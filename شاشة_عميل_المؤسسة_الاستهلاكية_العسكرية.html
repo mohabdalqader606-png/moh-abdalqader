@@ -472,6 +472,7 @@ const DEFAULT_ITEMS = [{"ourCode": "FVL00109", "ourName": "فاصوليا مجم
 let currentGroupId = null;
 let currentPage = 'mapping';
 let openPicker = null; // invoiceId currently showing item picker
+let openBulkAssign = null; // invoiceId currently showing تعبئة سريعة حسب نسبة الضريبة
 let TRANSFERS = []; // {docNum, docDate, fromWhs, toWhs, ourCode, ourName, qty, uom}
 let STATEMENT = []; // {theirCode, theirName, agreementNo, amanat, ghairMawrid, price, qtyDispatch, qtyAmman, qtyAqaba, totalValue}
 let DUMMY_INVOICES = []; // {id, docNum, date, branch, amount}
@@ -810,11 +811,29 @@ function renderInvoicesPage(){
         }).join('')}
       </div>` : '';
 
+    const uniqueTaxRates = [...new Set(ITEMS.map(it=>it.taxRate||0))].sort((a,b)=>a-b);
+    const bulkAssignHtml = openBulkAssign===inv.id ? `
+      <div class="input-panel" style="border-top:1px dashed var(--line); border-bottom:none; margin-top:8px; padding:12px 4px 4px;">
+        <div class="row-actions" style="margin-top:0;">
+          <label style="font-size:12px; display:flex; align-items:center; gap:6px;">نسبة الضريبة
+            <select onchange="renderBulkAssignList('${inv.id}', this.value)">
+              <option value="">— اختر —</option>
+              ${uniqueTaxRates.map(r=>`<option value="${r}">${(r*100).toFixed(0)}%</option>`).join('')}
+            </select>
+          </label>
+          <button class="btn-primary btn-sm" onclick="applyBulkAssign('${inv.id}')">تنفيذ</button>
+          <button class="btn-ghost btn-sm" onclick="toggleBulkAssign('${inv.id}')">إغلاق</button>
+        </div>
+        <div class="hint" style="margin-top:4px;">اختر النسبة، بتطلعلك كل الأصناف المتاحة بهاي النسبة (يلي مو مضافة بأي فاتورة ثانية) — دخّل رقم الترتيب جنب كل صنف بدك تضيفه هون، واللي ما تحطله رقم بيضل متاح تضيفه لفاتورة ثانية.</div>
+        <div id="bulkAssignList_${inv.id}"></div>
+      </div>` : '';
+
     return `<div class="inv-card">
       <div class="inv-head">
         <input type="text" value="${esc(inv.name)}" onchange="renameInvoice('${inv.id}', this.value)">
         <span class="inv-count">${inv.itemKeys.length} صنف</span>
         <span style="flex:1;"></span>
+        <button class="btn-ghost btn-sm" onclick="toggleBulkAssign('${inv.id}')">🏷️ تعبئة حسب نسبة الضريبة</button>
         <div class="picker">
           <button class="btn-ghost btn-sm" onclick="togglePicker('${inv.id}')">+ إضافة صنف</button>
           ${pickerHtml}
@@ -823,9 +842,60 @@ function renderInvoicesPage(){
       </div>
       <div class="inv-body">
         ${linesHtml || '<div class="muted" style="padding:8px 4px; font-size:12px;">ما في أصناف بهاي الفاتورة بعد.</div>'}
+        ${bulkAssignHtml}
       </div>
     </div>`;
   }).join('');
+}
+
+function toggleBulkAssign(invId){
+  openBulkAssign = (openBulkAssign===invId) ? null : invId;
+  openPicker = null;
+  renderInvoicesPage();
+}
+function renderBulkAssignList(invId, taxRateStr){
+  const container = document.getElementById('bulkAssignList_'+invId);
+  if(!container) return;
+  const g = GROUPS.find(x=>x.id===currentGroupId);
+  const inv = g && g.invoices.find(i=>i.id===invId);
+  if(taxRateStr === '' || !inv){ container.innerHTML=''; return; }
+  const taxRate = parseFloat(taxRateStr);
+  const usedKeys = new Set();
+  GROUPS.forEach(gr=> gr.invoices.forEach(iv=> iv.itemKeys.forEach(k=>usedKeys.add(k))));
+  const candidates = ITEMS.filter(it => Math.abs((it.taxRate||0) - taxRate) < 0.0001 && !usedKeys.has(itemKey(it)));
+  candidates.sort((a,b)=> String(a.theirCode).localeCompare(String(b.theirCode),'ar'));
+  if(!candidates.length){
+    container.innerHTML = '<div class="muted" style="padding:8px; font-size:12px;">ما في أصناف متاحة بهاي النسبة (إما كلها مضافة بفواتير ثانية، أو ما في أصناف بهاي النسبة أصلاً).</div>';
+    return;
+  }
+  container.innerHTML = `<div class="tbl-wrap" style="max-height:320px; padding:0; margin-top:6px;"><table class="grid"><thead><tr><th style="width:70px;">الترتيب</th><th>رمزهم</th><th>اسم الصنف لدى المؤسسة</th><th>رمزنا</th></tr></thead><tbody>` +
+    candidates.map(it=>{
+      const k = itemKey(it);
+      return `<tr><td><input type="number" min="1" step="1" data-key="${esc(k)}" style="width:60px;"></td><td class="mono">${esc(it.theirCode)}</td><td>${esc(it.theirName)}</td><td class="mono">${esc(it.ourCode)}</td></tr>`;
+    }).join('') + '</tbody></table></div>';
+}
+function applyBulkAssign(invId){
+  const g = GROUPS.find(x=>x.id===currentGroupId);
+  const inv = g && g.invoices.find(i=>i.id===invId);
+  if(!inv) return;
+  const container = document.getElementById('bulkAssignList_'+invId);
+  if(!container) return;
+  const inputs = container.querySelectorAll('input[data-key]');
+  const entries = [];
+  inputs.forEach(inp=>{
+    const v = inp.value.trim();
+    if(v!==''){
+      const n = parseFloat(v);
+      if(!isNaN(n)) entries.push({key: inp.dataset.key, order:n});
+    }
+  });
+  if(!entries.length){ flash('invStatusMsg','ما دخّلت رقم ترتيب لأي صنف.', false); return; }
+  entries.sort((a,b)=>a.order-b.order);
+  entries.forEach(e=>{ if(!inv.itemKeys.includes(e.key)) inv.itemKeys.push(e.key); });
+  openBulkAssign = null;
+  saveState();
+  renderInvoicesPage();
+  flash('invStatusMsg', `تمت إضافة ${entries.length} صنف بالترتيب المحدد.`, true);
 }
 
 /* ==================== طباعة الفواتير ==================== */
