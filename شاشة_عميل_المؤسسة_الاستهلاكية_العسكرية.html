@@ -336,6 +336,18 @@ ORDER BY T0."DocNum"</code>
             <summary style="cursor:pointer; font-size:11.5px; color:var(--navy);">لو احتجت مستقبلاً تلاقي اسم عمود حقل مستخدم إضافي (UDF) ثاني</summary>
             <div style="margin-top:6px;">شغّل: <code class="block">SELECT "TableID", "AliasID", "Descr" FROM CUFD WHERE "Descr" LIKE N'%كلمة من اسم الحقل%'</code>عمود AliasID هو الاسم التقني — اسم عمود الحقل الفعلي بالجدول = <code style="direction:ltr; display:inline-block;">U_</code> + AliasID.</div>
           </details>
+          <details style="margin-top:8px;">
+            <summary style="cursor:pointer; font-size:11.5px; color:var(--navy);">🏷️ ترجمة أكواد الفروع (اسم الفرع بيجي رقم من SAP مش اسم)</summary>
+            <div style="margin-top:6px;">
+              حقل "اسم الفرع" بسند التحويل هو حقل Valid-Values برقم، فالكويري بيرجّع رقم الكود مش الاسم. مزروع هون 111 فرع من قائمة الفروع اللي بعتِيها. لو الفرع اللي طلع مو موجود، أو القائمة عندكم اتغيّرت، الصق تحديث (Table / Title / Description من نفس شاشة UDF Values بـ SAP) وبيتحفظ:
+              <textarea id="branchCodesPasteArea" style="min-height:60px;" placeholder="الصق هنا: كود [تاب] - [تاب] اسم الفرع، سطر لكل فرع..."></textarea>
+              <div class="row-actions">
+                <button class="btn-ghost btn-sm" onclick="importBranchCodes()">حفظ التحديث</button>
+                <button class="btn-ghost btn-sm" onclick="reapplyBranchCodesToTransfers()">🔄 طبّق الترجمة على السندات المستوردة حالياً</button>
+                <span class="status-msg" id="branchCodesMsg"></span>
+              </div>
+            </div>
+          </details>
         </div>
         <textarea id="trPasteArea" placeholder="الصق هنا سندات التحويل..."></textarea>
         <div class="row-actions">
@@ -464,6 +476,8 @@ let TRANSFERS = []; // {docNum, docDate, fromWhs, toWhs, ourCode, ourName, qty, 
 let STATEMENT = []; // {theirCode, theirName, agreementNo, amanat, ghairMawrid, price, qtyDispatch, qtyAmman, qtyAqaba, totalValue}
 let DUMMY_INVOICES = []; // {id, docNum, date, branch, amount}
 let BRANCHES = ['عمان', 'العقبة']; // قائمة أسماء الفروع القابلة للتعريف من داخل السجل
+const DEFAULT_BRANCH_CODE_MAP = {"1": "الكرامة", "10": "بني كنانة", "100": "الموقر", "101": "حي معصوم", "102": "عبد الله الرواحنة", "104": "القريقرة", "105": "الرئيسي", "106": "مغير الكرك", "107": "فقوع", "108": "محي", "109": "بصيرا", "11": "الرمثا", "110": "جرش الجديد", "111": "البادية الشمالية", "112": "الجفر", "12": "عجلون", "13": "سوف", "14": "الروابي", "15": "الطرة", "16": "سوق الفاروق", "17": "ساكب", "18": "عنجرة", "19": "مرج الحمام", "2": "اسواق طارق", "20": "السلط", "21": "السرو", "22": "صويلح", "23": "خالد", "24": "الحزام", "25": "ياجوز", "26": "المفرق", "27": "جعفر الطيار", "28": "القصر", "29": "هزاع المجالي", "3": "مجمع المقابلين", "30": "المزار الجنوبي", "31": "زيد بن الحارث", "32": "مؤتة", "33": "مادبا", "34": "سوق الرابية", "35": "سوق دير ابي سعيد", "36": "اسواق السلام", "37": "العيص", "38": "الطفيلة", "39": "القادسية", "4": "راس العين", "40": "وصفي التل الشهيد-اربد", "41": "الحارث بن عمير الازدي", "42": "اربد الشمالي", "43": "الشوبك", "44": "وادي موسى", "45": "الطيبة الشمالية", "46": "معان", "47": "خالد بن الوليد", "48": "العدنانية", "49": "راشد الزيود", "5": "شفا بدران", "50": "الصديق", "51": "الوفاء", "52": "كفرنجه", "53": "الوسطية", "54": "المزار الشمالي", "55": "منشية بني حسن", "56": "مثلث ارحابا", "57": "الاشرفية", "58": "الهاشمية", "59": "علان", "6": "مجمع الشهيد /سحاب", "60": "آيل", "61": "عوجان", "62": "الشونة الشمالية", "63": "غور الصافي", "64": "دير علا", "65": "الكريمة", "66": "الصبيحي", "67": "بلعما", "68": "القطرانة", "69": "الشونة الجنوبية", "7": "كفر يوبا", "70": "البتراء", "71": "النشامى-حسينية معان", "72": "الجيزة", "73": "ماركا", "74": "سوق مرصع", "75": "برما", "76": "الازرق", "77": "رحاب", "78": "مليح", "79": "ام العمد", "8": "الحصن", "80": "ام البساتين", "81": "ذيبان", "82": "الفاروق", "83": "الحسا", "84": "العقبة", "85": "جديتا", "86": "الطيبة", "87": "السعيدية", "88": "الخالدية", "89": "المنارة", "9": "عروس الشمال", "90": "سما السرحان", "91": "سوق صبحا", "92": "الريشة", "93": "القويرة", "94": "الديسة", "95": "اذرح", "96": "الفيصلية", "97": "الطيبة الجنوب", "98": "المدينة التدريبية -الزرقاء", "99": "سوق بدر الجديد"}; // ترجمة كود الفرع (UDF رقمي بـ SAP) إلى اسمه
+let BRANCH_CODE_MAP = {};
 let lastTrMatch = null; // {mappedRows, unmapped} كاش آخر مطابقة، لإعادة الرسم عند تبديل إخفاء عمود اسمنا أو تغيير الترتيب
 let trSortKey = 'theirCode';
 let trSortDir = 1; // 1 تصاعدي، -1 تنازلي
@@ -482,10 +496,14 @@ function loadState(){
       STATEMENT = Array.isArray(d.STATEMENT) ? d.STATEMENT : [];
       DUMMY_INVOICES = Array.isArray(d.DUMMY_INVOICES) ? d.DUMMY_INVOICES : [];
       if(Array.isArray(d.BRANCHES) && d.BRANCHES.length) BRANCHES = d.BRANCHES;
+      if(d.BRANCH_CODE_MAP && typeof d.BRANCH_CODE_MAP==='object') BRANCH_CODE_MAP = d.BRANCH_CODE_MAP;
     }
   }catch(e){ console.warn('تعذر تحميل البيانات المحفوظة', e); }
   if(!localStorage.getItem(STORAGE_KEY)){
     ITEMS = DEFAULT_ITEMS.map(it=>({...it}));
+  }
+  if(!Object.keys(BRANCH_CODE_MAP).length){
+    BRANCH_CODE_MAP = {...DEFAULT_BRANCH_CODE_MAP};
   }
   if(!GROUPS.length){
     GROUPS = [
@@ -508,7 +526,7 @@ function ensureInvoiceDefaults(inv){
   if(!inv.qty) inv.qty={};
 }
 function saveState(){
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, BRANCHES})); }
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, BRANCHES, BRANCH_CODE_MAP})); }
   catch(e){ console.warn('تعذر الحفظ المحلي', e); }
 }
 
@@ -1152,6 +1170,37 @@ function copyTransferQuery(){
   );
 }
 
+function translateBranchCode(v){
+  v = String(v||'').trim();
+  if(v && /^\d+$/.test(v) && BRANCH_CODE_MAP[v]) return BRANCH_CODE_MAP[v];
+  return v;
+}
+function importBranchCodes(){
+  const raw = document.getElementById('branchCodesPasteArea').value;
+  const lines = raw.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  let added=0;
+  lines.forEach(l=>{
+    const parts = l.split('\t').map(p=>p.trim()).filter(p=>p!=='-' && p!=='');
+    if(parts.length<2) return;
+    const code = parts[0], name = parts[parts.length-1];
+    if(!/^\d+$/.test(code) || !name || name==='Define New') return;
+    BRANCH_CODE_MAP[code] = name;
+    added++;
+  });
+  saveState();
+  document.getElementById('branchCodesPasteArea').value = '';
+  flash('branchCodesMsg', `تم حفظ ${added} كود فرع. إجمالي الأكواد المخزّنة: ${Object.keys(BRANCH_CODE_MAP).length}.`, true);
+}
+function reapplyBranchCodesToTransfers(){
+  let fixed = 0;
+  TRANSFERS.forEach(t=>{
+    const translated = translateBranchCode(t.branch);
+    if(translated !== t.branch){ t.branch = translated; fixed++; }
+  });
+  saveState();
+  flash('branchCodesMsg', `تم تحديث اسم الفرع بـ ${fixed} سطر من السندات المستوردة حالياً.`, true);
+}
+
 const TR_HEADER_ALIASES = {
   'رقم السند':'docNum', 'تاريخ التسليم':'docDate', 'تاريخ السند':'docDate',
   'من مستودع':'fromWhs', 'الى مستودع':'toWhs', 'إلى مستودع':'toWhs',
@@ -1181,7 +1230,7 @@ function importTransfers(){
     rec.toWhs = rec.toWhs || '';
     rec.ourName = rec.ourName || '';
     rec.uom = rec.uom || '';
-    rec.branch = rec.branch || '';
+    rec.branch = translateBranchCode(rec.branch || '');
     newRecords.push(rec);
   }
   // أي سند موجود مسبقاً وله سطور بالنص الملصوق، منستبدل سطوره القديمة بالجديدة — يمنع تكرار/مضاعفة الكميات لو استوردت نفس البيانات أكثر من مرة
@@ -1266,7 +1315,7 @@ function matchTransferVouchers(){
     <div class="card"><div class="lbl">عدد السندات المطابقة</div><div class="val">${voucherMap.size}</div></div>
     <div class="card"><div class="lbl">عدد الأصناف</div><div class="val">${mappedRows.length + unmapped.length}</div></div>
     <div class="card ${unmapped.length?'warn':'good'}"><div class="lbl">أصناف غير مربوطة</div><div class="val">${unmapped.length}</div></div>
-    <div class="card"><div class="lbl">إجمالي القيمة (سعر المستودع)</div><div class="val">${fmtNum(grandTotal)}</div></div>
+    <div class="card"><div class="lbl">إجمالي القيمة (سعر المستودع)</div><div class="val">${fmt3(grandTotal)}</div></div>
   `;
   flash('trMatchMsg', `تمت المطابقة: ${voucherMap.size} سند، ${mappedRows.length+unmapped.length} صنف.`, true);
 }
@@ -1570,7 +1619,7 @@ function renderStatementPage(){
 
 /* ==================== نسخ احتياطي ==================== */
 function downloadBackup(){
-  const data = {version:1, exportedAt: new Date().toISOString(), ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, BRANCHES};
+  const data = {version:1, exportedAt: new Date().toISOString(), ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, BRANCHES, BRANCH_CODE_MAP};
   const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1592,6 +1641,7 @@ function restoreBackup(evt){
       STATEMENT = Array.isArray(d.STATEMENT) ? d.STATEMENT : [];
       DUMMY_INVOICES = Array.isArray(d.DUMMY_INVOICES) ? d.DUMMY_INVOICES : [];
       if(Array.isArray(d.BRANCHES) && d.BRANCHES.length) BRANCHES = d.BRANCHES;
+      if(d.BRANCH_CODE_MAP && typeof d.BRANCH_CODE_MAP==='object') BRANCH_CODE_MAP = d.BRANCH_CODE_MAP;
       GROUPS.forEach(g=>{ ensureGroupDefaults(g); (g.invoices||[]).forEach(ensureInvoiceDefaults); });
       currentGroupId = GROUPS[0] ? GROUPS[0].id : null;
       saveState();
