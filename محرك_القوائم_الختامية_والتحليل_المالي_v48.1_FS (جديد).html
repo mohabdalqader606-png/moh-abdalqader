@@ -606,10 +606,12 @@ function loadBP(txt){txt=txt||document.getElementById('txBP').value;if(!txt||!St
 function bpIntegrityCheck(){const byCtrl={};Object.entries(S.bp||{}).forEach(([c,b])=>{if(!b.ctrl)return;(byCtrl[b.ctrl]=byCtrl[b.ctrl]||[]).push(c)});const warn=[];
  Object.entries(byCtrl).forEach(([ctrl,codes])=>{let pSum=codes.reduce((s,c)=>s+(S.bpOpen[c]||0),0);Object.values(S.bpMoves||{}).forEach(m=>codes.forEach(c=>{if(m[c])pSum+=m[c].d-m[c].c}));
   let cRaw=S.opening[ctrl]||0;Object.values(S.moves||{}).forEach(m=>{if(m[ctrl])cRaw+=m[ctrl].d-m[ctrl].c});
-  if(Math.abs(cRaw)>0.5&&Math.abs(pSum)>Math.abs(cRaw)*1.02){warn.push(`⚠ حساب المراقبة ${ctrl}: مجموع أرصدة الشركاء المفصولين (${fmt(pSum)}) يتجاوز رصيد الحساب كاملاً (${fmt(cRaw)}) — يشير إلى ازدواج في لصق كويري 4 (شركاء الأعمال، أكثر من لصقة بنطاقات متداخلة). اضغط «مسح» ثم أعد لصق الكويري مرة واحدة فقط بنطاق تاريخ صحيح.`)}});
+  if(Math.abs(cRaw)<=0.5)return;const ratio=Math.abs(pSum)/Math.abs(cRaw);
+  if(ratio>1.3){warn.push({lvl:'bad',t:`⚠ حساب المراقبة ${ctrl}: مجموع أرصدة الشركاء المفصولين (${fmt(pSum)}) يتجاوز رصيد الحساب كاملاً (${fmt(cRaw)}) بفارق كبير (${(ratio*100-100).toFixed(0)}%) — يشير غالباً إلى ازدواج في لصق كويري 4 (أكثر من لصقة بنطاقات متداخلة). اضغط «مسح» ثم أعد لصق الكويري مرة واحدة فقط بنطاق تاريخ صحيح.`})}
+  else if(ratio>1.03){warn.push({lvl:'note',t:`ملاحظة حساب المراقبة ${ctrl}: مجموع أرصدة الشركاء المفصولين (${fmt(pSum)}) يفوق رصيد الحساب كاملاً (${fmt(cRaw)}) بفارق ${fmt(pSum-cRaw)} (${(ratio*100-100).toFixed(1)}%) — تحقق من وجود شريك تحت هذا الحساب غير مدرج بقائمة IN بالكويري، أو فرق توقيت/تقريب.`})}});
  return warn}
 function renderBPList(){document.getElementById('bpList').innerHTML=Object.entries(S.bp||{}).map(([c,b])=>`<span class="badge">${c} ${b.name} ← ${b.ctrl} | افتتاحي ${fmt(S.bpOpen[c]||0)}</span>`).join('');
- const we=document.getElementById('bpWarn');if(we){const w=bpIntegrityCheck();we.innerHTML=w.map(x=>`<div class="badge" style="display:block;white-space:normal;margin-top:6px;background:var(--coral,#c0392b);color:#fff;border-color:var(--coral,#c0392b)">${x}</div>`).join('')}}
+ const we=document.getElementById('bpWarn');if(we){const w=bpIntegrityCheck();we.innerHTML=w.map(x=>`<div class="badge" style="display:block;white-space:normal;margin-top:6px;background:${x.lvl==='bad'?'var(--coral,#c0392b)':'var(--gold,#b08d57)'};color:#fff;border-color:${x.lvl==='bad'?'var(--coral,#c0392b)':'var(--gold,#b08d57)'}">${x.t}</div>`).join('')}}
 /* ---- تسوية توقيت الإيراد: فواتير احتياطية غير مسلّمة / تسليمات غير مفوترة ---- */
 function timingBalances(ms){ // returns balances at each month end: def (deferred revenue from undelivered reserve invoices), unb (unbilled deliveries)
  const at={};const endOf=k=>{const [y,m]=k.split('-').map(Number);return new Date(y,m,0)};const openD=(()=>{const y=S.settings.openYear,m=S.settings.openMonth;return new Date(y,m,0)})();
