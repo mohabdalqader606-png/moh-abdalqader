@@ -316,16 +316,15 @@
       <details class="opt" id="trImportDetails" open>
         <summary><span class="num">1</span>&nbsp; استيراد سندات التحويل اللي أحد طرفيها 011 (لصق — Tab مفصول)</summary>
         <div class="hint" style="margin-top:8px;">
-          شغّل هالكويري (جداول SAP B1 القياسية لسند التحويل — OWTR/WTR1) والصق نتيجته تحت:
-          <code class="block">SELECT T0."DocNum" AS "رقم السند", T0."DocDate" AS "تاريخ التسليم",
-T1."FromWhsCod" AS "من مستودع", T1."WhsCode" AS "الى مستودع",
-T1."ItemCode" AS "رمزنا", T1."Dscription" AS "اسمنا",
-T1."Quantity" AS "الكمية", T1."UomCode" AS "الوحدة"
-FROM OWTR T0 INNER JOIN WTR1 T1 ON T0."DocEntry" = T1."DocEntry"
-WHERE (T1."FromWhsCod" = '011' OR T1."WhsCode" = '011')
-AND T0."DocDate" BETWEEN '2026-08-01' AND '2026-08-31'
-ORDER BY T0."DocNum"</code>
-          غيّر التاريخين بسطر <code style="direction:ltr; display:inline-block;">BETWEEN</code> لأول وآخر يوم بالشهر يلي بدك تسحبه، وشغّل الكويري من جديد كل شهر. لو رجّع خطأ عمود (مثلاً "UomCode" مو موجود عندكم)، احذف السطر المسبب للخطأ من الـ SELECT وابعتلي رسالة الخطأ بالضبط لأصلّحها فوراً. بديل: الصق مباشرة من كشف "Stock Transfer" الورقي بنفس ترتيب الأعمدة (Item No. / Description / From / To / UoM / Quantity) بدون كويري أصلاً.
+          اختار الفترة، وبتتحدّث الكويري تحت تلقائياً — انسخها وشغّلها بـ SAP HANA والصق النتيجة بالمربع تحت:
+          <div class="row-actions" style="margin:8px 0;">
+            <label style="font-size:12px; display:flex; align-items:center; gap:6px;">من تاريخ <input type="date" id="trDateFrom" onchange="renderTransferQuery()"></label>
+            <label style="font-size:12px; display:flex; align-items:center; gap:6px;">إلى تاريخ <input type="date" id="trDateTo" onchange="renderTransferQuery()"></label>
+            <button class="btn-ghost btn-sm" onclick="copyTransferQuery()">📋 نسخ الكويري</button>
+            <span class="status-msg" id="trQueryCopyMsg"></span>
+          </div>
+          <code class="block" id="trQueryBlock"></code>
+          لو رجّع خطأ عمود (مثلاً "UomCode" مو موجود عندكم)، احذف السطر المسبب للخطأ من الـ SELECT وابعتلي رسالة الخطأ بالضبط لأصلّحها فوراً. بديل: الصق مباشرة من كشف "Stock Transfer" الورقي بنفس ترتيب الأعمدة (Item No. / Description / From / To / UoM / Quantity) بدون كويري أصلاً.
         </div>
         <textarea id="trPasteArea" placeholder="الصق هنا سندات التحويل..."></textarea>
         <div class="row-actions">
@@ -1096,6 +1095,35 @@ function numberToArabicWords(amount){
 }
 
 /* ==================== سندات التحويل (011) ومطابقة فاتورة الصرف الوهمي ==================== */
+function fmtISODate(d){ const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; }
+function initTransferDates(){
+  const now = new Date();
+  const first = new Date(now.getFullYear(), now.getMonth(), 1);
+  document.getElementById('trDateFrom').value = fmtISODate(first);
+  document.getElementById('trDateTo').value = fmtISODate(now);
+  renderTransferQuery();
+}
+function renderTransferQuery(){
+  const from = document.getElementById('trDateFrom').value || '2026-08-01';
+  const to = document.getElementById('trDateTo').value || '2026-08-31';
+  const sql = `SELECT T0."DocNum" AS "رقم السند", T0."DocDate" AS "تاريخ التسليم",
+T1."FromWhsCod" AS "من مستودع", T1."WhsCode" AS "الى مستودع",
+T1."ItemCode" AS "رمزنا", T1."Dscription" AS "اسمنا",
+T1."Quantity" AS "الكمية", T1."UomCode" AS "الوحدة"
+FROM OWTR T0 INNER JOIN WTR1 T1 ON T0."DocEntry" = T1."DocEntry"
+WHERE (T1."FromWhsCod" = '011' OR T1."WhsCode" = '011')
+AND T0."DocDate" BETWEEN '${from}' AND '${to}'
+ORDER BY T0."DocNum"`;
+  document.getElementById('trQueryBlock').textContent = sql;
+}
+function copyTransferQuery(){
+  const sql = document.getElementById('trQueryBlock').textContent;
+  navigator.clipboard.writeText(sql).then(
+    ()=>flash('trQueryCopyMsg','تم النسخ.', true),
+    ()=>flash('trQueryCopyMsg','تعذر النسخ التلقائي — انسخ الكويري يدوياً.', false)
+  );
+}
+
 const TR_HEADER_ALIASES = {
   'رقم السند':'docNum', 'تاريخ التسليم':'docDate', 'تاريخ السند':'docDate',
   'من مستودع':'fromWhs', 'الى مستودع':'toWhs', 'إلى مستودع':'toWhs',
@@ -1416,6 +1444,7 @@ function restoreBackup(evt){
 /* ==================== بدء التشغيل ==================== */
 loadState();
 switchPage('mapping');
+initTransferDates();
 </script>
 </body>
 </html>
