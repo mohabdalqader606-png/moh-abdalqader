@@ -325,12 +325,14 @@
           <code class="block" id="trQueryBlock">SELECT T0."DocNum" AS "رقم السند", T0."DocDate" AS "تاريخ التسليم",
 T1."FromWhsCod" AS "من مستودع", T1."WhsCode" AS "الى مستودع",
 T1."ItemCode" AS "رمزنا", T1."Dscription" AS "اسمنا",
-T1."Quantity" AS "الكمية", T1."UomCode" AS "الوحدة"
+T1."Quantity" AS "الكمية", T1."UomCode" AS "الوحدة",
+T0."U_BranchName" AS "اسم الفرع"
 FROM OWTR T0 INNER JOIN WTR1 T1 ON T0."DocEntry" = T1."DocEntry"
 WHERE (T1."FromWhsCod" = '011' OR T1."WhsCode" = '011')
 AND T0."DocDate" BETWEEN [%0] AND [%1]
 ORDER BY T0."DocNum"</code>
-          لو رجّع خطأ عمود (مثلاً "UomCode" مو موجود عندكم)، احذف السطر المسبب للخطأ من الـ SELECT وابعتلي رسالة الخطأ بالضبط لأصلّحها فوراً. بديل: الصق مباشرة من كشف "Stock Transfer" الورقي بنفس ترتيب الأعمدة (Item No. / Description / From / To / UoM / Quantity) بدون كويري أصلاً.
+          سطر "اسم الفرع" بياخذه من حقل مستخدم إضافي (UDF) بفورمة Inventory Transfer عندكم — اسم الحقل بالكويري لازم يطابق اسمه الحقيقي بقاعدة البيانات (مو بالضرورة U_BranchName). لمعرفة الاسم الصحيح: فعّل System Information (Ctrl+Shift+I) بـ SAP، حوّم فوق حقل "اسم الفرع" بالفورمة، وبيطلعلك بالشريط السفلي اسم الجدول والحقل الفعليين — عدّل السطر حسبه.
+          لو رجّع خطأ عمود (مثلاً "UomCode" أو "U_BranchName" مو موجودين عندكم)، احذف السطر المسبب للخطأ من الـ SELECT وابعتلي رسالة الخطأ بالضبط لأصلّحها فوراً. بديل: الصق مباشرة من كشف "Stock Transfer" الورقي بنفس ترتيب الأعمدة (Item No. / Description / From / To / UoM / Quantity) بدون كويري أصلاً — بس وقتها ما رح يظهر اسم الفرع.
         </div>
         <textarea id="trPasteArea" placeholder="الصق هنا سندات التحويل..."></textarea>
         <div class="row-actions">
@@ -378,15 +380,20 @@ ORDER BY T0."DocNum"</code>
     <div class="toolbar" id="trTableToolbar" style="display:none; border-bottom:none;">
       <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="trHideOurCode" onchange="toggleOurNameCol()"> إخفاء عمود "رمزنا"</label>
       <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="trHideOurName" onchange="toggleOurNameCol()"> إخفاء عمود "اسمنا"</label>
+      <span class="muted" style="font-size:11.5px;">اضغط أي عنوان عمود بالجدول للترتيب حسبه (وبضغطة ثانية يعكس الاتجاه)</span>
     </div>
     <div class="tbl-wrap">
       <table class="grid" id="trResultTable" style="display:none;">
         <thead>
           <tr>
-            <th>رمز الصنف لدى المؤسسة</th><th>اسم الصنف لدى المؤسسة</th>
-            <th id="thOurCode">رمزنا</th><th id="thOurName">اسمنا</th>
-            <th>الكمية عندنا (وحدتنا)</th><th>الكمية لدى المؤسسة (حبة)</th>
-            <th>سعر المستودع</th><th>المجموع</th>
+            <th id="thTheirCode" style="cursor:pointer;" onclick="setTrSort('theirCode')">رمز الصنف لدى المؤسسة</th>
+            <th id="thTheirName" style="cursor:pointer;" onclick="setTrSort('theirName')">اسم الصنف لدى المؤسسة</th>
+            <th id="thOurCode" style="cursor:pointer;" onclick="setTrSort('ourCode')">رمزنا</th>
+            <th id="thOurName" style="cursor:pointer;" onclick="setTrSort('ourName')">اسمنا</th>
+            <th id="thOurQty" style="cursor:pointer;" onclick="setTrSort('ourQty')">الكمية عندنا (وحدتنا)</th>
+            <th id="thTheirQty" style="cursor:pointer;" onclick="setTrSort('theirQty')">الكمية لدى المؤسسة (حبة)</th>
+            <th id="thWhsPrice" style="cursor:pointer;" onclick="setTrSort('whsPrice')">سعر المستودع</th>
+            <th id="thTotal" style="cursor:pointer;" onclick="setTrSort('total')">المجموع</th>
           </tr>
         </thead>
         <tbody id="trResultTbody"></tbody>
@@ -454,7 +461,9 @@ let TRANSFERS = []; // {docNum, docDate, fromWhs, toWhs, ourCode, ourName, qty, 
 let STATEMENT = []; // {theirCode, theirName, agreementNo, amanat, ghairMawrid, price, qtyDispatch, qtyAmman, qtyAqaba, totalValue}
 let DUMMY_INVOICES = []; // {id, docNum, date, branch, amount}
 let BRANCHES = ['عمان', 'العقبة']; // قائمة أسماء الفروع القابلة للتعريف من داخل السجل
-let lastTrMatch = null; // {mappedRows, unmapped} كاش آخر مطابقة، لإعادة الرسم عند تبديل إخفاء عمود اسمنا
+let lastTrMatch = null; // {mappedRows, unmapped} كاش آخر مطابقة، لإعادة الرسم عند تبديل إخفاء عمود اسمنا أو تغيير الترتيب
+let trSortKey = 'theirCode';
+let trSortDir = 1; // 1 تصاعدي، -1 تنازلي
 
 function itemKey(it){ return it.ourCode + '|' + it.theirCode; }
 function findItem(key){ return ITEMS.find(it => itemKey(it) === key); }
@@ -1144,7 +1153,8 @@ const TR_HEADER_ALIASES = {
   'رقم السند':'docNum', 'تاريخ التسليم':'docDate', 'تاريخ السند':'docDate',
   'من مستودع':'fromWhs', 'الى مستودع':'toWhs', 'إلى مستودع':'toWhs',
   'رمزنا':'ourCode', 'اسمنا':'ourName',
-  'الكمية':'qty', 'الوحدة':'uom'
+  'الكمية':'qty', 'الوحدة':'uom',
+  'اسم الفرع':'branch'
 };
 
 function importTransfers(){
@@ -1168,6 +1178,7 @@ function importTransfers(){
     rec.toWhs = rec.toWhs || '';
     rec.ourName = rec.ourName || '';
     rec.uom = rec.uom || '';
+    rec.branch = rec.branch || '';
     newRecords.push(rec);
   }
   // أي سند موجود مسبقاً وله سطور بالنص الملصوق، منستبدل سطوره القديمة بالجديدة — يمنع تكرار/مضاعفة الكميات لو استوردت نفس البيانات أكثر من مرة
@@ -1208,12 +1219,17 @@ function matchTransferVouchers(){
   const voucherMap = new Map();
   matchedLines.forEach(t=>{
     const k = normDocNum(t.docNum);
-    if(!voucherMap.has(k)) voucherMap.set(k, {docNum:t.docNum, docDate:t.docDate, fromWhs:t.fromWhs, toWhs:t.toWhs, lines:0});
+    if(!voucherMap.has(k)) voucherMap.set(k, {docNum:t.docNum, docDate:t.docDate, fromWhs:t.fromWhs, toWhs:t.toWhs, branch:t.branch, lines:0});
     voucherMap.get(k).lines++;
   });
   document.getElementById('trVoucherHeaders').innerHTML = Array.from(voucherMap.values()).map(v=>
-    `<div class="hint" style="margin:2px 0;">📄 سند <b class="mono">${esc(v.docNum)}</b> — ${esc(v.docDate)||'—'} · من <b>${esc(v.fromWhs)||'—'}</b> إلى <b>${esc(v.toWhs)||'—'}</b> · ${v.lines} سطر</div>`
+    `<div class="hint" style="margin:2px 0;">📄 سند <b class="mono">${esc(v.docNum)}</b> — ${esc(v.docDate)||'—'} · من <b>${esc(v.fromWhs)||'—'}</b> إلى <b>${esc(v.toWhs)||'—'}</b> · ${v.lines} سطر${v.branch?` · الفرع: <b>${esc(v.branch)}</b>`:''}</div>`
   ).join('');
+
+  // أسماء الفروع الفريدة بكل السندات المطابقة — تُعرض كملخص، وتُضاف تلقائياً لقائمة الفروع المعرّفة
+  const matchedBranches = [...new Set(Array.from(voucherMap.values()).map(v=>v.branch).filter(Boolean))];
+  matchedBranches.forEach(b=>{ if(!BRANCHES.includes(b)) BRANCHES.push(b); });
+  if(matchedBranches.length){ saveState(); }
 
   // تجميع حسب رمزنا
   const grouped = {};
@@ -1237,12 +1253,6 @@ function matchTransferVouchers(){
       unmapped.push({ourCode:g.ourCode, ourName:g.ourName, ourQty:g.qty});
     }
   });
-  mappedRows.sort((a,b)=>{
-    const an = parseFloat(a.theirCode), bn = parseFloat(b.theirCode);
-    if(!isNaN(an) && !isNaN(bn)) return an-bn;
-    return String(a.theirCode).localeCompare(String(b.theirCode),'ar');
-  });
-
   lastTrMatch = {mappedRows, unmapped};
   document.getElementById('trTableToolbar').style.display = '';
   renderTransferResultTable();
@@ -1258,9 +1268,47 @@ function matchTransferVouchers(){
   flash('trMatchMsg', `تمت المطابقة: ${voucherMap.size} سند، ${mappedRows.length+unmapped.length} صنف.`, true);
 }
 
+const TR_SORT_TH = {
+  theirCode: ['thTheirCode','رمز الصنف لدى المؤسسة'],
+  theirName: ['thTheirName','اسم الصنف لدى المؤسسة'],
+  ourCode: ['thOurCode','رمزنا'],
+  ourName: ['thOurName','اسمنا'],
+  ourQty: ['thOurQty','الكمية عندنا (وحدتنا)'],
+  theirQty: ['thTheirQty','الكمية لدى المؤسسة (حبة)'],
+  whsPrice: ['thWhsPrice','سعر المستودع'],
+  total: ['thTotal','المجموع']
+};
+function setTrSort(key){
+  if(trSortKey === key) trSortDir *= -1;
+  else { trSortKey = key; trSortDir = 1; }
+  renderTransferResultTable();
+}
+function trCompareRows(a, b){
+  const av = a[trSortKey], bv = b[trSortKey];
+  let cmp;
+  if(trSortKey === 'theirCode'){
+    const an = parseFloat(av), bn = parseFloat(bv);
+    cmp = (!isNaN(an) && !isNaN(bn)) ? an-bn : String(av).localeCompare(String(bv),'ar');
+  }else if(typeof av === 'number' && typeof bv === 'number'){
+    cmp = av - bv;
+  }else{
+    cmp = String(av||'').localeCompare(String(bv||''),'ar');
+  }
+  return cmp * trSortDir;
+}
+function updateTrSortHeaderLabels(){
+  Object.entries(TR_SORT_TH).forEach(([key,[id,label]])=>{
+    const el = document.getElementById(id);
+    if(!el) return;
+    el.textContent = label + (key===trSortKey ? (trSortDir===1?' ▲':' ▼') : '');
+  });
+}
+
 function renderTransferResultTable(){
   if(!lastTrMatch) return;
-  const {mappedRows, unmapped} = lastTrMatch;
+  const unmapped = lastTrMatch.unmapped;
+  const mappedRows = lastTrMatch.mappedRows.slice().sort(trCompareRows);
+  updateTrSortHeaderLabels();
   const hideOurCode = document.getElementById('trHideOurCode').checked;
   const hideOurName = document.getElementById('trHideOurName').checked;
   document.getElementById('thOurCode').style.display = hideOurCode ? 'none' : '';
