@@ -97,6 +97,34 @@
   .picker-item:hover{background:var(--teal-bg);}
   .picker-item .code{font-family:var(--mono); color:var(--ink-soft); font-size:10.5px;}
 
+  #printOverlay{display:none; position:fixed; inset:0; background:#fff; z-index:1000; overflow:auto;}
+  #printOverlay.active{display:block;}
+  .print-toolbar{position:sticky; top:0; background:var(--paper); padding:10px 24px; border-bottom:1px solid var(--line); display:flex; gap:10px; z-index:2;}
+  .print-sheet{max-width:940px; margin:20px auto; padding:26px; border:1px solid #ccc; font-family:var(--disp); color:#000; background:#fff;}
+  .ps-natno{text-align:left; font-size:10.5px; color:#333; margin-bottom:6px;}
+  .ps-head{display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #B23A34; padding-bottom:10px; margin-bottom:10px; gap:12px;}
+  .ps-head .en{text-align:left; font-size:10.5px; line-height:1.65; direction:ltr;}
+  .ps-head .en .brand{font-size:19px; font-weight:800; color:#B23A34;}
+  .ps-head .ar{text-align:right; font-size:11px; line-height:1.8;}
+  .ps-head .ar .brand{font-size:16px; font-weight:800; color:#1B2536;}
+  .ps-boxes{display:flex; justify-content:center; gap:14px; margin:12px 0;}
+  .ps-box{border:1.5px solid #B23A34; color:#B23A34; border-radius:4px; padding:6px 18px; font-size:12px; font-weight:700; text-align:center; line-height:1.6;}
+  .ps-meta{display:flex; justify-content:space-between; font-size:12px; margin:12px 0; flex-wrap:wrap; gap:8px;}
+  .ps-cust{text-align:center; font-weight:700; font-size:13px; margin:10px 0 14px;}
+  table.ps-table{width:100%; border-collapse:collapse; font-size:10.5px;}
+  table.ps-table th{background:#B23A34; color:#fff; padding:6px 5px; border:1px solid #B23A34; white-space:nowrap;}
+  table.ps-table td{padding:5px; border:1px solid #ddd; text-align:center;}
+  .ps-footer{margin-top:8px; border:1px solid #ddd; border-radius:6px; padding:9px 14px; font-size:11.5px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px;}
+  .ps-footer .lines div{margin:2px 0;}
+  .ps-words{margin-top:8px; font-weight:700; font-size:12px; text-align:center;}
+  @media print{
+    body *{visibility:hidden;}
+    #printOverlay, #printOverlay *{visibility:visible;}
+    #printOverlay{position:absolute; top:0; left:0; width:100%; display:block;}
+    .print-toolbar{display:none;}
+    .print-sheet{border:none; margin:0; max-width:100%;}
+  }
+
   .roadmap{padding:20px 24px 26px; display:flex; flex-direction:column; gap:10px;}
   .rm-item{display:flex; gap:12px; align-items:flex-start; padding:14px 16px; border:1px solid var(--line); border-radius:12px; background:#FAFBFD;}
   .rm-item.done{border-color:var(--teal); background:var(--teal-bg);}
@@ -127,6 +155,7 @@
   <div style="display:flex; gap:8px; margin:16px 0 -4px; position:relative; z-index:3; align-items:center; flex-wrap:wrap;">
     <button class="btn-primary" id="pageTabMapping" onclick="switchPage('mapping')" style="border-radius:9px 9px 0 0;">🔗 ربط الأصناف</button>
     <button class="btn-ghost" id="pageTabInvoices" onclick="switchPage('invoices')" style="border-radius:9px 9px 0 0;">🧾 تصميم ترتيب الفواتير</button>
+    <button class="btn-ghost" id="pageTabPrint" onclick="switchPage('print')" style="border-radius:9px 9px 0 0;">🖨️ طباعة الفواتير</button>
     <button class="btn-ghost" id="pageTabRoadmap" onclick="switchPage('roadmap')" style="border-radius:9px 9px 0 0;">🗺️ خارطة المراحل</button>
     <span style="flex:1;"></span>
     <button class="btn-ghost btn-sm" style="border-color:var(--teal); color:var(--teal); border-radius:9px 9px 0 0;" onclick="downloadBackup()">💾 نسخة احتياطية</button>
@@ -215,6 +244,21 @@
     <div class="list" id="invoicesList"></div>
   </section>
 
+  <!-- ============ صفحة طباعة الفواتير ============ -->
+  <section class="panel" id="printPage" style="display:none;">
+    <div class="grp-tabs" id="printGrpTabs"></div>
+    <div class="input-panel" style="border-top:1px solid var(--line);">
+      <div class="hint" style="margin:0 0 8px;">إعدادات المجموعة (بتنطبق على كل فواتيرها):</div>
+      <div class="row-actions" style="margin-top:0; gap:16px; flex-wrap:wrap;">
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">رقم العميل <input type="text" id="grpCustCode" style="width:110px;" onchange="updateGroupSetting('custCode', this.value)"></label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">رقم الاتفاقية <input type="text" id="grpAgreementNo" style="width:90px;" onchange="updateGroupSetting('agreementNo', this.value)"></label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="grpTaxExempt" onchange="updateGroupSetting('taxExempt', this.checked)"> إعفاء ضريبي كامل (0% بغض النظر عن ضريبة الصنف — زي العقبة)</label>
+      </div>
+      <div class="hint" style="margin-top:8px;">دخّل الكمية لكل صنف — المجاميع والضريبة بتنحسب لحالها. لكل فاتورة اختار نوعها: "فاتورة مبيعات" عادية (تُطبع أول بأول، متل فواتير العقبة خلال الشهر من سندات التحويل) أو "كشف تجميعي" (مستند واحد بآخر الشهر، رقمه يتسلسل تلقائياً بين مستندات التجميع بنفس المجموعة). اضغط "معاينة وطباعة" لعرض الشكل النهائي.</div>
+    </div>
+    <div class="list" id="printInvoicesList"></div>
+  </section>
+
   <!-- ============ صفحة خارطة المراحل ============ -->
   <section class="panel" id="roadmapPage" style="display:none;">
     <div class="roadmap">
@@ -228,20 +272,20 @@
         <div class="rm-txt"><b>رفع كشف المؤسسة الشهري وتفريغه</b><span>رفع كشف المؤسسة (لصق / إكسل بشكل موثوق، PDF وصورة تحتاج عيّنة فعلية لضبط القراءة) وتفريغه تلقائياً بعمودين: العقبة، وباقي المملكة — بالكميات لكل رمز صنف عند المؤسسة.</span></div>
         <span class="rm-tag">قادمة</span>
       </div>
-      <div class="rm-item">
+      <div class="rm-item done">
         <span class="rm-num">3</span>
-        <div class="rm-txt"><b>توزيع كميات باقي المملكة على الفواتير وطباعتها</b><span>إسقاط كميات عمود "باقي المملكة" على قالب الفواتير المصمم بالمرحلة 1 (بالترتيب المحفوظ)، وطباعة كل فاتورة برمزنا/رمزهم/الكمية/السعر.</span></div>
-        <span class="rm-tag">قادمة</span>
+        <div class="rm-txt"><b>طباعة الفواتير بالتنسيق الرسمي (كميات يدوية حالياً)</b><span>محرك طباعة مطابق تماماً لنموذج الفاتورة الفعلي (رأسية الشركة، الضريبة، سعر بيع المؤسسة، المجموع بالحروف). حالياً الكمية تُدخل يدوياً لكل صنف — بمرحلة 2 رح تنعبى تلقائياً من كشف المؤسسة الشهري.</span></div>
+        <span class="rm-tag">جاهزة</span>
       </div>
       <div class="rm-item">
         <span class="rm-num">4</span>
         <div class="rm-txt"><b>شاشة تحويلات العقبة خلال الشهر</b><span>تفريغ تحويلات العقبة إلى 011 أولاً بأول (لصق / إكسل / PDF) وطباعة فواتيرها بنفس آلية الترتيب فور اعتماد كل تحويل.</span></div>
         <span class="rm-tag">قادمة</span>
       </div>
-      <div class="rm-item">
+      <div class="rm-item done">
         <span class="rm-num">5</span>
-        <div class="rm-txt"><b>الكشف التجميعي لكميات العقبة آخر الشهر</b><span>كشف بنفس بيانات الفاتورة (رمزنا/رمزهم/كمية/سعر) لكن باسم "كشف تجميعي"، بنفس آلية اختيار ترتيب الطباعة المستخدمة بباقي المملكة.</span></div>
-        <span class="rm-tag">قادمة</span>
+        <div class="rm-txt"><b>الكشف التجميعي لكميات العقبة آخر الشهر</b><span>نفس محرك الطباعة بمرحلة 3، بس كل فاتورة إلها "نوع مستند" تختاره: فاتورة مبيعات عادية (تُطبع أول بأول خلال الشهر من سند التحويل) أو كشف تجميعي (مستند واحد بآخر الشهر، رقمه يتسلسل تلقائياً). العقبة بإعفاء ضريبي كامل 0% دايماً بغض النظر عن نوع المستند.</span></div>
+        <span class="rm-tag">جاهزة</span>
       </div>
       <div class="rm-item">
         <span class="rm-num">6</span>
@@ -252,13 +296,21 @@
   </section>
 </main>
 
+<div id="printOverlay">
+  <div class="print-toolbar">
+    <button class="btn-primary btn-sm" onclick="window.print()">🖨️ طباعة</button>
+    <button class="btn-ghost btn-sm" onclick="closePrintPreview()">✕ إغلاق</button>
+  </div>
+  <div id="printSheetContent"></div>
+</div>
+
 <script>
 /* ==================== تخزين ==================== */
 const STORAGE_KEY = 'milInst_v2';
 // {ourCode, ourName, ourUnit, theirCode, theirName, origin, taxRate, factor, salePriceUnit, salePricePiece, whsPriceUnit, whsPricePiece}
 let ITEMS = [];
 let GROUPS = [];  // {id, name, invoices:[{id, name, itemKeys:[itemKey,...]}]}
-const DEFAULT_ITEMS = [{"ourCode": "FVL00109", "ourName": "فاصوليا مجمدة مصرية مونتانا20*400غم", "ourUnit": "Carton", "theirCode": "11365702", "theirName": "مونتانا فاصوليا خضراء  مجمده 400غم كيس", "origin": "مصري", "taxRate": 0.0, "factor": 20.0, "salePriceUnit": 9.0, "salePricePiece": 0.45, "whsPriceUnit": 10.0, "whsPricePiece": 0.5}, {"ourCode": "FVL00280", "ourName": "طحين قمح تركي جميع الاستعمالات 1 كغم شد 10", "ourUnit": "Bag", "theirCode": "11510452", "theirName": "دقيق القمح لجميع الاغراض 1 كغم mega", "origin": "تركيا", "taxRate": 0.0, "factor": 1.0, "salePriceUnit": 0.49, "salePricePiece": 0.49, "whsPriceUnit": 0.59, "whsPricePiece": 0.59}, {"ourCode": "FVL00307", "ourName": "فاصولياء خضراء مصرية 20*400 غم بنت الريف", "ourUnit": "Carton", "theirCode": "11366450", "theirName": "بنت الريف فاصوليا خضراء مقطعه 400غم", "origin": "مصري", "taxRate": 0.0, "factor": 20.0, "salePriceUnit": 7.12, "salePricePiece": 0.356, "whsPriceUnit": 8.0, "whsPricePiece": 0.4}, {"ourCode": "FVL00368", "ourName": "AGRICO-JAPONICA SHORT GRAIN RICE ارز الكيلاني حبة مصريه", "ourUnit": "Piece", "theirCode": "11286286", "theirName": "كيلاني ارز حبة مصرية 3.5 كغم كيس فيتنام", "origin": "مصري", "taxRate": 0.0, "factor": 1.0, "salePriceUnit": 2.35, "salePricePiece": 2.35, "whsPriceUnit": 2.85, "whsPricePiece": 2.85}, {"ourCode": "PFS00003", "ourName": "C.P.-WHITE FISH FILLET WELL TRIMMEDفيليه سمك فيتنامي ابيض (CP)", "ourUnit": "KG", "theirCode": "11366466", "theirName": "سمك فيلية ابيض مجمد 1كغم كيس cp", "origin": "فتنامي", "taxRate": 0.0, "factor": 1.0, "salePriceUnit": 2.95, "salePricePiece": 2.95, "whsPriceUnit": 3.39, "whsPricePiece": 3.39}, {"ourCode": "CFC00195", "ourName": "70181-TAGLIATELLE 12*500GM معكرونة فوتوتشيني ايطالي", "ourUnit": "Carton", "theirCode": "11356452", "theirName": "فوتوشيني رقم 81 كيس RISCOSSA TAGLITELLE", "origin": "ايطالي", "taxRate": 0.05, "factor": 12.0, "salePriceUnit": 12.5423, "salePricePiece": 1.0452, "whsPriceUnit": 15.0, "whsPricePiece": 1.25}, {"ourCode": "CFC00084", "ourName": "495-SEMOLA LASAGNE 500GR*12  معكرونة لازانيا ايطالي", "ourUnit": "Carton", "theirCode": "11356460", "theirName": "Riscossa Lasagne  لازانيا كيس 500 غرام ايطاليا", "origin": "ايطالي", "taxRate": 0.04, "factor": 12.0, "salePriceUnit": 15.3462, "salePricePiece": 1.2788, "whsPriceUnit": 18.48, "whsPricePiece": 1.54}, {"ourCode": "CFC00003", "ourName": "70105-FARFALLE معكرونة  إيطالي فارفالي ببيونه", "ourUnit": "Carton", "theirCode": "11356453", "theirName": "Riscossa farfalle ببيونة رقم 105 كيس 500 غرام ايطاليا", "origin": "ايطالي", "taxRate": 0.05, "factor": 24.0, "salePriceUnit": 19.52, "salePricePiece": 0.8133, "whsPriceUnit": 23.76, "whsPricePiece": 0.99}, {"ourCode": "CFC00005", "ourName": "7002-SPAGHETTI-5129 24*500 GM معكرونة سباغيتي رفيعه ايطالي", "ourUnit": "Carton", "theirCode": "11356457", "theirName": "Riscossa Spaghetti   سباغتي رقم 2 كيس 500 غرام ايطاليا", "origin": "ايطالي", "taxRate": 0.05, "factor": 24.0, "salePriceUnit": 15.9528, "salePricePiece": 0.6647, "whsPriceUnit": 18.96, "whsPricePiece": 0.79}, {"ourCode": "CFC00006", "ourName": "7027-PENNE ZITE-5122  24*500 GM معكرونة مشطوفه رفيعه ايطالي", "ourUnit": "Carton", "theirCode": "11356477", "theirName": "Riscossa penne مشطوفةرفيعة كيس 500 غرام ايطاليا", "origin": "ايطالي", "taxRate": 0.05, "factor": 24.0, "salePriceUnit": 15.9543, "salePricePiece": 0.6648, "whsPriceUnit": 18.96, "whsPricePiece": 0.79}, {"ourCode": "CFC00007", "ourName": "7040-40-COCCIOLE-5123 24*500 GM معكرونة صدفه ايطالي", "ourUnit": "Carton", "theirCode": "11670180", "theirName": "معكرونة صدف رقم 40 كيس 500 غم RISCOSSE", "origin": "ايطالي", "taxRate": 0.05, "factor": 24.0, "salePriceUnit": 21.9429, "salePricePiece": 0.9143, "whsPriceUnit": 26.4, "whsPricePiece": 1.1}, {"ourCode": "CFC00008", "ourName": "7050-SPIRALI-5124 معكرونة برغي ايطالي", "ourUnit": "Carton", "theirCode": "11356456", "theirName": "Riscossa Spirali  برغي رقم 50 كيس 500 غرام ايطاليا", "origin": "ايطالي", "taxRate": 0.05, "factor": 24.0, "salePriceUnit": 15.9543, "salePricePiece": 0.6648, "whsPriceUnit": 18.96, "whsPricePiece": 0.79}, {"ourCode": "CFC00009", "ourName": "7055-FAGIOLINI LISCI-5125 24*500 GM معكرونة كوع رفيع ايطالي", "ourUnit": "Carton", "theirCode": "11356461", "theirName": "Riscossa lisci  كوع رفيعة رقم 55 كيس 500 غرام ايطاليا", "origin": "ايطالي", "taxRate": 0.05, "factor": 24.0, "salePriceUnit": 15.9543, "salePricePiece": 0.6648, "whsPriceUnit": 18.96, "whsPricePiece": 0.79}, {"ourCode": "CFC00010", "ourName": "5119-701T-CAPELLINI TAGLIATI 24*500 GM  معكرونة شعيريه رفيعه ايطالي", "ourUnit": "Carton", "theirCode": "11356454", "theirName": "Riscossa vermicelli شعيرية رفيعة  رقم 70 كيس 500 غرام ايطاليا", "origin": "ايطالي", "taxRate": 0.05, "factor": 24.0, "salePriceUnit": 15.9543, "salePricePiece": 0.6648, "whsPriceUnit": 18.96, "whsPricePiece": 0.79}, {"ourCode": "CFC00012", "ourName": "71B- ORZO 7071 GR500X24 معكرونة لسان العصفورايطالي", "ourUnit": "Carton", "theirCode": "11356459", "theirName": "Riscossa Orze  لسان عصفور رقم 71 كيس 500 غرام ايطاليا", "origin": "ايطالي", "taxRate": 0.05, "factor": 24.0, "salePriceUnit": 15.9543, "salePricePiece": 0.6648, "whsPriceUnit": 18.96, "whsPricePiece": 0.79}, {"ourCode": "CFC00014", "ourName": "7025-PENNE ZITONI RIGATE معكرونة مشطوفه عريضه ايطالي", "ourUnit": "Carton", "theirCode": "11356455", "theirName": "Riscossa penne مشطوفة عريضة رقم25 كيس 500 غرام ايطاليا", "origin": "ايطالي", "taxRate": 0.05, "factor": 24.0, "salePriceUnit": 15.9543, "salePricePiece": 0.6648, "whsPriceUnit": 18.96, "whsPricePiece": 0.79}, {"ourCode": "CFC00016", "ourName": "7034-GOMITI معكرونة كوع عريضه ايطالي", "ourUnit": "Carton", "theirCode": "11356458", "theirName": "Riscossa كوع عريضة كيس 500 غرام ايطاليا", "origin": "ايطالي", "taxRate": 0.05, "factor": 24.0, "salePriceUnit": 15.9543, "salePricePiece": 0.6648, "whsPriceUnit": 18.96, "whsPricePiece": 0.79}, {"ourCode": "CFC00083", "ourName": "4112-SPIRALI F.TO.SPECIALE - معكرونة ملونة برغي ايطالي", "ourUnit": "Carton", "theirCode": "11356462", "theirName": "برغي ملون رقم  112 riscoss a spirall", "origin": "ايطالي", "taxRate": 0.05, "factor": 24.0, "salePriceUnit": 21.936, "salePricePiece": 0.914, "whsPriceUnit": 26.4, "whsPricePiece": 1.1}, {"ourCode": "FVL00376", "ourName": "OLIVEE-SLICED BLACK OLIVE (12 * 1) زيتون أسود شرائح الوزن الصافي 0.170كغم", "ourUnit": "Piece", "theirCode": "11530181", "theirName": "زيتون اسود شرائح 350 غم", "origin": "مصري", "taxRate": 0.05, "factor": 1.0, "salePriceUnit": 0.6095, "salePricePiece": 0.6095, "whsPriceUnit": 0.75, "whsPricePiece": 0.75}, {"ourCode": "CHS00596", "ourName": "FARM HOUSE-MEEMAS HALLOUMI CHEESE جبنة حلوم  ميماس  200 غم تقريبا بالحبة", "ourUnit": "Piece", "theirCode": "11375989", "theirName": "ميماس جبنة بيضاء للشوي 200غم بلاستيك", "origin": "تركيا", "taxRate": 0.05, "factor": 1.0, "salePriceUnit": 0.9504, "salePricePiece": 0.9504, "whsPriceUnit": 1.25, "whsPricePiece": 1.25}, {"ourCode": "CHS00004", "ourName": "6729-2974-13497-جبنة شدر مبشورة ملون 226.79 غم للحبة", "ourUnit": "Piece", "theirCode": "11377174", "theirName": "امريكان هيرتاج جبن شيدر مبشور معتدل  226.79غم", "origin": "امريكي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 2.25, "salePricePiece": 2.25, "whsPriceUnit": 2.79, "whsPricePiece": 2.79}, {"ourCode": "CHS00005", "ourName": "13511-37878-جبنة كريم تشيز قطع امريكي 226.79 غم", "ourUnit": "Piece", "theirCode": "11377161", "theirName": "امريكان هيرتاج كريم تشيز جبنه مبستر 226.79غم", "origin": "امريكي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.45, "salePricePiece": 1.45, "whsPriceUnit": 1.89, "whsPricePiece": 1.89}, {"ourCode": "CHS00009", "ourName": "18869-13507-جبنة شرحات امريكي ملون 226.79 غم", "ourUnit": "Piece", "theirCode": "11377173", "theirName": "امريكان هيرتاج جبن شرحات ملون 226.79 غم", "origin": "امريكي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.6, "salePricePiece": 1.6, "whsPriceUnit": 2.19, "whsPricePiece": 2.19}, {"ourCode": "CHS00012", "ourName": "29258-13502-جبنة شدر قطع ميديوم امريكي ملون 226.79 غم", "ourUnit": "Piece", "theirCode": "11377166", "theirName": "امريكان هيرتاج جبن شيدر وسط  226.79 غم", "origin": "امريكي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 2.25, "salePricePiece": 2.25, "whsPriceUnit": 2.79, "whsPricePiece": 2.79}, {"ourCode": "CHS00013", "ourName": "29281-13505-جبنة شدر قطع معتدل امريكي ملون 226.79 غم", "ourUnit": "Piece", "theirCode": "11377165", "theirName": "امريكان هيرتاج جبن شيدر معتدل  226.79غم", "origin": "امريكي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 2.25, "salePricePiece": 2.25, "whsPriceUnit": 2.79, "whsPricePiece": 2.79}, {"ourCode": "CHS00014", "ourName": "29283-14374-جبنة شدر قطع امريكي حاد 226.79 غم", "ourUnit": "Piece", "theirCode": "11377164", "theirName": "امريكان هيرتاج جبن شيدر حاد  226.79 غم", "origin": "امريكي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 2.25, "salePricePiece": 2.25, "whsPriceUnit": 2.79, "whsPricePiece": 2.79}, {"ourCode": "CHS00016", "ourName": "50067-13514-جبنة امريكي كولبي  جاك 226.79 غم", "ourUnit": "Piece", "theirCode": "11377168", "theirName": "امريكان هيرتاج كولبي ومونتري 226.79 غم", "origin": "امريكي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 2.25, "salePricePiece": 2.25, "whsPriceUnit": 2.79, "whsPricePiece": 2.79}, {"ourCode": "CHS00018", "ourName": "6738-9569-13506-جبنة موزيريللا امريكي مبشورة 200 غم", "ourUnit": "Piece", "theirCode": "11377162", "theirName": "امريكان هيرتاج جبن موزاريلا مبشورقليل 200غم", "origin": "امريكي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.75, "salePricePiece": 1.75, "whsPriceUnit": 2.19, "whsPricePiece": 2.19}, {"ourCode": "CHS00022", "ourName": "6726 50063 13793 جبنة مكسيكية مبشورة 226.79 غم", "ourUnit": "Piece", "theirCode": "11377163", "theirName": "امريكان هيرتاج مبشور خلطه مكسيكي 226.79غم", "origin": "امريكي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 2.25, "salePricePiece": 2.25, "whsPriceUnit": 2.79, "whsPricePiece": 2.79}, {"ourCode": "CHS00024", "ourName": "44240-14070-جبنة برمزان امريكي في علب 85 غم", "ourUnit": "Piece", "theirCode": "11377171", "theirName": "امريكان هيرتاج جبن بارميزان 85.04غم علبه", "origin": "امريكا", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.2, "salePricePiece": 1.2, "whsPriceUnit": 1.52, "whsPricePiece": 1.52}, {"ourCode": "CHS00033", "ourName": "جبنة ايدام سلايس 150 غم بالحبة - 36026--0035799(1X12)", "ourUnit": "Piece", "theirCode": "11064245", "theirName": "فريكو ايدام شرائح جبنه 150 غم هولندا", "origin": "هولندي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.8, "salePricePiece": 1.8, "whsPriceUnit": 2.27, "whsPricePiece": 2.27}, {"ourCode": "CHS00039", "ourName": "جبنة فريكو ايدام سلايس بالفلفل 150 غم الحبة-0035809-42336(1X12)", "ourUnit": "Piece", "theirCode": "11375810", "theirName": "فريكو شرائح جبنه ايدام حار 150غم بلاستيك FRICO هولندي", "origin": "هولندي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.9336, "salePricePiece": 1.9336, "whsPriceUnit": 2.4, "whsPricePiece": 2.4}, {"ourCode": "CHS00042", "ourName": "جبنة جودا سلايس 150 غم بالحبة37976--0037979(1X12)", "ourUnit": "Piece", "theirCode": "11064244", "theirName": "فريكو شرائح جبنه جودا 150غم بلاستيك FRICO هولندي", "origin": "هولندي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.8, "salePricePiece": 1.8, "whsPriceUnit": 2.27, "whsPricePiece": 2.27}, {"ourCode": "CHS00052", "ourName": "جبنة ميموليت سلايس 150 غم بالحبة-35804(1X12)", "ourUnit": "Piece", "theirCode": "11066322", "theirName": "فريكو شرائح جبنه ميموليت 150غم بلاستيك FRICO هولندي", "origin": "هولندي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.9, "salePricePiece": 1.9, "whsPriceUnit": 2.34, "whsPricePiece": 2.34}, {"ourCode": "CHS00053", "ourName": "جبنة مسدام سلايس 150 غم بالحبة --36031--0035803(1X12)", "ourUnit": "Piece", "theirCode": "11375809", "theirName": "فريكو شرائح جبنه مسدام 150غم بلاستيك FRICO هولندي", "origin": "هولندي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.9, "salePricePiece": 1.9, "whsPriceUnit": 2.34, "whsPricePiece": 2.34}, {"ourCode": "CHS00055", "ourName": "جبنة مدخنة قطع 200 غم بالحبة-36768-41562(1X21)", "ourUnit": "Piece", "theirCode": "11062675", "theirName": "فريكو جبن مدخن مطبوخ 200غم بلاستك FRICO هولندي", "origin": "هولندي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 2.0, "salePricePiece": 2.0, "whsPriceUnit": 2.5, "whsPricePiece": 2.5}, {"ourCode": "CHS00070", "ourName": "31755-13558-جبنة برمزان امريكي علب 226 غم", "ourUnit": "Piece", "theirCode": "11377172", "theirName": "امريكان هيرتاج جبن بارميزان مبشور 226.79غم", "origin": "امريكي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 2.85, "salePricePiece": 2.85, "whsPriceUnit": 3.48, "whsPricePiece": 3.48}, {"ourCode": "CHS00071", "ourName": "453805-GENUINE KASHKAVALقشقوان هنغاري 350 غم  بالحبة", "ourUnit": "Piece", "theirCode": "11062673", "theirName": "جبنة قشقوان 350غم كيسGENUIVE", "origin": "هنغاري", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 2.3, "salePricePiece": 2.3, "whsPriceUnit": 2.9, "whsPricePiece": 2.9}, {"ourCode": "CHS00072", "ourName": "453807-GENUINE KASHKAVALقشقوان هنغاري 700 غم  بالحبة", "ourUnit": "Piece", "theirCode": "11062674", "theirName": "جبنة قشقوان 700غم كيسGENUIVE", "origin": "هنغاري", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 4.5, "salePricePiece": 4.5, "whsPriceUnit": 5.69, "whsPricePiece": 5.69}, {"ourCode": "CHS00469", "ourName": "ALNT-MZ-002-MOZARELLA SHREDDED CHEESE 200GR  موزيريلا مبشور", "ourUnit": "Piece", "theirCode": "11377178", "theirName": "النوتريكا جبنه موزاريلامبشور 200 غم بلاستيك", "origin": "تركي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.25, "salePricePiece": 1.25, "whsPriceUnit": 1.58, "whsPricePiece": 1.58}, {"ourCode": "CHS00470", "ourName": "ALNT-MZ-005-MOZARELLA SHREDDED CHEESE 500GR موزيريلا مبشور", "ourUnit": "Piece", "theirCode": "11377179", "theirName": "النوتريكا جبنه موزاريلامبشور 500 غم بلاستيك", "origin": "تركي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 3.0, "salePricePiece": 3.0, "whsPriceUnit": 3.75, "whsPricePiece": 3.75}, {"ourCode": "CHS00471", "ourName": "ALNT-MZ-009-MOZARELLA SHREDDED CHEESE 900GR موزيريلا مبشور", "ourUnit": "Piece", "theirCode": "11377180", "theirName": "النوتريكا جبنه موزاريلامبشور 900 غم بلاستيك", "origin": "تركي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 5.25, "salePricePiece": 5.25, "whsPriceUnit": 6.49, "whsPricePiece": 6.49}, {"ourCode": "CHS00491", "ourName": "ALNT-FCR-001-FRESH CREAM CHEESE 200GR كريم تشيز", "ourUnit": "Piece", "theirCode": "11377177", "theirName": "النوتريكا جبنة كريم طازجة 200 غم بلاستيك تركيا", "origin": "تركيا", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.0, "salePricePiece": 1.0, "whsPriceUnit": 1.25, "whsPricePiece": 1.25}, {"ourCode": "CHS00544", "ourName": "MBEY SHALLAL WITH NIGELLA SEEDCHEESE 150 GM جبنة شلل مع قزحة(1X15)", "ourUnit": "Piece", "theirCode": "11375992", "theirName": "مرادبي جبنة مشلله بالقزحة 150غم بلاستيك", "origin": "تركي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.5, "salePricePiece": 1.5, "whsPriceUnit": 1.88, "whsPricePiece": 1.88}, {"ourCode": "CHS00545", "ourName": "MBEY MUJJADDAL CHEESE 150 GM جبنة مجدله(1X15)", "ourUnit": "Piece", "theirCode": "11375991", "theirName": "مرادبي جبنة مجدلة 150غم بلاستيك", "origin": "تركي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.5, "salePricePiece": 1.5, "whsPriceUnit": 1.88, "whsPricePiece": 1.88}, {"ourCode": "CHS00546", "ourName": "MBEY ANATOLIAN MIX 150 GM جبنة خلطة الاناضول(1X15)", "ourUnit": "Piece", "theirCode": "11375993", "theirName": "مرادبي جبنة خلطة الاناضول 150غم بلاستيك", "origin": "تركي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.5, "salePricePiece": 1.5, "whsPriceUnit": 1.88, "whsPricePiece": 1.88}, {"ourCode": "CHS00550", "ourName": "MBEY SHALLAL  150 GM جبنة شلل(1X15)", "ourUnit": "Piece", "theirCode": "11375990", "theirName": "مرادبي مشلله 150غم بلاستيك", "origin": "تركي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.5, "salePricePiece": 1.5, "whsPriceUnit": 1.95, "whsPricePiece": 1.95}, {"ourCode": "CHS00591", "ourName": "23976--جبنة موزيريلا اصابع امريكي 28.25 غم", "ourUnit": "Piece", "theirCode": "11377175", "theirName": "امريكان هيرتاج اعواد جبن موزاريلاقليل 28.25غم", "origin": "امريكي", "taxRate": 0.05, "factor": 1.0, "salePriceUnit": 0.3, "salePricePiece": 0.3, "whsPriceUnit": 0.36, "whsPricePiece": 0.36}, {"ourCode": "CHS00561", "ourName": "RHODES-FETA CHEEASE GOLD جبنة فيتا جولد رودس (125غم*40)", "ourUnit": "Piece", "theirCode": "11373686", "theirName": "رودس جولد جبن ابيض طري كامل الدسم قيتا 125غم", "origin": "مصر", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 0.3127, "salePricePiece": 0.3127, "whsPriceUnit": 0.39, "whsPricePiece": 0.39}, {"ourCode": "CHS00562", "ourName": "RHODES-FETA CHEEASE GOLD جبنة فيتا جولد رودس (250غم*27)", "ourUnit": "Piece", "theirCode": "11373687", "theirName": "رودس جولد جبن ابيض طري كامل الدسم قيتا 250غم", "origin": "مصر", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 0.6182, "salePricePiece": 0.6182, "whsPriceUnit": 0.8, "whsPricePiece": 0.8}, {"ourCode": "CHS00563", "ourName": "RHODES-FETA CHEEASE GOLD جبنة فيتا جولد رودس (500غم*12)", "ourUnit": "Piece", "theirCode": "11373688", "theirName": "رودس جولد جبن ابيض طري كامل الدسم قيتا 500غم", "origin": "مصر", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.2009, "salePricePiece": 1.2009, "whsPriceUnit": 1.59, "whsPricePiece": 1.59}, {"ourCode": "DAR00004", "ourName": "AV20JH -AV20IQ-MASTER GOURMET CHEF 1 L كريمة ايطالي شيف للطبخ", "ourUnit": "Piece", "theirCode": "10388194", "theirName": "ماستر جورميه كريمة للطبخ 1لتر ايطاليا", "origin": "ايطالي", "taxRate": 0.16, "factor": 1.0, "salePriceUnit": 2.15, "salePricePiece": 2.15, "whsPriceUnit": 2.8, "whsPricePiece": 2.8}, {"ourCode": "DAR00005", "ourName": "AV20IM-MASTER GOURMET CHEF كريمة ايطالي شيف للطبخ شد 20 حبة 1/2 لتر", "ourUnit": "Piece", "theirCode": "11371486", "theirName": "ماستر غورميه شيف كريمة طبخ 500مل كرتون ايطالي", "origin": "ايطالي", "taxRate": 0.16, "factor": 1.0, "salePriceUnit": 1.15, "salePricePiece": 1.15, "whsPriceUnit": 1.55, "whsPricePiece": 1.55}, {"ourCode": "DAR00027", "ourName": "AV20IF-MASTER GOURMET CHEF 200 ML كريمة ايطالي شيف للطبخ", "ourUnit": "Piece", "theirCode": "11371487", "theirName": "ماستر غورميه شيف كريمة طبخ 200مل كرتون ايطالي", "origin": "ايطالي", "taxRate": 0.16, "factor": 1.0, "salePriceUnit": 0.5052, "salePricePiece": 0.5052, "whsPriceUnit": 0.65, "whsPricePiece": 0.65}, {"ourCode": "FVL00012", "ourName": "ذرة حلوة هنغاري 20*400 غم ماركة ميري", "ourUnit": "Carton", "theirCode": "11365709", "theirName": "ميري ماركت ذرة حلوة مجمدة 400غم كيس هنغاري", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 13.2931, "salePricePiece": 0.6647, "whsPriceUnit": 17.8, "whsPricePiece": 0.89}, {"ourCode": "FVL00013", "ourName": "بازيلا بالجزر هنغاري 20*400 غم ماركة ميري", "ourUnit": "Carton", "theirCode": "11365707", "theirName": "ميري ماركت بازيلا خضراء مع جزر  مجمدة 400غم كيس هنغاري", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 13.2931, "salePricePiece": 0.6647, "whsPriceUnit": 17.8, "whsPricePiece": 0.89}, {"ourCode": "FVL00014", "ourName": "بازيلا سادة هنغاري 20*400 غم ماركة ميري", "ourUnit": "Carton", "theirCode": "11365708", "theirName": "ميري ماركت بازيلا خضراء مجمدة 400غم كيس هنغاري", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 13.2931, "salePricePiece": 0.6647, "whsPriceUnit": 17.8, "whsPricePiece": 0.89}, {"ourCode": "FVL00015", "ourName": "لب جوافة  مجمدة شد 16 كغم ماركة اللانا", "ourUnit": "Carton", "theirCode": "11367182", "theirName": "الانا لب جوافه محلى ومجمد 1كغم  الهند", "origin": "الهند", "taxRate": 0.16, "factor": 16.0, "salePriceUnit": 23.3655, "salePricePiece": 1.4603, "whsPriceUnit": 31.84, "whsPricePiece": 1.99}, {"ourCode": "FVL00016", "ourName": "لب المانجا نوع توتابوري شد 16 كغم ماركة اللانا", "ourUnit": "Carton", "theirCode": "11367181", "theirName": "الانا لب المنجه محلى ومجمد 1كغم  الهند", "origin": "الهند", "taxRate": 0.16, "factor": 16.0, "salePriceUnit": 23.3655, "salePricePiece": 1.4603, "whsPriceUnit": 31.84, "whsPricePiece": 1.99}, {"ourCode": "FVL00034", "ourName": "ملوخية مجمدة مصرية مونتانا شد 20*400 غم", "ourUnit": "Carton", "theirCode": "11365704", "theirName": "مونتانا ملوخيه خضراء مجمده 400غم كيس مصري", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 10.2241, "salePricePiece": 0.5112, "whsPriceUnit": 13.8, "whsPricePiece": 0.69}, {"ourCode": "FVL00035", "ourName": "بامية خضراء مجمدة اكسترا مونتانا20*400 غم", "ourUnit": "Carton", "theirCode": "11365999", "theirName": "مونتانا باميه اكسترا مجمده 400غم كيس مصري", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 21.8448, "salePricePiece": 1.0922, "whsPriceUnit": 29.8, "whsPricePiece": 1.49}, {"ourCode": "FVL00036", "ourName": "بامية مجمدة مصرية مونتانا زيرو20*400 غم", "ourUnit": "Carton", "theirCode": "11365998", "theirName": "مونتانا بامية زيرو مجمده 400غم كيس مصري", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 17.5862, "salePricePiece": 0.8793, "whsPriceUnit": 23.8, "whsPricePiece": 1.19}, {"ourCode": "FVL00037", "ourName": "سبانخ مجمدة مصرية مونتانا20*400 غم", "ourUnit": "Carton", "theirCode": "11365705", "theirName": "مونتانا سبانخ  خضراء مجمده 400غم كيس مصري", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 9.31, "salePricePiece": 0.4655, "whsPriceUnit": 13.8, "whsPricePiece": 0.69}, {"ourCode": "FVL00042", "ourName": "1016482-6K-GOLDEN RIVER بطاطا بلجيكي شد 10 كيس * 1 كغم", "ourUnit": "Carton", "theirCode": "11363842", "theirName": "جولدن ريفر بطاطس مقلي 1كغم بلجيكا", "origin": "بلجيكا", "taxRate": 0.16, "factor": 10.0, "salePriceUnit": 13.7586, "salePricePiece": 1.3759, "whsPriceUnit": 18.8, "whsPricePiece": 1.88}, {"ourCode": "FVL00043", "ourName": "1016483-6K-GOLDEN RIVER بطاطا بلجيكي شد4 * 2.5  كغم", "ourUnit": "Carton", "theirCode": "11363841", "theirName": "جولدن ريفر اصابع بطاطس مقلية 2.5 كغم كيس", "origin": "بلجيكا", "taxRate": 0.16, "factor": 4.0, "salePriceUnit": 13.3, "salePricePiece": 3.325, "whsPriceUnit": 17.56, "whsPricePiece": 4.39}, {"ourCode": "FVL00107", "ourName": "خضار مشكلة مصرية مونتانا20*400غم", "ourUnit": "Carton", "theirCode": "11365703", "theirName": "مونتانا خضار مشكل مجمده 400غم كيس", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 10.0, "salePricePiece": 0.5, "whsPriceUnit": 13.8, "whsPricePiece": 0.69}, {"ourCode": "FVL00111", "ourName": "فول اخضر حب مصري مونتانا20*400غم", "ourUnit": "Carton", "theirCode": "11365701", "theirName": "مونتانا فول اخضر  مجمده 400غم كيس", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 12.2586, "salePricePiece": 0.6129, "whsPriceUnit": 17.8, "whsPricePiece": 0.89}, {"ourCode": "FVL00246", "ourName": "ورق عنب  الكيلاني شد 12 * 908 غم EXTRA", "ourUnit": "Carton", "theirCode": "11316287", "theirName": "الكيلاني ورق عنب اكسترا908غم مرطبان", "origin": "الصين", "taxRate": 0.16, "factor": 12.0, "salePriceUnit": 23.9379, "salePricePiece": 1.9948, "whsPriceUnit": 32.28, "whsPricePiece": 2.69}, {"ourCode": "FVL00276", "ourName": "بامية اكسترازيرو ريفي 20*350 غم", "ourUnit": "Carton", "theirCode": "11366449", "theirName": "بامية  اكسترا(زيرو) ريفي 20*350 غم", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 15.9483, "salePricePiece": 0.7974, "whsPriceUnit": 21.0, "whsPricePiece": 1.05}, {"ourCode": "FVL00302", "ourName": "بازيلا بالجزر مصري 20*350 غم ماركة ريفي", "ourUnit": "Carton", "theirCode": "11366443", "theirName": "ريفي بازيلاء وجرز مجمد350 غم كيس", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 5.1207, "salePricePiece": 0.256, "whsPriceUnit": 7.0, "whsPricePiece": 0.35}, {"ourCode": "FVL00303", "ourName": "ملوخيه مصرية مجمده 20*400 غم ماركة ريفي", "ourUnit": "Carton", "theirCode": "11366444", "theirName": "ريفي ملوخيه مفرومه 400غم كيس", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 5.1207, "salePricePiece": 0.256, "whsPriceUnit": 7.0, "whsPricePiece": 0.35}, {"ourCode": "FVL00306", "ourName": "خضار مشكله مصرية مجمده 20*350 غم ريفي", "ourUnit": "Carton", "theirCode": "11366445", "theirName": "ريفي خضروات مشكله350غم كيس", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 8.068, "salePricePiece": 0.4034, "whsPriceUnit": 10.8, "whsPricePiece": 0.54}, {"ourCode": "FVL00311", "ourName": "فراولة ريفي مصرية  8*1 كغم", "ourUnit": "Carton", "theirCode": "11366447", "theirName": "ريفي فراوله مجمده 1كغم كيس", "origin": "مصري", "taxRate": 0.16, "factor": 8.0, "salePriceUnit": 10.1931, "salePricePiece": 1.2741, "whsPriceUnit": 13.6, "whsPricePiece": 1.7}, {"ourCode": "FVL00316", "ourName": "فراولة ريفي مصرية  20*350 غم", "ourUnit": "Carton", "theirCode": "11366448", "theirName": "ريفي فراوله مجمده 350 غم كيس", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 9.4, "salePricePiece": 0.47, "whsPriceUnit": 12.8, "whsPricePiece": 0.64}, {"ourCode": "FVL00322", "ourName": "بامية سوبر اكسترا ريفي 20*350 غم", "ourUnit": "Carton", "theirCode": "11366451", "theirName": "ريفي بامية سوبر اكسترا 350 غم كيس", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 16.3276, "salePricePiece": 0.8164, "whsPriceUnit": 22.0, "whsPricePiece": 1.1}, {"ourCode": "FVL00332", "ourName": "بامية نمره 1 ريفي 20*400 غم", "ourUnit": "Carton", "theirCode": "11366446", "theirName": "غم كيس400(A) بنت الريف باميه", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 5.3966, "salePricePiece": 0.2698, "whsPriceUnit": 7.2, "whsPricePiece": 0.36}, {"ourCode": "FVL00360", "ourName": "1037547-4275/4261-QUART TO LUTOSA 2-3 T-M  بطاطا ودجز بلجيكي شد12 * 750 غم", "ourUnit": "Carton", "theirCode": "11366167", "theirName": "لوتوسا قطع بطاطس حار بالقشر 750غم LUTOSA", "origin": "بلجيكا", "taxRate": 0.16, "factor": 12.0, "salePriceUnit": 16.6138, "salePricePiece": 1.3845, "whsPriceUnit": 22.68, "whsPricePiece": 1.89}, {"ourCode": "PFS00234", "ourName": "ALLIANCE -FRZ-PDTO SHRIMPS 21/25, 1 KG BAG روبيان منظف بالذيل", "ourUnit": "KG", "theirCode": "11366467", "theirName": "الكيلاني روبيان منظف بالذيل مجمد 1000غم كيس الامارات", "origin": "الامارات", "taxRate": 0.16, "factor": 1.0, "salePriceUnit": 6.0, "salePricePiece": 6.0, "whsPriceUnit": 7.99, "whsPricePiece": 7.99}, {"ourCode": "DAR00003", "ourName": "AV10AR-AV10FP-DECOR UP كريمة ايطالي للحلويات والايس كريم  ديكوراب", "ourUnit": "Piece", "theirCode": "11265988", "theirName": "ماستر مارتيني كريمة حلويات شبية قشدة معدة للخفق 1 لتر تتراباك", "origin": "ايطالي", "taxRate": 0.16, "factor": 1.0, "salePriceUnit": 2.0, "salePricePiece": 2.0, "whsPriceUnit": 2.69, "whsPricePiece": 2.69}, {"ourCode": "PFS00230", "ourName": "ALLIANCE -FRZ-SEAFOOD COCKTAIL كوكتيل ماكولات بحرية", "ourUnit": "KG", "theirCode": "11750178", "theirName": "كوكتيل الماكولات البحرية المجمدة 1000 غم كيس", "origin": "الامارات", "taxRate": 0.16, "factor": 1.0, "salePriceUnit": 3.05, "salePricePiece": 3.05, "whsPriceUnit": 4.05, "whsPricePiece": 4.05}, {"ourCode": "PFS00236", "ourName": "ALLIANCE -FRZ-CALAMARI RINGS 1 KG BAG كلماري حلقات", "ourUnit": "KG", "theirCode": "11750179", "theirName": "كلماري حلقات مجمد 1000 غم كيس", "origin": "الامارات", "taxRate": 0.16, "factor": 1.0, "salePriceUnit": 4.07, "salePricePiece": 4.07, "whsPriceUnit": 5.39, "whsPricePiece": 5.39}, {"ourCode": "FVL00385", "ourName": "زيبا ارز بسمتي كريمي سيلا ( 1121 ) 4كغم", "ourUnit": "Piece", "theirCode": "11551547", "theirName": "زيبا ارز بسمتي كريمي(1121) 4 كغم كيس الهند", "origin": "الهند", "taxRate": 0.0, "factor": 1.0, "salePriceUnit": 4.05, "salePricePiece": 4.05, "whsPriceUnit": 4.49, "whsPricePiece": 4.49}, {"ourCode": "FOD00064", "ourName": "زبدة بلجيكي اصابع شد 40*100 غم ميجا", "ourUnit": "Piece", "theirCode": "94226889", "theirName": "ميجا غير مملحة زبدة 100غم", "origin": "بلجيكا", "taxRate": 0.1, "factor": 40.0, "salePriceUnit": 28.16, "salePricePiece": 0.704, "whsPriceUnit": 32.8, "whsPricePiece": 0.82}];
+const DEFAULT_ITEMS = [{"ourCode": "FVL00109", "ourName": "فاصوليا مجمدة مصرية مونتانا20*400غم", "ourUnit": "Carton", "theirCode": "11365702", "theirName": "مونتانا فاصوليا خضراء  مجمده 400غم كيس", "origin": "مصري", "taxRate": 0.0, "factor": 20.0, "salePriceUnit": 9.0, "salePricePiece": 0.45, "whsPriceUnit": 10.0, "whsPricePiece": 0.5}, {"ourCode": "FVL00280", "ourName": "طحين قمح تركي جميع الاستعمالات 1 كغم شد 10", "ourUnit": "Bag", "theirCode": "11510452", "theirName": "دقيق القمح لجميع الاغراض 1 كغم mega", "origin": "تركيا", "taxRate": 0.0, "factor": 1.0, "salePriceUnit": 0.49, "salePricePiece": 0.49, "whsPriceUnit": 0.59, "whsPricePiece": 0.59}, {"ourCode": "FVL00307", "ourName": "فاصولياء خضراء مصرية 20*400 غم بنت الريف", "ourUnit": "Carton", "theirCode": "11366450", "theirName": "بنت الريف فاصوليا خضراء مقطعه 400غم", "origin": "مصري", "taxRate": 0.0, "factor": 20.0, "salePriceUnit": 7.119999999999999, "salePricePiece": 0.356, "whsPriceUnit": 8.0, "whsPricePiece": 0.4}, {"ourCode": "FVL00368", "ourName": "AGRICO-JAPONICA SHORT GRAIN RICE ارز الكيلاني حبة مصريه", "ourUnit": "Piece", "theirCode": "11286286", "theirName": "كيلاني ارز حبة مصرية 3.5 كغم كيس فيتنام", "origin": "مصري", "taxRate": 0.0, "factor": 1.0, "salePriceUnit": 2.35, "salePricePiece": 2.35, "whsPriceUnit": 2.85, "whsPricePiece": 2.85}, {"ourCode": "PFS00003", "ourName": "C.P.-WHITE FISH FILLET WELL TRIMMEDفيليه سمك فيتنامي ابيض (CP)", "ourUnit": "KG", "theirCode": "11366466", "theirName": "سمك فيلية ابيض مجمد 1كغم كيس cp", "origin": "فتنامي", "taxRate": 0.0, "factor": 1.0, "salePriceUnit": 2.95, "salePricePiece": 2.95, "whsPriceUnit": 3.39, "whsPricePiece": 3.39}, {"ourCode": "CFC00195", "ourName": "70181-TAGLIATELLE 12*500GM معكرونة فوتوتشيني ايطالي", "ourUnit": "Carton", "theirCode": "11356452", "theirName": "فوتوشيني رقم 81 كيس RISCOSSA TAGLITELLE", "origin": "ايطالي", "taxRate": 0.05, "factor": 12.0, "salePriceUnit": 12.54230769230772, "salePricePiece": 1.04519230769231, "whsPriceUnit": 15.0, "whsPricePiece": 1.25}, {"ourCode": "CFC00084", "ourName": "495-SEMOLA LASAGNE 500GR*12  معكرونة لازانيا ايطالي", "ourUnit": "Carton", "theirCode": "11356460", "theirName": "Riscossa Lasagne  لازانيا كيس 500 غرام ايطاليا", "origin": "ايطالي", "taxRate": 0.04, "factor": 12.0, "salePriceUnit": 15.3461538461538, "salePricePiece": 1.27884615384615, "whsPriceUnit": 18.48, "whsPricePiece": 1.54}, {"ourCode": "CFC00003", "ourName": "70105-FARFALLE معكرونة  إيطالي فارفالي ببيونه", "ourUnit": "Carton", "theirCode": "11356453", "theirName": "Riscossa farfalle ببيونة رقم 105 كيس 500 غرام ايطاليا", "origin": "ايطالي", "taxRate": 0.05, "factor": 24.0, "salePriceUnit": 19.519999999999992, "salePricePiece": 0.813333333333333, "whsPriceUnit": 23.759999999999998, "whsPricePiece": 0.9899999999999999}, {"ourCode": "CFC00005", "ourName": "7002-SPAGHETTI-5129 24*500 GM معكرونة سباغيتي رفيعه ايطالي", "ourUnit": "Carton", "theirCode": "11356457", "theirName": "Riscossa Spaghetti   سباغتي رقم 2 كيس 500 غرام ايطاليا", "origin": "ايطالي", "taxRate": 0.05, "factor": 24.0, "salePriceUnit": 15.9528, "salePricePiece": 0.6647, "whsPriceUnit": 18.96, "whsPricePiece": 0.79}, {"ourCode": "CFC00006", "ourName": "7027-PENNE ZITE-5122  24*500 GM معكرونة مشطوفه رفيعه ايطالي", "ourUnit": "Carton", "theirCode": "11356477", "theirName": "Riscossa penne مشطوفةرفيعة كيس 500 غرام ايطاليا", "origin": "ايطالي", "taxRate": 0.05, "factor": 24.0, "salePriceUnit": 15.95428571428572, "salePricePiece": 0.664761904761905, "whsPriceUnit": 18.96, "whsPricePiece": 0.79}, {"ourCode": "CFC00007", "ourName": "7040-40-COCCIOLE-5123 24*500 GM معكرونة صدفه ايطالي", "ourUnit": "Carton", "theirCode": "11670180", "theirName": "معكرونة صدف رقم 40 كيس 500 غم RISCOSSE", "origin": "ايطالي", "taxRate": 0.05, "factor": 24.0, "salePriceUnit": 21.942857142857136, "salePricePiece": 0.914285714285714, "whsPriceUnit": 26.400000000000002, "whsPricePiece": 1.1}, {"ourCode": "CFC00008", "ourName": "7050-SPIRALI-5124 معكرونة برغي ايطالي", "ourUnit": "Carton", "theirCode": "11356456", "theirName": "Riscossa Spirali  برغي رقم 50 كيس 500 غرام ايطاليا", "origin": "ايطالي", "taxRate": 0.05, "factor": 24.0, "salePriceUnit": 15.95428571428572, "salePricePiece": 0.664761904761905, "whsPriceUnit": 18.96, "whsPricePiece": 0.79}, {"ourCode": "CFC00009", "ourName": "7055-FAGIOLINI LISCI-5125 24*500 GM معكرونة كوع رفيع ايطالي", "ourUnit": "Carton", "theirCode": "11356461", "theirName": "Riscossa lisci  كوع رفيعة رقم 55 كيس 500 غرام ايطاليا", "origin": "ايطالي", "taxRate": 0.05, "factor": 24.0, "salePriceUnit": 15.95428571428572, "salePricePiece": 0.664761904761905, "whsPriceUnit": 18.96, "whsPricePiece": 0.79}, {"ourCode": "CFC00010", "ourName": "5119-701T-CAPELLINI TAGLIATI 24*500 GM  معكرونة شعيريه رفيعه ايطالي", "ourUnit": "Carton", "theirCode": "11356454", "theirName": "Riscossa vermicelli شعيرية رفيعة  رقم 70 كيس 500 غرام ايطاليا", "origin": "ايطالي", "taxRate": 0.05, "factor": 24.0, "salePriceUnit": 15.95428571428572, "salePricePiece": 0.664761904761905, "whsPriceUnit": 18.96, "whsPricePiece": 0.79}, {"ourCode": "CFC00012", "ourName": "71B- ORZO 7071 GR500X24 معكرونة لسان العصفورايطالي", "ourUnit": "Carton", "theirCode": "11356459", "theirName": "Riscossa Orze  لسان عصفور رقم 71 كيس 500 غرام ايطاليا", "origin": "ايطالي", "taxRate": 0.05, "factor": 24.0, "salePriceUnit": 15.95428571428572, "salePricePiece": 0.664761904761905, "whsPriceUnit": 18.96, "whsPricePiece": 0.79}, {"ourCode": "CFC00014", "ourName": "7025-PENNE ZITONI RIGATE معكرونة مشطوفه عريضه ايطالي", "ourUnit": "Carton", "theirCode": "11356455", "theirName": "Riscossa penne مشطوفة عريضة رقم25 كيس 500 غرام ايطاليا", "origin": "ايطالي", "taxRate": 0.05, "factor": 24.0, "salePriceUnit": 15.95428571428572, "salePricePiece": 0.664761904761905, "whsPriceUnit": 18.96, "whsPricePiece": 0.79}, {"ourCode": "CFC00016", "ourName": "7034-GOMITI معكرونة كوع عريضه ايطالي", "ourUnit": "Carton", "theirCode": "11356458", "theirName": "Riscossa كوع عريضة كيس 500 غرام ايطاليا", "origin": "ايطالي", "taxRate": 0.05, "factor": 24.0, "salePriceUnit": 15.95428571428572, "salePricePiece": 0.664761904761905, "whsPriceUnit": 18.96, "whsPricePiece": 0.79}, {"ourCode": "CFC00083", "ourName": "4112-SPIRALI F.TO.SPECIALE - معكرونة ملونة برغي ايطالي", "ourUnit": "Carton", "theirCode": "11356462", "theirName": "برغي ملون رقم  112 riscoss a spirall", "origin": "ايطالي", "taxRate": 0.05, "factor": 24.0, "salePriceUnit": 21.936, "salePricePiece": 0.914, "whsPriceUnit": 26.400000000000002, "whsPricePiece": 1.1}, {"ourCode": "FVL00376", "ourName": "OLIVEE-SLICED BLACK OLIVE (12 * 1) زيتون أسود شرائح الوزن الصافي 0.170كغم", "ourUnit": "Piece", "theirCode": "11530181", "theirName": "زيتون اسود شرائح 350 غم", "origin": "مصري", "taxRate": 0.05, "factor": 1.0, "salePriceUnit": 0.6095238095238095, "salePricePiece": 0.6095238095238095, "whsPriceUnit": 0.75, "whsPricePiece": 0.75}, {"ourCode": "CHS00596", "ourName": "FARM HOUSE-MEEMAS HALLOUMI CHEESE جبنة حلوم  ميماس  200 غم تقريبا بالحبة", "ourUnit": "Piece", "theirCode": "11375989", "theirName": "ميماس جبنة بيضاء للشوي 200غم بلاستيك", "origin": "تركيا", "taxRate": 0.05, "factor": 1.0, "salePriceUnit": 0.9504, "salePricePiece": 0.9504, "whsPriceUnit": 1.25, "whsPricePiece": 1.25}, {"ourCode": "CHS00004", "ourName": "6729-2974-13497-جبنة شدر مبشورة ملون 226.79 غم للحبة", "ourUnit": "Piece", "theirCode": "11377174", "theirName": "امريكان هيرتاج جبن شيدر مبشور معتدل  226.79غم", "origin": "امريكي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 2.25, "salePricePiece": 2.25, "whsPriceUnit": 2.79, "whsPricePiece": 2.79}, {"ourCode": "CHS00005", "ourName": "13511-37878-جبنة كريم تشيز قطع امريكي 226.79 غم", "ourUnit": "Piece", "theirCode": "11377161", "theirName": "امريكان هيرتاج كريم تشيز جبنه مبستر 226.79غم", "origin": "امريكي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.45, "salePricePiece": 1.45, "whsPriceUnit": 1.89, "whsPricePiece": 1.89}, {"ourCode": "CHS00009", "ourName": "18869-13507-جبنة شرحات امريكي ملون 226.79 غم", "ourUnit": "Piece", "theirCode": "11377173", "theirName": "امريكان هيرتاج جبن شرحات ملون 226.79 غم", "origin": "امريكي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.5999999999999999, "salePricePiece": 1.5999999999999999, "whsPriceUnit": 2.19, "whsPricePiece": 2.19}, {"ourCode": "CHS00012", "ourName": "29258-13502-جبنة شدر قطع ميديوم امريكي ملون 226.79 غم", "ourUnit": "Piece", "theirCode": "11377166", "theirName": "امريكان هيرتاج جبن شيدر وسط  226.79 غم", "origin": "امريكي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 2.25, "salePricePiece": 2.25, "whsPriceUnit": 2.79, "whsPricePiece": 2.79}, {"ourCode": "CHS00013", "ourName": "29281-13505-جبنة شدر قطع معتدل امريكي ملون 226.79 غم", "ourUnit": "Piece", "theirCode": "11377165", "theirName": "امريكان هيرتاج جبن شيدر معتدل  226.79غم", "origin": "امريكي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 2.25, "salePricePiece": 2.25, "whsPriceUnit": 2.79, "whsPricePiece": 2.79}, {"ourCode": "CHS00014", "ourName": "29283-14374-جبنة شدر قطع امريكي حاد 226.79 غم", "ourUnit": "Piece", "theirCode": "11377164", "theirName": "امريكان هيرتاج جبن شيدر حاد  226.79 غم", "origin": "امريكي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 2.25, "salePricePiece": 2.25, "whsPriceUnit": 2.79, "whsPricePiece": 2.79}, {"ourCode": "CHS00016", "ourName": "50067-13514-جبنة امريكي كولبي  جاك 226.79 غم", "ourUnit": "Piece", "theirCode": "11377168", "theirName": "امريكان هيرتاج كولبي ومونتري 226.79 غم", "origin": "امريكي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 2.25, "salePricePiece": 2.25, "whsPriceUnit": 2.79, "whsPricePiece": 2.79}, {"ourCode": "CHS00018", "ourName": "6738-9569-13506-جبنة موزيريللا امريكي مبشورة 200 غم", "ourUnit": "Piece", "theirCode": "11377162", "theirName": "امريكان هيرتاج جبن موزاريلا مبشورقليل 200غم", "origin": "امريكي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.75, "salePricePiece": 1.75, "whsPriceUnit": 2.19, "whsPricePiece": 2.19}, {"ourCode": "CHS00022", "ourName": "6726 50063 13793 جبنة مكسيكية مبشورة 226.79 غم", "ourUnit": "Piece", "theirCode": "11377163", "theirName": "امريكان هيرتاج مبشور خلطه مكسيكي 226.79غم", "origin": "امريكي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 2.25, "salePricePiece": 2.25, "whsPriceUnit": 2.79, "whsPricePiece": 2.79}, {"ourCode": "CHS00024", "ourName": "44240-14070-جبنة برمزان امريكي في علب 85 غم", "ourUnit": "Piece", "theirCode": "11377171", "theirName": "امريكان هيرتاج جبن بارميزان 85.04غم علبه", "origin": "امريكا", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.2, "salePricePiece": 1.2, "whsPriceUnit": 1.52, "whsPricePiece": 1.52}, {"ourCode": "CHS00033", "ourName": "جبنة ايدام سلايس 150 غم بالحبة - 36026--0035799(1X12)", "ourUnit": "Piece", "theirCode": "11064245", "theirName": "فريكو ايدام شرائح جبنه 150 غم هولندا", "origin": "هولندي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.7999999999999998, "salePricePiece": 1.7999999999999998, "whsPriceUnit": 2.27, "whsPricePiece": 2.27}, {"ourCode": "CHS00039", "ourName": "جبنة فريكو ايدام سلايس بالفلفل 150 غم الحبة-0035809-42336(1X12)", "ourUnit": "Piece", "theirCode": "11375810", "theirName": "فريكو شرائح جبنه ايدام حار 150غم بلاستيك FRICO هولندي", "origin": "هولندي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.9336, "salePricePiece": 1.9336, "whsPriceUnit": 2.4, "whsPricePiece": 2.4}, {"ourCode": "CHS00042", "ourName": "جبنة جودا سلايس 150 غم بالحبة37976--0037979(1X12)", "ourUnit": "Piece", "theirCode": "11064244", "theirName": "فريكو شرائح جبنه جودا 150غم بلاستيك FRICO هولندي", "origin": "هولندي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.7999999999999998, "salePricePiece": 1.7999999999999998, "whsPriceUnit": 2.27, "whsPricePiece": 2.27}, {"ourCode": "CHS00052", "ourName": "جبنة ميموليت سلايس 150 غم بالحبة-35804(1X12)", "ourUnit": "Piece", "theirCode": "11066322", "theirName": "فريكو شرائح جبنه ميموليت 150غم بلاستيك FRICO هولندي", "origin": "هولندي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.8999999999999997, "salePricePiece": 1.8999999999999997, "whsPriceUnit": 2.34, "whsPricePiece": 2.34}, {"ourCode": "CHS00053", "ourName": "جبنة مسدام سلايس 150 غم بالحبة --36031--0035803(1X12)", "ourUnit": "Piece", "theirCode": "11375809", "theirName": "فريكو شرائح جبنه مسدام 150غم بلاستيك FRICO هولندي", "origin": "هولندي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.8999999999999997, "salePricePiece": 1.8999999999999997, "whsPriceUnit": 2.34, "whsPricePiece": 2.34}, {"ourCode": "CHS00055", "ourName": "جبنة مدخنة قطع 200 غم بالحبة-36768-41562(1X21)", "ourUnit": "Piece", "theirCode": "11062675", "theirName": "فريكو جبن مدخن مطبوخ 200غم بلاستك FRICO هولندي", "origin": "هولندي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 2.0, "salePricePiece": 2.0, "whsPriceUnit": 2.5, "whsPricePiece": 2.5}, {"ourCode": "CHS00070", "ourName": "31755-13558-جبنة برمزان امريكي علب 226 غم", "ourUnit": "Piece", "theirCode": "11377172", "theirName": "امريكان هيرتاج جبن بارميزان مبشور 226.79غم", "origin": "امريكي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 2.8499999999999996, "salePricePiece": 2.8499999999999996, "whsPriceUnit": 3.48, "whsPricePiece": 3.48}, {"ourCode": "CHS00071", "ourName": "453805-GENUINE KASHKAVALقشقوان هنغاري 350 غم  بالحبة", "ourUnit": "Piece", "theirCode": "11062673", "theirName": "جبنة قشقوان 350غم كيسGENUIVE", "origin": "هنغاري", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 2.3, "salePricePiece": 2.3, "whsPriceUnit": 2.9, "whsPricePiece": 2.9}, {"ourCode": "CHS00072", "ourName": "453807-GENUINE KASHKAVALقشقوان هنغاري 700 غم  بالحبة", "ourUnit": "Piece", "theirCode": "11062674", "theirName": "جبنة قشقوان 700غم كيسGENUIVE", "origin": "هنغاري", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 4.5, "salePricePiece": 4.5, "whsPriceUnit": 5.69, "whsPricePiece": 5.69}, {"ourCode": "CHS00469", "ourName": "ALNT-MZ-002-MOZARELLA SHREDDED CHEESE 200GR  موزيريلا مبشور", "ourUnit": "Piece", "theirCode": "11377178", "theirName": "النوتريكا جبنه موزاريلامبشور 200 غم بلاستيك", "origin": "تركي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.25, "salePricePiece": 1.25, "whsPriceUnit": 1.58, "whsPricePiece": 1.58}, {"ourCode": "CHS00470", "ourName": "ALNT-MZ-005-MOZARELLA SHREDDED CHEESE 500GR موزيريلا مبشور", "ourUnit": "Piece", "theirCode": "11377179", "theirName": "النوتريكا جبنه موزاريلامبشور 500 غم بلاستيك", "origin": "تركي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 2.9999999999999996, "salePricePiece": 2.9999999999999996, "whsPriceUnit": 3.75, "whsPricePiece": 3.75}, {"ourCode": "CHS00471", "ourName": "ALNT-MZ-009-MOZARELLA SHREDDED CHEESE 900GR موزيريلا مبشور", "ourUnit": "Piece", "theirCode": "11377180", "theirName": "النوتريكا جبنه موزاريلامبشور 900 غم بلاستيك", "origin": "تركي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 5.25, "salePricePiece": 5.25, "whsPriceUnit": 6.49, "whsPricePiece": 6.49}, {"ourCode": "CHS00491", "ourName": "ALNT-FCR-001-FRESH CREAM CHEESE 200GR كريم تشيز", "ourUnit": "Piece", "theirCode": "11377177", "theirName": "النوتريكا جبنة كريم طازجة 200 غم بلاستيك تركيا", "origin": "تركيا", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.0, "salePricePiece": 1.0, "whsPriceUnit": 1.25, "whsPricePiece": 1.25}, {"ourCode": "CHS00544", "ourName": "MBEY SHALLAL WITH NIGELLA SEEDCHEESE 150 GM جبنة شلل مع قزحة(1X15)", "ourUnit": "Piece", "theirCode": "11375992", "theirName": "مرادبي جبنة مشلله بالقزحة 150غم بلاستيك", "origin": "تركي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.4999999999999998, "salePricePiece": 1.4999999999999998, "whsPriceUnit": 1.88, "whsPricePiece": 1.88}, {"ourCode": "CHS00545", "ourName": "MBEY MUJJADDAL CHEESE 150 GM جبنة مجدله(1X15)", "ourUnit": "Piece", "theirCode": "11375991", "theirName": "مرادبي جبنة مجدلة 150غم بلاستيك", "origin": "تركي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.4999999999999998, "salePricePiece": 1.4999999999999998, "whsPriceUnit": 1.88, "whsPricePiece": 1.88}, {"ourCode": "CHS00546", "ourName": "MBEY ANATOLIAN MIX 150 GM جبنة خلطة الاناضول(1X15)", "ourUnit": "Piece", "theirCode": "11375993", "theirName": "مرادبي جبنة خلطة الاناضول 150غم بلاستيك", "origin": "تركي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.5, "salePricePiece": 1.5, "whsPriceUnit": 1.88, "whsPricePiece": 1.88}, {"ourCode": "CHS00550", "ourName": "MBEY SHALLAL  150 GM جبنة شلل(1X15)", "ourUnit": "Piece", "theirCode": "11375990", "theirName": "مرادبي مشلله 150غم بلاستيك", "origin": "تركي", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.4999999999999998, "salePricePiece": 1.4999999999999998, "whsPriceUnit": 1.95, "whsPricePiece": 1.95}, {"ourCode": "CHS00591", "ourName": "23976--جبنة موزيريلا اصابع امريكي 28.25 غم", "ourUnit": "Piece", "theirCode": "11377175", "theirName": "امريكان هيرتاج اعواد جبن موزاريلاقليل 28.25غم", "origin": "امريكي", "taxRate": 0.05, "factor": 1.0, "salePriceUnit": 0.3, "salePricePiece": 0.3, "whsPriceUnit": 0.36, "whsPricePiece": 0.36}, {"ourCode": "CHS00561", "ourName": "RHODES-FETA CHEEASE GOLD جبنة فيتا جولد رودس (125غم*40)", "ourUnit": "Piece", "theirCode": "11373686", "theirName": "رودس جولد جبن ابيض طري كامل الدسم قيتا 125غم", "origin": "مصر", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 0.3127, "salePricePiece": 0.3127, "whsPriceUnit": 0.39, "whsPricePiece": 0.39}, {"ourCode": "CHS00562", "ourName": "RHODES-FETA CHEEASE GOLD جبنة فيتا جولد رودس (250غم*27)", "ourUnit": "Piece", "theirCode": "11373687", "theirName": "رودس جولد جبن ابيض طري كامل الدسم قيتا 250غم", "origin": "مصر", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 0.6181818181818182, "salePricePiece": 0.6181818181818182, "whsPriceUnit": 0.8, "whsPricePiece": 0.8}, {"ourCode": "CHS00563", "ourName": "RHODES-FETA CHEEASE GOLD جبنة فيتا جولد رودس (500غم*12)", "ourUnit": "Piece", "theirCode": "11373688", "theirName": "رودس جولد جبن ابيض طري كامل الدسم قيتا 500غم", "origin": "مصر", "taxRate": 0.1, "factor": 1.0, "salePriceUnit": 1.2009090909090907, "salePricePiece": 1.2009090909090907, "whsPriceUnit": 1.59, "whsPricePiece": 1.59}, {"ourCode": "DAR00004", "ourName": "AV20JH -AV20IQ-MASTER GOURMET CHEF 1 L كريمة ايطالي شيف للطبخ", "ourUnit": "Piece", "theirCode": "10388194", "theirName": "ماستر جورميه كريمة للطبخ 1لتر ايطاليا", "origin": "ايطالي", "taxRate": 0.16, "factor": 1.0, "salePriceUnit": 2.15, "salePricePiece": 2.15, "whsPriceUnit": 2.8, "whsPricePiece": 2.8}, {"ourCode": "DAR00005", "ourName": "AV20IM-MASTER GOURMET CHEF كريمة ايطالي شيف للطبخ شد 20 حبة 1/2 لتر", "ourUnit": "Piece", "theirCode": "11371486", "theirName": "ماستر غورميه شيف كريمة طبخ 500مل كرتون ايطالي", "origin": "ايطالي", "taxRate": 0.16, "factor": 1.0, "salePriceUnit": 1.1500000000000001, "salePricePiece": 1.1500000000000001, "whsPriceUnit": 1.55, "whsPricePiece": 1.55}, {"ourCode": "DAR00027", "ourName": "AV20IF-MASTER GOURMET CHEF 200 ML كريمة ايطالي شيف للطبخ", "ourUnit": "Piece", "theirCode": "11371487", "theirName": "ماستر غورميه شيف كريمة طبخ 200مل كرتون ايطالي", "origin": "ايطالي", "taxRate": 0.16, "factor": 1.0, "salePriceUnit": 0.5051724137931034, "salePricePiece": 0.5051724137931034, "whsPriceUnit": 0.65, "whsPricePiece": 0.65}, {"ourCode": "FVL00012", "ourName": "ذرة حلوة هنغاري 20*400 غم ماركة ميري", "ourUnit": "Carton", "theirCode": "11365709", "theirName": "ميري ماركت ذرة حلوة مجمدة 400غم كيس هنغاري", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 13.293103448275861, "salePricePiece": 0.664655172413793, "whsPriceUnit": 17.8, "whsPricePiece": 0.89}, {"ourCode": "FVL00013", "ourName": "بازيلا بالجزر هنغاري 20*400 غم ماركة ميري", "ourUnit": "Carton", "theirCode": "11365707", "theirName": "ميري ماركت بازيلا خضراء مع جزر  مجمدة 400غم كيس هنغاري", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 13.293103448275861, "salePricePiece": 0.664655172413793, "whsPriceUnit": 17.8, "whsPricePiece": 0.89}, {"ourCode": "FVL00014", "ourName": "بازيلا سادة هنغاري 20*400 غم ماركة ميري", "ourUnit": "Carton", "theirCode": "11365708", "theirName": "ميري ماركت بازيلا خضراء مجمدة 400غم كيس هنغاري", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 13.293103448275861, "salePricePiece": 0.664655172413793, "whsPriceUnit": 17.8, "whsPricePiece": 0.89}, {"ourCode": "FVL00015", "ourName": "لب جوافة  مجمدة شد 16 كغم ماركة اللانا", "ourUnit": "Carton", "theirCode": "11367182", "theirName": "الانا لب جوافه محلى ومجمد 1كغم  الهند", "origin": "الهند", "taxRate": 0.16, "factor": 16.0, "salePriceUnit": 23.36551724137936, "salePricePiece": 1.46034482758621, "whsPriceUnit": 31.84, "whsPricePiece": 1.99}, {"ourCode": "FVL00016", "ourName": "لب المانجا نوع توتابوري شد 16 كغم ماركة اللانا", "ourUnit": "Carton", "theirCode": "11367181", "theirName": "الانا لب المنجه محلى ومجمد 1كغم  الهند", "origin": "الهند", "taxRate": 0.16, "factor": 16.0, "salePriceUnit": 23.36551724137936, "salePricePiece": 1.46034482758621, "whsPriceUnit": 31.84, "whsPricePiece": 1.99}, {"ourCode": "FVL00034", "ourName": "ملوخية مجمدة مصرية مونتانا شد 20*400 غم", "ourUnit": "Carton", "theirCode": "11365704", "theirName": "مونتانا ملوخيه خضراء مجمده 400غم كيس مصري", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 10.22413793103448, "salePricePiece": 0.511206896551724, "whsPriceUnit": 13.799999999999999, "whsPricePiece": 0.69}, {"ourCode": "FVL00035", "ourName": "بامية خضراء مجمدة اكسترا مونتانا20*400 غم", "ourUnit": "Carton", "theirCode": "11365999", "theirName": "مونتانا باميه اكسترا مجمده 400غم كيس مصري", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 21.8448275862068, "salePricePiece": 1.09224137931034, "whsPriceUnit": 29.8, "whsPricePiece": 1.49}, {"ourCode": "FVL00036", "ourName": "بامية مجمدة مصرية مونتانا زيرو20*400 غم", "ourUnit": "Carton", "theirCode": "11365998", "theirName": "مونتانا بامية زيرو مجمده 400غم كيس مصري", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 17.58620689655172, "salePricePiece": 0.879310344827586, "whsPriceUnit": 23.799999999999997, "whsPricePiece": 1.19}, {"ourCode": "FVL00037", "ourName": "سبانخ مجمدة مصرية مونتانا20*400 غم", "ourUnit": "Carton", "theirCode": "11365705", "theirName": "مونتانا سبانخ  خضراء مجمده 400غم كيس مصري", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 9.31, "salePricePiece": 0.4655, "whsPriceUnit": 13.8, "whsPricePiece": 0.6900000000000001}, {"ourCode": "FVL00042", "ourName": "1016482-6K-GOLDEN RIVER بطاطا بلجيكي شد 10 كيس * 1 كغم", "ourUnit": "Carton", "theirCode": "11363842", "theirName": "جولدن ريفر بطاطس مقلي 1كغم بلجيكا", "origin": "بلجيكا", "taxRate": 0.16, "factor": 10.0, "salePriceUnit": 13.758620689655201, "salePricePiece": 1.37586206896552, "whsPriceUnit": 18.799999999999997, "whsPricePiece": 1.8799999999999997}, {"ourCode": "FVL00043", "ourName": "1016483-6K-GOLDEN RIVER بطاطا بلجيكي شد4 * 2.5  كغم", "ourUnit": "Carton", "theirCode": "11363841", "theirName": "جولدن ريفر اصابع بطاطس مقلية 2.5 كغم كيس", "origin": "بلجيكا", "taxRate": 0.16, "factor": 4.0, "salePriceUnit": 13.3, "salePricePiece": 3.325, "whsPriceUnit": 17.56, "whsPricePiece": 4.39}, {"ourCode": "FVL00107", "ourName": "خضار مشكلة مصرية مونتانا20*400غم", "ourUnit": "Carton", "theirCode": "11365703", "theirName": "مونتانا خضار مشكل مجمده 400غم كيس", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 10.0, "salePricePiece": 0.5, "whsPriceUnit": 13.8, "whsPricePiece": 0.6900000000000001}, {"ourCode": "FVL00111", "ourName": "فول اخضر حب مصري مونتانا20*400غم", "ourUnit": "Carton", "theirCode": "11365701", "theirName": "مونتانا فول اخضر  مجمده 400غم كيس", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 12.25862068965518, "salePricePiece": 0.612931034482759, "whsPriceUnit": 17.8, "whsPricePiece": 0.89}, {"ourCode": "FVL00246", "ourName": "ورق عنب  الكيلاني شد 12 * 908 غم EXTRA", "ourUnit": "Carton", "theirCode": "11316287", "theirName": "الكيلاني ورق عنب اكسترا908غم مرطبان", "origin": "الصين", "taxRate": 0.16, "factor": 12.0, "salePriceUnit": 23.9379310344828, "salePricePiece": 1.9948275862069, "whsPriceUnit": 32.28, "whsPricePiece": 2.69}, {"ourCode": "FVL00276", "ourName": "بامية اكسترازيرو ريفي 20*350 غم", "ourUnit": "Carton", "theirCode": "11366449", "theirName": "بامية  اكسترا(زيرو) ريفي 20*350 غم", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 15.948275862068959, "salePricePiece": 0.797413793103448, "whsPriceUnit": 21.0, "whsPricePiece": 1.05}, {"ourCode": "FVL00302", "ourName": "بازيلا بالجزر مصري 20*350 غم ماركة ريفي", "ourUnit": "Carton", "theirCode": "11366443", "theirName": "ريفي بازيلاء وجرز مجمد350 غم كيس", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 5.12068965517242, "salePricePiece": 0.256034482758621, "whsPriceUnit": 7.0, "whsPricePiece": 0.35}, {"ourCode": "FVL00303", "ourName": "ملوخيه مصرية مجمده 20*400 غم ماركة ريفي", "ourUnit": "Carton", "theirCode": "11366444", "theirName": "ريفي ملوخيه مفرومه 400غم كيس", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 5.12068965517242, "salePricePiece": 0.256034482758621, "whsPriceUnit": 7.0, "whsPricePiece": 0.35}, {"ourCode": "FVL00306", "ourName": "خضار مشكله مصرية مجمده 20*350 غم ريفي", "ourUnit": "Carton", "theirCode": "11366445", "theirName": "ريفي خضروات مشكله350غم كيس", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 8.068, "salePricePiece": 0.4034, "whsPriceUnit": 10.8, "whsPricePiece": 0.54}, {"ourCode": "FVL00311", "ourName": "فراولة ريفي مصرية  8*1 كغم", "ourUnit": "Carton", "theirCode": "11366447", "theirName": "ريفي فراوله مجمده 1كغم كيس", "origin": "مصري", "taxRate": 0.16, "factor": 8.0, "salePriceUnit": 10.19310344827584, "salePricePiece": 1.27413793103448, "whsPriceUnit": 13.6, "whsPricePiece": 1.7}, {"ourCode": "FVL00316", "ourName": "فراولة ريفي مصرية  20*350 غم", "ourUnit": "Carton", "theirCode": "11366448", "theirName": "ريفي فراوله مجمده 350 غم كيس", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 9.399999999999999, "salePricePiece": 0.4699999999999999, "whsPriceUnit": 12.8, "whsPricePiece": 0.64}, {"ourCode": "FVL00322", "ourName": "بامية سوبر اكسترا ريفي 20*350 غم", "ourUnit": "Carton", "theirCode": "11366451", "theirName": "ريفي بامية سوبر اكسترا 350 غم كيس", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 16.327586206896562, "salePricePiece": 0.8163793103448281, "whsPriceUnit": 22.0, "whsPricePiece": 1.1}, {"ourCode": "FVL00332", "ourName": "بامية نمره 1 ريفي 20*400 غم", "ourUnit": "Carton", "theirCode": "11366446", "theirName": "غم كيس400(A) بنت الريف باميه", "origin": "مصري", "taxRate": 0.16, "factor": 20.0, "salePriceUnit": 5.39655172413794, "salePricePiece": 0.269827586206897, "whsPriceUnit": 7.199999999999999, "whsPricePiece": 0.36}, {"ourCode": "FVL00360", "ourName": "1037547-4275/4261-QUART TO LUTOSA 2-3 T-M  بطاطا ودجز بلجيكي شد12 * 750 غم", "ourUnit": "Carton", "theirCode": "11366167", "theirName": "لوتوسا قطع بطاطس حار بالقشر 750غم LUTOSA", "origin": "بلجيكا", "taxRate": 0.16, "factor": 12.0, "salePriceUnit": 16.61379310344828, "salePricePiece": 1.38448275862069, "whsPriceUnit": 22.68, "whsPricePiece": 1.89}, {"ourCode": "PFS00234", "ourName": "ALLIANCE -FRZ-PDTO SHRIMPS 21/25, 1 KG BAG روبيان منظف بالذيل", "ourUnit": "KG", "theirCode": "11366467", "theirName": "الكيلاني روبيان منظف بالذيل مجمد 1000غم كيس الامارات", "origin": "الامارات", "taxRate": 0.16, "factor": 1.0, "salePriceUnit": 6.0, "salePricePiece": 6.0, "whsPriceUnit": 7.99, "whsPricePiece": 7.99}, {"ourCode": "DAR00003", "ourName": "AV10AR-AV10FP-DECOR UP كريمة ايطالي للحلويات والايس كريم  ديكوراب", "ourUnit": "Piece", "theirCode": "11265988", "theirName": "ماستر مارتيني كريمة حلويات شبية قشدة معدة للخفق 1 لتر تتراباك", "origin": "ايطالي", "taxRate": 0.16, "factor": 1.0, "salePriceUnit": 2.0, "salePricePiece": 2.0, "whsPriceUnit": 2.69, "whsPricePiece": 2.69}, {"ourCode": "PFS00230", "ourName": "ALLIANCE -FRZ-SEAFOOD COCKTAIL كوكتيل ماكولات بحرية", "ourUnit": "KG", "theirCode": "11750178", "theirName": "كوكتيل الماكولات البحرية المجمدة 1000 غم كيس", "origin": "الامارات", "taxRate": 0.16, "factor": 1.0, "salePriceUnit": 3.05, "salePricePiece": 3.05, "whsPriceUnit": 4.05, "whsPricePiece": 4.05}, {"ourCode": "PFS00236", "ourName": "ALLIANCE -FRZ-CALAMARI RINGS 1 KG BAG كلماري حلقات", "ourUnit": "KG", "theirCode": "11750179", "theirName": "كلماري حلقات مجمد 1000 غم كيس", "origin": "الامارات", "taxRate": 0.16, "factor": 1.0, "salePriceUnit": 4.07, "salePricePiece": 4.07, "whsPriceUnit": 5.39, "whsPricePiece": 5.39}, {"ourCode": "FVL00385", "ourName": "زيبا ارز بسمتي كريمي سيلا ( 1121 ) 4كغم", "ourUnit": "Piece", "theirCode": "11551547", "theirName": "زيبا ارز بسمتي كريمي(1121) 4 كغم كيس الهند", "origin": "الهند", "taxRate": 0.0, "factor": 1.0, "salePriceUnit": 4.05, "salePricePiece": 4.05, "whsPriceUnit": 4.49, "whsPricePiece": 4.49}, {"ourCode": "FOD00064", "ourName": "زبدة بلجيكي اصابع شد 40*100 غم ميجا", "ourUnit": "Piece", "theirCode": "94226889", "theirName": "ميجا غير مملحة زبدة 100غم", "origin": "بلجيكا", "taxRate": 0.1, "factor": 40.0, "salePriceUnit": 28.16, "salePricePiece": 0.704, "whsPriceUnit": 32.8, "whsPricePiece": 0.82}];
 let currentGroupId = null;
 let currentPage = 'mapping';
 let openPicker = null; // invoiceId currently showing item picker
@@ -280,11 +332,23 @@ function loadState(){
   }
   if(!GROUPS.length){
     GROUPS = [
-      {id:'amman', name:'باقي المملكة — الشهري', invoices:[]},
-      {id:'aqaba', name:'العقبة — الكشف التجميعي', invoices:[]}
+      {id:'amman', name:'باقي المملكة — الشهري', invoices:[], custCode:'', agreementNo:'70/2026', taxExempt:false},
+      {id:'aqaba', name:'العقبة', invoices:[], custCode:'', agreementNo:'70/2026', taxExempt:true}
     ];
   }
+  GROUPS.forEach(g=>{ ensureGroupDefaults(g); (g.invoices||[]).forEach(ensureInvoiceDefaults); });
   currentGroupId = GROUPS[0].id;
+}
+function ensureGroupDefaults(g){
+  if(g.custCode===undefined) g.custCode='';
+  if(g.agreementNo===undefined) g.agreementNo='70/2026';
+  if(g.taxExempt===undefined) g.taxExempt=false;
+}
+function ensureInvoiceDefaults(inv){
+  if(inv.docNo===undefined) inv.docNo='';
+  if(inv.docDate===undefined) inv.docDate='';
+  if(inv.docType===undefined) inv.docType='invoice'; // 'invoice' = فاتورة مبيعات | 'aggregate' = كشف تجميعي
+  if(!inv.qty) inv.qty={};
 }
 function saveState(){
   try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS})); }
@@ -294,7 +358,7 @@ function saveState(){
 /* ==================== تنقّل الصفحات ==================== */
 function switchPage(p){
   currentPage = p;
-  ['mapping','invoices','roadmap'].forEach(k=>{
+  ['mapping','invoices','print','roadmap'].forEach(k=>{
     document.getElementById(k+'Page').style.display = (k===p) ? 'block' : 'none';
     const tab = document.getElementById('pageTab'+k.charAt(0).toUpperCase()+k.slice(1));
     tab.className = (k===p) ? 'btn-primary' : 'btn-ghost';
@@ -302,6 +366,7 @@ function switchPage(p){
   });
   if(p==='mapping') renderMappingTable();
   if(p==='invoices') renderInvoicesPage();
+  if(p==='print') renderPrintPage();
 }
 
 /* ==================== أدوات عامة ==================== */
@@ -422,10 +487,10 @@ function renderMappingTable(){
       <td><input type="text" value="${esc(it.origin)}" onchange="editItemField('${k}','origin',this.value)"></td>
       <td><input type="number" step="any" value="${it.taxRate}" onchange="editItemField('${k}','taxRate',this.value)"></td>
       <td><input type="number" step="any" value="${it.factor}" onchange="editItemField('${k}','factor',this.value)"></td>
-      <td><input type="number" step="any" value="${it.salePriceUnit}" onchange="editItemField('${k}','salePriceUnit',this.value)"></td>
-      <td><input type="number" step="any" value="${it.salePricePiece}" onchange="editItemField('${k}','salePricePiece',this.value)"></td>
-      <td><input type="number" step="any" value="${it.whsPriceUnit}" onchange="editItemField('${k}','whsPriceUnit',this.value)"></td>
-      <td><input type="number" step="any" value="${it.whsPricePiece}" onchange="editItemField('${k}','whsPricePiece',this.value)"></td>
+      <td><input type="number" step="any" value="${fmt4(it.salePriceUnit)}" onchange="editItemField('${k}','salePriceUnit',this.value)"></td>
+      <td><input type="number" step="any" value="${fmt4(it.salePricePiece)}" onchange="editItemField('${k}','salePricePiece',this.value)"></td>
+      <td><input type="number" step="any" value="${fmt4(it.whsPriceUnit)}" onchange="editItemField('${k}','whsPriceUnit',this.value)"></td>
+      <td><input type="number" step="any" value="${fmt4(it.whsPricePiece)}" onchange="editItemField('${k}','whsPricePiece',this.value)"></td>
       <td><button class="btn-danger tiny-btn" onclick="deleteItem('${k}')">حذف</button></td>
     </tr>`;
   }).join('');
@@ -440,12 +505,16 @@ function renderMappingTable(){
 }
 
 /* ==================== تصميم ترتيب الفواتير ==================== */
-function renderGroupTabs(){
-  document.getElementById('grpTabs').innerHTML = GROUPS.map(g=>
+function renderGroupTabs(containerId){
+  document.getElementById(containerId).innerHTML = GROUPS.map(g=>
     `<button class="${g.id===currentGroupId?'active':''}" onclick="selectGroup('${g.id}')">${esc(g.name)}</button>`
   ).join('');
 }
-function selectGroup(id){ currentGroupId = id; openPicker=null; renderInvoicesPage(); }
+function selectGroup(id){
+  currentGroupId = id; openPicker=null;
+  renderInvoicesPage();
+  renderPrintPage();
+}
 
 function addGroupPrompt(){
   const name = prompt('اسم مجموعة الفواتير الجديدة (مثلاً: عمّان — دفعة إضافية):');
@@ -523,7 +592,8 @@ function addItemToInvoice(invId, key){
 }
 
 function renderInvoicesPage(){
-  renderGroupTabs();
+  if(currentPage!=='invoices') return;
+  renderGroupTabs('grpTabs');
   const g = GROUPS.find(x=>x.id===currentGroupId);
   const list = document.getElementById('invoicesList');
   if(!g || !g.invoices.length){
@@ -577,6 +647,277 @@ function renderInvoicesPage(){
       </div>
     </div>`;
   }).join('');
+}
+
+/* ==================== طباعة الفواتير ==================== */
+function fmt3(n){ return ((+n)||0).toFixed(3); }
+function fmt4(n){ return ((+n)||0).toFixed(4); }
+
+function updateGroupSetting(field, value){
+  const g = GROUPS.find(x=>x.id===currentGroupId);
+  if(!g) return;
+  ensureGroupDefaults(g);
+  g[field] = (field==='taxExempt') ? !!value : value;
+  saveState();
+  setTimeout(renderPrintPage, 0);
+}
+function updateInvoiceField(invId, field, value){
+  const g = GROUPS.find(x=>x.id===currentGroupId);
+  const inv = g && g.invoices.find(i=>i.id===invId);
+  if(!inv) return;
+  ensureInvoiceDefaults(inv);
+  inv[field] = value;
+  saveState();
+  if(field==='docType') setTimeout(renderPrintPage, 0);
+}
+function updateQty(invId, key, value){
+  const g = GROUPS.find(x=>x.id===currentGroupId);
+  const inv = g && g.invoices.find(i=>i.id===invId);
+  if(!inv) return;
+  ensureInvoiceDefaults(inv);
+  inv.qty[key] = parseNum(value);
+  saveState();
+  setTimeout(renderPrintPage, 0);
+}
+function resetQty(invId){
+  const g = GROUPS.find(x=>x.id===currentGroupId);
+  const inv = g && g.invoices.find(i=>i.id===invId);
+  if(!inv) return;
+  if(!confirm('مسح كل الكميات المدخلة بهاي الفاتورة (استعداداً لشهر جديد)؟')) return;
+  inv.qty = {};
+  saveState();
+  renderPrintPage();
+}
+function computeLine(item, qty, taxExempt){
+  const net = qty * (item.salePricePiece||0);
+  const taxPct = taxExempt ? 0 : (item.taxRate||0);
+  const taxVal = net * taxPct;
+  const total = net + taxVal;
+  return {net, taxPct, taxVal, total};
+}
+function isAqabaGroup(g){ return /عقبة/.test(g.name); }
+function computeInvoiceTitle(g, inv){
+  if(inv.docType==='aggregate'){
+    const aggInvoices = g.invoices.filter(i=>i.docType==='aggregate');
+    const n = aggInvoices.findIndex(i=>i.id===inv.id)+1;
+    return 'كشف تجميعي' + (isAqabaGroup(g) ? ' العقبة' : '') + ' ' + n;
+  }
+  return 'فاتورة مبيعات';
+}
+
+function renderPrintPage(){
+  if(currentPage!=='print') return;
+  renderGroupTabs('printGrpTabs');
+  const g = GROUPS.find(x=>x.id===currentGroupId);
+  if(!g) return;
+  ensureGroupDefaults(g);
+  document.getElementById('grpCustCode').value = g.custCode;
+  document.getElementById('grpAgreementNo').value = g.agreementNo;
+  document.getElementById('grpTaxExempt').checked = g.taxExempt;
+
+  const list = document.getElementById('printInvoicesList');
+  if(!g.invoices.length){
+    list.innerHTML = '<div class="empty-hint">ما في فواتير بهاي المجموعة بعد — روح لصفحة "تصميم ترتيب الفواتير" وضيف فاتورة.</div>';
+    return;
+  }
+  list.innerHTML = g.invoices.map(inv=>{
+    ensureInvoiceDefaults(inv);
+    let netTotal=0, taxTotal=0, grandTotal=0, instTotal=0;
+    const rows = inv.itemKeys.map((k,idx)=>{
+      const it = findItem(k);
+      if(!it) return '';
+      const qty = inv.qty[k]||0;
+      const {net,taxPct,taxVal,total} = computeLine(it, qty, g.taxExempt);
+      netTotal+=net; taxTotal+=taxVal; grandTotal+=total; instTotal += qty*(it.whsPricePiece||0);
+      return `<tr>
+        <td>${idx+1}</td>
+        <td class="mono">${esc(it.theirCode)}</td>
+        <td style="text-align:right;">${esc(it.theirName)}</td>
+        <td><input type="number" min="0" step="any" value="${qty||''}" placeholder="0" style="width:80px;" onchange="updateQty('${inv.id}','${k}',this.value)"></td>
+        <td class="mono">${fmt4(it.salePricePiece)}</td>
+        <td class="mono">${fmt3(net)}</td>
+        <td class="mono">${(taxPct*100).toFixed(0)}%</td>
+        <td class="mono">${fmt3(taxVal)}</td>
+        <td class="mono">${fmt3(total)}</td>
+      </tr>`;
+    }).join('');
+
+    return `<div class="inv-card">
+      <div class="inv-head">
+        <b style="font-size:13px;">${esc(inv.name)}</b>
+        <label style="font-size:11.5px; display:flex; align-items:center; gap:5px;">نوع المستند
+          <select onchange="updateInvoiceField('${inv.id}','docType',this.value)">
+            <option value="invoice" ${inv.docType==='invoice'?'selected':''}>فاتورة مبيعات</option>
+            <option value="aggregate" ${inv.docType==='aggregate'?'selected':''}>كشف تجميعي</option>
+          </select>
+        </label>
+        <span class="muted" style="font-size:11px;">→ ${esc(computeInvoiceTitle(g, inv))}</span>
+        <label style="font-size:11.5px; display:flex; align-items:center; gap:5px;">رقم المستند <input type="text" value="${esc(inv.docNo)}" style="width:110px;" onchange="updateInvoiceField('${inv.id}','docNo',this.value)"></label>
+        <label style="font-size:11.5px; display:flex; align-items:center; gap:5px;">التاريخ <input type="date" value="${esc(inv.docDate)}" onchange="updateInvoiceField('${inv.id}','docDate',this.value)"></label>
+        <span style="flex:1;"></span>
+        <button class="btn-ghost btn-sm" onclick="resetQty('${inv.id}')">مسح الكميات</button>
+        <button class="btn-primary btn-sm" onclick="openPrintPreview('${g.id}','${inv.id}')">🖨️ معاينة وطباعة</button>
+      </div>
+      <div class="inv-body" style="overflow-x:auto;">
+        <table class="grid" style="min-width:760px;">
+          <thead><tr><th>#</th><th>رمزهم</th><th>الصنف لدى العميل</th><th>الكمية</th><th>سعر حبة</th><th>الصافي</th><th>ضريبة%</th><th>قيمة الضريبة</th><th>الإجمالي</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="9" class="muted" style="padding:10px;">ما في أصناف بهاي الفاتورة — ضيفها من صفحة "تصميم ترتيب الفواتير".</td></tr>'}</tbody>
+        </table>
+        <div style="text-align:left; font-family:var(--mono); font-size:12px; margin-top:8px; color:var(--ink-soft);">
+          قبل الضريبة ${fmt3(netTotal)} · الضريبة ${fmt3(taxTotal)} · بعد الضريبة <b style="color:var(--navy);">${fmt3(grandTotal)}</b> · بيع المؤسسة ${fmt3(instTotal)}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function openPrintPreview(groupId, invId){
+  const g = GROUPS.find(x=>x.id===groupId);
+  const inv = g && g.invoices.find(i=>i.id===invId);
+  if(!g||!inv) return;
+  document.getElementById('printSheetContent').innerHTML = buildPrintSheetHTML(g, inv);
+  document.getElementById('printOverlay').classList.add('active');
+}
+function closePrintPreview(){
+  document.getElementById('printOverlay').classList.remove('active');
+}
+
+function buildPrintSheetHTML(g, inv){
+  ensureGroupDefaults(g); ensureInvoiceDefaults(inv);
+  let netTotal=0, taxTotal=0, grandTotal=0, instTotal=0;
+  const rowsHtml = inv.itemKeys.map(k=>{
+    const it = findItem(k);
+    if(!it) return '';
+    const qty = inv.qty[k]||0;
+    const {net,taxPct,taxVal,total} = computeLine(it, qty, g.taxExempt);
+    netTotal+=net; taxTotal+=taxVal; grandTotal+=total; instTotal += qty*(it.whsPricePiece||0);
+    return `<tr>
+      <td class="mono">${esc(it.theirCode)}</td>
+      <td style="text-align:right;">${esc(it.theirName)}</td>
+      <td>${esc(it.origin)}</td>
+      <td>${fmtNum(qty)}</td>
+      <td>حبة</td>
+      <td>${fmt4(it.salePricePiece)}</td>
+      <td>${fmt3(net)}</td>
+      <td>${(taxPct*100).toFixed(0)}%</td>
+      <td>${fmt3(taxVal)}</td>
+      <td>${fmt3(total)}</td>
+      <td>${fmt4(it.whsPricePiece)}</td>
+    </tr>`;
+  }).join('');
+
+  const dateStr = inv.docDate ? inv.docDate.split('-').reverse().join('/') : '—';
+  const custLine = isAqabaGroup(g) ? 'المؤسسة الاستهلاكية العسكرية /العقبة المحترمين' : 'المؤسسة الاستهلاكية العسكرية المحترمين';
+  const title = computeInvoiceTitle(g, inv);
+
+  const footerLines = taxTotal>0 ? `
+    <div>المجموع قبل الضريبة: <b>${fmt3(netTotal)}</b></div>
+    <div>ضريبة المبيعات: <b>${fmt3(taxTotal)}</b></div>
+    <div>المجموع بعد الضريبة: <b>${fmt3(grandTotal)}</b></div>
+  ` : `<div>المجموع: <b>${fmt3(grandTotal)}</b></div>`;
+
+  return `
+  <div class="print-sheet">
+    <div class="ps-natno">الرقم الوطني: 100047692</div>
+    <div class="ps-head">
+      <div class="ar">
+        <div class="brand">مركز الكيلاني الغذائية</div>
+        <div>تلفون المبيعات: (6-962+) 4300700</div>
+        <div>فاكس: (6-962+) 4300723</div>
+        <div>ص.ب: 830574 عمّان 11183 الأردن</div>
+        <div>بريد الكتروني: sarah@kaylanifc.com</div>
+      </div>
+      <div class="en">
+        <div class="brand">Kaylani <span style="color:#1B2536;">FOOD CENTER</span></div>
+        <div>Sales Tel.: (962-6) 4300700</div>
+        <div>Fax.: (962-6) 4300723</div>
+        <div>P.O.Box 830574 Amman 11183 Jordan</div>
+        <div>E-mail: sarah@kaylanifc.com</div>
+      </div>
+    </div>
+    <div class="ps-boxes">
+      <div class="ps-box">رقم ضريبة المبيعات<br>0020908</div>
+      <div class="ps-box">${esc(title)}</div>
+    </div>
+    <div class="ps-meta">
+      <div>رقم الاتفاقية : ${esc(g.agreementNo)}</div>
+      <div style="text-align:left;">التسلسل: ${esc(inv.docNo)||'—'}<br>${dateStr}</div>
+      <div>رقم العميل : ${esc(g.custCode)||'—'}</div>
+    </div>
+    <div class="ps-cust">${custLine}</div>
+    <div style="overflow-x:auto;">
+    <table class="ps-table">
+      <thead><tr>
+        <th>رمز المادة</th><th>اسم المادة</th><th>بلد المنشأ</th><th>الكمية</th><th>الوحدة</th>
+        <th>سعر حبة</th><th>الصافي قبل الضريبة</th><th>نسبة الضريبة</th><th>قيمة الضريبة</th>
+        <th>المجموع بعد الضريبة</th><th>سعر بيع المؤسسة</th>
+      </tr></thead>
+      <tbody>${rowsHtml || '<tr><td colspan="11">ما في أصناف</td></tr>'}</tbody>
+    </table>
+    </div>
+    <div class="ps-footer">
+      <div>مجموع بيع المؤسسة: <b>${fmt3(instTotal)}</b></div>
+      <div class="lines">${footerLines}</div>
+    </div>
+    <div class="ps-words">${esc(numberToArabicWords(grandTotal))}</div>
+    <div class="ps-cust" style="margin-top:12px;">${custLine}</div>
+  </div>`;
+}
+
+/* ==================== تحويل الرقم إلى كتابة عربية (دينار/فلس) ==================== */
+function numberToArabicWords(amount){
+  amount = Math.round((amount||0)*1000)/1000;
+  const dinars = Math.floor(amount);
+  const fils = Math.round((amount - dinars)*1000);
+
+  const ones=['','واحد','اثنان','ثلاثة','أربعة','خمسة','ستة','سبعة','ثمانية','تسعة','عشرة',
+    'أحد عشر','اثنا عشر','ثلاثة عشر','أربعة عشر','خمسة عشر','ستة عشر','سبعة عشر','ثمانية عشر','تسعة عشر'];
+  const tens=['','عشرة','عشرون','ثلاثون','أربعون','خمسون','ستون','سبعون','ثمانون','تسعون'];
+  const hundreds=['','مائة','مائتان','ثلاثمائة','أربعمائة','خمسمائة','ستمائة','سبعمائة','ثمانمائة','تسعمائة'];
+  const scales=[
+    {value:1000000000, singular:'مليار', dual:'ملياران', plural:'مليارات'},
+    {value:1000000, singular:'مليون', dual:'مليونان', plural:'ملايين'},
+    {value:1000, singular:'ألف', dual:'ألفان', plural:'آلاف'}
+  ];
+
+  function threeDigits(n){
+    const parts=[];
+    const h = Math.floor(n/100), rem = n%100;
+    if(h>0) parts.push(hundreds[h]);
+    if(rem>0){
+      if(rem<20) parts.push(ones[rem]);
+      else{
+        const t=Math.floor(rem/10), o=rem%10;
+        parts.push(o>0 ? (ones[o]+' و'+tens[t]) : tens[t]);
+      }
+    }
+    return parts.join(' و');
+  }
+  function chunkToWords(n, scale){
+    if(n===1) return scale.singular;
+    if(n===2) return scale.dual;
+    let words = threeDigits(n);
+    words += ' ' + ((n>=3 && n<=10) ? scale.plural : scale.singular);
+    return words;
+  }
+  function numberToWords(n){
+    if(n===0) return 'صفر';
+    let parts=[], remaining=n;
+    for(const scale of scales){
+      const count = Math.floor(remaining/scale.value);
+      if(count>0){ parts.push(chunkToWords(count, scale)); remaining = remaining % scale.value; }
+    }
+    if(remaining>0) parts.push(threeDigits(remaining));
+    return parts.filter(Boolean).join(' و');
+  }
+
+  const dinarWord = dinars===1?'دينار':(dinars===2?'ديناران':(dinars>=3&&dinars<=10?'دنانير':'دينار'));
+  let result = `${numberToWords(dinars)} ${dinarWord}`;
+  if(fils>0){
+    const filsWord = fils===1?'فلس':(fils===2?'فلسان':(fils>=3&&fils<=10?'فلوس':'فلساً'));
+    result += ` و${numberToWords(fils)} ${filsWord}`;
+  }
+  return result + ' فقط لا غير';
 }
 
 /* ==================== نسخ احتياطي ==================== */
