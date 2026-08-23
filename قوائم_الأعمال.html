@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>قوائم الأعمال — إدارة المهام</title>
+<style>
+  :root{
+    --navy:#152A4A; --navy-deep:#0E1E36; --paper:#F4F6F9; --card:#FFFFFF; --line:#E1E6EE;
+    --ink:#1B2536; --ink-soft:#5B667A;
+    --gold:#8A6416; --gold-bg:#FCEFD6;
+    --teal:#1F7A6C; --teal-bg:#E7F5F1;
+    --crimson:#B23A34; --crimson-bg:#FCEBEA;
+    --mono:'IBM Plex Mono','Consolas',monospace; --disp:'Segoe UI',Tahoma,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--disp);}
+  body{padding-bottom:60px;}
+  header.topbar{background:linear-gradient(135deg,var(--navy-deep),var(--navy) 70%); color:#fff; padding:22px 28px 26px; position:relative; overflow:hidden;}
+  header.topbar::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(90deg, rgba(255,255,255,.035) 0 1px, transparent 1px 46px); pointer-events:none;}
+  .topbar-inner{position:relative; display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:14px;}
+  .eyebrow{font-size:12px; letter-spacing:.06em; color:#9FB0CC; margin-bottom:6px; font-weight:600;}
+  h1{margin:0; font-size:22px; font-weight:700;}
+  .sub{color:#B8C4DA; font-size:12.5px; margin-top:6px; max-width:640px; line-height:1.7;}
+
+  main{max-width:1200px; margin:0 auto; padding:0 24px;}
+  section.panel{background:var(--card); border:1px solid var(--line); border-radius:14px; margin-top:-18px; box-shadow:0 10px 30px -18px rgba(21,42,74,.25); position:relative; z-index:2;}
+
+  .input-panel{padding:20px 24px 18px; border-bottom:1px solid var(--line);}
+  .input-panel h2{font-size:14px; margin:0 0 12px; display:flex; align-items:center; gap:8px;}
+  .input-panel h2 .num{width:21px;height:21px;border-radius:6px;background:var(--navy);color:#fff;display:inline-flex;align-items:center;justify-content:center;font-size:11.5px;font-family:var(--mono);}
+  .form-grid{display:grid; grid-template-columns:1.6fr 1fr .9fr .8fr auto; gap:10px; align-items:end;}
+  .field{display:flex; flex-direction:column; gap:5px;}
+  .field label{font-size:11px; color:var(--ink-soft); font-weight:600;}
+  input[type=text], input[type=date], select{border:1.5px solid var(--line); border-radius:9px; padding:9px 11px; font-family:var(--disp); font-size:12.5px; color:var(--ink); background:#FAFBFD;}
+  input[type=text]:focus, input[type=date]:focus, select:focus{outline:none; border-color:var(--navy); background:#fff;}
+  button{font-family:var(--disp); font-size:13px; font-weight:600; cursor:pointer; border-radius:9px; padding:9px 16px; border:none; transition:.15s;}
+  .btn-primary{background:var(--navy); color:#fff;}
+  .btn-primary:hover{background:var(--navy-deep);}
+  .btn-ghost{background:#fff; color:var(--navy); border:1.5px solid var(--line);}
+  .btn-ghost:hover{border-color:var(--navy);}
+  .btn-sm{padding:5px 11px; font-size:11.5px; border-radius:7px;}
+  .btn-danger{background:#fff; color:var(--crimson); border:1.5px solid var(--crimson-bg);}
+  .btn-danger:hover{background:var(--crimson-bg);}
+
+  .summary{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; padding:18px 24px; border-bottom:1px solid var(--line);}
+  .stat{background:#FAFBFD; border:1px solid var(--line); border-radius:12px; padding:13px 16px;}
+  .stat .lbl{font-size:11px; color:var(--ink-soft); margin-bottom:6px;}
+  .stat .val{font-family:var(--mono); font-size:21px; font-weight:700; color:var(--navy);}
+  .stat.warn .val{color:var(--crimson);} .stat.good .val{color:var(--teal);} .stat.grace .val{color:var(--gold);}
+  .progress-wrap{padding:0 24px 16px;}
+  .progress-bar{height:8px; border-radius:6px; background:#EEF2F8; overflow:hidden;}
+  .progress-fill{height:100%; background:linear-gradient(90deg,var(--teal),#2EA88E); transition:width .25s;}
+
+  .toolbar{display:flex; align-items:center; gap:10px; padding:12px 24px; border-bottom:1px solid var(--line); flex-wrap:wrap;}
+  .seg{display:flex; border:1.5px solid var(--line); border-radius:9px; overflow:hidden;}
+  .seg button{background:#fff; color:var(--ink-soft); border-radius:0; padding:7px 13px; font-size:12px; border-inline-end:1px solid var(--line);}
+  .seg button:last-child{border-inline-end:none;}
+  .seg button.active{background:var(--navy); color:#fff;}
+  .search{border:1.5px solid var(--line); border-radius:9px; padding:7px 13px; font-size:12px; width:220px; font-family:var(--disp);}
+  select.list-filter{border:1.5px solid var(--line); border-radius:9px; padding:7px 11px; font-size:12px;}
+  .toolbar .spacer{flex:1;}
+
+  .list-area{padding:14px 24px 24px; display:flex; flex-direction:column; gap:10px;}
+  .task{border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#fff; display:flex; align-items:center; gap:14px; padding:12px 16px;}
+  .task:hover{background:#FAFBFD;}
+  .task.done{opacity:.6;}
+  .task.done .task-title{text-decoration:line-through; color:var(--ink-soft);}
+  .chk{width:20px; height:20px; border-radius:6px; border:2px solid var(--line); flex:0 0 auto; cursor:pointer; display:flex; align-items:center; justify-content:center; background:#fff;}
+  .chk.checked{background:var(--teal); border-color:var(--teal); color:#fff; font-size:13px;}
+  .task-main{flex:1; min-width:0;}
+  .task-title{font-weight:700; font-size:13.5px;}
+  .task-meta{display:flex; gap:12px; align-items:center; flex-wrap:wrap; font-size:11px; color:var(--ink-soft); margin-top:4px;}
+  .pill{padding:3px 10px; border-radius:20px; font-size:10.5px; font-weight:700;}
+  .pill.high{background:var(--crimson-bg); color:var(--crimson);}
+  .pill.med{background:var(--gold-bg); color:var(--gold);}
+  .pill.low{background:var(--teal-bg); color:var(--teal);}
+  .pill.list{background:#EEF2F8; color:var(--navy);}
+  .due{font-family:var(--mono);}
+  .due.overdue{color:var(--crimson); font-weight:700;}
+  .task-actions{display:flex; gap:6px; flex:0 0 auto;}
+  .icon-btn{background:#fff; border:1.5px solid var(--line); border-radius:8px; width:30px; height:30px; display:flex; align-items:center; justify-content:center; cursor:pointer; color:var(--ink-soft); font-size:14px;}
+  .icon-btn:hover{border-color:var(--navy); color:var(--navy);}
+  .icon-btn.del:hover{border-color:var(--crimson); color:var(--crimson);}
+  .empty{padding:40px; text-align:center; color:var(--ink-soft); font-size:13px;}
+
+  .lists-manage{padding:12px 24px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+  .lists-manage .chips{display:flex; gap:8px; flex-wrap:wrap;}
+  .list-chip{background:#EEF2F8; color:var(--navy); border-radius:20px; padding:5px 12px; font-size:11.5px; font-weight:600; display:flex; align-items:center; gap:6px;}
+  .list-chip .x{cursor:pointer; color:var(--ink-soft);}
+  .list-chip .x:hover{color:var(--crimson);}
+  .add-list{display:flex; gap:6px; align-items:center;}
+  .add-list input{width:150px;}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div>
+      <div class="eyebrow">إدارة المهام اليومية</div>
+      <h1>قوائم الأعمال</h1>
+      <div class="sub">أضف، رتّب، وتابع مهامك ضمن قوائم متعددة — مع أولوية وتاريخ استحقاق وحالة إنجاز.</div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+
+    <div class="input-panel">
+      <h2><span class="num">1</span> إضافة مهمة جديدة</h2>
+      <div class="form-grid">
+        <div class="field">
+          <label>عنوان المهمة</label>
+          <input type="text" id="taskTitle" placeholder="اكتب المهمة هنا...">
+        </div>
+        <div class="field">
+          <label>القائمة</label>
+          <select id="taskList"></select>
+        </div>
+        <div class="field">
+          <label>الأولوية</label>
+          <select id="taskPriority">
+            <option value="high">عالية</option>
+            <option value="med" selected>متوسطة</option>
+            <option value="low">منخفضة</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>تاريخ الاستحقاق</label>
+          <input type="date" id="taskDue">
+        </div>
+        <button class="btn-primary" id="addTaskBtn">إضافة</button>
+      </div>
+    </div>
+
+    <div class="lists-manage">
+      <b style="font-size:12px;color:var(--ink-soft);">القوائم:</b>
+      <div class="chips" id="listChips"></div>
+      <div class="add-list">
+        <input type="text" id="newListName" placeholder="قائمة جديدة...">
+        <button class="btn-ghost btn-sm" id="addListBtn">+ إضافة قائمة</button>
+      </div>
+    </div>
+
+    <div class="summary">
+      <div class="stat"><div class="lbl">إجمالي المهام</div><div class="val" id="statTotal">0</div></div>
+      <div class="stat good"><div class="lbl">مُنجزة</div><div class="val" id="statDone">0</div></div>
+      <div class="stat grace"><div class="lbl">قيد التنفيذ</div><div class="val" id="statPending">0</div></div>
+      <div class="stat warn"><div class="lbl">متأخرة</div><div class="val" id="statOverdue">0</div></div>
+    </div>
+    <div class="progress-wrap">
+      <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+    </div>
+
+    <div class="toolbar">
+      <div class="seg" id="statusFilter">
+        <button class="active" data-f="all">الكل</button>
+        <button data-f="pending">قيد التنفيذ</button>
+        <button data-f="done">مُنجزة</button>
+      </div>
+      <select class="list-filter" id="listFilter"><option value="all">كل القوائم</option></select>
+      <div class="spacer"></div>
+      <input type="text" class="search" id="searchBox" placeholder="بحث عن مهمة...">
+    </div>
+
+    <div class="list-area" id="listArea"></div>
+
+  </section>
+</main>
+
+<script>
+(function(){
+  const STORAGE_KEY = 'amal_task_lists_v1';
+  const LISTS_KEY = 'amal_task_lists_names_v1';
+
+  let tasks = [];
+  let lists = ['عام'];
+  let statusFilter = 'all';
+  let listFilterVal = 'all';
+  let searchVal = '';
+
+  function load(){
+    try{
+      const t = localStorage.getItem(STORAGE_KEY);
+      const l = localStorage.getItem(LISTS_KEY);
+      tasks = t ? JSON.parse(t) : [];
+      lists = l ? JSON.parse(l) : ['عام'];
+      if(!lists.length) lists = ['عام'];
+    }catch(e){ tasks = []; lists = ['عام']; }
+  }
+  function save(){
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(tasks));
+    localStorage.setItem(LISTS_KEY, JSON.stringify(lists));
+  }
+
+  function uid(){ return Math.random().toString(36).slice(2,10)+Date.now().toString(36); }
+
+  function todayStr(){
+    const d = new Date();
+    return d.toISOString().slice(0,10);
+  }
+
+  function priorityLabel(p){ return p==='high' ? 'عالية' : p==='low' ? 'منخفضة' : 'متوسطة'; }
+
+  function renderListSelects(){
+    const taskListSel = document.getElementById('taskList');
+    const listFilterSel = document.getElementById('listFilter');
+    taskListSel.innerHTML = lists.map(l => `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`).join('');
+    const prevFilter = listFilterVal;
+    listFilterSel.innerHTML = '<option value="all">كل القوائم</option>' + lists.map(l => `<option value="${escapeHtml(l)}">${escapeHtml(l)}</option>`).join('');
+    listFilterSel.value = lists.includes(prevFilter) ? prevFilter : 'all';
+    listFilterVal = listFilterSel.value;
+  }
+
+  function renderChips(){
+    const wrap = document.getElementById('listChips');
+    wrap.innerHTML = lists.map(l => `
+      <span class="list-chip" data-list="${escapeHtml(l)}">
+        ${escapeHtml(l)}
+        <span class="x" data-del-list="${escapeHtml(l)}">✕</span>
+      </span>
+    `).join('');
+    wrap.querySelectorAll('[data-del-list]').forEach(el => {
+      el.addEventListener('click', () => {
+        const name = el.getAttribute('data-del-list');
+        if(lists.length <= 1){ alert('يجب الاحتفاظ بقائمة واحدة على الأقل.'); return; }
+        if(tasks.some(t => t.list === name)){
+          if(!confirm(`القائمة "${name}" تحتوي على مهام. سيتم نقل المهام إلى القائمة الأولى المتبقية. متابعة؟`)) return;
+        }
+        lists = lists.filter(l => l !== name);
+        const fallback = lists[0];
+        tasks.forEach(t => { if(t.list === name) t.list = fallback; });
+        save(); renderAll();
+      });
+    });
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function filteredTasks(){
+    return tasks.filter(t => {
+      if(statusFilter === 'pending' && t.done) return false;
+      if(statusFilter === 'done' && !t.done) return false;
+      if(listFilterVal !== 'all' && t.list !== listFilterVal) return false;
+      if(searchVal && !t.title.toLowerCase().includes(searchVal.toLowerCase())) return false;
+      return true;
+    }).sort((a,b) => {
+      if(a.done !== b.done) return a.done ? 1 : -1;
+      const order = {high:0, med:1, low:2};
+      if(order[a.priority] !== order[b.priority]) return order[a.priority]-order[b.priority];
+      return (a.due||'9999').localeCompare(b.due||'9999');
+    });
+  }
+
+  function renderStats(){
+    const total = tasks.length;
+    const done = tasks.filter(t => t.done).length;
+    const pending = total - done;
+    const today = todayStr();
+    const overdue = tasks.filter(t => !t.done && t.due && t.due < today).length;
+    document.getElementById('statTotal').textContent = total;
+    document.getElementById('statDone').textContent = done;
+    document.getElementById('statPending').textContent = pending;
+    document.getElementById('statOverdue').textContent = overdue;
+    document.getElementById('progressFill').style.width = total ? Math.round(done/total*100)+'%' : '0%';
+  }
+
+  function renderTasks(){
+    const area = document.getElementById('listArea');
+    const items = filteredTasks();
+    if(!items.length){
+      area.innerHTML = '<div class="empty">لا توجد مهام مطابقة. أضف مهمة جديدة من الأعلى.</div>';
+      return;
+    }
+    const today = todayStr();
+    area.innerHTML = items.map(t => {
+      const overdue = !t.done && t.due && t.due < today;
+      return `
+      <div class="task ${t.done?'done':''}" data-id="${t.id}">
+        <div class="chk ${t.done?'checked':''}" data-toggle="${t.id}">${t.done?'✓':''}</div>
+        <div class="task-main">
+          <div class="task-title">${escapeHtml(t.title)}</div>
+          <div class="task-meta">
+            <span class="pill list">${escapeHtml(t.list)}</span>
+            <span class="pill ${t.priority}">${priorityLabel(t.priority)}</span>
+            ${t.due ? `<span class="due ${overdue?'overdue':''}">${overdue?'متأخرة — ':''}${t.due}</span>` : ''}
+          </div>
+        </div>
+        <div class="task-actions">
+          <div class="icon-btn del" data-del="${t.id}" title="حذف">🗑</div>
+        </div>
+      </div>`;
+    }).join('');
+
+    area.querySelectorAll('[data-toggle]').forEach(el => {
+      el.addEventListener('click', () => {
+        const id = el.getAttribute('data-toggle');
+        const t = tasks.find(x => x.id === id);
+        if(t){ t.done = !t.done; save(); renderAll(); }
+      });
+    });
+    area.querySelectorAll('[data-del]').forEach(el => {
+      el.addEventListener('click', () => {
+        const id = el.getAttribute('data-del');
+        tasks = tasks.filter(x => x.id !== id);
+        save(); renderAll();
+      });
+    });
+  }
+
+  function renderAll(){
+    renderListSelects();
+    renderChips();
+    renderStats();
+    renderTasks();
+  }
+
+  function addTask(){
+    const titleEl = document.getElementById('taskTitle');
+    const title = titleEl.value.trim();
+    if(!title){ titleEl.focus(); return; }
+    const list = document.getElementById('taskList').value || lists[0];
+    const priority = document.getElementById('taskPriority').value;
+    const due = document.getElementById('taskDue').value;
+    tasks.push({ id: uid(), title, list, priority, due, done:false, createdAt: todayStr() });
+    titleEl.value = '';
+    document.getElementById('taskDue').value = '';
+    save(); renderAll();
+    titleEl.focus();
+  }
+
+  function addList(){
+    const el = document.getElementById('newListName');
+    const name = el.value.trim();
+    if(!name) return;
+    if(lists.includes(name)){ el.value=''; return; }
+    lists.push(name);
+    el.value = '';
+    save(); renderAll();
+  }
+
+  document.getElementById('addTaskBtn').addEventListener('click', addTask);
+  document.getElementById('taskTitle').addEventListener('keydown', e => { if(e.key === 'Enter') addTask(); });
+  document.getElementById('addListBtn').addEventListener('click', addList);
+  document.getElementById('newListName').addEventListener('keydown', e => { if(e.key === 'Enter') addList(); });
+
+  document.getElementById('statusFilter').addEventListener('click', e => {
+    const btn = e.target.closest('button[data-f]');
+    if(!btn) return;
+    statusFilter = btn.getAttribute('data-f');
+    [...document.getElementById('statusFilter').children].forEach(b => b.classList.toggle('active', b===btn));
+    renderTasks();
+  });
+  document.getElementById('listFilter').addEventListener('change', e => { listFilterVal = e.target.value; renderTasks(); });
+  document.getElementById('searchBox').addEventListener('input', e => { searchVal = e.target.value; renderTasks(); });
+
+  load();
+  renderAll();
+})();
+</script>
+
+</body>
+</html>
