@@ -135,6 +135,12 @@
   .rm-tag{margin-inline-start:auto; font-size:10.5px; padding:3px 9px; border-radius:20px; background:#fff; border:1px solid var(--line); color:var(--ink-soft); flex:none;}
   .rm-item.done .rm-tag{background:var(--teal); color:#fff; border-color:var(--teal);}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>
+  if(window.pdfjsLib){
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
+</script>
 </head>
 <body>
 
@@ -155,6 +161,7 @@
   <div style="display:flex; gap:8px; margin:16px 0 -4px; position:relative; z-index:3; align-items:center; flex-wrap:wrap;">
     <button class="btn-primary" id="pageTabMapping" onclick="switchPage('mapping')" style="border-radius:9px 9px 0 0;">🔗 ربط الأصناف</button>
     <button class="btn-ghost" id="pageTabInvoices" onclick="switchPage('invoices')" style="border-radius:9px 9px 0 0;">🧾 تصميم ترتيب الفواتير</button>
+    <button class="btn-ghost" id="pageTabStatement" onclick="switchPage('statement')" style="border-radius:9px 9px 0 0;">📥 كشف المؤسسة الشهري</button>
     <button class="btn-ghost" id="pageTabPrint" onclick="switchPage('print')" style="border-radius:9px 9px 0 0;">🖨️ طباعة الفواتير</button>
     <button class="btn-ghost" id="pageTabTransfers" onclick="switchPage('transfers')" style="border-radius:9px 9px 0 0;">🔄 سندات التحويل (011)</button>
     <button class="btn-ghost" id="pageTabRoadmap" onclick="switchPage('roadmap')" style="border-radius:9px 9px 0 0;">🗺️ خارطة المراحل</button>
@@ -245,6 +252,49 @@
     <div class="list" id="invoicesList"></div>
   </section>
 
+  <!-- ============ صفحة كشف المؤسسة الشهري ============ -->
+  <section class="panel" id="statementPage" style="display:none;">
+    <div class="input-panel">
+      <details class="opt" id="stImportDetails" open>
+        <summary><span class="num">1</span>&nbsp; استيراد كشف المؤسسة الشهري</summary>
+        <div class="hint" style="margin-top:8px;">
+          الصق نتيجة الكشف مباشرة (نسخ من الإكسل/التقرير — لازم صف عناوين بالضبط متل تحت)، أو ارفع ملف PDF وبيتاستخرج النص تلقائياً بصندوق اللصق (راجعه قبل الاستيراد لأن الاستخراج آلي وممكن يحتاج تصحيح بسيط). الصور/المسحيات مش مدعومة آلياً حالياً (القراءة الضوئية للأرقام مو موثوقة كفاية لبيانات مالية) — لو معك بس صورة، اعرضها جنب الصندوق واكتب/الصق الأرقام يدوياً.
+          <code class="block">ت	رقم المادة	اسم المادة	رقم الاتفاقية	امانات	غير مورد	السعر	كمية الصرف	كمية عمان	كمية العقبة	القيمة الإجمالية
+1	11377164	امريكان هيرتاج جبن شيدر حاد 226.79غم	2026310070	0	0	2.79	596	596	0	1,662.84</code>
+        </div>
+        <textarea id="stPasteArea" placeholder="الصق هنا الكشف..."></textarea>
+        <div class="row-actions">
+          <button class="btn-primary" onclick="importStatement()">استيراد / تحديث</button>
+          <button class="btn-ghost" onclick="document.getElementById('stPasteArea').value=''">تفريغ الصندوق</button>
+          <label class="btn-ghost btn-sm" style="cursor:pointer; display:inline-flex; align-items:center;">
+            📄 استخراج من PDF
+            <input type="file" id="stPdfInput" accept="application/pdf" style="display:none;" onchange="handleStatementPdf(event)">
+          </label>
+          <label class="btn-ghost btn-sm" style="cursor:pointer; display:inline-flex; align-items:center;">
+            🖼️ عرض صورة مرجعية
+            <input type="file" id="stImgInput" accept="image/*" style="display:none;" onchange="handleStatementImage(event)">
+          </label>
+          <button class="btn-danger" onclick="clearStatement()">مسح الكشف</button>
+          <span class="status-msg" id="stStatusMsg"></span>
+        </div>
+        <img id="stImgPreview" style="display:none; max-width:100%; margin-top:10px; border:1px solid var(--line); border-radius:8px;">
+      </details>
+    </div>
+
+    <div class="summary" id="stSummaryRow" style="display:none;"></div>
+
+    <div class="input-panel" style="border-bottom:1px solid var(--line);">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;"><span class="num">2</span><b style="font-size:13px;">توزيع الكميات على الفواتير</b></div>
+      <div class="hint">بتوزّع "كمية عمان" على فواتير كل مجموعة عادية، و"كمية العقبة" على فواتير مجموعة العقبة — كل صنف بينحط بالفاتورة يلي مضاف فيها بصفحة "تصميم ترتيب الفواتير". هاي العملية بتستبدل أي كمية مدخلة يدوياً حالياً بصفحة الطباعة لنفس الأصناف.</div>
+      <div class="row-actions">
+        <button class="btn-primary" onclick="distributeStatement()">توزيع الكميات الآن</button>
+        <span class="status-msg" id="stDistMsg"></span>
+      </div>
+    </div>
+
+    <div id="stResultsArea" style="padding:0 24px 24px;"></div>
+  </section>
+
   <!-- ============ صفحة طباعة الفواتير ============ -->
   <section class="panel" id="printPage" style="display:none;">
     <div class="grp-tabs" id="printGrpTabs"></div>
@@ -323,12 +373,12 @@ ORDER BY T0."DocNum"</code>
       </div>
       <div class="rm-item">
         <span class="rm-num">2</span>
-        <div class="rm-txt"><b>رفع كشف المؤسسة الشهري وتفريغه</b><span>رفع كشف المؤسسة (لصق / إكسل بشكل موثوق، PDF وصورة تحتاج عيّنة فعلية لضبط القراءة) وتفريغه تلقائياً بعمودين: العقبة، وباقي المملكة — بالكميات لكل رمز صنف عند المؤسسة.</span></div>
-        <span class="rm-tag">قادمة</span>
+        <div class="rm-txt"><b>رفع كشف المؤسسة الشهري وتوزيع كمياته على الفواتير</b><span>استيراد الكشف (لصق موثوق دايماً، أو رفع PDF فيه طبقة نص فيستخرج تلقائياً للمراجعة) ثم توزيع "كمية عمان" و"كمية العقبة" مباشرة على الفاتورة يلي كل صنف مضاف فيها — بدون أي حساب يدوي. الصور/المسحيات ما إلها استخراج آلي حالياً (خطر أخطاء بالأرقام)، بتنعرض للمرجعية بس.</span></div>
+        <span class="rm-tag">جاهزة</span>
       </div>
       <div class="rm-item done">
         <span class="rm-num">3</span>
-        <div class="rm-txt"><b>طباعة الفواتير بالتنسيق الرسمي (كميات يدوية حالياً)</b><span>محرك طباعة مطابق تماماً لنموذج الفاتورة الفعلي (رأسية الشركة، الضريبة، سعر بيع المؤسسة، المجموع بالحروف). حالياً الكمية تُدخل يدوياً لكل صنف — بمرحلة 2 رح تنعبى تلقائياً من كشف المؤسسة الشهري.</span></div>
+        <div class="rm-txt"><b>طباعة الفواتير بالتنسيق الرسمي</b><span>محرك طباعة مطابق تماماً لنموذج الفاتورة الفعلي (رأسية الشركة، الضريبة، سعر بيع المؤسسة، المجموع بالحروف). الكمية تتعبى تلقائياً من مرحلة 2 (توزيع الكشف)، أو تقدر تعدّلها/تدخلها يدوياً لأي فاتورة.</span></div>
         <span class="rm-tag">جاهزة</span>
       </div>
       <div class="rm-item">
@@ -369,6 +419,7 @@ let currentGroupId = null;
 let currentPage = 'mapping';
 let openPicker = null; // invoiceId currently showing item picker
 let TRANSFERS = []; // {docNum, docDate, fromWhs, toWhs, ourCode, ourName, qty, uom}
+let STATEMENT = []; // {theirCode, theirName, agreementNo, amanat, ghairMawrid, price, qtyDispatch, qtyAmman, qtyAqaba, totalValue}
 
 function itemKey(it){ return it.ourCode + '|' + it.theirCode; }
 function findItem(key){ return ITEMS.find(it => itemKey(it) === key); }
@@ -381,6 +432,7 @@ function loadState(){
       ITEMS = Array.isArray(d.ITEMS) ? d.ITEMS : [];
       GROUPS = Array.isArray(d.GROUPS) ? d.GROUPS : [];
       TRANSFERS = Array.isArray(d.TRANSFERS) ? d.TRANSFERS : [];
+      STATEMENT = Array.isArray(d.STATEMENT) ? d.STATEMENT : [];
     }
   }catch(e){ console.warn('تعذر تحميل البيانات المحفوظة', e); }
   if(!localStorage.getItem(STORAGE_KEY)){
@@ -407,14 +459,14 @@ function ensureInvoiceDefaults(inv){
   if(!inv.qty) inv.qty={};
 }
 function saveState(){
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS})); }
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT})); }
   catch(e){ console.warn('تعذر الحفظ المحلي', e); }
 }
 
 /* ==================== تنقّل الصفحات ==================== */
 function switchPage(p){
   currentPage = p;
-  ['mapping','invoices','print','transfers','roadmap'].forEach(k=>{
+  ['mapping','invoices','statement','print','transfers','roadmap'].forEach(k=>{
     document.getElementById(k+'Page').style.display = (k===p) ? 'block' : 'none';
     const tab = document.getElementById('pageTab'+k.charAt(0).toUpperCase()+k.slice(1));
     tab.className = (k===p) ? 'btn-primary' : 'btn-ghost';
@@ -422,6 +474,7 @@ function switchPage(p){
   });
   if(p==='mapping') renderMappingTable();
   if(p==='invoices') renderInvoicesPage();
+  if(p==='statement') renderStatementPage();
   if(p==='print') renderPrintPage();
   if(p==='transfers') renderTransfersPage();
 }
@@ -1109,9 +1162,161 @@ function renderTransfersPage(){
   flash('trStatusMsg', `${TRANSFERS.length} سطر تحويل محفوظ حالياً.`, true);
 }
 
+/* ==================== كشف المؤسسة الشهري ==================== */
+const ST_HEADER_ALIASES = {
+  'ت':null, 'رقم المادة':'theirCode', 'اسم المادة':'theirName',
+  'رقم الاتفاقية':'agreementNo', 'امانات':'amanat', 'غير مورد':'ghairMawrid',
+  'السعر':'price', 'كمية الصرف':'qtyDispatch', 'كمية عمان':'qtyAmman',
+  'كمية العقبة':'qtyAqaba', 'القيمة الإجمالية':'totalValue'
+};
+const ST_NUM_FIELDS = ['amanat','ghairMawrid','price','qtyDispatch','qtyAmman','qtyAqaba','totalValue'];
+
+function importStatement(){
+  const raw = document.getElementById('stPasteArea').value;
+  const lines = raw.split(/\r?\n/).filter(l=>l.trim().length>0);
+  if(lines.length<2){ flash('stStatusMsg','لازم صف عناوين على الأقل + صف بيانات وحدة.', false); return; }
+  const headers = lines[0].split('\t').map(h=>h.trim());
+  const keys = headers.map(h=> h in ST_HEADER_ALIASES ? ST_HEADER_ALIASES[h] : null);
+  if(!keys.includes('theirCode')){
+    flash('stStatusMsg','لازم يكون فيه عمود "رقم المادة" بالعناوين.', false); return;
+  }
+  STATEMENT = [];
+  for(let i=1;i<lines.length;i++){
+    const cells = lines[i].split('\t');
+    const rec = {};
+    keys.forEach((k,idx)=>{ if(k) rec[k]=(cells[idx]||'').trim(); });
+    if(!rec.theirCode) continue;
+    ST_NUM_FIELDS.forEach(f=>{ rec[f] = rec[f]!==undefined ? parseNum(rec[f]) : 0; });
+    rec.theirName = rec.theirName || '';
+    rec.agreementNo = rec.agreementNo || '';
+    STATEMENT.push(rec);
+  }
+  saveState();
+  document.getElementById('stPasteArea').value = '';
+  document.getElementById('stImportDetails').open = false;
+  renderStatementPage();
+  flash('stStatusMsg', `تم استيراد ${STATEMENT.length} صنف من الكشف.`, true);
+}
+function clearStatement(){
+  if(!confirm('مسح الكشف المستورد بالكامل؟')) return;
+  STATEMENT = [];
+  saveState();
+  document.getElementById('stImportDetails').open = true;
+  renderStatementPage();
+  flash('stStatusMsg','تم مسح الكشف.', true);
+}
+
+async function handleStatementPdf(evt){
+  const file = evt.target.files[0];
+  if(!file) return;
+  if(!window.pdfjsLib){ flash('stStatusMsg','مكتبة قراءة PDF ما تحمّلت (تحتاج اتصال إنترنت أول مرة).', false); evt.target.value=''; return; }
+  flash('stStatusMsg','جارِ استخراج النص من PDF...', true);
+  try{
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+    const rows = [];
+    for(let p=1;p<=pdf.numPages;p++){
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      content.items.forEach(it=>{
+        const x = it.transform[4], y = Math.round(it.transform[5]);
+        let row = rows.find(r=> r.page===p && Math.abs(r.y-y)<3);
+        if(!row){ row={page:p, y, items:[]}; rows.push(row); }
+        row.items.push({x, str:it.str});
+      });
+    }
+    rows.sort((a,b)=> a.page-b.page || b.y-a.y);
+    const lines = rows.map(r=> r.items.sort((a,b)=>b.x-a.x).map(i=>i.str.trim()).filter(Boolean).join('\t')).filter(Boolean);
+    document.getElementById('stPasteArea').value = lines.join('\n');
+    document.getElementById('stImportDetails').open = true;
+    flash('stStatusMsg','تم استخراج النص من PDF — راجعه وصحّح ترتيب الأعمدة لو لزم قبل ما تضغط استيراد.', true);
+  }catch(e){
+    flash('stStatusMsg','تعذر قراءة ملف الـ PDF: '+e.message, false);
+  }
+  evt.target.value = '';
+}
+function handleStatementImage(evt){
+  const file = evt.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e=>{
+    const img = document.getElementById('stImgPreview');
+    img.src = e.target.result;
+    img.style.display = 'block';
+    document.getElementById('stImportDetails').open = true;
+    flash('stStatusMsg','الصورة معروضة تحت للمرجعية — اكتب/الصق الأرقام يدوياً بالصندوق (ما في قراءة ضوئية آلية للصور حالياً لأنها مو موثوقة لبيانات مالية).', true);
+  };
+  reader.readAsDataURL(file);
+  evt.target.value = '';
+}
+
+function distributeStatement(){
+  if(!STATEMENT.length){ flash('stDistMsg','استورد الكشف أول.', false); return; }
+  if(!confirm('رح تستبدل هاي العملية أي كمية مدخلة يدوياً حالياً بصفحة "طباعة الفواتير" لنفس الأصناف. متابعة؟')) return;
+
+  let placed = 0;
+  const unmapped = [], unassigned = [];
+  STATEMENT.forEach(row=>{
+    const it = ITEMS.find(x=>x.theirCode===row.theirCode);
+    if(!it){ unmapped.push(row); return; }
+    const key = itemKey(it);
+    let foundAny = false;
+    GROUPS.forEach(g=>{
+      const targetQty = isAqabaGroup(g) ? row.qtyAqaba : row.qtyAmman;
+      const inv = g.invoices.find(iv=>iv.itemKeys.includes(key));
+      if(inv){
+        ensureInvoiceDefaults(inv);
+        inv.qty[key] = targetQty;
+        foundAny = true; placed++;
+      }
+    });
+    if(!foundAny && (row.qtyAmman || row.qtyAqaba)){
+      unassigned.push({...row, ourCode:it.ourCode, ourName:it.ourName});
+    }
+  });
+  saveState();
+  renderStatementPage();
+  renderPrintPage();
+  flash('stDistMsg', `تم توزيع ${placed} سطر على الفواتير.`, true);
+
+  const box = document.getElementById('stResultsArea');
+  let html = `<div class="card good" style="margin-bottom:12px;"><div class="lbl">نتيجة التوزيع</div><div class="val" style="font-size:14px;">تم توزيع الكمية على ${placed} سطر فاتورة بنجاح.</div></div>`;
+  if(unmapped.length){
+    html += `<div class="hint" style="color:var(--crimson); font-weight:700; margin-top:14px;">⚠ أصناف بالكشف مش موجودة بجدول الربط (${unmapped.length}) — ضيفها بصفحة "ربط الأصناف":</div>`;
+    html += `<table class="grid" style="margin-top:6px;"><thead><tr><th>رمز المادة</th><th>اسم المادة</th><th>كمية عمان</th><th>كمية العقبة</th></tr></thead><tbody>` +
+      unmapped.map(r=>`<tr><td class="mono">${esc(r.theirCode)}</td><td>${esc(r.theirName)}</td><td class="mono">${fmtNum(r.qtyAmman)}</td><td class="mono">${fmtNum(r.qtyAqaba)}</td></tr>`).join('') +
+      `</tbody></table>`;
+  }
+  if(unassigned.length){
+    html += `<div class="hint" style="color:var(--gold); font-weight:700; margin-top:14px;">◐ أصناف مربوطة بس مش مضافة لأي فاتورة بعد (${unassigned.length}) — ضيفها بصفحة "تصميم ترتيب الفواتير":</div>`;
+    html += `<table class="grid" style="margin-top:6px;"><thead><tr><th>رمز المادة</th><th>اسم المادة</th><th>رمزنا</th><th>اسمنا</th><th>كمية عمان</th><th>كمية العقبة</th></tr></thead><tbody>` +
+      unassigned.map(r=>`<tr><td class="mono">${esc(r.theirCode)}</td><td>${esc(r.theirName)}</td><td class="mono">${esc(r.ourCode)}</td><td>${esc(r.ourName)}</td><td class="mono">${fmtNum(r.qtyAmman)}</td><td class="mono">${fmtNum(r.qtyAqaba)}</td></tr>`).join('') +
+      `</tbody></table>`;
+  }
+  box.innerHTML = html;
+}
+
+function renderStatementPage(){
+  if(!STATEMENT.length){
+    document.getElementById('stSummaryRow').style.display = 'none';
+    document.getElementById('stResultsArea').innerHTML = '';
+    return;
+  }
+  const totalAmman = STATEMENT.reduce((s,r)=>s+r.qtyAmman,0);
+  const totalAqaba = STATEMENT.reduce((s,r)=>s+r.qtyAqaba,0);
+  const totalValue = STATEMENT.reduce((s,r)=>s+r.totalValue,0);
+  document.getElementById('stSummaryRow').style.display = '';
+  document.getElementById('stSummaryRow').innerHTML = `
+    <div class="card"><div class="lbl">عدد أصناف الكشف</div><div class="val">${STATEMENT.length}</div></div>
+    <div class="card"><div class="lbl">إجمالي كمية عمان</div><div class="val">${fmtNum(totalAmman)}</div></div>
+    <div class="card"><div class="lbl">إجمالي كمية العقبة</div><div class="val">${fmtNum(totalAqaba)}</div></div>
+    <div class="card"><div class="lbl">القيمة الإجمالية</div><div class="val">${fmtNum(totalValue)}</div></div>
+  `;
+}
+
 /* ==================== نسخ احتياطي ==================== */
 function downloadBackup(){
-  const data = {version:1, exportedAt: new Date().toISOString(), ITEMS, GROUPS};
+  const data = {version:1, exportedAt: new Date().toISOString(), ITEMS, GROUPS, TRANSFERS, STATEMENT};
   const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1129,6 +1334,9 @@ function restoreBackup(evt){
       const d = JSON.parse(e.target.result);
       if(!Array.isArray(d.ITEMS) || !Array.isArray(d.GROUPS)) throw new Error('bad format');
       ITEMS = d.ITEMS; GROUPS = d.GROUPS;
+      TRANSFERS = Array.isArray(d.TRANSFERS) ? d.TRANSFERS : [];
+      STATEMENT = Array.isArray(d.STATEMENT) ? d.STATEMENT : [];
+      GROUPS.forEach(g=>{ ensureGroupDefaults(g); (g.invoices||[]).forEach(ensureInvoiceDefaults); });
       currentGroupId = GROUPS[0] ? GROUPS[0].id : null;
       saveState();
       renderMappingTable();
