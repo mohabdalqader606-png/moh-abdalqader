@@ -136,6 +136,7 @@
   .rm-item.done .rm-tag{background:var(--teal); color:#fff; border-color:var(--teal);}
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
   if(window.pdfjsLib){
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -351,15 +352,40 @@ ORDER BY T0."DocNum"</code>
       </div>
     </div>
 
+    <div class="input-panel" style="border-bottom:1px solid var(--line);">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;"><span class="num">3</span><b style="font-size:13px;">سجل فواتير الصرف الوهمي</b></div>
+      <div class="hint">سجّل رقم/تاريخ/فرع/مبلغ كل فاتورة صرف وهمي وصلتك (تقدر تضيف أكثر من فاتورة — 3 أو 4 أو أكثر)، وبعدين صدّرهم كشف Excel لأي فترة تختارها.</div>
+      <div class="tbl-wrap" style="max-height:260px; padding:0; margin-top:6px;">
+        <table class="grid" id="dummyInvTable">
+          <thead><tr><th>رقم الفاتورة</th><th>التاريخ</th><th>اسم الفرع</th><th>المبلغ</th><th></th></tr></thead>
+          <tbody id="dummyInvTbody"></tbody>
+        </table>
+      </div>
+      <div class="row-actions">
+        <button class="btn-ghost btn-sm" onclick="addDummyInvoiceRow()">+ إضافة فاتورة</button>
+      </div>
+      <div class="hint" style="margin-top:10px;">تصدير كشف Excel (تسلسل / تاريخ / اسم الفرع / رقم الفاتورة / المبلغ) — اختياري لفترة معيّنة:</div>
+      <div class="row-actions">
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">من تاريخ <input type="date" id="dummyExportFrom"></label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">إلى تاريخ <input type="date" id="dummyExportTo"></label>
+        <button class="btn-primary btn-sm" onclick="exportDummyInvoicesExcel()">📊 تصدير Excel</button>
+        <span class="status-msg" id="dummyExportMsg"></span>
+      </div>
+    </div>
+
     <div class="summary" id="trSummaryRow" style="display:none;"></div>
     <div id="trVoucherHeaders" style="padding:0 24px;"></div>
+    <div class="toolbar" id="trTableToolbar" style="display:none; border-bottom:none;">
+      <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="trHideOurName" onchange="toggleOurNameCol()"> إخفاء عمود "اسمنا"</label>
+    </div>
     <div class="tbl-wrap">
       <table class="grid" id="trResultTable" style="display:none;">
         <thead>
           <tr>
             <th>رمز الصنف لدى المؤسسة</th><th>اسم الصنف لدى المؤسسة</th>
-            <th>رمزنا</th><th>اسمنا</th>
+            <th>رمزنا</th><th id="thOurName">اسمنا</th>
             <th>الكمية عندنا (وحدتنا)</th><th>الكمية لدى المؤسسة (حبة)</th>
+            <th>سعر المستودع</th><th>المجموع</th>
           </tr>
         </thead>
         <tbody id="trResultTbody"></tbody>
@@ -425,6 +451,8 @@ let currentPage = 'mapping';
 let openPicker = null; // invoiceId currently showing item picker
 let TRANSFERS = []; // {docNum, docDate, fromWhs, toWhs, ourCode, ourName, qty, uom}
 let STATEMENT = []; // {theirCode, theirName, agreementNo, amanat, ghairMawrid, price, qtyDispatch, qtyAmman, qtyAqaba, totalValue}
+let DUMMY_INVOICES = []; // {id, docNum, date, branch, amount}
+let lastTrMatch = null; // {mappedRows, unmapped} كاش آخر مطابقة، لإعادة الرسم عند تبديل إخفاء عمود اسمنا
 
 function itemKey(it){ return it.ourCode + '|' + it.theirCode; }
 function findItem(key){ return ITEMS.find(it => itemKey(it) === key); }
@@ -438,6 +466,7 @@ function loadState(){
       GROUPS = Array.isArray(d.GROUPS) ? d.GROUPS : [];
       TRANSFERS = Array.isArray(d.TRANSFERS) ? d.TRANSFERS : [];
       STATEMENT = Array.isArray(d.STATEMENT) ? d.STATEMENT : [];
+      DUMMY_INVOICES = Array.isArray(d.DUMMY_INVOICES) ? d.DUMMY_INVOICES : [];
     }
   }catch(e){ console.warn('تعذر تحميل البيانات المحفوظة', e); }
   if(!localStorage.getItem(STORAGE_KEY)){
@@ -464,7 +493,7 @@ function ensureInvoiceDefaults(inv){
   if(!inv.qty) inv.qty={};
 }
 function saveState(){
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT})); }
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES})); }
   catch(e){ console.warn('تعذر الحفظ المحلي', e); }
 }
 
@@ -1189,10 +1218,12 @@ function matchTransferVouchers(){
   Object.values(grouped).forEach(g=>{
     const it = ITEMS.find(x=>x.ourCode===g.ourCode);
     if(it){
+      const theirQty = g.qty * (it.factor||1);
+      const whsPrice = it.whsPricePiece||0;
       mappedRows.push({
         theirCode: it.theirCode, theirName: it.theirName,
         ourCode: g.ourCode, ourName: it.ourName || g.ourName,
-        ourQty: g.qty, theirQty: g.qty * (it.factor||1)
+        ourQty: g.qty, theirQty, whsPrice, total: theirQty*whsPrice
       });
     }else{
       unmapped.push({ourCode:g.ourCode, ourName:g.ourName, ourQty:g.qty});
@@ -1204,37 +1235,107 @@ function matchTransferVouchers(){
     return String(a.theirCode).localeCompare(String(b.theirCode),'ar');
   });
 
+  lastTrMatch = {mappedRows, unmapped};
+  document.getElementById('trTableToolbar').style.display = '';
+  renderTransferResultTable();
+
+  const grandTotal = mappedRows.reduce((s,r)=>s+r.total, 0);
+  document.getElementById('trSummaryRow').style.display = '';
+  document.getElementById('trSummaryRow').innerHTML = `
+    <div class="card"><div class="lbl">عدد السندات المطابقة</div><div class="val">${voucherMap.size}</div></div>
+    <div class="card"><div class="lbl">عدد الأصناف</div><div class="val">${mappedRows.length + unmapped.length}</div></div>
+    <div class="card ${unmapped.length?'warn':'good'}"><div class="lbl">أصناف غير مربوطة</div><div class="val">${unmapped.length}</div></div>
+    <div class="card"><div class="lbl">إجمالي القيمة (سعر المستودع)</div><div class="val">${fmtNum(grandTotal)}</div></div>
+  `;
+  flash('trMatchMsg', `تمت المطابقة: ${voucherMap.size} سند، ${mappedRows.length+unmapped.length} صنف.`, true);
+}
+
+function renderTransferResultTable(){
+  if(!lastTrMatch) return;
+  const {mappedRows, unmapped} = lastTrMatch;
+  const hideOurName = document.getElementById('trHideOurName').checked;
+  document.getElementById('thOurName').style.display = hideOurName ? 'none' : '';
+
   const tbody = document.getElementById('trResultTbody');
+  const ourNameTd = (name)=> hideOurName ? '' : `<td>${esc(name)}</td>`;
   let rowsHtml = mappedRows.map(r=>`<tr>
     <td class="mono">${esc(r.theirCode)}</td>
     <td>${esc(r.theirName)}</td>
     <td class="mono">${esc(r.ourCode)}</td>
-    <td>${esc(r.ourName)}</td>
+    ${ourNameTd(r.ourName)}
     <td class="mono">${fmtNum(r.ourQty)}</td>
     <td class="mono">${fmtNum(r.theirQty)}</td>
+    <td class="mono">${fmt4(r.whsPrice)}</td>
+    <td class="mono">${fmt3(r.total)}</td>
   </tr>`).join('');
   rowsHtml += unmapped.map(r=>`<tr style="background:var(--crimson-bg);">
     <td colspan="2" class="muted">⚠ غير مربوط بجدول الربط — ضيفه بصفحة "ربط الأصناف"</td>
     <td class="mono">${esc(r.ourCode)}</td>
-    <td>${esc(r.ourName)}</td>
+    ${ourNameTd(r.ourName)}
     <td class="mono">${fmtNum(r.ourQty)}</td>
+    <td class="mono">—</td>
+    <td class="mono">—</td>
     <td class="mono">—</td>
   </tr>`).join('');
   tbody.innerHTML = rowsHtml;
 
   document.getElementById('trResultTable').style.display = '';
   document.getElementById('trEmptyHint').style.display = 'none';
-  document.getElementById('trSummaryRow').style.display = '';
-  document.getElementById('trSummaryRow').innerHTML = `
-    <div class="card"><div class="lbl">عدد السندات المطابقة</div><div class="val">${voucherMap.size}</div></div>
-    <div class="card"><div class="lbl">عدد الأصناف</div><div class="val">${mappedRows.length + unmapped.length}</div></div>
-    <div class="card ${unmapped.length?'warn':'good'}"><div class="lbl">أصناف غير مربوطة</div><div class="val">${unmapped.length}</div></div>
-  `;
-  flash('trMatchMsg', `تمت المطابقة: ${voucherMap.size} سند، ${mappedRows.length+unmapped.length} صنف.`, true);
+}
+function toggleOurNameCol(){
+  renderTransferResultTable();
+}
+
+/* ==================== سجل فواتير الصرف الوهمي ==================== */
+function addDummyInvoiceRow(){
+  DUMMY_INVOICES.push({id: uid(), docNum:'', date:'', branch:'', amount:0});
+  saveState();
+  renderDummyInvoices();
+}
+function updateDummyInvoiceField(id, field, value){
+  const row = DUMMY_INVOICES.find(r=>r.id===id);
+  if(!row) return;
+  row[field] = (field==='amount') ? parseNum(value) : value;
+  saveState();
+}
+function deleteDummyInvoiceRow(id){
+  DUMMY_INVOICES = DUMMY_INVOICES.filter(r=>r.id!==id);
+  saveState();
+  renderDummyInvoices();
+}
+function renderDummyInvoices(){
+  const tbody = document.getElementById('dummyInvTbody');
+  tbody.innerHTML = DUMMY_INVOICES.map(r=>`<tr>
+    <td><input type="text" value="${esc(r.docNum)}" onchange="updateDummyInvoiceField('${r.id}','docNum',this.value)" style="width:100px;"></td>
+    <td><input type="date" value="${esc(r.date)}" onchange="updateDummyInvoiceField('${r.id}','date',this.value)"></td>
+    <td><input type="text" value="${esc(r.branch)}" onchange="updateDummyInvoiceField('${r.id}','branch',this.value)" style="width:120px;"></td>
+    <td><input type="number" step="any" value="${r.amount}" onchange="updateDummyInvoiceField('${r.id}','amount',this.value)" style="width:100px;"></td>
+    <td><button class="btn-danger tiny-btn" onclick="deleteDummyInvoiceRow('${r.id}')">حذف</button></td>
+  </tr>`).join('') || '<tr><td colspan="5" class="muted" style="padding:10px;">ما في فواتير مسجلة بعد — اضغط "إضافة فاتورة".</td></tr>';
+}
+function exportDummyInvoicesExcel(){
+  if(!window.XLSX){ flash('dummyExportMsg','مكتبة تصدير Excel ما تحمّلت (تحتاج اتصال إنترنت أول مرة).', false); return; }
+  const from = document.getElementById('dummyExportFrom').value;
+  const to = document.getElementById('dummyExportTo').value;
+  let rows = DUMMY_INVOICES.filter(r=>r.date);
+  if(from) rows = rows.filter(r=>r.date >= from);
+  if(to) rows = rows.filter(r=>r.date <= to);
+  rows = rows.slice().sort((a,b)=> a.date.localeCompare(b.date));
+  if(!rows.length){ flash('dummyExportMsg','ما في فواتير بهاي الفترة (تأكد إنك عبّيت التاريخ لكل فاتورة).', false); return; }
+
+  const data = [['التسلسل','التاريخ','اسم الفرع','رقم الفاتورة','المبلغ']];
+  rows.forEach((r,idx)=> data.push([idx+1, r.date, r.branch, r.docNum, r.amount]));
+
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'كشف الفواتير');
+  XLSX.writeFile(wb, `كشف_فواتير_الصرف_الوهمي.xlsx`);
+  flash('dummyExportMsg', `تم تصدير ${rows.length} فاتورة.`, true);
 }
 
 function renderTransfersPage(){
   flash('trStatusMsg', `${TRANSFERS.length} سطر تحويل محفوظ حالياً.`, true);
+  renderDummyInvoices();
 }
 
 /* ==================== كشف المؤسسة الشهري ==================== */
@@ -1391,7 +1492,7 @@ function renderStatementPage(){
 
 /* ==================== نسخ احتياطي ==================== */
 function downloadBackup(){
-  const data = {version:1, exportedAt: new Date().toISOString(), ITEMS, GROUPS, TRANSFERS, STATEMENT};
+  const data = {version:1, exportedAt: new Date().toISOString(), ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES};
   const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1411,6 +1512,7 @@ function restoreBackup(evt){
       ITEMS = d.ITEMS; GROUPS = d.GROUPS;
       TRANSFERS = Array.isArray(d.TRANSFERS) ? d.TRANSFERS : [];
       STATEMENT = Array.isArray(d.STATEMENT) ? d.STATEMENT : [];
+      DUMMY_INVOICES = Array.isArray(d.DUMMY_INVOICES) ? d.DUMMY_INVOICES : [];
       GROUPS.forEach(g=>{ ensureGroupDefaults(g); (g.invoices||[]).forEach(ensureInvoiceDefaults); });
       currentGroupId = GROUPS[0] ? GROUPS[0].id : null;
       saveState();
