@@ -376,6 +376,7 @@ ORDER BY T0."DocNum"</code>
     <div class="summary" id="trSummaryRow" style="display:none;"></div>
     <div id="trVoucherHeaders" style="padding:0 24px;"></div>
     <div class="toolbar" id="trTableToolbar" style="display:none; border-bottom:none;">
+      <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="trHideOurCode" onchange="toggleOurNameCol()"> إخفاء عمود "رمزنا"</label>
       <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="trHideOurName" onchange="toggleOurNameCol()"> إخفاء عمود "اسمنا"</label>
     </div>
     <div class="tbl-wrap">
@@ -383,7 +384,7 @@ ORDER BY T0."DocNum"</code>
         <thead>
           <tr>
             <th>رمز الصنف لدى المؤسسة</th><th>اسم الصنف لدى المؤسسة</th>
-            <th>رمزنا</th><th id="thOurName">اسمنا</th>
+            <th id="thOurCode">رمزنا</th><th id="thOurName">اسمنا</th>
             <th>الكمية عندنا (وحدتنا)</th><th>الكمية لدى المؤسسة (حبة)</th>
             <th>سعر المستودع</th><th>المجموع</th>
           </tr>
@@ -452,6 +453,7 @@ let openPicker = null; // invoiceId currently showing item picker
 let TRANSFERS = []; // {docNum, docDate, fromWhs, toWhs, ourCode, ourName, qty, uom}
 let STATEMENT = []; // {theirCode, theirName, agreementNo, amanat, ghairMawrid, price, qtyDispatch, qtyAmman, qtyAqaba, totalValue}
 let DUMMY_INVOICES = []; // {id, docNum, date, branch, amount}
+let BRANCHES = ['عمان', 'العقبة']; // قائمة أسماء الفروع القابلة للتعريف من داخل السجل
 let lastTrMatch = null; // {mappedRows, unmapped} كاش آخر مطابقة، لإعادة الرسم عند تبديل إخفاء عمود اسمنا
 
 function itemKey(it){ return it.ourCode + '|' + it.theirCode; }
@@ -467,6 +469,7 @@ function loadState(){
       TRANSFERS = Array.isArray(d.TRANSFERS) ? d.TRANSFERS : [];
       STATEMENT = Array.isArray(d.STATEMENT) ? d.STATEMENT : [];
       DUMMY_INVOICES = Array.isArray(d.DUMMY_INVOICES) ? d.DUMMY_INVOICES : [];
+      if(Array.isArray(d.BRANCHES) && d.BRANCHES.length) BRANCHES = d.BRANCHES;
     }
   }catch(e){ console.warn('تعذر تحميل البيانات المحفوظة', e); }
   if(!localStorage.getItem(STORAGE_KEY)){
@@ -493,7 +496,7 @@ function ensureInvoiceDefaults(inv){
   if(!inv.qty) inv.qty={};
 }
 function saveState(){
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES})); }
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, BRANCHES})); }
   catch(e){ console.warn('تعذر الحفظ المحلي', e); }
 }
 
@@ -1153,7 +1156,7 @@ function importTransfers(){
   if(!keys.includes('docNum') || !keys.includes('ourCode') || !keys.includes('qty')){
     flash('trStatusMsg','لازم يكون فيه أعمدة "رقم السند" و"رمزنا" و"الكمية" بالعناوين.', false); return;
   }
-  let added=0;
+  const newRecords = [];
   for(let i=1;i<lines.length;i++){
     const cells = lines[i].split('\t');
     const rec = {};
@@ -1165,13 +1168,18 @@ function importTransfers(){
     rec.toWhs = rec.toWhs || '';
     rec.ourName = rec.ourName || '';
     rec.uom = rec.uom || '';
-    TRANSFERS.push(rec);
-    added++;
+    newRecords.push(rec);
   }
+  // أي سند موجود مسبقاً وله سطور بالنص الملصوق، منستبدل سطوره القديمة بالجديدة — يمنع تكرار/مضاعفة الكميات لو استوردت نفس البيانات أكثر من مرة
+  const touchedDocNums = new Set(newRecords.map(r=>normDocNum(r.docNum)));
+  const before = TRANSFERS.length;
+  TRANSFERS = TRANSFERS.filter(t=> !touchedDocNums.has(normDocNum(t.docNum)));
+  const replaced = before - TRANSFERS.length;
+  TRANSFERS.push(...newRecords);
   saveState();
   document.getElementById('trPasteArea').value = '';
   document.getElementById('trImportDetails').open = false;
-  flash('trStatusMsg', `تم استيراد ${added} سطر. إجمالي الأسطر المخزّنة: ${TRANSFERS.length}.`, true);
+  flash('trStatusMsg', `تم استيراد ${newRecords.length} سطر (${touchedDocNums.size} سند)${replaced?` — استبدلت ${replaced} سطر قديم لنفس السندات`:''}. إجمالي الأسطر المخزّنة: ${TRANSFERS.length}.`, true);
 }
 function clearTransfers(){
   if(!confirm('مسح كل سندات التحويل المستوردة؟')) return;
@@ -1253,15 +1261,18 @@ function matchTransferVouchers(){
 function renderTransferResultTable(){
   if(!lastTrMatch) return;
   const {mappedRows, unmapped} = lastTrMatch;
+  const hideOurCode = document.getElementById('trHideOurCode').checked;
   const hideOurName = document.getElementById('trHideOurName').checked;
+  document.getElementById('thOurCode').style.display = hideOurCode ? 'none' : '';
   document.getElementById('thOurName').style.display = hideOurName ? 'none' : '';
 
   const tbody = document.getElementById('trResultTbody');
+  const ourCodeTd = (code)=> hideOurCode ? '' : `<td class="mono">${esc(code)}</td>`;
   const ourNameTd = (name)=> hideOurName ? '' : `<td>${esc(name)}</td>`;
   let rowsHtml = mappedRows.map(r=>`<tr>
     <td class="mono">${esc(r.theirCode)}</td>
     <td>${esc(r.theirName)}</td>
-    <td class="mono">${esc(r.ourCode)}</td>
+    ${ourCodeTd(r.ourCode)}
     ${ourNameTd(r.ourName)}
     <td class="mono">${fmtNum(r.ourQty)}</td>
     <td class="mono">${fmtNum(r.theirQty)}</td>
@@ -1270,7 +1281,7 @@ function renderTransferResultTable(){
   </tr>`).join('');
   rowsHtml += unmapped.map(r=>`<tr style="background:var(--crimson-bg);">
     <td colspan="2" class="muted">⚠ غير مربوط بجدول الربط — ضيفه بصفحة "ربط الأصناف"</td>
-    <td class="mono">${esc(r.ourCode)}</td>
+    ${ourCodeTd(r.ourCode)}
     ${ourNameTd(r.ourName)}
     <td class="mono">${fmtNum(r.ourQty)}</td>
     <td class="mono">—</td>
@@ -1308,10 +1319,26 @@ function renderDummyInvoices(){
   tbody.innerHTML = DUMMY_INVOICES.map(r=>`<tr>
     <td><input type="text" value="${esc(r.docNum)}" onchange="updateDummyInvoiceField('${r.id}','docNum',this.value)" style="width:100px;"></td>
     <td><input type="date" value="${esc(r.date)}" onchange="updateDummyInvoiceField('${r.id}','date',this.value)"></td>
-    <td><input type="text" value="${esc(r.branch)}" onchange="updateDummyInvoiceField('${r.id}','branch',this.value)" style="width:120px;"></td>
+    <td><select onchange="handleBranchSelect(this,'${r.id}')" style="width:130px;">
+      <option value="" ${!r.branch?'selected':''}>— اختر —</option>
+      ${BRANCHES.map(b=>`<option value="${esc(b)}" ${r.branch===b?'selected':''}>${esc(b)}</option>`).join('')}
+      <option value="__new__">+ إضافة فرع جديد...</option>
+    </select></td>
     <td><input type="number" step="any" value="${r.amount}" onchange="updateDummyInvoiceField('${r.id}','amount',this.value)" style="width:100px;"></td>
     <td><button class="btn-danger tiny-btn" onclick="deleteDummyInvoiceRow('${r.id}')">حذف</button></td>
   </tr>`).join('') || '<tr><td colspan="5" class="muted" style="padding:10px;">ما في فواتير مسجلة بعد — اضغط "إضافة فاتورة".</td></tr>';
+}
+function handleBranchSelect(selectEl, id){
+  if(selectEl.value === '__new__'){
+    const name = prompt('اسم الفرع الجديد:');
+    if(name && name.trim()){
+      if(!BRANCHES.includes(name.trim())) BRANCHES.push(name.trim());
+      updateDummyInvoiceField(id, 'branch', name.trim());
+    }
+    renderDummyInvoices();
+    return;
+  }
+  updateDummyInvoiceField(id, 'branch', selectEl.value);
 }
 function exportDummyInvoicesExcel(){
   if(!window.XLSX){ flash('dummyExportMsg','مكتبة تصدير Excel ما تحمّلت (تحتاج اتصال إنترنت أول مرة).', false); return; }
@@ -1492,7 +1519,7 @@ function renderStatementPage(){
 
 /* ==================== نسخ احتياطي ==================== */
 function downloadBackup(){
-  const data = {version:1, exportedAt: new Date().toISOString(), ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES};
+  const data = {version:1, exportedAt: new Date().toISOString(), ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, BRANCHES};
   const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -1513,6 +1540,7 @@ function restoreBackup(evt){
       TRANSFERS = Array.isArray(d.TRANSFERS) ? d.TRANSFERS : [];
       STATEMENT = Array.isArray(d.STATEMENT) ? d.STATEMENT : [];
       DUMMY_INVOICES = Array.isArray(d.DUMMY_INVOICES) ? d.DUMMY_INVOICES : [];
+      if(Array.isArray(d.BRANCHES) && d.BRANCHES.length) BRANCHES = d.BRANCHES;
       GROUPS.forEach(g=>{ ensureGroupDefaults(g); (g.invoices||[]).forEach(ensureInvoiceDefaults); });
       currentGroupId = GROUPS[0] ? GROUPS[0].id : null;
       saveState();
