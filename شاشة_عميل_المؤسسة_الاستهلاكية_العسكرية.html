@@ -457,7 +457,9 @@ ORDER BY T0."DocNum"</code>
 <div id="printOverlay">
   <div class="print-toolbar">
     <button class="btn-primary btn-sm" onclick="window.print()">🖨️ طباعة</button>
+    <button class="btn-ghost btn-sm" onclick="copyPrintTableTSV()">📋 نسخ الجدول (Excel/SAP)</button>
     <button class="btn-ghost btn-sm" onclick="closePrintPreview()">✕ إغلاق</button>
+    <span class="status-msg" id="printCopyMsg"></span>
   </div>
   <div id="printSheetContent"></div>
 </div>
@@ -1032,6 +1034,17 @@ function openPrintPreview(groupId, invId, mode){
 function closePrintPreview(){
   document.getElementById('printOverlay').classList.remove('active');
 }
+function copyPrintTableTSV(){
+  const table = document.querySelector('#printSheetContent .ps-table');
+  if(!table){ flash('printCopyMsg','ما في جدول لنسخه.', false); return; }
+  const rows = Array.from(table.querySelectorAll('tr')).map(tr=>
+    Array.from(tr.children).map(cell=>cell.textContent.trim().replace(/\s+/g,' ')).join('\t')
+  );
+  navigator.clipboard.writeText(rows.join('\n')).then(
+    ()=>flash('printCopyMsg','تم نسخ الجدول — الصقه بإكسل أو SAP.', true),
+    ()=>flash('printCopyMsg','تعذر النسخ التلقائي.', false)
+  );
+}
 
 function buildPrintSheetHTML(g, inv){
   ensureGroupDefaults(g); ensureInvoiceDefaults(inv);
@@ -1072,7 +1085,7 @@ function buildPrintSheetHTML(g, inv){
     <div class="ps-natno">الرقم الوطني: 100047692</div>
     <div class="ps-head">
       <div class="ar">
-        <div class="brand">مركز الكيلاني الغذائية</div>
+        <div class="brand">مركز الكيلاني للأغذية</div>
         <div>تلفون المبيعات: (6-962+) 4300700</div>
         <div>فاكس: (6-962+) 4300723</div>
         <div>ص.ب: 830574 عمّان 11183 الأردن</div>
@@ -1117,15 +1130,18 @@ function buildPrintSheetHTML(g, inv){
 
 function buildCompanySheetHTML(g, inv){
   ensureGroupDefaults(g); ensureInvoiceDefaults(inv);
-  let totalOurQty = 0, totalValue = 0;
+  let totalOurQty = 0, netTotal = 0, taxTotal = 0, grandTotal = 0;
   const rowsHtml = inv.itemKeys.map((k,idx)=>{
     const it = findItem(k);
     if(!it) return '';
     const theirQty = inv.qty[k]||0;
     const factor = it.factor || 1;
     const ourQty = theirQty / factor;
-    const lineTotal = ourQty * (it.salePriceUnit||0);
-    totalOurQty += ourQty; totalValue += lineTotal;
+    const net = ourQty * (it.salePriceUnit||0);
+    const taxPct = g.taxExempt ? 0 : (it.taxRate||0);
+    const taxVal = net * taxPct;
+    const total = net + taxVal;
+    totalOurQty += ourQty; netTotal += net; taxTotal += taxVal; grandTotal += total;
     return `<tr>
       <td>${idx+1}</td>
       <td class="mono">${esc(it.ourCode)}</td>
@@ -1133,7 +1149,10 @@ function buildCompanySheetHTML(g, inv){
       <td>${esc(it.ourUnit)}</td>
       <td class="mono">${fmtNum(ourQty)}</td>
       <td class="mono">${fmt4(it.salePriceUnit)}</td>
-      <td class="mono">${fmt3(lineTotal)}</td>
+      <td class="mono">${fmt3(net)}</td>
+      <td class="mono">${(taxPct*100).toFixed(0)}%</td>
+      <td class="mono">${fmt3(taxVal)}</td>
+      <td class="mono">${fmt3(total)}</td>
     </tr>`;
   }).join('');
 
@@ -1145,7 +1164,7 @@ function buildCompanySheetHTML(g, inv){
     <div class="ps-natno">قائمة إدخال SAP (رموزنا) — مرجعية داخلية، مو للإرسال للمؤسسة</div>
     <div class="ps-head">
       <div class="ar">
-        <div class="brand">مركز الكيلاني الغذائية</div>
+        <div class="brand">مركز الكيلاني للأغذية</div>
       </div>
       <div class="en">
         <div class="brand">Kaylani <span style="color:#1B2536;">FOOD CENTER</span></div>
@@ -1163,14 +1182,19 @@ function buildCompanySheetHTML(g, inv){
     <table class="ps-table">
       <thead><tr>
         <th>#</th><th>رمزنا</th><th>اسمنا</th><th>وحدتنا</th>
-        <th>الكمية (بوحدتنا)</th><th>سعر البيع/الوحدة</th><th>الإجمالي</th>
+        <th>الكمية (بوحدتنا)</th><th>سعر البيع/الوحدة</th><th>الصافي</th>
+        <th>نسبة الضريبة</th><th>مبلغ الضريبة</th><th>الإجمالي بعد الضريبة</th>
       </tr></thead>
-      <tbody>${rowsHtml || '<tr><td colspan="7">ما في أصناف</td></tr>'}</tbody>
+      <tbody>${rowsHtml || '<tr><td colspan="10">ما في أصناف</td></tr>'}</tbody>
     </table>
     </div>
     <div class="ps-footer">
       <div>إجمالي الكمية (بوحدتنا): <b>${fmtNum(totalOurQty)}</b></div>
-      <div class="lines"><div>إجمالي القيمة: <b>${fmt3(totalValue)}</b></div></div>
+      <div class="lines">
+        <div>الصافي قبل الضريبة: <b>${fmt3(netTotal)}</b></div>
+        <div>مبلغ الضريبة: <b>${fmt3(taxTotal)}</b></div>
+        <div>الإجمالي بعد الضريبة: <b>${fmt3(grandTotal)}</b></div>
+      </div>
     </div>
   </div>`;
 }
