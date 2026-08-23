@@ -156,6 +156,7 @@
     <button class="btn-primary" id="pageTabMapping" onclick="switchPage('mapping')" style="border-radius:9px 9px 0 0;">🔗 ربط الأصناف</button>
     <button class="btn-ghost" id="pageTabInvoices" onclick="switchPage('invoices')" style="border-radius:9px 9px 0 0;">🧾 تصميم ترتيب الفواتير</button>
     <button class="btn-ghost" id="pageTabPrint" onclick="switchPage('print')" style="border-radius:9px 9px 0 0;">🖨️ طباعة الفواتير</button>
+    <button class="btn-ghost" id="pageTabTransfers" onclick="switchPage('transfers')" style="border-radius:9px 9px 0 0;">🔄 سندات التحويل (011)</button>
     <button class="btn-ghost" id="pageTabRoadmap" onclick="switchPage('roadmap')" style="border-radius:9px 9px 0 0;">🗺️ خارطة المراحل</button>
     <span style="flex:1;"></span>
     <button class="btn-ghost btn-sm" style="border-color:var(--teal); color:var(--teal); border-radius:9px 9px 0 0;" onclick="downloadBackup()">💾 نسخة احتياطية</button>
@@ -259,6 +260,59 @@
     <div class="list" id="printInvoicesList"></div>
   </section>
 
+  <!-- ============ صفحة سندات التحويل (011) ============ -->
+  <section class="panel" id="transfersPage" style="display:none;">
+    <div class="input-panel">
+      <details class="opt" open>
+        <summary><span class="num">1</span>&nbsp; استيراد سندات التحويل اللي أحد طرفيها 011 (لصق — Tab مفصول)</summary>
+        <div class="hint" style="margin-top:8px;">
+          كويري مقترح (عدّله حسب أسماء الجداول عندكم بالضبط، بس خلّي عناوين الأعمدة متل ما هي حتى تنقرأ صح):
+          <code class="block">SELECT T0."DocNum" AS "رقم السند", T0."DocDate" AS "تاريخ التسليم",
+T1."FromWhsCode" AS "من مستودع", T1."WhsCode" AS "الى مستودع",
+T1."ItemCode" AS "رمزنا", T1."Dscription" AS "اسمنا",
+T1."Quantity" AS "الكمية", T1."UomCode" AS "الوحدة"
+FROM OWTR T0 INNER JOIN WTR1 T1 ON T0."DocEntry" = T1."DocEntry"
+WHERE T1."FromWhsCode" = '011' OR T1."WhsCode" = '011'
+ORDER BY T0."DocNum"</code>
+          شغّل الكويري والصق نتيجته تحت — أو الصق مباشرة من كشف "Stock Transfer" الورقي لو نسخته بنفس الأعمدة.
+        </div>
+        <textarea id="trPasteArea" placeholder="الصق هنا سندات التحويل..."></textarea>
+        <div class="row-actions">
+          <button class="btn-primary" onclick="importTransfers()">استيراد / إضافة</button>
+          <button class="btn-ghost" onclick="document.getElementById('trPasteArea').value=''">تفريغ الصندوق</button>
+          <button class="btn-danger" onclick="clearTransfers()">مسح كل السندات المستوردة</button>
+          <span class="status-msg" id="trStatusMsg"></span>
+        </div>
+      </details>
+    </div>
+
+    <div class="input-panel" style="border-bottom:1px solid var(--line);">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;"><span class="num">2</span><b style="font-size:13px;">مطابقة السندات مع فاتورة الصرف الوهمي</b></div>
+      <div class="hint">دخّل رقم/أرقام السندات (مفصولة بمسافة) اللي وصلت فاتورة الصرف الوهمي عنها، وبترتّب لك الأصناف تصاعدياً حسب رمزها لدى المؤسسة عشان تطابقها.</div>
+      <div class="row-actions">
+        <input type="text" id="trVoucherNos" placeholder="مثال: 2610323 2610404" style="width:260px; direction:ltr; text-align:left;">
+        <button class="btn-primary btn-sm" onclick="matchTransferVouchers()">مطابقة</button>
+        <span class="status-msg" id="trMatchMsg"></span>
+      </div>
+    </div>
+
+    <div class="summary" id="trSummaryRow" style="display:none;"></div>
+    <div id="trVoucherHeaders" style="padding:0 24px;"></div>
+    <div class="tbl-wrap">
+      <table class="grid" id="trResultTable" style="display:none;">
+        <thead>
+          <tr>
+            <th>رمز الصنف لدى المؤسسة</th><th>اسم الصنف لدى المؤسسة</th>
+            <th>رمزنا</th><th>اسمنا</th>
+            <th>الكمية عندنا (وحدتنا)</th><th>الكمية لدى المؤسسة (حبة)</th>
+          </tr>
+        </thead>
+        <tbody id="trResultTbody"></tbody>
+      </table>
+      <div class="empty-hint" id="trEmptyHint">استورد السندات فوق، وبعدين دخّل أرقامها للمطابقة.</div>
+    </div>
+  </section>
+
   <!-- ============ صفحة خارطة المراحل ============ -->
   <section class="panel" id="roadmapPage" style="display:none;">
     <div class="roadmap">
@@ -289,8 +343,8 @@
       </div>
       <div class="rm-item">
         <span class="rm-num">6</span>
-        <div class="rm-txt"><b>مطابقة سندات تحويل 011 مع فاتورة الصرف الوهمي</b><span>كويري لسندات التحويل اللي أحد طرفيها 011، تدخل أرقام السندات (سندين أو أكثر) فترتّب تصاعدياً حسب رمز صنف المؤسسة، وتعرض: رمز/اسم الصنف عند المؤسسة وعندنا، والكمية عندهم وعندنا (بربط وحدة البيع ومعامل التحويل من جدول الربط) — لمطابقتها مع فاتورة الصرف الوهمي.</span></div>
-        <span class="rm-tag">قادمة</span>
+        <div class="rm-txt"><b>مطابقة سندات تحويل 011 مع فاتورة الصرف الوهمي</b><span>استيراد سندات التحويل (Stock Transfer) اللي أحد طرفيها 011، تدخل أرقام السندات (سند أو أكثر) فتترتّب تصاعدياً حسب رمز صنف المؤسسة، وتعرض: رمز/اسم الصنف عند المؤسسة وعندنا، والكمية عندنا وعندهم (بربط معامل التحويل من جدول الربط) — تطابقها بعينك مع فاتورة الصرف الوهمي الورقية.</span></div>
+        <span class="rm-tag">جاهزة</span>
       </div>
     </div>
   </section>
@@ -314,6 +368,7 @@ const DEFAULT_ITEMS = [{"ourCode": "FVL00109", "ourName": "فاصوليا مجم
 let currentGroupId = null;
 let currentPage = 'mapping';
 let openPicker = null; // invoiceId currently showing item picker
+let TRANSFERS = []; // {docNum, docDate, fromWhs, toWhs, ourCode, ourName, qty, uom}
 
 function itemKey(it){ return it.ourCode + '|' + it.theirCode; }
 function findItem(key){ return ITEMS.find(it => itemKey(it) === key); }
@@ -325,6 +380,7 @@ function loadState(){
       const d = JSON.parse(raw);
       ITEMS = Array.isArray(d.ITEMS) ? d.ITEMS : [];
       GROUPS = Array.isArray(d.GROUPS) ? d.GROUPS : [];
+      TRANSFERS = Array.isArray(d.TRANSFERS) ? d.TRANSFERS : [];
     }
   }catch(e){ console.warn('تعذر تحميل البيانات المحفوظة', e); }
   if(!localStorage.getItem(STORAGE_KEY)){
@@ -351,14 +407,14 @@ function ensureInvoiceDefaults(inv){
   if(!inv.qty) inv.qty={};
 }
 function saveState(){
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS})); }
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS})); }
   catch(e){ console.warn('تعذر الحفظ المحلي', e); }
 }
 
 /* ==================== تنقّل الصفحات ==================== */
 function switchPage(p){
   currentPage = p;
-  ['mapping','invoices','print','roadmap'].forEach(k=>{
+  ['mapping','invoices','print','transfers','roadmap'].forEach(k=>{
     document.getElementById(k+'Page').style.display = (k===p) ? 'block' : 'none';
     const tab = document.getElementById('pageTab'+k.charAt(0).toUpperCase()+k.slice(1));
     tab.className = (k===p) ? 'btn-primary' : 'btn-ghost';
@@ -367,6 +423,7 @@ function switchPage(p){
   if(p==='mapping') renderMappingTable();
   if(p==='invoices') renderInvoicesPage();
   if(p==='print') renderPrintPage();
+  if(p==='transfers') renderTransfersPage();
 }
 
 /* ==================== أدوات عامة ==================== */
@@ -918,6 +975,133 @@ function numberToArabicWords(amount){
     result += ` و${numberToWords(fils)} ${filsWord}`;
   }
   return result + ' فقط لا غير';
+}
+
+/* ==================== سندات التحويل (011) ومطابقة فاتورة الصرف الوهمي ==================== */
+const TR_HEADER_ALIASES = {
+  'رقم السند':'docNum', 'تاريخ التسليم':'docDate', 'تاريخ السند':'docDate',
+  'من مستودع':'fromWhs', 'الى مستودع':'toWhs', 'إلى مستودع':'toWhs',
+  'رمزنا':'ourCode', 'اسمنا':'ourName',
+  'الكمية':'qty', 'الوحدة':'uom'
+};
+
+function importTransfers(){
+  const raw = document.getElementById('trPasteArea').value;
+  const lines = raw.split(/\r?\n/).filter(l=>l.trim().length>0);
+  if(lines.length<2){ flash('trStatusMsg','لازم صف عناوين على الأقل + صف بيانات وحدة.', false); return; }
+  const headers = lines[0].split('\t').map(h=>h.trim());
+  const keys = headers.map(h=>TR_HEADER_ALIASES[h]||null);
+  if(!keys.includes('docNum') || !keys.includes('ourCode') || !keys.includes('qty')){
+    flash('trStatusMsg','لازم يكون فيه أعمدة "رقم السند" و"رمزنا" و"الكمية" بالعناوين.', false); return;
+  }
+  let added=0;
+  for(let i=1;i<lines.length;i++){
+    const cells = lines[i].split('\t');
+    const rec = {};
+    keys.forEach((k,idx)=>{ if(k) rec[k]=(cells[idx]||'').trim(); });
+    if(!rec.docNum || !rec.ourCode) continue;
+    rec.qty = parseNum(rec.qty);
+    rec.docDate = rec.docDate || '';
+    rec.fromWhs = rec.fromWhs || '';
+    rec.toWhs = rec.toWhs || '';
+    rec.ourName = rec.ourName || '';
+    rec.uom = rec.uom || '';
+    TRANSFERS.push(rec);
+    added++;
+  }
+  saveState();
+  flash('trStatusMsg', `تم استيراد ${added} سطر. إجمالي الأسطر المخزّنة: ${TRANSFERS.length}.`, true);
+}
+function clearTransfers(){
+  if(!confirm('مسح كل سندات التحويل المستوردة؟')) return;
+  TRANSFERS = [];
+  saveState();
+  document.getElementById('trResultTable').style.display = 'none';
+  document.getElementById('trSummaryRow').style.display = 'none';
+  document.getElementById('trVoucherHeaders').innerHTML = '';
+  document.getElementById('trEmptyHint').style.display = 'block';
+  flash('trStatusMsg','تم مسح كل السندات.', true);
+}
+
+function normDocNum(v){ return String(v||'').replace(/[^0-9]/g,''); }
+
+function matchTransferVouchers(){
+  const raw = document.getElementById('trVoucherNos').value;
+  // نفصل على المسافات بس (مو الفاصلة) لأن رقم السند نفسه ممكن يجي بفواصل آلاف مثل 2,610,323
+  const wanted = raw.trim().split(/\s+/).map(normDocNum).filter(Boolean);
+  if(!wanted.length){ flash('trMatchMsg','دخّل رقم سند واحد على الأقل.', false); return; }
+
+  const matchedLines = TRANSFERS.filter(t=> wanted.includes(normDocNum(t.docNum)));
+  if(!matchedLines.length){ flash('trMatchMsg','ما لقيت أي سطر بهاي الأرقام — تأكد إنك استوردتها فوق.', false); return; }
+
+  // رأسيات السندات المطابقة (للعرض فوق الجدول)
+  const voucherMap = new Map();
+  matchedLines.forEach(t=>{
+    const k = normDocNum(t.docNum);
+    if(!voucherMap.has(k)) voucherMap.set(k, {docNum:t.docNum, docDate:t.docDate, fromWhs:t.fromWhs, toWhs:t.toWhs, lines:0});
+    voucherMap.get(k).lines++;
+  });
+  document.getElementById('trVoucherHeaders').innerHTML = Array.from(voucherMap.values()).map(v=>
+    `<div class="hint" style="margin:2px 0;">📄 سند <b class="mono">${esc(v.docNum)}</b> — ${esc(v.docDate)||'—'} · من <b>${esc(v.fromWhs)||'—'}</b> إلى <b>${esc(v.toWhs)||'—'}</b> · ${v.lines} سطر</div>`
+  ).join('');
+
+  // تجميع حسب رمزنا
+  const grouped = {};
+  matchedLines.forEach(t=>{
+    if(!grouped[t.ourCode]) grouped[t.ourCode] = {ourCode:t.ourCode, ourName:t.ourName, qty:0};
+    grouped[t.ourCode].qty += t.qty;
+  });
+
+  const mappedRows = [], unmapped = [];
+  Object.values(grouped).forEach(g=>{
+    const it = ITEMS.find(x=>x.ourCode===g.ourCode);
+    if(it){
+      mappedRows.push({
+        theirCode: it.theirCode, theirName: it.theirName,
+        ourCode: g.ourCode, ourName: it.ourName || g.ourName,
+        ourQty: g.qty, theirQty: g.qty * (it.factor||1)
+      });
+    }else{
+      unmapped.push({ourCode:g.ourCode, ourName:g.ourName, ourQty:g.qty});
+    }
+  });
+  mappedRows.sort((a,b)=>{
+    const an = parseFloat(a.theirCode), bn = parseFloat(b.theirCode);
+    if(!isNaN(an) && !isNaN(bn)) return an-bn;
+    return String(a.theirCode).localeCompare(String(b.theirCode),'ar');
+  });
+
+  const tbody = document.getElementById('trResultTbody');
+  let rowsHtml = mappedRows.map(r=>`<tr>
+    <td class="mono">${esc(r.theirCode)}</td>
+    <td>${esc(r.theirName)}</td>
+    <td class="mono">${esc(r.ourCode)}</td>
+    <td>${esc(r.ourName)}</td>
+    <td class="mono">${fmtNum(r.ourQty)}</td>
+    <td class="mono">${fmtNum(r.theirQty)}</td>
+  </tr>`).join('');
+  rowsHtml += unmapped.map(r=>`<tr style="background:var(--crimson-bg);">
+    <td colspan="2" class="muted">⚠ غير مربوط بجدول الربط — ضيفه بصفحة "ربط الأصناف"</td>
+    <td class="mono">${esc(r.ourCode)}</td>
+    <td>${esc(r.ourName)}</td>
+    <td class="mono">${fmtNum(r.ourQty)}</td>
+    <td class="mono">—</td>
+  </tr>`).join('');
+  tbody.innerHTML = rowsHtml;
+
+  document.getElementById('trResultTable').style.display = '';
+  document.getElementById('trEmptyHint').style.display = 'none';
+  document.getElementById('trSummaryRow').style.display = '';
+  document.getElementById('trSummaryRow').innerHTML = `
+    <div class="card"><div class="lbl">عدد السندات المطابقة</div><div class="val">${voucherMap.size}</div></div>
+    <div class="card"><div class="lbl">عدد الأصناف</div><div class="val">${mappedRows.length + unmapped.length}</div></div>
+    <div class="card ${unmapped.length?'warn':'good'}"><div class="lbl">أصناف غير مربوطة</div><div class="val">${unmapped.length}</div></div>
+  `;
+  flash('trMatchMsg', `تمت المطابقة: ${voucherMap.size} سند، ${mappedRows.length+unmapped.length} صنف.`, true);
+}
+
+function renderTransfersPage(){
+  flash('trStatusMsg', `${TRANSFERS.length} سطر تحويل محفوظ حالياً.`, true);
 }
 
 /* ==================== نسخ احتياطي ==================== */
