@@ -113,6 +113,7 @@
   .ps-cust{text-align:center; font-weight:700; font-size:13px; margin:10px 0 14px;}
   table.ps-table{width:100%; border-collapse:collapse; font-size:10.5px;}
   table.ps-table th{background:#B23A34; color:#fff; padding:6px 5px; border:1px solid #B23A34; white-space:nowrap;}
+  #mapTheadRow th[onclick]{cursor:pointer;}
   table.ps-table td{padding:5px; border:1px solid #ddd; text-align:center;}
   .ps-footer{margin-top:8px; border:1px solid #ddd; border-radius:6px; padding:9px 14px; font-size:11.5px; display:flex; justify-content:space-between; flex-wrap:wrap; gap:10px;}
   .ps-footer .lines div{margin:2px 0;}
@@ -242,14 +243,25 @@
     <div class="tbl-wrap">
       <table class="grid" id="mapTable">
         <thead>
-          <tr>
-            <th>رمزنا</th><th>اسمنا</th><th>وحدتنا</th>
-            <th>رمز العميل</th><th>اسم الصنف لدى العميل</th>
-            <th>بلد المنشأ</th><th>الضريبة%</th><th>التعبئة</th>
-            <th>سعر بيع/وحدة</th><th>سعر بيع/حبة</th><th>سعر مستودع/وحدة</th><th>سعر مستودع/حبة</th>
-            <th title="ترتيب الصنف بفاتورة باقي المملكة">ترتيب عمان</th><th title="رقم فاتورة باقي المملكة">فاتورة عمان</th>
-            <th title="ترتيب الصنف بكشف تجميعي العقبة">ترتيب تجميعي العقبة</th><th title="رقم كشف تجميعي العقبة">فاتورة تجميعي العقبة</th>
-            <th title="ترتيب الصنف بفواتير العقبة (حسب سند التحويل)">ترتيب فواتير العقبة</th><th title="رقم فاتورة فواتير العقبة (حسب سند التحويل)">فاتورة فواتير العقبة</th>
+          <tr id="mapTheadRow">
+            <th id="thMap_ourCode" onclick="setMapSort('ourCode')">رمزنا</th>
+            <th id="thMap_ourName" onclick="setMapSort('ourName')">اسمنا</th>
+            <th id="thMap_ourUnit" onclick="setMapSort('ourUnit')">وحدتنا</th>
+            <th id="thMap_theirCode" onclick="setMapSort('theirCode')">رمز العميل</th>
+            <th id="thMap_theirName" onclick="setMapSort('theirName')">اسم الصنف لدى العميل</th>
+            <th id="thMap_origin" onclick="setMapSort('origin')">بلد المنشأ</th>
+            <th id="thMap_taxRate" onclick="setMapSort('taxRate')">الضريبة%</th>
+            <th id="thMap_factor" onclick="setMapSort('factor')">التعبئة</th>
+            <th id="thMap_salePriceUnit" onclick="setMapSort('salePriceUnit')">سعر بيع/وحدة</th>
+            <th id="thMap_salePricePiece" onclick="setMapSort('salePricePiece')">سعر بيع/حبة</th>
+            <th id="thMap_whsPriceUnit" onclick="setMapSort('whsPriceUnit')">سعر مستودع/وحدة</th>
+            <th id="thMap_whsPricePiece" onclick="setMapSort('whsPricePiece')">سعر مستودع/حبة</th>
+            <th id="thMap_ammanOrder" title="ترتيب الصنف بفاتورة باقي المملكة" onclick="setMapSort('ammanOrder')">ترتيب عمان</th>
+            <th id="thMap_ammanInvoiceNo" title="رقم فاتورة باقي المملكة" onclick="setMapSort('ammanInvoiceNo')">فاتورة عمان</th>
+            <th id="thMap_aqabaAggOrder" title="ترتيب الصنف بكشف تجميعي العقبة" onclick="setMapSort('aqabaAggOrder')">ترتيب تجميعي العقبة</th>
+            <th id="thMap_aqabaAggInvoiceNo" title="رقم كشف تجميعي العقبة" onclick="setMapSort('aqabaAggInvoiceNo')">فاتورة تجميعي العقبة</th>
+            <th id="thMap_aqabaVoucherOrder" title="ترتيب الصنف بفواتير العقبة (حسب سند التحويل)" onclick="setMapSort('aqabaVoucherOrder')">ترتيب فواتير العقبة</th>
+            <th id="thMap_aqabaVoucherInvoiceNo" title="رقم فاتورة فواتير العقبة (حسب سند التحويل)" onclick="setMapSort('aqabaVoucherInvoiceNo')">فاتورة فواتير العقبة</th>
             <th></th>
           </tr>
         </thead>
@@ -554,6 +566,8 @@ let BRANCH_CODE_MAP = {};
 let lastTrMatch = null; // {mappedRows, unmapped} كاش آخر مطابقة، لإعادة الرسم عند تبديل إخفاء عمود اسمنا أو تغيير الترتيب
 let trSortKey = 'theirCode';
 let trSortDir = 1; // 1 تصاعدي، -1 تنازلي
+let mapSortKey = 'ourCode';
+let mapSortDir = 1;
 
 function itemKey(it){ return it.ourCode + '|' + it.theirCode; }
 function findItem(key){ return ITEMS.find(it => itemKey(it) === key); }
@@ -785,6 +799,29 @@ function editItemField(key, field, value){
   saveState();
 }
 
+const MAP_NUM_SORT_FIELDS = new Set(['taxRate','factor','salePriceUnit','salePricePiece','whsPriceUnit','whsPricePiece',
+  'ammanOrder','ammanInvoiceNo','aqabaAggOrder','aqabaAggInvoiceNo','aqabaVoucherOrder','aqabaVoucherInvoiceNo']);
+function setMapSort(key){
+  if(mapSortKey === key) mapSortDir *= -1;
+  else { mapSortKey = key; mapSortDir = 1; }
+  renderMappingTable();
+}
+function mapCompareRows(a, b){
+  const av = a[mapSortKey], bv = b[mapSortKey];
+  let cmp;
+  if(MAP_NUM_SORT_FIELDS.has(mapSortKey)) cmp = (+av||0) - (+bv||0);
+  else cmp = String(av||'').localeCompare(String(bv||''),'ar');
+  return cmp * mapSortDir;
+}
+function updateMapSortHeaderLabels(){
+  const row = document.getElementById('mapTheadRow');
+  if(!row) return;
+  row.querySelectorAll('th[id^="thMap_"]').forEach(th=>{
+    const key = th.id.slice('thMap_'.length);
+    const base = th.dataset.baseLabel || (th.dataset.baseLabel = th.textContent.trim());
+    th.textContent = base + (key===mapSortKey ? (mapSortDir===1?' ▲':' ▼') : '');
+  });
+}
 function renderMappingTable(){
   const taxFilterEl = document.getElementById('mapTaxFilter');
   const uniqueTaxRates = [...new Set(ITEMS.map(it=>it.taxRate||0))].sort((a,b)=>a-b);
@@ -799,10 +836,11 @@ function renderMappingTable(){
     if(taxSel!=='' && Math.abs((it.taxRate||0) - parseFloat(taxSel)) > 0.0001) return false;
     if(!q) return true;
     return [it.ourCode,it.ourName,it.theirCode,it.theirName].some(v=>String(v||'').toLowerCase().includes(q));
-  }).sort((a,b)=> String(a.ourCode).localeCompare(String(b.ourCode),'ar'));
+  }).sort(mapCompareRows);
 
   document.getElementById('mapCountLbl').textContent = `${rows.length} من ${ITEMS.length} صنف`;
   document.getElementById('mapEmptyHint').style.display = ITEMS.length ? 'none' : 'block';
+  updateMapSortHeaderLabels();
 
   const tbody = document.getElementById('mapTbody');
   tbody.innerHTML = rows.map(it=>{
