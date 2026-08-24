@@ -166,6 +166,7 @@
     <button class="btn-ghost" id="pageTabStatement" onclick="switchPage('statement')" style="border-radius:9px 9px 0 0;">📥 كشف المؤسسة الشهري</button>
     <button class="btn-ghost" id="pageTabPrint" onclick="switchPage('print')" style="border-radius:9px 9px 0 0;">🖨️ طباعة الفواتير</button>
     <button class="btn-ghost" id="pageTabTransfers" onclick="switchPage('transfers')" style="border-radius:9px 9px 0 0;">🔄 سندات التحويل (011)</button>
+    <button class="btn-ghost" id="pageTabSummary" onclick="switchPage('summary')" style="border-radius:9px 9px 0 0;">📋 ملخص الفواتير</button>
     <button class="btn-ghost" id="pageTabRoadmap" onclick="switchPage('roadmap')" style="border-radius:9px 9px 0 0;">🗺️ خارطة المراحل</button>
     <span style="flex:1;"></span>
     <button class="btn-ghost btn-sm" style="border-color:var(--teal); color:var(--teal); border-radius:9px 9px 0 0;" onclick="downloadBackup()">💾 نسخة احتياطية</button>
@@ -440,6 +441,39 @@ ORDER BY T0."DocNum"</code>
   </section>
 
   <!-- ============ صفحة خارطة المراحل ============ -->
+  <section class="panel" id="summaryPage" style="display:none;">
+    <div class="input-panel" style="border-bottom:1px solid var(--line);">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;"><b style="font-size:13px;">ملخص الفواتير الشهرية</b></div>
+      <div class="hint">ملخص كل الفواتير يلي انطبعت فعلياً (باقي المملكة + كشف تجميعي العقبة + فواتير العقبة حسب السند) — حسب الصنف وحسب الفترة، مع مجاميع. الفاتورة بتنسجل بالملخص أول ما تفتحها من زر "🖨️ معاينة وطباعة".</div>
+      <div class="row-actions">
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">من تاريخ <input type="date" id="sumFrom"></label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">إلى تاريخ <input type="date" id="sumTo"></label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">المجموعة
+          <select id="sumGroup">
+            <option value="">الكل</option>
+            <option value="amman">باقي المملكة</option>
+            <option value="aqaba">العقبة</option>
+          </select>
+        </label>
+        <button class="btn-primary btn-sm" onclick="renderSummaryPage()">عرض</button>
+        <button class="btn-ghost btn-sm" onclick="exportSummaryExcel()">📊 تصدير Excel</button>
+        <span class="status-msg" id="sumMsg"></span>
+      </div>
+    </div>
+    <div class="summary" id="sumTotalsRow"></div>
+    <div class="tbl-wrap">
+      <table class="grid" id="sumTable">
+        <thead><tr>
+          <th>رمز الصنف لدى المؤسسة</th><th>اسم الصنف</th>
+          <th>رقم الفاتورة</th><th>التاريخ</th><th>المجموعة</th><th>الكمية</th>
+          <th>سعر البيع</th><th>ضريبة المبيعات</th><th>الاجمالي</th><th>سعر بيع المؤسسة</th>
+        </tr></thead>
+        <tbody id="sumTbody"></tbody>
+      </table>
+      <div class="empty-hint" id="sumEmptyHint" style="display:none;">ما في فواتير مسجّلة بهاي الفترة بعد — افتح معاينة/طباعة لفاتورة أول (من صفحة "طباعة الفواتير" أو "سندات التحويل").</div>
+    </div>
+  </section>
+
   <section class="panel" id="roadmapPage" style="display:none;">
     <div class="roadmap">
       <div class="rm-item done">
@@ -502,6 +536,7 @@ let openBulkAssign = null; // invoiceId currently showing تعبئة سريعة 
 let TRANSFERS = []; // {docNum, docDate, fromWhs, toWhs, ourCode, ourName, qty, uom}
 let STATEMENT = []; // {theirCode, theirName, agreementNo, amanat, ghairMawrid, price, qtyDispatch, qtyAmman, qtyAqaba, totalValue}
 let DUMMY_INVOICES = []; // {id, docNum, date, branch, amount}
+let INVOICE_LOG = []; // {id, key, groupId, groupName, docType, docNo, docDate, printedAt, lines:[{theirCode,theirName,qty,price,net,taxPct,taxVal,total,whsPrice,whsTotal}]}
 let BRANCHES = ['عمان', 'العقبة']; // قائمة أسماء الفروع القابلة للتعريف من داخل السجل
 const DEFAULT_BRANCH_CODE_MAP = {"1": "الكرامة", "10": "بني كنانة", "100": "الموقر", "101": "حي معصوم", "102": "عبد الله الرواحنة", "104": "القريقرة", "105": "الرئيسي", "106": "مغير الكرك", "107": "فقوع", "108": "محي", "109": "بصيرا", "11": "الرمثا", "110": "جرش الجديد", "111": "البادية الشمالية", "112": "الجفر", "12": "عجلون", "13": "سوف", "14": "الروابي", "15": "الطرة", "16": "سوق الفاروق", "17": "ساكب", "18": "عنجرة", "19": "مرج الحمام", "2": "اسواق طارق", "20": "السلط", "21": "السرو", "22": "صويلح", "23": "خالد", "24": "الحزام", "25": "ياجوز", "26": "المفرق", "27": "جعفر الطيار", "28": "القصر", "29": "هزاع المجالي", "3": "مجمع المقابلين", "30": "المزار الجنوبي", "31": "زيد بن الحارث", "32": "مؤتة", "33": "مادبا", "34": "سوق الرابية", "35": "سوق دير ابي سعيد", "36": "اسواق السلام", "37": "العيص", "38": "الطفيلة", "39": "القادسية", "4": "راس العين", "40": "وصفي التل الشهيد-اربد", "41": "الحارث بن عمير الازدي", "42": "اربد الشمالي", "43": "الشوبك", "44": "وادي موسى", "45": "الطيبة الشمالية", "46": "معان", "47": "خالد بن الوليد", "48": "العدنانية", "49": "راشد الزيود", "5": "شفا بدران", "50": "الصديق", "51": "الوفاء", "52": "كفرنجه", "53": "الوسطية", "54": "المزار الشمالي", "55": "منشية بني حسن", "56": "مثلث ارحابا", "57": "الاشرفية", "58": "الهاشمية", "59": "علان", "6": "مجمع الشهيد /سحاب", "60": "آيل", "61": "عوجان", "62": "الشونة الشمالية", "63": "غور الصافي", "64": "دير علا", "65": "الكريمة", "66": "الصبيحي", "67": "بلعما", "68": "القطرانة", "69": "الشونة الجنوبية", "7": "كفر يوبا", "70": "البتراء", "71": "النشامى-حسينية معان", "72": "الجيزة", "73": "ماركا", "74": "سوق مرصع", "75": "برما", "76": "الازرق", "77": "رحاب", "78": "مليح", "79": "ام العمد", "8": "الحصن", "80": "ام البساتين", "81": "ذيبان", "82": "الفاروق", "83": "الحسا", "84": "العقبة", "85": "جديتا", "86": "الطيبة", "87": "السعيدية", "88": "الخالدية", "89": "المنارة", "9": "عروس الشمال", "90": "سما السرحان", "91": "سوق صبحا", "92": "الريشة", "93": "القويرة", "94": "الديسة", "95": "اذرح", "96": "الفيصلية", "97": "الطيبة الجنوب", "98": "المدينة التدريبية -الزرقاء", "99": "سوق بدر الجديد"}; // ترجمة كود الفرع (UDF رقمي بـ SAP) إلى اسمه
 let BRANCH_CODE_MAP = {};
@@ -523,6 +558,7 @@ function loadState(){
       TRANSFERS = Array.isArray(d.TRANSFERS) ? d.TRANSFERS : [];
       STATEMENT = Array.isArray(d.STATEMENT) ? d.STATEMENT : [];
       DUMMY_INVOICES = Array.isArray(d.DUMMY_INVOICES) ? d.DUMMY_INVOICES : [];
+      INVOICE_LOG = Array.isArray(d.INVOICE_LOG) ? d.INVOICE_LOG : [];
       if(Array.isArray(d.BRANCHES) && d.BRANCHES.length) BRANCHES = d.BRANCHES;
       if(d.BRANCH_CODE_MAP && typeof d.BRANCH_CODE_MAP==='object') BRANCH_CODE_MAP = d.BRANCH_CODE_MAP;
     }
@@ -555,14 +591,14 @@ function ensureInvoiceDefaults(inv){
   if(!inv.qty) inv.qty={};
 }
 function saveState(){
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, BRANCHES, BRANCH_CODE_MAP})); }
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, INVOICE_LOG, BRANCHES, BRANCH_CODE_MAP})); }
   catch(e){ console.warn('تعذر الحفظ المحلي', e); }
 }
 
 /* ==================== تنقّل الصفحات ==================== */
 function switchPage(p){
   currentPage = p;
-  ['mapping','invoices','statement','print','transfers','roadmap'].forEach(k=>{
+  ['mapping','invoices','statement','print','transfers','summary','roadmap'].forEach(k=>{
     document.getElementById(k+'Page').style.display = (k===p) ? 'block' : 'none';
     const tab = document.getElementById('pageTab'+k.charAt(0).toUpperCase()+k.slice(1));
     tab.className = (k===p) ? 'btn-primary' : 'btn-ghost';
@@ -573,6 +609,7 @@ function switchPage(p){
   if(p==='statement') renderStatementPage();
   if(p==='print') renderPrintPage();
   if(p==='transfers') renderTransfersPage();
+  if(p==='summary') renderSummaryPage();
 }
 
 /* ==================== أدوات عامة ==================== */
@@ -1185,11 +1222,28 @@ function openPrintPreview(groupId, invId, mode){
   const inv = g && g.invoices.find(i=>i.id===invId);
   if(!g||!inv) return;
   const html = (mode==='company') ? buildCompanySheetHTML(g, inv) : buildPrintSheetHTML(g, inv);
+  if(mode!=='company') logInvoicePrint('design-'+inv.id+'|'+(inv.docNo||''), g, inv, null);
   document.getElementById('printSheetContent').innerHTML = html;
   document.getElementById('printOverlay').classList.add('active');
 }
 function closePrintPreview(){
   document.getElementById('printOverlay').classList.remove('active');
+}
+
+/* ==================== ملخص الفواتير (تسجيل كل فاتورة اتطبعت فعلياً) ==================== */
+function logInvoicePrint(key, g, inv, qtyOverride){
+  const lines = inv.itemKeys.map(k=>{
+    const it = findItem(k);
+    if(!it) return null;
+    const qty = qtyOverride ? (qtyOverride.get(k)||0) : (inv.qty[k]||0);
+    if(!qty) return null;
+    const {net,taxPct,taxVal,total} = computeLine(it, qty, g.taxExempt);
+    return {theirCode:it.theirCode, theirName:it.theirName, ourCode:it.ourCode, qty, price:it.salePricePiece||0, net, taxPct, taxVal, total, whsPrice:it.whsPricePiece||0, whsTotal: qty*(it.whsPricePiece||0)};
+  }).filter(Boolean);
+  if(!lines.length) return;
+  INVOICE_LOG = INVOICE_LOG.filter(r=> r.key!==key);
+  INVOICE_LOG.push({id:uid(), key, groupId:g.id, groupName:g.name, docType:inv.docType, docNo:inv.docNo, docDate:inv.docDate, printedAt:new Date().toISOString(), lines});
+  saveState();
 }
 function copyPrintTableTSV(){
   const table = document.querySelector('#printSheetContent .ps-table');
@@ -1609,6 +1663,7 @@ function printAqabaVoucherInvoices(){
     const keys = slots.get(slot).map(x=>x.key);
     const fakeInv = {id:'aqaba-voucher-slot-'+slot, name:'فاتورة سند '+slot, docType:'invoice', docNo, docDate, itemKeys:keys, qty:{}};
     html += buildPrintSheetHTML(g, fakeInv, qtyMap);
+    logInvoicePrint('voucher-'+slot+'|'+(docNo||''), g, fakeInv, qtyMap);
   });
   document.getElementById('printSheetContent').innerHTML = html;
   document.getElementById('printOverlay').classList.add('active');
@@ -1752,6 +1807,106 @@ function exportDummyInvoicesExcel(){
   XLSX.utils.book_append_sheet(wb, ws, 'كشف الفواتير');
   XLSX.writeFile(wb, `كشف_فواتير_الصرف_الوهمي.xlsx`);
   flash('dummyExportMsg', `تم تصدير ${rows.length} فاتورة.`, true);
+}
+
+function getSummaryFilteredLines(){
+  const from = document.getElementById('sumFrom').value;
+  const to = document.getElementById('sumTo').value;
+  const groupFilter = document.getElementById('sumGroup').value;
+  const rows = [];
+  INVOICE_LOG.forEach(rec=>{
+    if(groupFilter && rec.groupId!==groupFilter) return;
+    if((from||to) && !rec.docDate) return;
+    if(from && rec.docDate < from) return;
+    if(to && rec.docDate > to) return;
+    rec.lines.forEach(ln=> rows.push({...ln, docNo:rec.docNo, docDate:rec.docDate, groupName:rec.groupName}));
+  });
+  return rows;
+}
+function summaryByItem(){
+  const rows = getSummaryFilteredLines();
+  const byItem = new Map();
+  rows.forEach(r=>{
+    if(!byItem.has(r.theirCode)) byItem.set(r.theirCode, {theirCode:r.theirCode, theirName:r.theirName, rows:[]});
+    byItem.get(r.theirCode).rows.push(r);
+  });
+  const items = Array.from(byItem.values()).sort((a,b)=>String(a.theirCode).localeCompare(String(b.theirCode),'ar'));
+  items.forEach(item=> item.rows.sort((a,b)=> String(a.docDate||'').localeCompare(String(b.docDate||''))));
+  return items;
+}
+function renderSummaryPage(){
+  if(currentPage!=='summary') return;
+  const items = summaryByItem();
+  const tbody = document.getElementById('sumTbody');
+  const emptyHint = document.getElementById('sumEmptyHint');
+  if(!items.length){
+    tbody.innerHTML = '';
+    emptyHint.style.display = 'block';
+    document.getElementById('sumTotalsRow').innerHTML = '';
+    return;
+  }
+  emptyHint.style.display = 'none';
+
+  let grandQty=0, grandTax=0, grandTotal=0, grandWhs=0;
+  let html = '';
+  items.forEach(item=>{
+    let subQty=0, subTax=0, subTotal=0, subWhs=0;
+    item.rows.forEach((r,idx)=>{
+      subQty+=r.qty; subTax+=r.taxVal; subTotal+=r.total; subWhs+=r.whsTotal;
+      const dateStr = r.docDate ? r.docDate.split('-').reverse().join('/') : '—';
+      html += `<tr>
+        <td class="mono">${idx===0?esc(item.theirCode):''}</td>
+        <td>${idx===0?esc(item.theirName):''}</td>
+        <td class="mono">${esc(r.docNo)||'—'}</td>
+        <td>${dateStr}</td>
+        <td>${esc(r.groupName)}</td>
+        <td class="mono">${fmtNum(r.qty)}</td>
+        <td class="mono">${fmt4(r.price)}</td>
+        <td class="mono">${fmt3(r.taxVal)}</td>
+        <td class="mono">${fmt3(r.total)}</td>
+        <td class="mono">${fmt3(r.whsTotal)}</td>
+      </tr>`;
+    });
+    html += `<tr style="background:var(--paper); font-weight:700;">
+      <td colspan="5">إجمالي ${esc(item.theirName)}</td>
+      <td class="mono">${fmtNum(subQty)}</td>
+      <td></td>
+      <td class="mono">${fmt3(subTax)}</td>
+      <td class="mono">${fmt3(subTotal)}</td>
+      <td class="mono">${fmt3(subWhs)}</td>
+    </tr>`;
+    grandQty+=subQty; grandTax+=subTax; grandTotal+=subTotal; grandWhs+=subWhs;
+  });
+  tbody.innerHTML = html;
+  document.getElementById('sumTotalsRow').innerHTML = `
+    <div class="card"><div class="lbl">عدد الأصناف</div><div class="val">${items.length}</div></div>
+    <div class="card"><div class="lbl">إجمالي الكمية</div><div class="val">${fmtNum(grandQty)}</div></div>
+    <div class="card"><div class="lbl">إجمالي ضريبة المبيعات</div><div class="val">${fmt3(grandTax)}</div></div>
+    <div class="card"><div class="lbl">الإجمالي بعد الضريبة</div><div class="val">${fmt3(grandTotal)}</div></div>
+    <div class="card"><div class="lbl">إجمالي سعر بيع المؤسسة</div><div class="val">${fmt3(grandWhs)}</div></div>
+  `;
+}
+function exportSummaryExcel(){
+  if(!window.XLSX){ flash('sumMsg','مكتبة تصدير Excel ما تحمّلت (تحتاج اتصال إنترنت أول مرة).', false); return; }
+  const items = summaryByItem();
+  if(!items.length){ flash('sumMsg','ما في بيانات لتصديرها بهاي الفترة.', false); return; }
+  const data = [['رمز الصنف لدى المؤسسة','اسم الصنف','رقم الفاتورة','التاريخ','المجموعة','الكمية','سعر البيع','ضريبة المبيعات','الاجمالي','سعر بيع المؤسسة']];
+  let grandQty=0, grandTax=0, grandTotal=0, grandWhs=0;
+  items.forEach(item=>{
+    let subQty=0, subTax=0, subTotal=0, subWhs=0;
+    item.rows.forEach(r=>{
+      subQty+=r.qty; subTax+=r.taxVal; subTotal+=r.total; subWhs+=r.whsTotal;
+      data.push([item.theirCode, item.theirName, r.docNo, r.docDate, r.groupName, r.qty, r.price, r.taxVal, r.total, r.whsTotal]);
+    });
+    data.push(['','إجمالي '+item.theirName,'','','',subQty,'',subTax,subTotal,subWhs]);
+    grandQty+=subQty; grandTax+=subTax; grandTotal+=subTotal; grandWhs+=subWhs;
+  });
+  data.push(['','الإجمالي العام','','','',grandQty,'',grandTax,grandTotal,grandWhs]);
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'ملخص الفواتير');
+  XLSX.writeFile(wb, `ملخص_الفواتير_الشهرية.xlsx`);
+  flash('sumMsg', `تم تصدير ${items.length} صنف.`, true);
 }
 
 function renderTransfersPage(){
@@ -1934,6 +2089,7 @@ function restoreBackup(evt){
       TRANSFERS = Array.isArray(d.TRANSFERS) ? d.TRANSFERS : [];
       STATEMENT = Array.isArray(d.STATEMENT) ? d.STATEMENT : [];
       DUMMY_INVOICES = Array.isArray(d.DUMMY_INVOICES) ? d.DUMMY_INVOICES : [];
+      INVOICE_LOG = Array.isArray(d.INVOICE_LOG) ? d.INVOICE_LOG : [];
       if(Array.isArray(d.BRANCHES) && d.BRANCHES.length) BRANCHES = d.BRANCHES;
       if(d.BRANCH_CODE_MAP && typeof d.BRANCH_CODE_MAP==='object') BRANCH_CODE_MAP = d.BRANCH_CODE_MAP;
       GROUPS.forEach(g=>{ ensureGroupDefaults(g); (g.invoices||[]).forEach(ensureInvoiceDefaults); });
