@@ -250,6 +250,7 @@
       </div>
       <div class="hint" style="margin-top:8px;">رتّب الأصناف جوّا كل فاتورة بالسهمين ▲▼، أو احذف الصنف من الفاتورة. القالب هذا بيتحفظ ويتكرر تلقائياً كل شهر لنفس المجموعة — عدّله بس لما يتغير ترتيب فعلي عند المؤسسة.</div>
     </div>
+    <div id="freshLoadBanner"></div>
     <div class="list" id="invoicesList"></div>
   </section>
 
@@ -468,6 +469,8 @@ ORDER BY T0."DocNum"</code>
 <script>
 /* ==================== تخزين ==================== */
 const STORAGE_KEY = 'milInst_v2';
+let IS_FRESH_LOAD = false;
+let freshLoadBannerDismissed = false;
 // {ourCode, ourName, ourUnit, theirCode, theirName, origin, taxRate, factor, salePriceUnit, salePricePiece, whsPriceUnit, whsPricePiece}
 let ITEMS = [];
 let GROUPS = [];  // {id, name, invoices:[{id, name, itemKeys:[itemKey,...]}]}
@@ -490,6 +493,7 @@ function itemKey(it){ return it.ourCode + '|' + it.theirCode; }
 function findItem(key){ return ITEMS.find(it => itemKey(it) === key); }
 
 function loadState(){
+  IS_FRESH_LOAD = !localStorage.getItem(STORAGE_KEY);
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
     if(raw){
@@ -778,8 +782,23 @@ function addItemToInvoice(invId, key){
   renderInvoicesPage();
 }
 
+function triggerRestoreClick(){ document.getElementById('restoreFileInput').click(); }
+function dismissFreshLoadBanner(){ freshLoadBannerDismissed = true; renderFreshLoadBanner(); }
+function renderFreshLoadBanner(){
+  const el = document.getElementById('freshLoadBanner');
+  if(!el) return;
+  const totalItemKeys = GROUPS.reduce((sum,g)=> sum + g.invoices.reduce((s,inv)=> s + inv.itemKeys.length, 0), 0);
+  if(!IS_FRESH_LOAD || freshLoadBannerDismissed || totalItemKeys>0){ el.innerHTML=''; return; }
+  el.innerHTML = `
+    <div style="background:#FFF7E6; border:1px solid #E8B94A; border-radius:8px; padding:12px 16px; margin-bottom:14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+      <div style="flex:1; min-width:220px; font-size:13px;">⚠️ هذا أول فتح لهذا الملف على هذا المتصفح — ما في أي فواتير مصممة بعد. إذا سبق ورتبت الفواتير على نسخة تانية من الملف، لا تعبيها من جديد يدوياً.</div>
+      <button class="btn-primary btn-sm" onclick="triggerRestoreClick()">📂 استرجاع آخر نسخة احتياطية</button>
+      <button class="btn-ghost btn-sm" onclick="dismissFreshLoadBanner()">تجاهل، هاي أول مرة فعلاً</button>
+    </div>`;
+}
 function renderInvoicesPage(){
   if(currentPage!=='invoices') return;
+  renderFreshLoadBanner();
   renderGroupTabs('grpTabs');
   const g = GROUPS.find(x=>x.id===currentGroupId);
   const list = document.getElementById('invoicesList');
@@ -1756,6 +1775,7 @@ function restoreBackup(evt){
       if(d.BRANCH_CODE_MAP && typeof d.BRANCH_CODE_MAP==='object') BRANCH_CODE_MAP = d.BRANCH_CODE_MAP;
       GROUPS.forEach(g=>{ ensureGroupDefaults(g); (g.invoices||[]).forEach(ensureInvoiceDefaults); });
       currentGroupId = GROUPS[0] ? GROUPS[0].id : null;
+      IS_FRESH_LOAD = false;
       saveState();
       renderMappingTable();
       renderInvoicesPage();
