@@ -118,12 +118,13 @@
   .ps-footer .lines div{margin:2px 0;}
   .ps-words{margin-top:8px; font-weight:700; font-size:12px; text-align:center;}
   @media print{
+    @page{size:A4; margin:10mm;}
     body *{visibility:hidden;}
     #printOverlay, #printOverlay *{visibility:visible;}
     #printOverlay{position:absolute; top:0; left:0; width:100%; display:block;}
     .print-toolbar{display:none;}
-    .print-sheet{border:none; margin:0; max-width:100%;}
-    .print-sheet + .print-sheet{page-break-before:always;}
+    .print-sheet{border:none; margin:0; max-width:100%; page-break-inside:avoid; break-inside:avoid;}
+    .print-sheet + .print-sheet{page-break-before:always; break-before:page;}
   }
 
   .roadmap{padding:20px 24px 26px; display:flex; flex-direction:column; gap:10px;}
@@ -445,7 +446,7 @@ ORDER BY T0."DocNum"</code>
     </div>
   </section>
 
-  <!-- ============ صفحة خارطة المراحل ============ -->
+  <!-- ============ صفحة ملخص الفواتير ============ -->
   <section class="panel" id="summaryPage" style="display:none;">
     <div class="input-panel" style="border-bottom:1px solid var(--line);">
       <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;"><b style="font-size:13px;">ملخص الفواتير الشهرية</b></div>
@@ -460,6 +461,15 @@ ORDER BY T0."DocNum"</code>
             <option value="aqaba">العقبة</option>
           </select>
         </label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">رقم الفاتورة
+          <select id="sumDocNo"><option value="">— كل الفواتير —</option></select>
+        </label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">طريقة العرض
+          <select id="sumMode">
+            <option value="detail">تفصيلي (حسب الصنف)</option>
+            <option value="byInvoice">تجميعي (حسب الفاتورة)</option>
+          </select>
+        </label>
         <button class="btn-primary btn-sm" onclick="renderSummaryPage()">عرض</button>
         <button class="btn-ghost btn-sm" onclick="exportSummaryExcel()">📊 تصدير Excel</button>
         <span class="status-msg" id="sumMsg"></span>
@@ -468,11 +478,7 @@ ORDER BY T0."DocNum"</code>
     <div class="summary" id="sumTotalsRow"></div>
     <div class="tbl-wrap">
       <table class="grid" id="sumTable">
-        <thead><tr>
-          <th>رمز الصنف لدى المؤسسة</th><th>اسم الصنف</th>
-          <th>رقم الفاتورة</th><th>التاريخ</th><th>المجموعة</th><th>الكمية</th>
-          <th>سعر البيع</th><th>ضريبة المبيعات</th><th>الاجمالي</th><th>سعر بيع المؤسسة</th>
-        </tr></thead>
+        <thead id="sumThead"></thead>
         <tbody id="sumTbody"></tbody>
       </table>
       <div class="empty-hint" id="sumEmptyHint" style="display:none;">ما في فواتير مسجّلة بهاي الفترة بعد — افتح معاينة/طباعة لفاتورة أول (من صفحة "طباعة الفواتير" أو "سندات التحويل").</div>
@@ -1825,18 +1831,32 @@ function exportDummyInvoicesExcel(){
   flash('dummyExportMsg', `تم تصدير ${rows.length} فاتورة.`, true);
 }
 
-function getSummaryFilteredLines(){
+function getFilteredInvoiceLogRecords(){
   const from = document.getElementById('sumFrom').value;
   const to = document.getElementById('sumTo').value;
   const groupFilter = document.getElementById('sumGroup').value;
-  const rows = [];
-  INVOICE_LOG.forEach(rec=>{
-    if(groupFilter && rec.groupId!==groupFilter) return;
-    if((from||to) && !rec.docDate) return;
-    if(from && rec.docDate < from) return;
-    if(to && rec.docDate > to) return;
-    rec.lines.forEach(ln=> rows.push({...ln, docNo:rec.docNo, docDate:rec.docDate, groupName:rec.groupName}));
+  return INVOICE_LOG.filter(rec=>{
+    if(groupFilter && rec.groupId!==groupFilter) return false;
+    if((from||to) && !rec.docDate) return false;
+    if(from && rec.docDate < from) return false;
+    if(to && rec.docDate > to) return false;
+    return true;
   });
+}
+function populateDocNoFilter(records){
+  const el = document.getElementById('sumDocNo');
+  const prev = el.value;
+  const docNos = [...new Set(records.map(r=>r.docNo).filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),'ar'));
+  el.innerHTML = '<option value="">— كل الفواتير —</option>' + docNos.map(d=>`<option value="${esc(d)}">${esc(d)}</option>`).join('');
+  el.value = docNos.includes(prev) ? prev : '';
+}
+function getSummaryFilteredLines(){
+  let records = getFilteredInvoiceLogRecords();
+  populateDocNoFilter(records);
+  const docNoSel = document.getElementById('sumDocNo').value;
+  if(docNoSel) records = records.filter(r=>r.docNo===docNoSel);
+  const rows = [];
+  records.forEach(rec=> rec.lines.forEach(ln=> rows.push({...ln, docNo:rec.docNo, docDate:rec.docDate, groupName:rec.groupName})));
   return rows;
 }
 function summaryByItem(){
@@ -1850,11 +1870,71 @@ function summaryByItem(){
   items.forEach(item=> item.rows.sort((a,b)=> String(a.docDate||'').localeCompare(String(b.docDate||''))));
   return items;
 }
+function summaryByInvoice(){
+  let records = getFilteredInvoiceLogRecords();
+  populateDocNoFilter(records);
+  const docNoSel = document.getElementById('sumDocNo').value;
+  if(docNoSel) records = records.filter(r=>r.docNo===docNoSel);
+  return records.map(rec=>{
+    let qty=0, net=0, tax=0, total=0, whs=0;
+    rec.lines.forEach(ln=>{ qty+=ln.qty; net+=ln.net; tax+=ln.taxVal; total+=ln.total; whs+=ln.whsTotal; });
+    return {docNo:rec.docNo, docDate:rec.docDate, groupName:rec.groupName, itemCount:rec.lines.length, qty, net, tax, total, whs};
+  }).sort((a,b)=> String(a.docDate||'').localeCompare(String(b.docDate||'')));
+}
 function renderSummaryPage(){
   if(currentPage!=='summary') return;
-  const items = summaryByItem();
+  const mode = document.getElementById('sumMode').value;
+  const thead = document.getElementById('sumThead');
   const tbody = document.getElementById('sumTbody');
   const emptyHint = document.getElementById('sumEmptyHint');
+
+  if(mode==='byInvoice'){
+    thead.innerHTML = `<tr><th>رقم الفاتورة</th><th>التاريخ</th><th>المجموعة</th><th>عدد الأصناف</th><th>الكمية</th><th>الصافي قبل الضريبة</th><th>ضريبة المبيعات</th><th>الاجمالي</th><th>سعر بيع المؤسسة</th></tr>`;
+    const invoices = summaryByInvoice();
+    if(!invoices.length){
+      tbody.innerHTML = ''; emptyHint.style.display = 'block'; document.getElementById('sumTotalsRow').innerHTML = '';
+      return;
+    }
+    emptyHint.style.display = 'none';
+    let grandQty=0, grandNet=0, grandTax=0, grandTotal=0, grandWhs=0;
+    tbody.innerHTML = invoices.map(inv=>{
+      grandQty+=inv.qty; grandNet+=inv.net; grandTax+=inv.tax; grandTotal+=inv.total; grandWhs+=inv.whs;
+      const dateStr = inv.docDate ? inv.docDate.split('-').reverse().join('/') : '—';
+      return `<tr>
+        <td class="mono">${esc(inv.docNo)||'—'}</td>
+        <td>${dateStr}</td>
+        <td>${esc(inv.groupName)}</td>
+        <td class="mono">${inv.itemCount}</td>
+        <td class="mono">${fmtNum(inv.qty)}</td>
+        <td class="mono">${fmt3(inv.net)}</td>
+        <td class="mono">${fmt3(inv.tax)}</td>
+        <td class="mono">${fmt3(inv.total)}</td>
+        <td class="mono">${fmt3(inv.whs)}</td>
+      </tr>`;
+    }).join('') + `<tr style="background:var(--paper); font-weight:700;">
+      <td colspan="4">الإجمالي العام</td>
+      <td class="mono">${fmtNum(grandQty)}</td>
+      <td class="mono">${fmt3(grandNet)}</td>
+      <td class="mono">${fmt3(grandTax)}</td>
+      <td class="mono">${fmt3(grandTotal)}</td>
+      <td class="mono">${fmt3(grandWhs)}</td>
+    </tr>`;
+    document.getElementById('sumTotalsRow').innerHTML = `
+      <div class="card"><div class="lbl">عدد الفواتير</div><div class="val">${invoices.length}</div></div>
+      <div class="card"><div class="lbl">إجمالي الكمية</div><div class="val">${fmtNum(grandQty)}</div></div>
+      <div class="card"><div class="lbl">إجمالي ضريبة المبيعات</div><div class="val">${fmt3(grandTax)}</div></div>
+      <div class="card"><div class="lbl">الإجمالي بعد الضريبة</div><div class="val">${fmt3(grandTotal)}</div></div>
+      <div class="card"><div class="lbl">إجمالي سعر بيع المؤسسة</div><div class="val">${fmt3(grandWhs)}</div></div>
+    `;
+    return;
+  }
+
+  thead.innerHTML = `<tr>
+    <th>رمز الصنف لدى المؤسسة</th><th>اسم الصنف</th>
+    <th>رقم الفاتورة</th><th>التاريخ</th><th>المجموعة</th><th>الكمية</th>
+    <th>سعر البيع</th><th>ضريبة المبيعات</th><th>الاجمالي</th><th>سعر بيع المؤسسة</th>
+  </tr>`;
+  const items = summaryByItem();
   if(!items.length){
     tbody.innerHTML = '';
     emptyHint.style.display = 'block';
@@ -1904,6 +1984,24 @@ function renderSummaryPage(){
 }
 function exportSummaryExcel(){
   if(!window.XLSX){ flash('sumMsg','مكتبة تصدير Excel ما تحمّلت (تحتاج اتصال إنترنت أول مرة).', false); return; }
+  const mode = document.getElementById('sumMode').value;
+  if(mode==='byInvoice'){
+    const invoices = summaryByInvoice();
+    if(!invoices.length){ flash('sumMsg','ما في بيانات لتصديرها بهاي الفترة.', false); return; }
+    const data = [['رقم الفاتورة','التاريخ','المجموعة','عدد الأصناف','الكمية','الصافي قبل الضريبة','ضريبة المبيعات','الاجمالي','سعر بيع المؤسسة']];
+    let grandQty=0, grandNet=0, grandTax=0, grandTotal=0, grandWhs=0;
+    invoices.forEach(inv=>{
+      data.push([inv.docNo, inv.docDate, inv.groupName, inv.itemCount, inv.qty, inv.net, inv.tax, inv.total, inv.whs]);
+      grandQty+=inv.qty; grandNet+=inv.net; grandTax+=inv.tax; grandTotal+=inv.total; grandWhs+=inv.whs;
+    });
+    data.push(['','الإجمالي العام','','',grandQty,grandNet,grandTax,grandTotal,grandWhs]);
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'ملخص الفواتير');
+    XLSX.writeFile(wb, `ملخص_الفواتير_الشهرية_تجميعي.xlsx`);
+    flash('sumMsg', `تم تصدير ${invoices.length} فاتورة.`, true);
+    return;
+  }
   const items = summaryByItem();
   if(!items.length){ flash('sumMsg','ما في بيانات لتصديرها بهاي الفترة.', false); return; }
   const data = [['رمز الصنف لدى المؤسسة','اسم الصنف','رقم الفاتورة','التاريخ','المجموعة','الكمية','سعر البيع','ضريبة المبيعات','الاجمالي','سعر بيع المؤسسة']];
