@@ -1,0 +1,842 @@
+<meta charset="UTF-8">
+<title>نظام التنبؤ بمسحوبات العملاء v1</title>
+<style>
+:root{--ink:#0b1f3a;--ink2:#5b6b82;--line:#e2e7ee;--bg:#f4f6f9;--card:#fff;--red:#c0392b;--redbg:#fdecea;--orange:#c0641f;--orangebg:#fdf0e3;--yellow:#8a6d00;--yellowbg:#fdf6da;--green:#1e7d45;--greenbg:#e6f6ec;--blue:#1c5fa8;--blk:#111}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Segoe UI",Tahoma,Arial,sans-serif;background:var(--bg);color:var(--blk);direction:rtl}
+header{background:var(--ink);color:#fff;padding:12px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+header h1{font-size:16px;margin:0}
+nav{display:flex;gap:4px;flex-wrap:wrap;background:#0e2a4f;padding:6px 14px}
+nav button{background:transparent;border:none;color:#cfe0f5;padding:8px 12px;border-radius:6px;cursor:pointer;font-size:13px}
+nav button.on{background:#fff;color:var(--ink);font-weight:700}
+main{padding:16px;max-width:1400px;margin:0 auto}
+.tab{display:none}
+.tab.on{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:14px;box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.card h2{font-size:15px;margin:0 0 8px}
+.card h3{font-size:13px;margin:14px 0 6px;color:var(--ink2)}
+.hint{color:var(--ink2);font-size:12px;margin:2px 0 10px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+label{font-size:12.5px;color:var(--ink2)}
+textarea,input[type=text],input[type=number],input[type=date],select{border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:13px;font-family:inherit}
+textarea{width:100%;min-height:110px;font-family:ui-monospace,Consolas,monospace;font-size:12px;direction:ltr}
+.btn{background:var(--ink);color:#fff;border:none;border-radius:6px;padding:7px 14px;font-size:13px;cursor:pointer}
+.btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+.btn.sm{padding:4px 9px;font-size:12px}
+.btn.danger{background:var(--red)}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{border-bottom:1px solid var(--line);padding:6px 8px;text-align:right}
+th{background:#f0f3f7;color:var(--ink2);font-weight:700;position:sticky;top:0}
+tr:hover td{background:#f7f9fc}
+.num{font-family:ui-monospace,Consolas,monospace;text-align:left;direction:ltr}
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700}
+.b-red{background:var(--redbg);color:var(--red)}
+.b-orange{background:var(--orangebg);color:var(--orange)}
+.b-yellow{background:var(--yellowbg);color:var(--yellow)}
+.b-green{background:var(--greenbg);color:var(--green)}
+.b-blue{background:#e7f0fb;color:var(--blue)}
+.b-gray{background:#eef0f3;color:#555}
+.kpi{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.kpi .box{flex:1;min-width:130px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;text-align:center}
+.kpi .box b{display:block;font-size:22px}
+.section-red{border-inline-start:4px solid var(--red)}
+.section-orange{border-inline-start:4px solid var(--orange)}
+.section-yellow{border-inline-start:4px solid var(--yellow)}
+.section-green{border-inline-start:4px solid var(--green)}
+.alert-card{border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px;background:#fff}
+.alert-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px}
+.alert-title{font-weight:700;font-size:13.5px}
+.alert-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:4px 14px;margin:8px 0;font-size:12.5px}
+.alert-grid div b{display:block;color:var(--ink2);font-weight:600;font-size:11px}
+.reason{font-size:12.5px;background:#f7f9fc;border-radius:6px;padding:6px 8px;margin-top:6px}
+.rec{font-size:12.5px;color:var(--blue);font-weight:600;margin-top:4px}
+.actions{display:flex;gap:6px;margin-top:8px}
+.empty{color:var(--ink2);font-size:12.5px;padding:10px}
+.pill-list{display:flex;flex-wrap:wrap;gap:6px}
+.pill{background:#eef2f7;border-radius:14px;padding:3px 10px;font-size:11.5px;display:flex;gap:6px;align-items:center}
+.pill button{border:none;background:transparent;color:var(--red);cursor:pointer;font-weight:700}
+footer{text-align:center;color:var(--ink2);font-size:11px;padding:20px}
+</style>
+<header>
+  <h1>📦 نظام التنبؤ بمسحوبات العملاء — Adaptive Forecasting Prototype v1</h1>
+  <div class="row" style="margin:0">
+    <button class="btn ghost sm" onclick="backupJson()">⬇️ نسخة احتياطية JSON</button>
+    <label class="btn ghost sm" style="cursor:pointer">⬆️ استعادة<input type="file" id="fRestore" accept=".json" style="display:none"></label>
+    <button class="btn ghost sm" onclick="recomputeAll(true)">🔄 إعادة حساب التوقعات</button>
+  </div>
+</header>
+<nav id="nav"></nav>
+<main id="main"></main>
+<footer>Prototype v1 — يعمل بالكامل في المتصفح (بدون سيرفر)، البيانات محفوظة محلياً في هذا الجهاز فقط.</footer>
+
+<script>
+/* ==================== التخزين ==================== */
+function load(k,d){try{const v=localStorage.getItem('WD_'+k);return v?JSON.parse(v):d}catch(e){return d}}
+function save(k,v){try{localStorage.setItem('WD_'+k,JSON.stringify(v))}catch(e){alert('تعذر الحفظ محلياً (قد تكون البيانات كبيرة جداً لـ localStorage): '+e.message)}}
+function defaultSettings(){return {offDays:[5],holidays:[],grace:0,leadTimeDays:3,alphaInterval:0.4,alphaQty:0.35,graceMissedMult:1.5,growthThreshold:0.15}}
+let ROWS=load('ROWS',[]);
+let STOCK=load('STOCK',[]);
+let SETTINGS=Object.assign(defaultSettings(),load('SETTINGS',{}));
+let FORECASTS=load('FORECASTS',{});
+let ACCURACY=load('ACCURACY',[]);
+let ACTIONLOG=load('ACTIONLOG',[]);
+let ROWKEYS=new Set(ROWS.map(rowKey));
+function persistAll(){save('ROWS',ROWS);save('STOCK',STOCK);save('SETTINGS',SETTINGS);save('FORECASTS',FORECASTS);save('ACCURACY',ACCURACY);save('ACTIONLOG',ACTIONLOG)}
+function rowKey(r){return [r.custCode,r.itemCode,r.wdDate,r.qty,r.uom].join('|')}
+
+/* ==================== أدوات عامة ==================== */
+function todayIso(){const d=new Date();return isoDate(d)}
+function isoDate(d){return d.getFullYear()+'-'+p2(d.getMonth()+1)+'-'+p2(d.getDate())}
+function p2(n){return String(n).padStart(2,'0')}
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function mean(a){return a.length?a.reduce((s,x)=>s+x,0)/a.length:null}
+function median(a){if(!a.length)return null;const s=[...a].sort((x,y)=>x-y);const m=Math.floor(s.length/2);return s.length%2?s[m]:(s[m-1]+s[m])/2}
+function stdev(a){if(a.length<2)return 0;const m=mean(a);return Math.sqrt(mean(a.map(x=>(x-m)**2)))}
+function mad(a){if(!a.length)return 0;const m=median(a);return median(a.map(x=>Math.abs(x-m)))}
+function fmtN(n,d){if(n==null||isNaN(n))return '—';return (+n).toLocaleString('en-US',{maximumFractionDigits:d==null?1:d,minimumFractionDigits:0})}
+function fmtDate(iso){if(!iso)return '—';const [y,m,d]=iso.split('-');return `${d}/${m}/${y}`}
+function esc(s){return String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}
+
+/* ==================== تقويم أيام العمل ==================== */
+function holidaySet(){return new Set((SETTINGS.holidays||[]).map(h=>h.date))}
+function isWorkingDay(iso){const d=new Date(iso+'T00:00:00');if((SETTINGS.offDays||[5]).includes(d.getDay()))return false;if(holidaySet().has(iso))return false;return true}
+function addWorkingDays(iso,n){if(n==null||isNaN(n))return null;let d=new Date(iso+'T00:00:00');let steps=Math.round(n);const dir=steps>=0?1:-1;steps=Math.abs(steps);let guard=0;while(steps>0&&guard<20000){d.setDate(d.getDate()+dir);guard++;if(isWorkingDay(isoDate(d)))steps--}return isoDate(d)}
+function workingDaysBetween(iso1,iso2){if(!iso1||!iso2)return null;if(iso1===iso2)return 0;let sign=1,a=iso1,b=iso2;if(a>b){sign=-1;[a,b]=[b,a]}let d=new Date(a+'T00:00:00');const end=new Date(b+'T00:00:00');let cnt=0,guard=0;while(d<end&&guard<20000){d.setDate(d.getDate()+1);guard++;if(isWorkingDay(isoDate(d)))cnt++}return cnt*sign}
+
+/* ==================== استيراد البيانات ==================== */
+function parseDate(v){
+  if(v==null||v==='')return null;
+  if(typeof v==='number'||/^\d+(\.\d+)?$/.test(String(v).trim())&&+v>20000&&+v<80000){
+    const n=+v;const d=new Date(Date.UTC(1899,11,30)+n*86400000);return isoDate(d);
+  }
+  v=String(v).trim();let m;
+  if(m=v.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))return `${m[1]}-${p2(m[2])}-${p2(m[3])}`;
+  if(m=v.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/)){
+    let d=+m[1],mo=+m[2],y=+m[3];
+    if(d>12&&mo<=12){/*DD/MM*/}else if(mo>12&&d<=12){[d,mo]=[mo,d]}
+    if(mo>12||d>31)return null;
+    return `${y}-${p2(mo)}-${p2(d)}`;
+  }
+  const dt=new Date(v);if(!isNaN(dt))return isoDate(dt);
+  return null;
+}
+function splitLine(line){return line.includes('\t')?line.split('\t'):line.split(',')}
+function parseWithdrawalText(text){
+  const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if(!lines.length)return {added:0,dup:0,bad:0};
+  let start=0;
+  const c0=splitLine(lines[0]);
+  const qtyTest=c0[6];
+  const dateTest=parseDate(c0[4]);
+  if((qtyTest!=null&&isNaN(parseFloat(qtyTest)))||!dateTest)start=1;
+  let added=0,dup=0,bad=0;
+  for(let i=start;i<lines.length;i++){
+    const c=splitLine(lines[i]);
+    if(c.length<7)continue;
+    const custCode=(c[0]||'').trim(),custName=(c[1]||'').trim(),itemCode=(c[2]||'').trim(),itemName=(c[3]||'').trim();
+    const wdDate=parseDate(c[4]);
+    const qty=parseFloat(c[6]);
+    const uom=(c[7]||'').trim();
+    const rep=(c[8]||'').trim();
+    const custCategory=(c[9]||'').trim();
+    const itemCategory=(c[10]||'').trim();
+    if(!custCode||!itemCode||!wdDate||isNaN(qty)){bad++;continue}
+    const r={custCode,custName,itemCode,itemName,wdDate,qty,uom,rep,custCategory,itemCategory};
+    const k=rowKey(r);
+    if(ROWKEYS.has(k)){dup++;continue}
+    ROWKEYS.add(k);ROWS.push(r);added++;
+  }
+  return {added,dup,bad};
+}
+function parseStockText(text){
+  const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  let start=0;const c0=splitLine(lines[0]||'');
+  if(c0[3]!=null&&isNaN(parseFloat(c0[3])))start=1;
+  let added=0;
+  for(let i=start;i<lines.length;i++){
+    const c=splitLine(lines[i]);if(c.length<4)continue;
+    const custCode=(c[0]||'').trim(),itemCode=(c[1]||'').trim();
+    const type=(c[2]||'').trim().toLowerCase().includes('open')?'opening':'delivery';
+    const date=parseDate(c[3])||todayIso();
+    const qty=parseFloat(c[4]!=null?c[4]:c[3]);
+    if(!custCode||!itemCode)continue;
+    STOCK.push({custCode,itemCode,type,date,qty:isNaN(qty)?0:qty});added++;
+  }
+  return added;
+}
+
+/* ==================== محرك التحليل والتوقع ==================== */
+function buildGroups(){
+  const map=new Map();
+  ROWS.forEach(r=>{
+    const key=r.custCode+'||'+r.itemCode;
+    if(!map.has(key))map.set(key,{key,custCode:r.custCode,custName:r.custName,itemCode:r.itemCode,itemName:r.itemName,rep:'',custCategory:'',itemCategory:'',uom:'',events:[]});
+    const g=map.get(key);
+    g.events.push({date:r.wdDate,qty:+r.qty});
+    if(r.rep)g.rep=r.rep;if(r.custCategory)g.custCategory=r.custCategory;if(r.itemCategory)g.itemCategory=r.itemCategory;if(r.uom)g.uom=r.uom;
+    if(r.custName)g.custName=r.custName;if(r.itemName)g.itemName=r.itemName;
+  });
+  map.forEach(g=>g.events.sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0));
+  return map;
+}
+function linSlope(arr){const n=arr.length;if(n<2)return 0;const xs=arr.map((_,i)=>i);const mx=mean(xs),my=mean(arr);let num=0,den=0;for(let i=0;i<n;i++){num+=(xs[i]-mx)*(arr[i]-my);den+=(xs[i]-mx)**2}return den?num/den:0}
+function ewma(arr,alpha){if(!arr.length)return null;let s=arr[0];for(let i=1;i<arr.length;i++)s=alpha*arr[i]+(1-alpha)*s;return s}
+
+function analyzeGroup(g,events,today){
+  const n=events.length;
+  const qtyArr=events.map(e=>e.qty);
+  const intervals=[];for(let i=1;i<n;i++)intervals.push(workingDaysBetween(events[i-1].date,events[i].date));
+  const last=events[n-1];
+  const avgInt=mean(intervals),medInt=median(intervals),sdInt=stdev(intervals);
+  const cvInt=avgInt?sdInt/avgInt:null;
+  const avgQty=mean(qtyArr),medQty=median(qtyArr),sdQty=stdev(qtyArr),madQty=mad(qtyArr);
+  const cvQty=avgQty?sdQty/avgQty:null;
+  const slopeQty=linSlope(qtyArr);
+  const relSlope=avgQty?(slopeQty*n)/avgQty:0;
+  const trend=relSlope>SETTINGS.growthThreshold?'up':relSlope<-SETTINGS.growthThreshold?'down':'flat';
+  const wdCount={};events.forEach(e=>{const dow=new Date(e.date+'T00:00:00').getDay();wdCount[dow]=(wdCount[dow]||0)+1});
+  let domDow=null,domPct=0;Object.entries(wdCount).forEach(([k,v])=>{const pct=v/n;if(pct>domPct){domPct=pct;domDow=+k}});
+  const seasonalOk=n>=12;
+  const daysSinceLast=workingDaysBetween(last.date,today);
+  let expInt=null,expDate=null;
+  if(n>=2){expInt=ewma(intervals,SETTINGS.alphaInterval);expDate=addWorkingDays(last.date,expInt)}
+  let expQty=null,qtyLow=null,qtyHigh=null;
+  if(n>=1){
+    expQty=ewma(qtyArr,SETTINGS.alphaQty);
+    expQty=Math.max(0,expQty+(n>=2?slopeQty:0));
+    const spread=madQty?madQty*1.4826*1.2:expQty*0.12;
+    qtyLow=Math.max(0,expQty-spread);qtyHigh=expQty+spread;
+  }
+  let confidence=n>=1?15:0;
+  if(n>=2){
+    const nScore=Math.min(n,10)/10*100;
+    const regScore=cvInt!=null?clamp((1-cvInt)*100,0,100):30;
+    const qtyRegScore=cvQty!=null?clamp((1-cvQty)*100,0,100):30;
+    let recencyScore=100;
+    if(expInt){const ratio=expInt?daysSinceLast/expInt:1;recencyScore=ratio<=1.2?100:clamp(100-(ratio-1.2)*60,10,100)}
+    confidence=Math.round(0.35*nScore+0.30*regScore+0.15*qtyRegScore+0.20*recencyScore);
+    if(n<3)confidence=Math.min(confidence,40);
+    confidence=clamp(confidence,5,99);
+  }
+  let anomaly=null;
+  if(n>=4&&madQty>0){
+    const z=(last.qty-medQty)/(madQty*1.4826);
+    if(Math.abs(z)>2)anomaly={z:+z.toFixed(2),dir:z>0?'high':'low'};
+  }
+  let overdueWD=expDate?workingDaysBetween(expDate,today):null;
+  let status='future';
+  if(n<2)status='insufficient';
+  else if(overdueWD!=null){
+    const missThresh=(medInt||avgInt||1)*SETTINGS.graceMissedMult;
+    if(overdueWD>missThresh)status='missed';
+    else if(overdueWD>=SETTINGS.grace)status='dueNow';
+    else if(overdueWD>=-3)status='due3';
+    else if(overdueWD>=-7)status='due7';
+    else status='future';
+  }
+  return Object.assign({},g,{n,intervals,avgInt,medInt,sdInt,cvInt,avgQty,medQty,sdQty,madQty,cvQty,slopeQty,relSlope,trend,domDow,domPct,seasonalOk,last,daysSinceLast,expInt,expDate,expQty,qtyLow,qtyHigh,confidence,anomaly,overdueWD,status,events});
+}
+
+let GROUPS=[];
+function recomputeAll(userTriggered){
+  const today=todayIso();
+  const map=buildGroups();
+  const newGroups=[];
+  map.forEach((g,key)=>{
+    const prevF=FORECASTS[key];
+    if(prevF&&prevF.expDate){
+      const newEvents=g.events.filter(e=>e.date>prevF.lastEventDate&&e.date!==prevF._loggedActualDate);
+      if(newEvents.length){
+        const actual=newEvents[0];
+        const already=ACCURACY.some(a=>a.key===key&&a.predictedDate===prevF.expDate&&a.actualDate===actual.date);
+        if(!already){
+          ACCURACY.push({
+            key,custCode:g.custCode,custName:g.custName,itemCode:g.itemCode,itemName:g.itemName,
+            predictedDate:prevF.expDate,predictedQty:prevF.expQty,
+            actualDate:actual.date,actualQty:actual.qty,
+            errDays:workingDaysBetween(prevF.expDate,actual.date),
+            errQtyPct:actual.qty?Math.abs((prevF.expQty||0)-actual.qty)/actual.qty*100:null,
+            loggedAt:today
+          });
+        }
+      }
+    }
+    const a=analyzeGroup(g,g.events,today);
+    FORECASTS[key]={key,expDate:a.expDate,expQty:a.expQty,confidence:a.confidence,lastEventDate:a.last.date};
+    newGroups.push(a);
+  });
+  GROUPS=newGroups;
+  persistAll();
+  if(userTriggered)render();
+}
+
+/* ==================== المخزون التقديري ==================== */
+function estimatedStock(g,today){
+  const key=g.custCode+'||'+g.itemCode;
+  const feed=STOCK.filter(s=>s.custCode===g.custCode&&s.itemCode===g.itemCode);
+  const opening=feed.filter(s=>s.type==='opening').sort((a,b)=>a.date<b.date?1:-1)[0];
+  if(!opening)return {known:false};
+  const deliveries=feed.filter(s=>s.type==='delivery'&&s.date>=opening.date&&s.date<=today).reduce((s,x)=>s+x.qty,0);
+  const withdrawn=g.events.filter(e=>e.date>=opening.date&&e.date<=today).reduce((s,x)=>s+x.qty,0);
+  const est=opening.qty+deliveries-withdrawn;
+  const dailyCons=g.avgInt&&g.avgQty?g.avgQty/g.avgInt:null;
+  const safety=(g.madQty||0)*1.4826*0.5;
+  const reorderPoint=dailyCons!=null?dailyCons*SETTINGS.leadTimeDays+safety:null;
+  let daysToReorder=null,reorderDate=null;
+  if(dailyCons&&reorderPoint!=null){
+    daysToReorder=Math.ceil((est-reorderPoint)/dailyCons);
+    reorderDate=addWorkingDays(today,Math.max(0,daysToReorder));
+  }
+  return {known:true,openingDate:opening.date,est,reorderPoint,daysToReorder,reorderDate,dailyCons};
+}
+
+/* ==================== سجل الإجراءات ==================== */
+function actionKey(g,type){return g.key+'::'+type}
+function logAction(g,type,status,snoozeDays){
+  const today=todayIso();
+  ACTIONLOG.push({key:g.key,type,status,at:today,snoozeUntil:snoozeDays?addWorkingDays(today,snoozeDays):null,custName:g.custName,itemName:g.itemName});
+  persistAll();render();
+}
+function isSuppressed(g,type){
+  const today=todayIso();
+  const entries=ACTIONLOG.filter(l=>l.key===g.key&&l.type===type);
+  if(!entries.length)return false;
+  const last=entries[entries.length-1];
+  if(last.status==='done')return true;
+  if(last.status==='snoozed'&&last.snoozeUntil&&last.snoozeUntil>=today)return true;
+  if(last.status==='contacted'&&last.at===today)return true;
+  return false;
+}
+
+/* ==================== توليد بيانات تجريبية ==================== */
+function genSeries(cu,it,rep,cat,intervalWD,baseQty,trendPct,cycles){
+  const today=todayIso();
+  let d=addWorkingDays(today,-(intervalWD*cycles));
+  let qty=baseQty;
+  const rows=[];
+  let guard=0;
+  while(d<=today&&guard<200){
+    guard++;
+    const outQty=Math.max(5,Math.round(qty));
+    rows.push({custCode:cu[0],custName:cu[1],itemCode:it[0],itemName:it[1],wdDate:d,qty:outQty,uom:'كرتون',rep,custCategory:cat,itemCategory:it[0]<='I102'?'أساسي':'ثانوي'});
+    qty=Math.max(5,qty*(1+trendPct)+(Math.random()*baseQty*0.10-baseQty*0.05));
+    d=addWorkingDays(d,Math.max(1,intervalWD+Math.round(Math.random()*2-1)));
+  }
+  return rows;
+}
+function loadDemoData(){
+  if(ROWS.length&&!confirm('يوجد بيانات محمّلة مسبقاً. إضافة بيانات تجريبية فوقها؟'))return;
+  const custs=[['C001','مؤسسة الأمل للتجارة'],['C002','سوبرماركت النخبة'],['C003','مطاعم الديار'],['C004','بقالة الجود'],['C005','فندق الواحة'],['C006','مطعم السنابل'],['C007','كافيه لوريل'],['C008','مؤسسة الرواد'],['C009','سوبر ماركت السلام'],['C010','مطعم البيت الشامي']];
+  const items=[['I100','بطاطا مجمدة 10 كغم'],['I101','دجاج مجمد كامل'],['I102','زيت دوار الشمس 16 لتر'],['I103','أرز بسمتي 10 كغم'],['I104','خضار مشكلة مجمدة 5 كغم'],['I105','عصير برتقال 1 لتر']];
+  const reps=['أحمد','سامر','ليث'];
+  const cats=['A - كبار العملاء','B - متوسط','C - صغير'];
+  let all=[];
+  custs.forEach((cu,ci)=>{
+    const rep=reps[ci%reps.length],cat=cats[ci%cats.length];
+    const nItems=1+Math.floor(Math.random()*3);
+    const chosen=[...items].sort(()=>Math.random()-0.5).slice(0,nItems);
+    chosen.forEach((it,ii)=>{
+      const pattern=(ci+ii)%5;
+      const intervalWD=[5,7,10,14,21][pattern];
+      const baseQty=[40,80,120,60,200][pattern];
+      const trend=pattern===2?0.05:pattern===4?-0.04:0;
+      all=all.concat(genSeries(cu,it,rep,cat,intervalWD,baseQty,trend,10+Math.floor(Math.random()*4)));
+    });
+  });
+  // سيناريوهات موضّحة يدوياً لعرض كل قسم في مركز الإجراءات بشكل مضمون
+  const rowsGrowth=genSeries(['C011','متجر الفردوس'],['I100','بطاطا مجمدة 10 كغم'],'أحمد','A - كبار العملاء',7,60,0.10,9);
+  const rowsMissed=genSeries(['C012','مطعم الأصايل'],['I101','دجاج مجمد كامل'],'سامر','B - متوسط',7,90,0,10);
+  rowsMissed.splice(rowsMissed.length-3,3); // توقف العميل عن الطلب منذ عدة دورات
+  const rowsAnomaly=genSeries(['C013','سوبرماركت الياسمين'],['I103','أرز بسمتي 10 كغم'],'ليث','A - كبار العملاء',6,70,0,8);
+  if(rowsAnomaly.length)rowsAnomaly[rowsAnomaly.length-1].qty=Math.round(rowsAnomaly[rowsAnomaly.length-1].qty*2.6);
+  const rowsNew=genSeries(['C014','كافيه المسك'],['I105','عصير برتقال 1 لتر'],'أحمد','C - صغير',10,25,0,1).slice(0,2);
+  all=all.concat(rowsGrowth,rowsMissed,rowsAnomaly,rowsNew);
+  all.forEach(r=>{const k=rowKey(r);if(!ROWKEYS.has(k)){ROWKEYS.add(k);ROWS.push(r)}});
+  recomputeAll(false);
+  persistAll();
+  alert('تم توليد '+all.length+' سطر بيانات تجريبية تغطي كل حالات مركز الإجراءات.');
+  render();
+}
+
+/* ==================== Backtest ==================== */
+function runBacktest(){
+  const today=todayIso();
+  const map=buildGroups();
+  const results=[];
+  map.forEach((g)=>{
+    if(g.events.length<4)return;
+    const sub=g.events.slice(0,-1);
+    const actual=g.events[g.events.length-1];
+    const boundary=sub[sub.length-1].date;
+    const a=analyzeGroup(g,sub,boundary);
+    if(!a.expDate)return;
+    results.push({
+      custName:g.custName,itemName:g.itemName,
+      predictedDate:a.expDate,actualDate:actual.date,
+      errDays:workingDaysBetween(a.expDate,actual.date),
+      predictedQty:a.expQty,actualQty:actual.qty,
+      errQtyPct:actual.qty?Math.abs((a.expQty||0)-actual.qty)/actual.qty*100:null
+    });
+  });
+  return results;
+}
+
+/* ==================== واجهة المستخدم ==================== */
+const TABS=[
+  ['action','🎯 مركز إجراءات اليوم'],
+  ['import','📥 استيراد البيانات'],
+  ['drill','🔍 تحليل عميل×صنف'],
+  ['trends','📈 اتجاهات الطلب'],
+  ['stock','🏬 المخزون التقديري'],
+  ['accuracy','✅ دقة التوقعات'],
+  ['settings','⚙️ الإعدادات وربط SAP'],
+];
+let CURRENT='action';
+function switchTab(t){CURRENT=t;render()}
+function renderNav(){
+  document.getElementById('nav').innerHTML=TABS.map(([k,l])=>`<button class="${k===CURRENT?'on':''}" onclick="switchTab('${k}')">${l}</button>`).join('');
+}
+
+function render(){
+  renderNav();
+  const m=document.getElementById('main');
+  if(CURRENT==='action')m.innerHTML=renderActionCenter();
+  else if(CURRENT==='import')m.innerHTML=renderImport();
+  else if(CURRENT==='drill')m.innerHTML=renderDrill();
+  else if(CURRENT==='trends')m.innerHTML=renderTrends();
+  else if(CURRENT==='stock')m.innerHTML=renderStock();
+  else if(CURRENT==='accuracy')m.innerHTML=renderAccuracy();
+  else if(CURRENT==='settings')m.innerHTML=renderSettings();
+  wireDynamic();
+}
+
+/* ---------- مركز إجراءات اليوم ---------- */
+function filterOptions(){
+  const reps=new Set(),ccats=new Set(),icats=new Set();
+  GROUPS.forEach(g=>{if(g.rep)reps.add(g.rep);if(g.custCategory)ccats.add(g.custCategory);if(g.itemCategory)icats.add(g.itemCategory)});
+  return {reps:[...reps],ccats:[...ccats],icats:[...icats]};
+}
+let ACTION_FILTERS={rep:'',ccat:'',icat:'',q:'',minConf:0};
+function applyFilters(list){
+  return list.filter(g=>{
+    if(ACTION_FILTERS.rep&&g.rep!==ACTION_FILTERS.rep)return false;
+    if(ACTION_FILTERS.ccat&&g.custCategory!==ACTION_FILTERS.ccat)return false;
+    if(ACTION_FILTERS.icat&&g.itemCategory!==ACTION_FILTERS.icat)return false;
+    if(ACTION_FILTERS.minConf&&(g.confidence||0)<ACTION_FILTERS.minConf)return false;
+    if(ACTION_FILTERS.q){
+      const s=(g.custName+' '+g.custCode+' '+g.itemName+' '+g.itemCode).toLowerCase();
+      if(!s.includes(ACTION_FILTERS.q.toLowerCase()))return false;
+    }
+    return true;
+  });
+}
+function reason(g,type){
+  if(type==='dueNow')return `موعد السحب المتوقع حان${g.overdueWD>0?' (متأخر '+g.overdueWD+' يوم عمل)':''} — بناءً على متوسط فترة ${fmtN(g.medInt,1)} يوم عمل بين السحوبات.`;
+  if(type==='due3')return `يُتوقع الطلب خلال ${Math.abs(g.overdueWD)} يوم عمل تقريباً، بناءً على ${g.n} سحبة سابقة.`;
+  if(type==='due7')return `يُتوقع الطلب خلال أسبوع تقريباً (${Math.abs(g.overdueWD)} يوم عمل)، بناءً على النمط المعتاد.`;
+  if(type==='missed')return `تجاوز العميل نمطه المعتاد بفارق كبير (${g.overdueWD} يوم عمل عن الموعد المتوقع، مقابل فترة معتادة ${fmtN(g.medInt,1)} يوم) — احتمال توقف الطلب أو التحول لمورد آخر.`;
+  if(type==='anomaly')return `آخر سحبة بتاريخ ${fmtDate(g.last.date)} كانت ${fmtN(g.last.qty,0)} وهي ${g.anomaly.dir==='high'?'أعلى':'أقل'} بشكل غير معتاد من الوسيط التاريخي ${fmtN(g.medQty,0)}.`;
+  if(type==='growth')return `الكمية المسحوبة في اتجاه تصاعدي مستمر (تغيّر تقديري ${(g.relSlope*100).toFixed(0)}% عبر آخر ${g.n} سحبة).`;
+  return '';
+}
+function recAction(type){
+  return {dueNow:'يوصى بالتواصل مع العميل خلال يوم عمل واحد.',due3:'يوصى بالتواصل خلال 1-2 يوم عمل قبل الموعد المتوقع.',due7:'أدرجه في خطة التواصل لهذا الأسبوع.',missed:'تواصل فوري لمعرفة السبب قبل فقدان العميل على هذا الصنف.',anomaly:'تحقق من سبب الانحراف (طلبية استثنائية، مشكلة تخزين، أو تحول جزئي لمورد آخر).',growth:'فرصة لزيادة السقف المقترح أو عرض بيع إضافي على هذا الصنف.'}[type];
+}
+function alertCard(g,type,color){
+  const sup=isSuppressed(g,type);
+  if(sup)return '';
+  return `<div class="alert-card">
+    <div class="alert-head">
+      <div class="alert-title">${esc(g.custName||g.custCode)} <span class="hint">(${esc(g.custCode)})</span> — ${esc(g.itemName||g.itemCode)}</div>
+      <span class="badge b-${color}">${g.confidence!=null?g.confidence+'% ثقة':''}</span>
+    </div>
+    <div class="alert-grid">
+      <div><b>آخر سحب</b>${fmtDate(g.last.date)}</div>
+      <div><b>التاريخ المتوقع</b>${g.expDate?fmtDate(g.expDate):'—'}</div>
+      <div><b>الكمية المتوقعة</b>${fmtN(g.expQty,0)} ${esc(g.uom||'')}</div>
+      <div><b>النطاق المتوقع</b>${fmtN(g.qtyLow,0)}–${fmtN(g.qtyHigh,0)}</div>
+      <div><b>متوسط الفترة</b>${fmtN(g.medInt,1)} يوم عمل</div>
+      <div><b>أيام منذ آخر سحب</b>${g.daysSinceLast}</div>
+      <div><b>المندوب</b>${esc(g.rep||'—')}</div>
+      <div><b>تصنيف العميل</b>${esc(g.custCategory||'—')}</div>
+    </div>
+    <div class="reason">📌 ${reason(g,type)}</div>
+    <div class="rec">✅ ${recAction(type)}</div>
+    <div class="actions">
+      <button class="btn sm" onclick="logAction(GMAP['${g.key}'],'${type}','contacted')">تم التواصل</button>
+      <button class="btn ghost sm" onclick="logAction(GMAP['${g.key}'],'${type}','snoozed',3)">تأجيل 3 أيام عمل</button>
+      <button class="btn ghost sm" onclick="logAction(GMAP['${g.key}'],'${type}','done')">إغلاق نهائي</button>
+    </div>
+  </div>`;
+}
+let GMAP={};
+function renderActionCenter(){
+  GMAP={};GROUPS.forEach(g=>GMAP[g.key]=g);
+  const opt=filterOptions();
+  const filtered=applyFilters(GROUPS);
+  const buckets={dueNow:[],due3:[],due7:[],missed:[],anomaly:[],growth:[]};
+  filtered.forEach(g=>{
+    if(g.status==='dueNow')buckets.dueNow.push(g);
+    else if(g.status==='due3')buckets.due3.push(g);
+    else if(g.status==='due7')buckets.due7.push(g);
+    if(g.status==='missed')buckets.missed.push(g);
+    if(g.anomaly)buckets.anomaly.push(g);
+    if(g.trend==='up'&&g.n>=4)buckets.growth.push(g);
+  });
+  const insufficient=filtered.filter(g=>g.status==='insufficient');
+  const sections=[
+    ['dueNow','🔴 يحتاج إجراء الآن','red'],
+    ['due3','🟠 خلال 3 أيام عمل','orange'],
+    ['due7','🟡 خلال أسبوع','yellow'],
+    ['missed','🔴 Missed — لم يسحب رغم التوقع','red'],
+    ['anomaly','🔴 Anomalies — كمية غير معتادة','red'],
+    ['growth','🟢 Demand Growth — طلب في تصاعد','green'],
+  ];
+  if(!ROWS.length)return `<div class="card"><h2>لا توجد بيانات بعد</h2><p class="hint">اذهب لتبويب "📥 استيراد البيانات" والصق بياناتك، أو جرّب زر "تحميل بيانات تجريبية" لمعاينة النظام فوراً.</p></div>`;
+  return `
+  <div class="kpi">
+    <div class="box"><b>${buckets.dueNow.length}</b>يحتاج إجراء الآن</div>
+    <div class="box"><b>${buckets.due3.length}</b>خلال 3 أيام</div>
+    <div class="box"><b>${buckets.due7.length}</b>خلال أسبوع</div>
+    <div class="box"><b>${buckets.missed.length}</b>Missed</div>
+    <div class="box"><b>${buckets.anomaly.length}</b>Anomalies</div>
+    <div class="box"><b>${buckets.growth.length}</b>Demand Growth</div>
+  </div>
+  <div class="card">
+    <div class="row">
+      <select id="fRep"><option value="">كل المندوبين</option>${opt.reps.map(r=>`<option ${ACTION_FILTERS.rep===r?'selected':''}>${esc(r)}</option>`).join('')}</select>
+      <select id="fCcat"><option value="">كل تصنيفات العملاء</option>${opt.ccats.map(r=>`<option ${ACTION_FILTERS.ccat===r?'selected':''}>${esc(r)}</option>`).join('')}</select>
+      <select id="fIcat"><option value="">كل فئات الأصناف</option>${opt.icats.map(r=>`<option ${ACTION_FILTERS.icat===r?'selected':''}>${esc(r)}</option>`).join('')}</select>
+      <input type="text" id="fQ" placeholder="بحث عميل/صنف" value="${esc(ACTION_FILTERS.q)}">
+      <label>حد أدنى للثقة</label><input type="number" id="fConf" value="${ACTION_FILTERS.minConf}" style="width:60px">
+      <button class="btn sm" onclick="applyActionFilters()">تطبيق</button>
+      <button class="btn ghost sm" onclick="exportActionCsv()">تصدير CSV</button>
+    </div>
+    ${insufficient.length?`<p class="hint">${insufficient.length} زوج (عميل×صنف) لديه بيانات غير كافية للتوقع (أقل من سحبتين) — غير مُدرج في التنبيهات.</p>`:''}
+  </div>
+  ${sections.map(([key,title,color])=>{
+    const list=buckets[key];
+    const cards=list.map(g=>alertCard(g,key,color)).filter(Boolean);
+    return `<div class="card section-${color}"><h2>${title} <span class="badge b-${color}">${cards.length}</span></h2>${cards.length?cards.join(''):'<div class="empty">لا يوجد عناصر في هذا القسم حالياً.</div>'}</div>`;
+  }).join('')}
+  `;
+}
+function applyActionFilters(){
+  ACTION_FILTERS.rep=document.getElementById('fRep').value;
+  ACTION_FILTERS.ccat=document.getElementById('fCcat').value;
+  ACTION_FILTERS.icat=document.getElementById('fIcat').value;
+  ACTION_FILTERS.q=document.getElementById('fQ').value;
+  ACTION_FILTERS.minConf=+document.getElementById('fConf').value||0;
+  render();
+}
+function exportActionCsv(){
+  const filtered=applyFilters(GROUPS).filter(g=>['dueNow','due3','due7','missed'].includes(g.status)||g.anomaly||(g.trend==='up'&&g.n>=4));
+  let t='الحالة\tالعميل\tكود العميل\tالصنف\tآخر سحب\tالتاريخ المتوقع\tالكمية المتوقعة\tالنطاق\tالثقة\tمتوسط الفترة\tأيام منذ آخر سحب\tالمندوب\n';
+  filtered.forEach(g=>{t+=[g.status,g.custName,g.custCode,g.itemName,g.last.date,g.expDate||'',fmtN(g.expQty,0),fmtN(g.qtyLow,0)+'-'+fmtN(g.qtyHigh,0),g.confidence,fmtN(g.medInt,1),g.daysSinceLast,g.rep].join('\t')+'\n'});
+  downloadFile('مركز_إجراءات_اليوم.csv','﻿'+t);
+}
+function downloadFile(name,content,type){
+  const b=new Blob([content],{type:type||'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=name;a.click();
+}
+
+/* ---------- استيراد البيانات ---------- */
+function renderImport(){
+  return `
+  <div class="card">
+    <h2>1) بيانات المسحوبات (إلزامي)</h2>
+    <p class="hint">الأعمدة بالترتيب مفصولة بـ Tab (نسخ/لصق من Excel أو نتيجة كويري HANA مباشرة):<br>
+    <b>كود العميل، اسم العميل، كود الصنف، اسم الصنف، تاريخ السحب، يوم السحب (يُتجاهل ويُعاد حسابه)، الكمية، وحدة القياس، مندوب المبيعات (اختياري)، تصنيف العميل (اختياري)، فئة الصنف (اختياري)</b></p>
+    <textarea id="txWd" placeholder="الصق البيانات هنا..."></textarea>
+    <div class="row">
+      <button class="btn" onclick="doImportWd()">تحميل ودمج البيانات</button>
+      <input type="file" id="fWd" accept=".csv,.txt,.tsv">
+      <button class="btn ghost" onclick="loadDemoData()">🎲 تحميل بيانات تجريبية للمعاينة</button>
+      <button class="btn ghost danger" style="color:#fff" onclick="clearAllData()">🗑️ مسح كل البيانات</button>
+    </div>
+    <div id="wdMsg" class="hint">${esc(IMPORT_MSG)}</div>
+  </div>
+  <div class="card">
+    <h2>2) بيانات المخزون (اختياري — لتفعيل "المخزون التقديري")</h2>
+    <p class="hint">الأعمدة: <b>كود العميل، كود الصنف، النوع (Opening/Delivery)، التاريخ، الكمية</b>. بدون هذه البيانات يبقى النظام يعمل بالكامل بالاعتماد على التوقع من نمط السحب فقط.</p>
+    <textarea id="txStock" placeholder="الصق بيانات الرصيد الافتتاحي والتوريدات هنا..."></textarea>
+    <div class="row"><button class="btn" onclick="doImportStock()">تحميل بيانات المخزون</button></div>
+    <div id="stockMsg" class="hint">${esc(STOCK_MSG)}</div>
+  </div>
+  <div class="card">
+    <h2>ملخص البيانات المحمّلة</h2>
+    <div class="kpi">
+      <div class="box"><b>${ROWS.length}</b>سطر سحب</div>
+      <div class="box"><b>${GROUPS.length}</b>زوج عميل×صنف</div>
+      <div class="box"><b>${new Set(ROWS.map(r=>r.custCode)).size}</b>عميل</div>
+      <div class="box"><b>${new Set(ROWS.map(r=>r.itemCode)).size}</b>صنف</div>
+      <div class="box"><b>${STOCK.length}</b>سطر مخزون</div>
+    </div>
+  </div>`;
+}
+let IMPORT_MSG='',STOCK_MSG='';
+function doImportWd(){
+  const ta=document.getElementById('txWd').value;
+  const file=document.getElementById('fWd').files[0];
+  const run=(text)=>{
+    const r=parseWithdrawalText(text);
+    recomputeAll(false);
+    IMPORT_MSG=`تم: ${r.added} سطر جديد، تم تجاهل ${r.dup} سطر مكرر، ${r.bad} سطر غير صالح.`;
+    render();
+  };
+  if(file){readFileSmart(file,run)}else if(ta.trim()){run(ta)}else{alert('الصق بيانات أو اختر ملفاً أولاً')}
+}
+function doImportStock(){
+  const ta=document.getElementById('txStock').value;
+  if(!ta.trim())return alert('الصق بيانات المخزون أولاً');
+  const n=parseStockText(ta);persistAll();
+  STOCK_MSG=`تم تحميل ${n} سطر.`;
+  render();
+}
+function readFileSmart(file,cb){
+  const r=new FileReader();
+  r.onload=()=>{
+    const buf=r.result;const b=new Uint8Array(buf);let enc='utf-8',skip=0;
+    if(b[0]===0xFF&&b[1]===0xFE){enc='utf-16le';skip=2}
+    else if(b[0]===0xEF&&b[1]===0xBB&&b[2]===0xBF){enc='utf-8';skip=3}
+    try{cb(new TextDecoder(enc).decode(buf.slice(skip)))}catch(e){cb(new TextDecoder('utf-8').decode(buf))}
+  };
+  r.readAsArrayBuffer(file);
+}
+function clearAllData(){
+  if(!confirm('سيتم مسح كل البيانات (السحوبات، المخزون، التوقعات، السجل) نهائياً من هذا الجهاز. متابعة؟'))return;
+  ROWS=[];STOCK=[];FORECASTS={};ACCURACY=[];ACTIONLOG=[];ROWKEYS=new Set();GROUPS=[];
+  persistAll();render();
+}
+
+/* ---------- تحليل عميل×صنف ---------- */
+let DRILL_KEY=null;
+function renderDrill(){
+  if(!GROUPS.length)return `<div class="card"><h2>لا توجد بيانات بعد</h2></div>`;
+  if(!DRILL_KEY)DRILL_KEY=GROUPS[0].key;
+  const g=GROUPS.find(x=>x.key===DRILL_KEY)||GROUPS[0];
+  const rows=GROUPS.map(x=>`<option value="${x.key}" ${x.key===g.key?'selected':''}>${esc(x.custName)} — ${esc(x.itemName)}</option>`).join('');
+  const maxQ=Math.max(...g.events.map(e=>e.qty),1);
+  const spark=g.events.map(e=>`<div title="${fmtDate(e.date)}: ${fmtN(e.qty,0)}" style="display:inline-block;width:14px;height:${10+70*(e.qty/maxQ)}px;background:var(--blue);margin-inline-end:3px;vertical-align:bottom;border-radius:2px 2px 0 0"></div>`).join('');
+  return `
+  <div class="card">
+    <h2>اختر عميل × صنف</h2>
+    <select id="drillSel" onchange="DRILL_KEY=this.value;render()">${rows}</select>
+  </div>
+  <div class="card">
+    <h2>${esc(g.custName)} (${esc(g.custCode)}) — ${esc(g.itemName)} (${esc(g.itemCode)})</h2>
+    <div class="alert-grid">
+      <div><b>عدد السحوبات</b>${g.n}</div>
+      <div><b>متوسط الفترة</b>${fmtN(g.avgInt,1)} يوم عمل</div>
+      <div><b>وسيط الفترة</b>${fmtN(g.medInt,1)} يوم عمل</div>
+      <div><b>معامل تذبذب الفترة</b>${g.cvInt!=null?fmtN(g.cvInt*100,0)+'%':'—'}</div>
+      <div><b>متوسط الكمية</b>${fmtN(g.avgQty,0)}</div>
+      <div><b>وسيط الكمية</b>${fmtN(g.medQty,0)}</div>
+      <div><b>الاتجاه Trend</b>${g.trend==='up'?'📈 صاعد':g.trend==='down'?'📉 هابط':'➖ مستقر'}</div>
+      <div><b>الموسمية</b>${g.seasonalOk?'يمكن رصدها (بيانات كافية)':'بيانات غير كافية'}</div>
+      <div><b>اليوم الأكثر تكراراً</b>${g.domDow!=null?['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'][g.domDow]+' ('+fmtN(g.domPct*100,0)+'%)':'—'}</div>
+      <div><b>آخر سحب</b>${fmtDate(g.last.date)}</div>
+      <div><b>التاريخ المتوقع القادم</b>${g.expDate?fmtDate(g.expDate):'—'}</div>
+      <div><b>الكمية المتوقعة</b>${fmtN(g.expQty,0)} (${fmtN(g.qtyLow,0)}–${fmtN(g.qtyHigh,0)})</div>
+      <div><b>الثقة</b>${g.confidence}%</div>
+    </div>
+    <h3>مخطط الكميات عبر الزمن</h3>
+    <div style="border-bottom:1px solid var(--line);padding:6px 0">${spark||'—'}</div>
+    <h3>سجل السحوبات</h3>
+    <table><tr><th>التاريخ</th><th>يوم</th><th>الكمية</th><th>الفترة عن السابقة (يوم عمل)</th></tr>
+    ${g.events.map((e,i)=>`<tr><td>${fmtDate(e.date)}</td><td>${['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'][new Date(e.date+'T00:00:00').getDay()]}</td><td class="num">${fmtN(e.qty,0)}</td><td class="num">${i===0?'—':g.intervals[i-1]}</td></tr>`).join('')}
+    </table>
+  </div>`;
+}
+
+/* ---------- اتجاهات الطلب ---------- */
+function renderTrends(){
+  if(!GROUPS.length)return `<div class="card"><h2>لا توجد بيانات بعد</h2></div>`;
+  const byItem={};
+  GROUPS.forEach(g=>{
+    const k=g.itemCode+'|'+g.itemName;
+    if(!byItem[k])byItem[k]={itemName:g.itemName,itemCode:g.itemCode,totalQty:0,totalSlope:0,n:0,customers:0};
+    byItem[k].totalQty+=g.events.reduce((s,e)=>s+e.qty,0);
+    byItem[k].totalSlope+=g.relSlope||0;
+    byItem[k].n+=g.n;byItem[k].customers++;
+  });
+  const itemRows=Object.values(byItem).sort((a,b)=>b.totalSlope-a.totalSlope);
+  const byRep={};
+  GROUPS.forEach(g=>{
+    const k=g.rep||'—';
+    if(!byRep[k])byRep[k]={rep:k,pairs:0,dueNow:0,missed:0,growth:0};
+    byRep[k].pairs++;
+    if(g.status==='dueNow')byRep[k].dueNow++;
+    if(g.status==='missed')byRep[k].missed++;
+    if(g.trend==='up'&&g.n>=4)byRep[k].growth++;
+  });
+  return `
+  <div class="card">
+    <h2>اتجاه الطلب حسب الصنف (مجمّع عبر كل العملاء)</h2>
+    <table><tr><th>الصنف</th><th>عدد العملاء</th><th>إجمالي الكمية التاريخية</th><th>مؤشر الاتجاه</th></tr>
+    ${itemRows.map(r=>`<tr><td>${esc(r.itemName||r.itemCode)}</td><td class="num">${r.customers}</td><td class="num">${fmtN(r.totalQty,0)}</td><td class="num">${r.totalSlope>0.15?'📈 صاعد':r.totalSlope<-0.15?'📉 هابط':'➖ مستقر'} (${(r.totalSlope*100).toFixed(0)}%)</td></tr>`).join('')}
+    </table>
+  </div>
+  <div class="card">
+    <h2>ملخص حسب المندوب</h2>
+    <table><tr><th>المندوب</th><th>عدد الأزواج (عميل×صنف)</th><th>يحتاج إجراء الآن</th><th>Missed</th><th>Demand Growth</th></tr>
+    ${Object.values(byRep).map(r=>`<tr><td>${esc(r.rep)}</td><td class="num">${r.pairs}</td><td class="num">${r.dueNow}</td><td class="num">${r.missed}</td><td class="num">${r.growth}</td></tr>`).join('')}
+    </table>
+  </div>`;
+}
+
+/* ---------- المخزون التقديري ---------- */
+function renderStock(){
+  if(!GROUPS.length)return `<div class="card"><h2>لا توجد بيانات بعد</h2></div>`;
+  const today=todayIso();
+  const rows=GROUPS.map(g=>({g,est:estimatedStock(g,today)}));
+  return `
+  <div class="card">
+    <h2>المخزون التقديري لدى العميل</h2>
+    <p class="hint">يُحسب فقط للأزواج التي تتوفر لها بيانات رصيد افتتاحي فعلية (تبويب الاستيراد، قسم 2). أي زوج بدون بيانات مخزون يظهر "غير معروف" ولا يُفترض له أي رصيد.</p>
+    <table><tr><th>العميل</th><th>الصنف</th><th>الرصيد التقديري</th><th>نقطة إعادة الطلب</th><th>الوصول لإعادة الطلب</th><th>الكمية المقترحة</th></tr>
+    ${rows.map(({g,est})=>est.known?`<tr>
+      <td>${esc(g.custName)}</td><td>${esc(g.itemName)}</td>
+      <td class="num">${fmtN(est.est,0)}</td>
+      <td class="num">${fmtN(est.reorderPoint,0)}</td>
+      <td>${est.reorderDate?(est.daysToReorder<=0?'<span class="badge b-red">وصل الآن</span>':'خلال '+est.daysToReorder+' يوم عمل ('+fmtDate(est.reorderDate)+')'):'—'}</td>
+      <td class="num">${fmtN(g.expQty,0)}</td>
+    </tr>`:`<tr><td>${esc(g.custName)}</td><td>${esc(g.itemName)}</td><td colspan="4"><span class="badge b-gray">غير معروف — لا توجد بيانات مخزون لهذا الزوج</span></td></tr>`).join('')}
+    </table>
+  </div>`;
+}
+
+/* ---------- دقة التوقعات ---------- */
+let LAST_BACKTEST=null;
+function renderAccuracy(){
+  const overallMAE=ACCURACY.length?mean(ACCURACY.map(a=>Math.abs(a.errDays))):null;
+  const overallMAPE=ACCURACY.filter(a=>a.errQtyPct!=null).length?mean(ACCURACY.filter(a=>a.errQtyPct!=null).map(a=>a.errQtyPct)):null;
+  const bt=LAST_BACKTEST;
+  const btMAE=bt&&bt.length?mean(bt.map(a=>Math.abs(a.errDays))):null;
+  const btMAPE=bt&&bt.filter(a=>a.errQtyPct!=null).length?mean(bt.filter(a=>a.errQtyPct!=null).map(a=>a.errQtyPct)):null;
+  return `
+  <div class="card">
+    <h2>Backtest فوري (يختبر الدقة على بياناتك الحالية بدون انتظار)</h2>
+    <p class="hint">لكل زوج عميل×صنف لديه 4 سحوبات فأكثر: يُخفى آخر سحب، يُحسب التوقع من التاريخ السابق فقط، ثم يُقارن بالسحب الفعلي.</p>
+    <button class="btn" onclick="LAST_BACKTEST=runBacktest();render()">▶️ تشغيل Backtest الآن</button>
+    ${bt?`<div class="kpi" style="margin-top:10px">
+      <div class="box"><b>${bt.length}</b>عدد الحالات المختبرة</div>
+      <div class="box"><b>${fmtN(btMAE,1)}</b>MAE (أيام عمل)</div>
+      <div class="box"><b>${btMAPE!=null?fmtN(btMAPE,1)+'%':'—'}</b>MAPE (كمية)</div>
+    </div>
+    <table><tr><th>العميل</th><th>الصنف</th><th>تاريخ متوقع</th><th>تاريخ فعلي</th><th>خطأ (يوم عمل)</th><th>كمية متوقعة</th><th>كمية فعلية</th><th>خطأ %</th></tr>
+    ${bt.map(a=>`<tr><td>${esc(a.custName)}</td><td>${esc(a.itemName)}</td><td>${fmtDate(a.predictedDate)}</td><td>${fmtDate(a.actualDate)}</td><td class="num">${a.errDays}</td><td class="num">${fmtN(a.predictedQty,0)}</td><td class="num">${fmtN(a.actualQty,0)}</td><td class="num">${a.errQtyPct!=null?fmtN(a.errQtyPct,0)+'%':'—'}</td></tr>`).join('')}
+    </table>`:''}
+  </div>
+  <div class="card">
+    <h2>الدقة المستمرة (Forecast vs Actual عبر الزمن)</h2>
+    <p class="hint">تُسجَّل تلقائياً كل مرة تُستورد فيها بيانات جديدة وتتحقق التوقعات السابقة من الواقع.</p>
+    <div class="kpi">
+      <div class="box"><b>${ACCURACY.length}</b>عدد المقارنات المسجّلة</div>
+      <div class="box"><b>${fmtN(overallMAE,1)}</b>MAE (أيام عمل)</div>
+      <div class="box"><b>${overallMAPE!=null?fmtN(overallMAPE,1)+'%':'—'}</b>MAPE (كمية)</div>
+    </div>
+    ${ACCURACY.length?`<table><tr><th>العميل</th><th>الصنف</th><th>تاريخ متوقع</th><th>تاريخ فعلي</th><th>خطأ (يوم عمل)</th><th>خطأ الكمية %</th></tr>
+    ${ACCURACY.slice().reverse().slice(0,200).map(a=>`<tr><td>${esc(a.custName)}</td><td>${esc(a.itemName)}</td><td>${fmtDate(a.predictedDate)}</td><td>${fmtDate(a.actualDate)}</td><td class="num">${a.errDays}</td><td class="num">${a.errQtyPct!=null?fmtN(a.errQtyPct,0)+'%':'—'}</td></tr>`).join('')}
+    </table>`:'<div class="empty">لا توجد مقارنات بعد — ستظهر تلقائياً عند استيراد بيانات جديدة لاحقة لتوقعات محفوظة.</div>'}
+  </div>`;
+}
+
+/* ---------- الإعدادات ---------- */
+const DOW_NAMES=['الأحد','الاثنين','الثلاثاء','الأربعاء','الخميس','الجمعة','السبت'];
+function renderSettings(){
+  return `
+  <div class="card">
+    <h2>أيام العطلة الأسبوعية</h2>
+    <div class="row">${DOW_NAMES.map((n,i)=>`<label><input type="checkbox" data-dow="${i}" ${(SETTINGS.offDays||[]).includes(i)?'checked':''} onchange="toggleOffDay(${i},this.checked)"> ${n}</label>`).join('')}</div>
+  </div>
+  <div class="card">
+    <h2>العطل الرسمية</h2>
+    <div class="row"><input type="date" id="holDate"><input type="text" id="holDesc" placeholder="وصف العطلة"><button class="btn sm" onclick="addHoliday()">إضافة</button></div>
+    <div class="pill-list">${(SETTINGS.holidays||[]).map((h,i)=>`<span class="pill">${fmtDate(h.date)} — ${esc(h.desc||'')}<button onclick="removeHoliday(${i})">×</button></span>`).join('')||'<span class="hint">لا توجد عطل مضافة</span>'}</div>
+  </div>
+  <div class="card">
+    <h2>عتبات التنبيهات والمحرك</h2>
+    <div class="row">
+      <label>مهلة سماح قبل اعتباره متأخراً (يوم عمل)</label><input type="number" id="setGrace" value="${SETTINGS.grace}" style="width:60px">
+      <label>مضاعف اعتبار "Missed" (× متوسط الفترة)</label><input type="number" step="0.1" id="setMissMult" value="${SETTINGS.graceMissedMult}" style="width:60px">
+      <label>مهلة التوريد Lead Time (يوم عمل)</label><input type="number" id="setLead" value="${SETTINGS.leadTimeDays}" style="width:60px">
+      <label>عتبة اعتبار الطلب "صاعد/هابط" %</label><input type="number" step="1" id="setGrowth" value="${SETTINGS.growthThreshold*100}" style="width:60px">
+      <button class="btn sm" onclick="saveEngineSettings()">حفظ</button>
+    </div>
+  </div>
+  <div class="card">
+    <h2>كويري جاهز لسحب بيانات المسحوبات من SAP Business One (HANA)</h2>
+    <p class="hint">قالب تقريبي مبني على مستندات التسليم (Delivery Notes) — عدّل أسماء الجداول/الحقول حسب مخطط SAP B1 لديكم فعلياً (قد تكون "المسحوبات" فواتير OINV/INV1 أو حركة مخزون UDT مخصصة بدلاً من ODLN/DLN1).</p>
+    <textarea readonly style="min-height:260px">${esc(SAP_QUERY)}</textarea>
+    <button class="btn ghost sm" onclick="copyQuery()">نسخ الكويري</button>
+  </div>`;
+}
+function toggleOffDay(dow,checked){
+  const s=new Set(SETTINGS.offDays||[]);
+  if(checked)s.add(dow);else s.delete(dow);
+  SETTINGS.offDays=[...s];persistAll();recomputeAll(true);
+}
+function addHoliday(){
+  const d=document.getElementById('holDate').value,desc=document.getElementById('holDesc').value;
+  if(!d)return alert('اختر تاريخاً');
+  SETTINGS.holidays=SETTINGS.holidays||[];SETTINGS.holidays.push({date:d,desc});
+  persistAll();recomputeAll(true);
+}
+function removeHoliday(i){SETTINGS.holidays.splice(i,1);persistAll();recomputeAll(true)}
+function saveEngineSettings(){
+  SETTINGS.grace=+document.getElementById('setGrace').value||0;
+  SETTINGS.graceMissedMult=+document.getElementById('setMissMult').value||1.5;
+  SETTINGS.leadTimeDays=+document.getElementById('setLead').value||3;
+  SETTINGS.growthThreshold=(+document.getElementById('setGrowth').value||15)/100;
+  persistAll();recomputeAll(true);
+}
+const SAP_QUERY=`-- قالب تقريبي لسحب تاريخ مسحوبات العملاء من SAP B1 (HANA) — عدّله حسب مخططكم الفعلي
+SELECT
+  T0."CardCode"      AS "كود العميل",
+  T0."CardName"      AS "اسم العميل",
+  T1."ItemCode"      AS "كود الصنف",
+  T1."Dscription"    AS "اسم الصنف",
+  T0."DocDate"       AS "تاريخ السحب",
+  T1."Quantity"      AS "الكمية",
+  T1."UomCode"       AS "وحدة القياس",
+  T2."SlpName"       AS "مندوب المبيعات"
+FROM "ODLN" T0                 -- رأس مستند التسليم (بدّلها بـ OINV إذا المسحوبات = فواتير)
+INNER JOIN "DLN1" T1 ON T1."DocEntry" = T0."DocEntry"
+LEFT JOIN "OSLP" T2 ON T2."SlpCode" = T0."SlpCode"
+WHERE T0."DocDate" >= '2025-01-01'      -- عدّل نطاق التاريخ
+  AND T0."CANCELED" = 'N'
+ORDER BY T0."CardCode", T1."ItemCode", T0."DocDate";`;
+function copyQuery(){
+  const ta=document.createElement('textarea');ta.value=SAP_QUERY;ta.style.position='fixed';ta.style.top='-1000px';document.body.appendChild(ta);ta.focus();ta.select();
+  try{document.execCommand('copy')}catch(e){}
+  document.body.removeChild(ta);alert('تم نسخ الكويري');
+}
+
+/* ---------- نسخ احتياطي ---------- */
+function backupJson(){
+  const data={ROWS,STOCK,SETTINGS,FORECASTS,ACCURACY,ACTIONLOG,exportedAt:new Date().toISOString()};
+  downloadFile('نسخة_احتياطية_نظام_التنبؤ.json',JSON.stringify(data),'application/json');
+}
+function restoreJson(file){
+  const r=new FileReader();
+  r.onload=()=>{
+    try{
+      const data=JSON.parse(r.result);
+      ROWS=data.ROWS||[];STOCK=data.STOCK||[];SETTINGS=Object.assign(defaultSettings(),data.SETTINGS||{});
+      FORECASTS=data.FORECASTS||{};ACCURACY=data.ACCURACY||[];ACTIONLOG=data.ACTIONLOG||[];
+      ROWKEYS=new Set(ROWS.map(rowKey));
+      persistAll();recomputeAll(false);render();
+      alert('تمت الاستعادة بنجاح');
+    }catch(e){alert('ملف غير صالح: '+e.message)}
+  };
+  r.readAsText(file);
+}
+function wireDynamic(){
+  const fr=document.getElementById('fRestore');
+  if(fr)fr.onchange=()=>{if(fr.files[0])restoreJson(fr.files[0])};
+}
+
+/* ==================== تشغيل ==================== */
+recomputeAll(false);
+render();
+</script>
