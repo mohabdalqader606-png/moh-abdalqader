@@ -289,6 +289,7 @@
       <div class="hint">بتوزّع "كمية عمان" على فواتير كل مجموعة عادية، و"كمية العقبة" على فواتير مجموعة العقبة — كل صنف بينحط بالفاتورة يلي مضاف فيها بصفحة "تصميم ترتيب الفواتير". هاي العملية بتستبدل أي كمية مدخلة يدوياً حالياً بصفحة الطباعة لنفس الأصناف.</div>
       <div class="row-actions">
         <button class="btn-primary" onclick="distributeStatement()">توزيع الكميات الآن</button>
+        <button class="btn-danger" onclick="clearAllQty()">مسح جميع الكميات بكل الفواتير</button>
         <span class="status-msg" id="stDistMsg"></span>
       </div>
     </div>
@@ -942,6 +943,19 @@ function resetQty(invId){
   inv.qty = {};
   saveState();
   renderPrintPage();
+}
+function clearAllQty(){
+  let invCount = 0;
+  GROUPS.forEach(g=> g.invoices.forEach(()=>{ invCount++; }));
+  if(!invCount){ flash('stDistMsg','ما في فواتير أصلاً.', false); return; }
+  if(!confirm(`رح يتم مسح كل الكميات المدخلة بجميع الفواتير (${invCount} فاتورة) بكل المجموعات (عمان والعقبة). متابعة؟`)) return;
+  if(!confirm('تأكيد أخير: هاي العملية ما إلها تراجع، وبتمسح كل الكميات فعلاً من كل الفواتير. متابعة؟')) return;
+  GROUPS.forEach(g=> g.invoices.forEach(inv=>{ ensureInvoiceDefaults(inv); inv.qty = {}; }));
+  saveState();
+  renderStatementPage();
+  if(currentPage==='invoices') renderInvoicesPage();
+  if(currentPage==='print') renderPrintPage();
+  flash('stDistMsg', `تم مسح كميات ${invCount} فاتورة.`, true);
 }
 function computeLine(item, qty, taxExempt){
   const net = qty * (item.salePricePiece||0);
