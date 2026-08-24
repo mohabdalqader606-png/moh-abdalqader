@@ -123,6 +123,7 @@
     #printOverlay{position:absolute; top:0; left:0; width:100%; display:block;}
     .print-toolbar{display:none;}
     .print-sheet{border:none; margin:0; max-width:100%;}
+    .print-sheet + .print-sheet{page-break-before:always;}
   }
 
   .roadmap{padding:20px 24px 26px; display:flex; flex-direction:column; gap:10px;}
@@ -184,6 +185,9 @@
           انسخ من الإكسل صف العناوين + الصفوف والصقهم هون مباشرة (Ctrl+V من الإكسل بينسخ تلقائياً Tab-separated). ترتيب الأعمدة حر، بس لازم أسماء العناوين تكون بالضبط متل تحت (نفس عناوين ملف الربط الأصلي). عمود "الكمية" لو موجود بينتجاهَل — مو جزء من جدول الربط.
           <code class="block">رمز العميل	اسم الصنف لدى العميل	رمز الشركة	اسم الصنف لدى الشركة	بلد المنشأ	نسبة ضريبة المبيعات	الوحدة لدينا	التعبئة	سعر البيع /الوحدة	سعر البيع /الحبة	سعر المستودعات/الوحدة	سعر المستودعات/الحبة
 11365702	مونتانا فاصوليا خضراء مجمده 400غم كيس	FVL00109	فاصوليا مجمدة مصرية مونتانا20*400غم	مصري	0	Carton	20	9	0.45	10	0.5</code>
+          عمودياً اختياريين لكل مجموعة (ترتيب الصنف داخل الفاتورة + رقم الفاتورة يلي ينحط فيها) — بيبنوا فواتير "باقي المملكة" و"كشف تجميعي العقبة" تلقائياً بدون ما تحتاج تروح لصفحة "تصميم ترتيب الفواتير":
+          <code class="block">ترتيب - عمان	رقم فاتورة - عمان	ترتيب - تجميعي العقبة	رقم فاتورة - تجميعي العقبة	ترتيب - فواتير العقبة	رقم فاتورة - فواتير العقبة
+1	1	1	1	1	1</code>
         </div>
         <textarea id="mapPasteArea" placeholder="الصق هنا جدول الربط..."></textarea>
         <div class="row-actions">
@@ -210,6 +214,12 @@
         <input type="number" id="mIn_salePricePiece" placeholder="سعر البيع/الحبة" style="width:110px;" step="any">
         <input type="number" id="mIn_whsPriceUnit" placeholder="سعر المستودع/الوحدة" style="width:130px;" step="any">
         <input type="number" id="mIn_whsPricePiece" placeholder="سعر المستودع/الحبة" style="width:120px;" step="any">
+        <input type="number" id="mIn_ammanOrder" placeholder="ترتيب - عمان" style="width:100px;" step="1" min="1">
+        <input type="number" id="mIn_ammanInvoiceNo" placeholder="رقم فاتورة - عمان" style="width:120px;" step="1" min="1">
+        <input type="number" id="mIn_aqabaAggOrder" placeholder="ترتيب - تجميعي العقبة" style="width:130px;" step="1" min="1">
+        <input type="number" id="mIn_aqabaAggInvoiceNo" placeholder="رقم فاتورة - تجميعي العقبة" style="width:150px;" step="1" min="1">
+        <input type="number" id="mIn_aqabaVoucherOrder" placeholder="ترتيب - فواتير العقبة" style="width:130px;" step="1" min="1">
+        <input type="number" id="mIn_aqabaVoucherInvoiceNo" placeholder="رقم فاتورة - فواتير العقبة" style="width:150px;" step="1" min="1">
         <button class="btn-primary btn-sm" onclick="addManualItem()">إضافة</button>
       </div>
     </div>
@@ -229,7 +239,11 @@
             <th>رمزنا</th><th>اسمنا</th><th>وحدتنا</th>
             <th>رمز العميل</th><th>اسم الصنف لدى العميل</th>
             <th>بلد المنشأ</th><th>الضريبة%</th><th>التعبئة</th>
-            <th>سعر بيع/وحدة</th><th>سعر بيع/حبة</th><th>سعر مستودع/وحدة</th><th>سعر مستودع/حبة</th><th></th>
+            <th>سعر بيع/وحدة</th><th>سعر بيع/حبة</th><th>سعر مستودع/وحدة</th><th>سعر مستودع/حبة</th>
+            <th title="ترتيب الصنف بفاتورة باقي المملكة">ترتيب عمان</th><th title="رقم فاتورة باقي المملكة">فاتورة عمان</th>
+            <th title="ترتيب الصنف بكشف تجميعي العقبة">ترتيب تجميعي العقبة</th><th title="رقم كشف تجميعي العقبة">فاتورة تجميعي العقبة</th>
+            <th title="ترتيب الصنف بفواتير العقبة (حسب سند التحويل)">ترتيب فواتير العقبة</th><th title="رقم فاتورة فواتير العقبة (حسب سند التحويل)">فاتورة فواتير العقبة</th>
+            <th></th>
           </tr>
         </thead>
         <tbody id="mapTbody"></tbody>
@@ -243,12 +257,13 @@
     <div class="grp-tabs" id="grpTabs"></div>
     <div class="input-panel" style="border-top:1px solid var(--line);">
       <div class="row-actions" style="margin-top:0;">
-        <button class="btn-primary btn-sm" onclick="addInvoice()">+ فاتورة جديدة بهاي المجموعة</button>
+        <button class="btn-primary btn-sm" id="addInvoiceBtn" onclick="addInvoice()">+ فاتورة جديدة بهاي المجموعة</button>
         <button class="btn-ghost btn-sm" onclick="renameGroupPrompt()">✏️ إعادة تسمية المجموعة</button>
         <button class="btn-ghost btn-sm" onclick="addGroupPrompt()">+ مجموعة فواتير جديدة</button>
         <span class="status-msg" id="invStatusMsg"></span>
       </div>
-      <div class="hint" style="margin-top:8px;">رتّب الأصناف جوّا كل فاتورة بالسهمين ▲▼، أو احذف الصنف من الفاتورة. القالب هذا بيتحفظ ويتكرر تلقائياً كل شهر لنفس المجموعة — عدّله بس لما يتغير ترتيب فعلي عند المؤسسة.</div>
+      <div class="hint" style="margin-top:8px;" id="autoInvoiceNote"></div>
+      <div class="hint" style="margin-top:8px;" id="manualInvoiceNote">رتّب الأصناف جوّا كل فاتورة بالسهمين ▲▼، أو احذف الصنف من الفاتورة. القالب هذا بيتحفظ ويتكرر تلقائياً كل شهر لنفس المجموعة — عدّله بس لما يتغير ترتيب فعلي عند المؤسسة.</div>
     </div>
     <div id="freshLoadBanner"></div>
     <div class="list" id="invoicesList"></div>
@@ -368,6 +383,11 @@ ORDER BY T0."DocNum"</code>
         <input type="text" id="trVoucherNos" placeholder="مثال: 2610323 2610404" style="width:260px; direction:ltr; text-align:left;">
         <button class="btn-primary btn-sm" onclick="matchTransferVouchers()">مطابقة</button>
         <span class="status-msg" id="trMatchMsg"></span>
+      </div>
+      <div class="row-actions" id="trAqabaPrintBox" style="display:none; margin-top:8px; padding-top:8px; border-top:1px dashed var(--line);">
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">رقم الفاتورة <input type="text" id="trAqabaPrintDocNo" style="width:150px;"></label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">التاريخ <input type="date" id="trAqabaPrintDocDate"></label>
+        <button class="btn-primary btn-sm" onclick="printAqabaVoucherInvoices()">🖨️ طباعة فاتورة العقبة لهاي السند/السندات</button>
       </div>
     </div>
 
@@ -520,6 +540,7 @@ function loadState(){
     ];
   }
   GROUPS.forEach(g=>{ ensureGroupDefaults(g); (g.invoices||[]).forEach(ensureInvoiceDefaults); });
+  rebuildAutoInvoices();
   currentGroupId = GROUPS[0].id;
 }
 function ensureGroupDefaults(g){
@@ -575,9 +596,17 @@ const MAP_HEADER_ALIASES = {
   'سعر البيع /الحبة':'salePricePiece', 'سعر البيع/الحبة':'salePricePiece',
   'سعر المستودعات/الوحدة':'whsPriceUnit', 'سعر المستودعات /الوحدة':'whsPriceUnit',
   'سعر المستودعات/الحبة':'whsPricePiece', 'سعر المستودعات /الحبة':'whsPricePiece',
+  'ترتيب - عمان':'ammanOrder', 'رقم فاتورة - عمان':'ammanInvoiceNo',
+  'ترتيب - تجميعي العقبة':'aqabaAggOrder', 'رقم فاتورة - تجميعي العقبة':'aqabaAggInvoiceNo',
+  'ترتيب - فواتير العقبة':'aqabaVoucherOrder', 'رقم فاتورة - فواتير العقبة':'aqabaVoucherInvoiceNo',
   'الكمية':null, '#':null
 };
-const NUM_FIELDS = ['taxRate','factor','salePriceUnit','salePricePiece','whsPriceUnit','whsPricePiece'];
+const NUM_FIELDS = ['taxRate','factor','salePriceUnit','salePricePiece','whsPriceUnit','whsPricePiece',
+  'ammanOrder','ammanInvoiceNo','aqabaAggOrder','aqabaAggInvoiceNo','aqabaVoucherOrder','aqabaVoucherInvoiceNo'];
+const ORDER_FIELD_SETS = [
+  {group:'amman', docType:'invoice', orderField:'ammanOrder', invField:'ammanInvoiceNo'},
+  {group:'aqaba', docType:'aggregate', orderField:'aqabaAggOrder', invField:'aqabaAggInvoiceNo'}
+];
 
 function importMapping(){
   const raw = document.getElementById('mapPasteArea').value;
@@ -608,6 +637,7 @@ function importMapping(){
       ITEMS.push(fresh); added++;
     }
   }
+  rebuildAutoInvoices();
   saveState();
   renderMappingTable();
   document.getElementById('mapPasteArea').value = '';
@@ -628,13 +658,21 @@ function addManualItem(){
     salePriceUnit: parseNum(document.getElementById('mIn_salePriceUnit').value),
     salePricePiece: parseNum(document.getElementById('mIn_salePricePiece').value),
     whsPriceUnit: parseNum(document.getElementById('mIn_whsPriceUnit').value),
-    whsPricePiece: parseNum(document.getElementById('mIn_whsPricePiece').value)
+    whsPricePiece: parseNum(document.getElementById('mIn_whsPricePiece').value),
+    ammanOrder: parseNum(document.getElementById('mIn_ammanOrder').value),
+    ammanInvoiceNo: parseNum(document.getElementById('mIn_ammanInvoiceNo').value),
+    aqabaAggOrder: parseNum(document.getElementById('mIn_aqabaAggOrder').value),
+    aqabaAggInvoiceNo: parseNum(document.getElementById('mIn_aqabaAggInvoiceNo').value),
+    aqabaVoucherOrder: parseNum(document.getElementById('mIn_aqabaVoucherOrder').value),
+    aqabaVoucherInvoiceNo: parseNum(document.getElementById('mIn_aqabaVoucherInvoiceNo').value)
   };
   if(!rec.ourCode || !rec.theirCode){ flash('mapStatusMsg','لازم تعبي رمزنا ورمز العميل على الأقل.', false); return; }
   const k = rec.ourCode+'|'+rec.theirCode;
   const existingIdx = ITEMS.findIndex(it=>itemKey(it)===k);
   if(existingIdx>=0) ITEMS[existingIdx] = rec; else ITEMS.push(rec);
-  ['mIn_ourCode','mIn_ourName','mIn_ourUnit','mIn_theirCode','mIn_theirName','mIn_origin','mIn_taxRate','mIn_factor','mIn_salePriceUnit','mIn_salePricePiece','mIn_whsPriceUnit','mIn_whsPricePiece'].forEach(id=>document.getElementById(id).value='');
+  ['mIn_ourCode','mIn_ourName','mIn_ourUnit','mIn_theirCode','mIn_theirName','mIn_origin','mIn_taxRate','mIn_factor','mIn_salePriceUnit','mIn_salePricePiece','mIn_whsPriceUnit','mIn_whsPricePiece',
+   'mIn_ammanOrder','mIn_ammanInvoiceNo','mIn_aqabaAggOrder','mIn_aqabaAggInvoiceNo','mIn_aqabaVoucherOrder','mIn_aqabaVoucherInvoiceNo'].forEach(id=>document.getElementById(id).value='');
+  rebuildAutoInvoices();
   saveState();
   renderMappingTable();
   flash('mapStatusMsg','تمت الإضافة.', true);
@@ -644,8 +682,50 @@ function deleteItem(key){
   if(!confirm('حذف هالصنف من جدول الربط؟ (رح ينحذف من أي فاتورة مضاف فيها كمان)')) return;
   ITEMS = ITEMS.filter(it=>itemKey(it)!==key);
   GROUPS.forEach(g=> g.invoices.forEach(inv=> inv.itemKeys = inv.itemKeys.filter(k=>k!==key)));
+  rebuildAutoInvoices();
   saveState();
   renderMappingTable();
+}
+
+/* ترتيب/رقم الفاتورة يتحدد من عمودي "الترتيب" و"رقم الفاتورة" بجدول ربط الأصناف مباشرة —
+   هاي الدالة بتبني (وتحدّث) فواتير "باقي المملكة" و"كشف تجميعي العقبة" تلقائياً من هاي الأعمدة. */
+function rebuildAutoInvoices(){
+  ORDER_FIELD_SETS.forEach(spec=> rebuildGroupCategory(spec.group, spec.docType, spec.orderField, spec.invField));
+}
+function rebuildGroupCategory(groupId, docType, orderField, invField){
+  const g = GROUPS.find(x=>x.id===groupId);
+  if(!g) return;
+  ensureGroupDefaults(g);
+  const bySlot = new Map();
+  ITEMS.forEach(it=>{
+    const slotRaw = it[invField];
+    if(slotRaw===undefined || slotRaw===null || slotRaw==='') return;
+    const slot = parseInt(slotRaw,10);
+    if(!slot || slot<1) return;
+    if(!bySlot.has(slot)) bySlot.set(slot, []);
+    bySlot.get(slot).push({key:itemKey(it), order:(+it[orderField])||0});
+  });
+  bySlot.forEach(arr=> arr.sort((a,b)=>a.order-b.order));
+  // فواتير قديمة بنيت يدوياً (قبل هالميزة) بنفس نوع المستند وما إلها رقم "slot" بعد —
+  // منستعملها بدل ما نسوي فواتير جديدة مكررة، عشان نحافظ على رقم المستند والتاريخ والكميات المدخلة فيها
+  const legacyInvoices = g.invoices.filter(iv=>iv.docType===docType && iv.slot===undefined);
+  Array.from(bySlot.keys()).sort((a,b)=>a-b).forEach(slot=>{
+    const arr = bySlot.get(slot);
+    let inv = g.invoices.find(iv=>iv.docType===docType && iv.slot===slot);
+    if(!inv){
+      inv = legacyInvoices.shift();
+      if(inv){ inv.slot = slot; }
+      else{
+        inv = {id: uid(), name:(docType==='aggregate'?'كشف تجميعي ':'فاتورة ')+slot, docType, slot, docNo:'', docDate:'', qty:{}, itemKeys:[]};
+        g.invoices.push(inv);
+      }
+    }
+    inv.itemKeys = arr.map(x=>x.key);
+  });
+  g.invoices.forEach(iv=>{
+    if(iv.docType===docType && iv.slot!==undefined && !bySlot.has(iv.slot)) iv.itemKeys = [];
+  });
+  g.invoices.sort((a,b)=> (a.docType===docType && b.docType===docType) ? (a.slot||0)-(b.slot||0) : 0);
 }
 
 function editItemField(key, field, value){
@@ -653,6 +733,7 @@ function editItemField(key, field, value){
   if(!it) return;
   if(NUM_FIELDS.includes(field)) it[field] = parseNum(value);
   else it[field] = value;
+  if(['ammanOrder','ammanInvoiceNo','aqabaAggOrder','aqabaAggInvoiceNo'].includes(field)) rebuildAutoInvoices();
   saveState();
 }
 
@@ -682,6 +763,12 @@ function renderMappingTable(){
       <td><input type="number" step="any" value="${fmt4(it.salePricePiece)}" onchange="editItemField('${k}','salePricePiece',this.value)"></td>
       <td><input type="number" step="any" value="${fmt4(it.whsPriceUnit)}" onchange="editItemField('${k}','whsPriceUnit',this.value)"></td>
       <td><input type="number" step="any" value="${fmt4(it.whsPricePiece)}" onchange="editItemField('${k}','whsPricePiece',this.value)"></td>
+      <td><input type="number" step="1" min="1" style="width:56px;" value="${it.ammanOrder||''}" onchange="editItemField('${k}','ammanOrder',this.value)"></td>
+      <td><input type="number" step="1" min="1" style="width:56px;" value="${it.ammanInvoiceNo||''}" onchange="editItemField('${k}','ammanInvoiceNo',this.value)"></td>
+      <td><input type="number" step="1" min="1" style="width:56px;" value="${it.aqabaAggOrder||''}" onchange="editItemField('${k}','aqabaAggOrder',this.value)"></td>
+      <td><input type="number" step="1" min="1" style="width:56px;" value="${it.aqabaAggInvoiceNo||''}" onchange="editItemField('${k}','aqabaAggInvoiceNo',this.value)"></td>
+      <td><input type="number" step="1" min="1" style="width:56px;" value="${it.aqabaVoucherOrder||''}" onchange="editItemField('${k}','aqabaVoucherOrder',this.value)"></td>
+      <td><input type="number" step="1" min="1" style="width:56px;" value="${it.aqabaVoucherInvoiceNo||''}" onchange="editItemField('${k}','aqabaVoucherInvoiceNo',this.value)"></td>
       <td><button class="btn-danger tiny-btn" onclick="deleteItem('${k}')">حذف</button></td>
     </tr>`;
   }).join('');
@@ -796,34 +883,67 @@ function renderFreshLoadBanner(){
       <button class="btn-ghost btn-sm" onclick="dismissFreshLoadBanner()">تجاهل، هاي أول مرة فعلاً</button>
     </div>`;
 }
+function isAutoManagedGroup(g){ return g && (g.id==='amman' || g.id==='aqaba'); }
+
 function renderInvoicesPage(){
   if(currentPage!=='invoices') return;
   renderFreshLoadBanner();
   renderGroupTabs('grpTabs');
   const g = GROUPS.find(x=>x.id===currentGroupId);
   const list = document.getElementById('invoicesList');
+  const addBtn = document.getElementById('addInvoiceBtn');
+  const autoNote = document.getElementById('autoInvoiceNote');
+  const manualNote = document.getElementById('manualInvoiceNote');
+  if(addBtn) addBtn.style.display = isAutoManagedGroup(g) ? 'none' : '';
+  if(autoNote) autoNote.style.display = isAutoManagedGroup(g) ? '' : 'none';
+  if(manualNote) manualNote.style.display = isAutoManagedGroup(g) ? 'none' : '';
+  if(autoNote && g){
+    autoNote.textContent = g.id==='amman'
+      ? 'الترتيب هون محسوب تلقائياً من عمودي "ترتيب - عمان" و"رقم فاتورة - عمان" بصفحة "ربط الأصناف" — عدّل من هناك.'
+      : 'كشف العقبة التجميعي هون محسوب تلقائياً من عمودي "ترتيب - تجميعي العقبة" و"رقم فاتورة - تجميعي العقبة" بصفحة "ربط الأصناف". فواتير العقبة يلي بتنطبع خلال الشهر (حسب سند التحويل) صارت تُطبع من صفحة "سندات التحويل (011)" مباشرة، وترتيبها بيتحدد من عمودي "ترتيب - فواتير العقبة" و"رقم فاتورة - فواتير العقبة".';
+  }
   if(!g || !g.invoices.length){
-    list.innerHTML = '<div class="empty-hint">ما في فواتير بهاي المجموعة بعد — اضغط "فاتورة جديدة".</div>';
+    list.innerHTML = isAutoManagedGroup(g)
+      ? '<div class="empty-hint">لسا ما في أصناف إلها ترتيب/رقم فاتورة معرّف بصفحة "ربط الأصناف" لهاي المجموعة.</div>'
+      : '<div class="empty-hint">ما في فواتير بهاي المجموعة بعد — اضغط "فاتورة جديدة".</div>';
     return;
   }
   if(!ITEMS.length){
     list.innerHTML = '<div class="empty-hint">ضيف أصناف بصفحة "ربط الأصناف" أول شي عشان تقدر تختارهم هون.</div>';
     return;
   }
-  list.innerHTML = g.invoices.map(inv=>{
+  const visibleInvoices = isAutoManagedGroup(g) ? g.invoices.filter(iv=>iv.slot!==undefined) : g.invoices;
+  if(isAutoManagedGroup(g) && !visibleInvoices.length){
+    list.innerHTML = '<div class="empty-hint">لسا ما في أصناف إلها ترتيب/رقم فاتورة معرّف بصفحة "ربط الأصناف" لهاي المجموعة.</div>';
+    return;
+  }
+  list.innerHTML = visibleInvoices.map(inv=>{
+    const auto = isAutoManagedGroup(g);
     const linesHtml = inv.itemKeys.map((k,idx)=>{
       const it = findItem(k);
       if(!it) return '';
       return `<div class="inv-line">
         <span class="ord">${idx+1}</span>
         <div class="nm"><b>${esc(it.theirName)||'<span class="muted">بدون اسم مؤسسة</span>'}</b><div class="sub">رمزهم ${esc(it.theirCode)} · عندنا ${esc(it.ourCode)} — ${esc(it.ourName)}</div></div>
-        <div class="arrows">
+        ${auto ? '' : `<div class="arrows">
           <button onclick="moveItemInInvoice('${inv.id}',${idx},-1)" title="أعلى">▲</button>
           <button onclick="moveItemInInvoice('${inv.id}',${idx},1)" title="أسفل">▼</button>
         </div>
-        <button class="btn-danger tiny-btn" onclick="removeItemFromInvoice('${inv.id}',${idx})">حذف</button>
+        <button class="btn-danger tiny-btn" onclick="removeItemFromInvoice('${inv.id}',${idx})">حذف</button>`}
       </div>`;
     }).join('');
+
+    if(auto){
+      return `<div class="inv-card">
+        <div class="inv-head">
+          <b style="font-size:13px;">${esc(inv.name)}</b>
+          <span class="inv-count">${inv.itemKeys.length} صنف</span>
+        </div>
+        <div class="inv-body">
+          ${linesHtml || '<div class="muted" style="padding:8px 4px; font-size:12px;">ما في أصناف بهاي الفاتورة بعد.</div>'}
+        </div>
+      </div>`;
+    }
 
     const pickerHtml = openPicker===inv.id ? `
       <div class="picker-panel">
@@ -1033,12 +1153,12 @@ function renderPrintPage(){
     return `<div class="inv-card">
       <div class="inv-head">
         <b style="font-size:13px;">${esc(inv.name)}</b>
-        <label style="font-size:11.5px; display:flex; align-items:center; gap:5px;">نوع المستند
+        ${inv.slot!==undefined ? `<span class="muted" style="font-size:11.5px;">نوع المستند: ${inv.docType==='aggregate'?'كشف تجميعي':'فاتورة مبيعات'} (محدد تلقائياً من ربط الأصناف)</span>` : `<label style="font-size:11.5px; display:flex; align-items:center; gap:5px;">نوع المستند
           <select onchange="updateInvoiceField('${inv.id}','docType',this.value)">
             <option value="invoice" ${inv.docType==='invoice'?'selected':''}>فاتورة مبيعات</option>
             <option value="aggregate" ${inv.docType==='aggregate'?'selected':''}>كشف تجميعي</option>
           </select>
-        </label>
+        </label>`}
         <span class="muted" style="font-size:11px;">→ ${esc(computeInvoiceTitle(g, inv))}</span>
         <label style="font-size:11.5px; display:flex; align-items:center; gap:5px;">رقم المستند <input type="text" value="${esc(inv.docNo)}" style="width:110px;" onchange="updateInvoiceField('${inv.id}','docNo',this.value)"></label>
         <label style="font-size:11.5px; display:flex; align-items:center; gap:5px;">التاريخ <input type="date" value="${esc(inv.docDate)}" onchange="updateInvoiceField('${inv.id}','docDate',this.value)"></label>
@@ -1083,13 +1203,13 @@ function copyPrintTableTSV(){
   );
 }
 
-function buildPrintSheetHTML(g, inv){
+function buildPrintSheetHTML(g, inv, qtyOverride){
   ensureGroupDefaults(g); ensureInvoiceDefaults(inv);
   let netTotal=0, taxTotal=0, grandTotal=0, instTotal=0;
   const rowsHtml = inv.itemKeys.map(k=>{
     const it = findItem(k);
     if(!it) return '';
-    const qty = inv.qty[k]||0;
+    const qty = qtyOverride ? (qtyOverride.get(k)||0) : (inv.qty[k]||0);
     const {net,taxPct,taxVal,total} = computeLine(it, qty, g.taxExempt);
     netTotal+=net; taxTotal+=taxVal; grandTotal+=total; instTotal += qty*(it.whsPricePiece||0);
     return `<tr>
@@ -1436,8 +1556,13 @@ function matchTransferVouchers(){
       unmapped.push({ourCode:g.ourCode, ourName:g.ourName, ourQty:g.qty});
     }
   });
-  lastTrMatch = {mappedRows, unmapped};
+  lastTrMatch = {mappedRows, unmapped, vouchers: Array.from(voucherMap.values())};
   document.getElementById('trTableToolbar').style.display = '';
+  document.getElementById('trAqabaPrintBox').style.display = '';
+  const firstVoucher = lastTrMatch.vouchers[0];
+  document.getElementById('trAqabaPrintDocNo').value = lastTrMatch.vouchers.map(v=>v.docNum).join(' / ');
+  const isoDate = firstVoucher && /^\d{4}-\d{2}-\d{2}$/.test(firstVoucher.docDate||'') ? firstVoucher.docDate : '';
+  document.getElementById('trAqabaPrintDocDate').value = isoDate;
   renderTransferResultTable();
 
   const grandTotal = mappedRows.reduce((s,r)=>s+r.total, 0);
@@ -1449,6 +1574,44 @@ function matchTransferVouchers(){
     <div class="card"><div class="lbl">إجمالي القيمة (سعر المستودع)</div><div class="val">${fmt3(grandTotal)}</div></div>
   `;
   flash('trMatchMsg', `تمت المطابقة: ${voucherMap.size} سند، ${mappedRows.length+unmapped.length} صنف.`, true);
+}
+
+/* ترتيب/تجميع فواتير العقبة يلي بتنطبع خلال الشهر حسب سند تحويل — محدد من عمودي
+   "ترتيب - فواتير العقبة" و"رقم فاتورة - فواتير العقبة" بجدول ربط الأصناف. الكمية بتجي
+   تلقائياً من مطابقة السند فوق (لآخر سند/سندات اتعملتلهم مطابقة) — كل أصناف القالب بتظهر
+   دايماً حتى لو كميتها صفر بهاد السند تحديداً. */
+function buildAqabaVoucherSlots(){
+  const bySlot = new Map();
+  ITEMS.forEach(it=>{
+    const slotRaw = it.aqabaVoucherInvoiceNo;
+    if(slotRaw===undefined || slotRaw===null || slotRaw==='') return;
+    const slot = parseInt(slotRaw,10);
+    if(!slot || slot<1) return;
+    if(!bySlot.has(slot)) bySlot.set(slot, []);
+    bySlot.get(slot).push({key:itemKey(it), order:(+it.aqabaVoucherOrder)||0});
+  });
+  bySlot.forEach(arr=> arr.sort((a,b)=>a.order-b.order));
+  return bySlot;
+}
+function printAqabaVoucherInvoices(){
+  if(!lastTrMatch || !lastTrMatch.mappedRows.length){ flash('trMatchMsg','اعمل "مطابقة" للسند/السندات أول.', false); return; }
+  const slots = buildAqabaVoucherSlots();
+  if(!slots.size){ flash('trMatchMsg','ما في أصناف إلها "ترتيب - فواتير العقبة" و"رقم فاتورة - فواتير العقبة" بصفحة ربط الأصناف بعد.', false); return; }
+  const g = GROUPS.find(x=>x.id==='aqaba');
+  if(!g){ flash('trMatchMsg','ما في مجموعة العقبة.', false); return; }
+  ensureGroupDefaults(g);
+  const qtyMap = new Map();
+  lastTrMatch.mappedRows.forEach(r=> qtyMap.set(r.ourCode+'|'+r.theirCode, r.theirQty));
+  const docNo = document.getElementById('trAqabaPrintDocNo').value.trim();
+  const docDate = document.getElementById('trAqabaPrintDocDate').value;
+  let html = '';
+  Array.from(slots.keys()).sort((a,b)=>a-b).forEach(slot=>{
+    const keys = slots.get(slot).map(x=>x.key);
+    const fakeInv = {id:'aqaba-voucher-slot-'+slot, name:'فاتورة سند '+slot, docType:'invoice', docNo, docDate, itemKeys:keys, qty:{}};
+    html += buildPrintSheetHTML(g, fakeInv, qtyMap);
+  });
+  document.getElementById('printSheetContent').innerHTML = html;
+  document.getElementById('printOverlay').classList.add('active');
 }
 
 const TR_SORT_TH = {
@@ -1774,6 +1937,7 @@ function restoreBackup(evt){
       if(Array.isArray(d.BRANCHES) && d.BRANCHES.length) BRANCHES = d.BRANCHES;
       if(d.BRANCH_CODE_MAP && typeof d.BRANCH_CODE_MAP==='object') BRANCH_CODE_MAP = d.BRANCH_CODE_MAP;
       GROUPS.forEach(g=>{ ensureGroupDefaults(g); (g.invoices||[]).forEach(ensureInvoiceDefaults); });
+      rebuildAutoInvoices();
       currentGroupId = GROUPS[0] ? GROUPS[0].id : null;
       IS_FRESH_LOAD = false;
       saveState();
