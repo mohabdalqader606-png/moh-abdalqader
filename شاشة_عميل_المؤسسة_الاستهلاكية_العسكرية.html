@@ -1367,17 +1367,26 @@ function decodeQrFromImg(img){
     const x = c.getContext('2d');
     x.drawImage(img, 0, 0, w, h);
     const d = x.getImageData(0, 0, w, h);
-    const r = jsQR(d.data, w, h, {inversionAttempts:'attemptBoth'});
-    return r ? r.data : null;
+    return jsQR(d.data, w, h, {inversionAttempts:'attemptBoth'});
   };
   return tryAt(1000) || tryAt(1600) || (Math.max(img.width,img.height)>1600 ? tryAt(2400) : null);
 }
-function makeCleanQrDataUrl(text){
-  if(!window.qrcode) return null;
+/* إعادة التوليد بايت-ببايت من binaryData (مو من النص) — عشان محتوى الفوترة ينحفظ حرفياً
+   بدون أي تحويل ترميز ممكن يخرّبه، فتطبيق سند يستقبل نفس المحتوى الأصلي بالضبط */
+function makeCleanQrDataUrl(qrResult){
+  if(!window.qrcode || !qrResult) return null;
   try{
+    const bytes = qrResult.binaryData && qrResult.binaryData.length ? Array.from(qrResult.binaryData) : null;
     const qr = qrcode(0, 'M');
-    qr.addData(text, 'Byte');
-    qr.make();
+    if(bytes){
+      const prev = qrcode.stringToBytes;
+      qrcode.stringToBytes = a=>a; // تمرير البايتات كما هي بدون تحويل ترميز
+      try{ qr.addData(bytes, 'Byte'); qr.make(); }
+      finally{ qrcode.stringToBytes = prev; }
+    }else{
+      qr.addData(qrResult.data, 'Byte');
+      qr.make();
+    }
     const count = qr.getModuleCount();
     const scale = 10, quiet = 4;
     const size = (count + quiet*2) * scale;
@@ -1393,8 +1402,7 @@ function makeCleanQrDataUrl(text){
 function decodeQrFromCanvas(c){
   if(!window.jsQR) return null;
   const d = c.getContext('2d').getImageData(0, 0, c.width, c.height);
-  const r = jsQR(d.data, c.width, c.height, {inversionAttempts:'attemptBoth'});
-  return r ? r.data : null;
+  return jsQR(d.data, c.width, c.height, {inversionAttempts:'attemptBoth'});
 }
 /* رفع فاتورة PDF (من نظام الفوترة) — منرسم أول صفحة ومنقرأ الـQR منها مباشرة */
 function processQrPdf(file, cb){
@@ -1408,8 +1416,8 @@ function processQrPdf(file, cb){
           const c = document.createElement('canvas');
           c.width = Math.round(vp.width); c.height = Math.round(vp.height);
           page.render({canvasContext: c.getContext('2d'), viewport: vp}).promise.then(()=>{
-            const text = decodeQrFromCanvas(c);
-            if(text){ const clean = makeCleanQrDataUrl(text); if(clean){ cb(clean, true); return; } }
+            const qrResult = decodeQrFromCanvas(c);
+            if(qrResult){ const clean = makeCleanQrDataUrl(qrResult); if(clean){ cb(clean, true); return; } }
             next();
           }).catch(()=>next());
         };
@@ -1428,9 +1436,9 @@ function processQrFile(file, cb){
   reader.onload = e=>{
     const img = new Image();
     img.onload = ()=>{
-      const text = decodeQrFromImg(img);
-      if(text){
-        const clean = makeCleanQrDataUrl(text);
+      const qrResult = decodeQrFromImg(img);
+      if(qrResult){
+        const clean = makeCleanQrDataUrl(qrResult);
         if(clean){ cb(clean, true); return; }
       }
       // فشلت القراءة أو مكتبة التوليد مش محمّلة — منخزن الصورة كما هي (مصغّرة) مع تحذير
