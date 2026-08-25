@@ -103,7 +103,7 @@ WHERE T0."U_SlpType" = 'CashVan'
 ORDER BY T0."SlpName"</textarea>
    <button class="btn ghost sm" style="margin-top:6px" onclick="copyQuery('qReps')">📋 نسخ الكويري</button>
   </details>
-  <div class="row"><label>بحث</label><input type="text" id="repsSearch" placeholder="اسم المندوب..." style="width:220px" oninput="renderReps()"></div>
+  <div class="row"><label>بحث</label><input type="text" id="repsSearch" placeholder="اسم المندوب..." style="width:220px" oninput="renderReps()"><button class="btn ghost sm" onclick="cleanOrphans()" title="يحذف أي سطر مبيعات أو تحصيل مربوط بمندوب محذوف">🧹 تنظيف سجلات يتيمة</button></div>
   <div class="tblwrap" style="max-height:none"><table><tr><th>المندوب</th><th class="num">مبيعات مسجّلة (سطر)</th><th class="num">تحصيل مسجّل (سطر)</th><th></th></tr><tbody id="repsTbl"></tbody></table></div>
  </div>
 </section>
@@ -256,7 +256,19 @@ function fillRepSelects(){const opts=ST.reps.map(r=>`<option value="${r.id}">${r
 
 /* ================= REPS ================= */
 function addRep(){const el=document.getElementById('newRepName');const name=el.value.trim();if(!name)return;if(ST.reps.some(r=>r.name===name)){alert('المندوب موجود أصلاً');return}ST.reps.push({id:uid(),name});el.value='';saveState();renderReps();fillRepSelects()}
-function delRep(id){if(!confirm('حذف المندوب؟ (بيضل سجلات مبيعاته/تحصيله لحاله بدون ما تنحذف)'))return;ST.reps=ST.reps.filter(r=>r.id!==id);saveState();renderReps();fillRepSelects()}
+function delRep(id){if(!confirm('حذف المندوب؟ رح تنحذف معه كل سجلات مبيعاته وتحصيله المسجّلة.'))return;
+ ST.reps=ST.reps.filter(r=>r.id!==id);
+ ST.sales=ST.sales.filter(s=>s.repId!==id);
+ ST.coll=ST.coll.filter(c=>c.repId!==id);
+ saveState();renderReps();renderSales();renderColl();fillRepSelects()}
+function cleanOrphans(){
+ const validIds=new Set(ST.reps.map(r=>r.id));
+ const nS=ST.sales.filter(s=>!validIds.has(s.repId)).length,nC=ST.coll.filter(c=>!validIds.has(c.repId)).length;
+ if(!nS&&!nC){alert('ما في سجلات يتيمة — كل شي مرتبط بمندوب موجود.');return}
+ if(!confirm(`رح تنحذف ${nS} سطر مبيعات و${nC} سطر تحصيل مش مرتبطين بأي مندوب موجود حالياً. متابعة؟`))return;
+ ST.sales=ST.sales.filter(s=>validIds.has(s.repId));
+ ST.coll=ST.coll.filter(c=>validIds.has(c.repId));
+ saveState();renderReps();renderSales();renderColl();renderComm();alert('تم التنظيف ✓')}
 function renderReps(){const el=document.getElementById('repsTbl');const q=(document.getElementById('repsSearch').value||'').trim().toLowerCase();
  const list=ST.reps.filter(r=>!q||r.name.toLowerCase().includes(q));
  el.innerHTML=list.map(r=>{const ns=ST.sales.filter(s=>s.repId===r.id).length,nc=ST.coll.filter(c=>c.repId===r.id).length;return `<tr><td><b>${r.name}</b></td><td class="num">${ns}</td><td class="num">${nc}</td><td><button class="btn danger sm" onclick="delRep('${r.id}')">حذف</button></td></tr>`}).join('')||'<tr><td colspan="4" class="hint">لا يوجد مندوبون بعد</td></tr>'}
