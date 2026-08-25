@@ -213,8 +213,10 @@ body.glass #tip{background:rgba(255,255,255,.95);backdrop-filter:blur(8px)}
  <div class="row" style="margin:8px 0;gap:8px">
   <button class="btn gold sm" onclick="exportJSON();toast('تم تنزيل النسخة الاحتياطية')" title="يحفظ كل بيانات هذا الملف الشركة الحالي بملف JSON على جهازك">💾 نسخة احتياطية</button>
   <label class="btn ghost sm" style="cursor:pointer" title="يستعيد بيانات من ملف نسخة احتياطية سابق">↩️ استعادة نسخة احتياطية<input type="file" id="fJsonQuick" accept=".json" style="display:none"></label>
+  <button class="btn ghost sm" onclick="exportClassBank()" title="يحفظ التصنيف (بند القوائم لكل حساب) وربط البنوك فقط بملف صغير مستقل — لحمايتهم من أي حذف أو مسح للبيانات المالية">📎 نسخة تصنيف وبنوك</button>
+  <label class="btn ghost sm" style="cursor:pointer" title="يستعيد التصنيف وربط البنوك من ملف محفوظ سابقاً — يدمجهم فوق الموجود حالياً، ما يمسح شي">📎 استعادة تصنيف وبنوك<input type="file" id="fClassBank" accept=".json" style="display:none"></label>
   <button class="btn ghost sm" style="color:var(--coral,#c0392b);border-color:var(--coral,#c0392b)" onclick="clearAllQueries()" title="⚠️ يمسح كل شي بهذا الملف الشركة: الحسابات، الأرصدة، الحركات، شركاء الأعمال، التصنيف، ربط البنوك — كل شي. ما يبقى إلا اسم الشركة والعملة. لا رجعة عنه إلا بنسخة احتياطية.">🗑️ حذف كل الكويريات</button>
-  <span class="hint">قبل أي حذف، خذ نسخة احتياطية أولاً — الاستعادة سهلة بملف واحد</span>
+  <span class="hint">قبل أي حذف، خذ نسخة احتياطية أولاً — الاستعادة سهلة بملف واحد. أو خذ «نسخة تصنيف وبنوك» الخفيفة بعد أي جلسة تصنيف طويلة</span>
  </div>
  <div class="row" style="margin:8px 0"><span id="dataCenterSum" class="badge ok" style="font-size:13px"></span><span class="hint">البنود الملوّنة أدناه ✓ محمّلة مسبقاً وتظهر مطوية — افتحها بالضغط لو حبيت تستبدل بياناتها</span></div>
  <div id="dataCenterCoverage"></div>
@@ -1700,6 +1702,17 @@ async function loadState(){await loadProfiles();let o=null;await loadBig();try{o
  const no=Object.keys(S.opening).length;if(no){document.getElementById('mOpen').textContent=no+' رصيد';document.getElementById('mOpen').className='badge ok'}
  ensureBPAccounts();refreshMonths();renderMap();renderAdj();adjClear();renderBankMap();renderBPList();renderTiming();if(Object.keys(S.bp||{}).length){document.getElementById('mBP').textContent=Object.keys(S.bp).length+' شريك';document.getElementById('mBP').className='badge ok'}}
 function exportJSON(){saveState();const full={...packState()};BIGKEYS.forEach(k=>full[k]=S[k]);const b=new Blob([JSON.stringify(full)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='القوائم_الختامية_'+new Date().toISOString().slice(0,10)+'.json';a.click()}
+function exportClassBank(){const pick={map:S.map||{},bank:S.bank||{},banks:S.banks||[],bankManual:S.bankManual||{},_kind:'classBank',_savedAt:new Date().toISOString()};const b=new Blob([JSON.stringify(pick)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='تصنيف_وبنوك_'+new Date().toISOString().slice(0,10)+'.json';a.click();toast('تم تنزيل نسخة التصنيف والبنوك')}
+function importClassBank(txt){let o;try{o=JSON.parse(txt)}catch(e){alert('ملف غير صالح');return}
+ if(!o||typeof o.map!=='object'){alert('هذا مو ملف تصنيف وبنوك صالح — تأكد إنك اخترت الملف الصح (تصنيف_وبنوك_...json)');return}
+ S.map=S.map||{};S.bank=S.bank||{};S.banks=S.banks||[];S.bankManual=S.bankManual||{};
+ let nm=0,nb=0;
+ Object.entries(o.map||{}).forEach(([k,v])=>{if(S.map[k]==null){S.map[k]=v;nm++}});
+ Object.entries(o.bank||{}).forEach(([k,v])=>{if(S.bank[k]==null){S.bank[k]=v;nb++}});
+ (o.banks||[]).forEach(bk=>{if(!S.banks.includes(bk))S.banks.push(bk)});
+ S.bankManual={...(o.bankManual||{}),...S.bankManual};
+ saveState();renderMap();renderBankMap();renderBPList();toast('تم استرجاع التصنيف والبنوك — أُضيف '+nm+' تصنيف و'+nb+' ربط بنك (اللي موجود حالياً ما انلمس)')}
+document.getElementById('fClassBank')?.addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;readFileSmart(f,txt=>importClassBank(txt))});
 document.getElementById('fJson').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;readFileSmart(f,async txt=>{try{const o=JSON.parse(txt);S=unpackState(o);for(const k of BIGKEYS){if(S[k]!=null)await idbSet(LSK+':'+k,S[k])}await idbSet(LSK,packState());location.reload()}catch(x){alert('ملف غير صالح')}})});
 (function(){const el=document.getElementById('fJsonQuick');if(el)el.addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;readFileSmart(f,async txt=>{try{const o=JSON.parse(txt);S=unpackState(o);for(const k of BIGKEYS){if(S[k]!=null)await idbSet(LSK+':'+k,S[k])}await idbSet(LSK,packState());location.reload()}catch(x){alert('ملف غير صالح — تأكد إنه نسخة احتياطية صحيحة من هذه الأداة')}})})})();
 const FEED_CLEAR={
