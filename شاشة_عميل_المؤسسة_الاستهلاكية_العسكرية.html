@@ -355,6 +355,15 @@
         <span class="status-msg" id="bulkAssignMsg"></span>
       </div>
     </div>
+    <div class="input-panel" style="border-bottom:1px solid var(--line);">
+      <div class="hint" style="margin:0 0 8px;">🖨️ طباعة دفعة فواتير مرة واحدة (حسب المؤسسة، كل فاتورة بصفحة A4 لحالها، بنفس نموذج الفاتورة الرسمي تماماً) — اختر من فاتورة إلى فاتورة من المجموعة المفتوحة حالياً:</div>
+      <div class="row-actions" style="margin-top:0;">
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">من <select id="batchPrintFrom"></select></label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">إلى <select id="batchPrintTo"></select></label>
+        <button class="btn-primary btn-sm" onclick="batchPrintInvoices()">🖨️ معاينة وطباعة الدفعة</button>
+        <span class="status-msg" id="batchPrintMsg"></span>
+      </div>
+    </div>
     <div class="list" id="printInvoicesList"></div>
   </section>
 
@@ -1262,6 +1271,45 @@ function computeInvoiceTitle(g, inv){
   return 'فاتورة مبيعات';
 }
 
+function getPrintableInvoices(g){
+  const list = g.invoices.filter(inv=> inv.slot!==undefined || !isAutoManagedGroup(g));
+  return list.slice().sort((a,b)=> (a.slot||0)-(b.slot||0));
+}
+function populateBatchPrintSelects(g){
+  const fromEl = document.getElementById('batchPrintFrom');
+  const toEl = document.getElementById('batchPrintTo');
+  if(!fromEl || !toEl) return;
+  const invoices = getPrintableInvoices(g);
+  const prevFrom = fromEl.value, prevTo = toEl.value;
+  const opts = invoices.map(inv=>`<option value="${esc(inv.id)}">${esc(inv.name)}${inv.docNo?` — ${esc(inv.docNo)}`:''}</option>`).join('');
+  fromEl.innerHTML = opts; toEl.innerHTML = opts;
+  if([...fromEl.options].some(o=>o.value===prevFrom)) fromEl.value = prevFrom;
+  if([...toEl.options].some(o=>o.value===prevTo)) toEl.value = prevTo;
+  else if(invoices.length) toEl.value = invoices[invoices.length-1].id;
+}
+function batchPrintInvoices(){
+  const g = GROUPS.find(x=>x.id===currentGroupId);
+  if(!g){ flash('batchPrintMsg','ما في مجموعة مختارة.', false); return; }
+  const invoices = getPrintableInvoices(g);
+  if(!invoices.length){ flash('batchPrintMsg','ما في فواتير بهاي المجموعة.', false); return; }
+  const fromId = document.getElementById('batchPrintFrom').value;
+  const toId = document.getElementById('batchPrintTo').value;
+  let fromIdx = invoices.findIndex(i=>i.id===fromId);
+  let toIdx = invoices.findIndex(i=>i.id===toId);
+  if(fromIdx<0) fromIdx = 0;
+  if(toIdx<0) toIdx = invoices.length-1;
+  if(toIdx < fromIdx) [fromIdx, toIdx] = [toIdx, fromIdx];
+  const batch = invoices.slice(fromIdx, toIdx+1);
+  let html = '';
+  batch.forEach(inv=>{
+    ensureInvoiceDefaults(inv);
+    html += buildPrintSheetHTML(g, inv);
+    logInvoicePrint('design', inv.id, g, inv, null);
+  });
+  document.getElementById('printSheetContent').innerHTML = html;
+  document.getElementById('printOverlay').classList.add('active');
+  flash('batchPrintMsg', `جهّزت ${batch.length} فاتورة للطباعة — كل وحدة بصفحة A4 لحالها.`, true);
+}
 function renderPrintPage(){
   if(currentPage!=='print') return;
   renderGroupTabs('printGrpTabs');
@@ -1271,6 +1319,7 @@ function renderPrintPage(){
   document.getElementById('grpCustCode').value = g.custCode;
   document.getElementById('grpAgreementNo').value = g.agreementNo;
   document.getElementById('grpTaxExempt').checked = g.taxExempt;
+  populateBatchPrintSelects(g);
 
   const list = document.getElementById('printInvoicesList');
   if(!g.invoices.length){
