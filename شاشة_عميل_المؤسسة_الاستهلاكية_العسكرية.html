@@ -1411,6 +1411,9 @@ function processQrPdf(file, cb){
   reader.onload = e=>{
     pdfjsLib.getDocument({data: new Uint8Array(e.target.result)}).promise.then(pdf=>{
       pdf.getPage(1).then(page=>{
+        // المقياس نسبي لحجم الصفحة (مو ثابت) — صفحات الفوترة أبعادها كبيرة، والمقياس الثابت كان يطلع كانفاس ضخم يبطئ/يفشل القراءة
+        const base = page.getViewport({scale: 1});
+        const scaleFor = target => target / Math.max(base.width, base.height);
         const tryScale = (scale, next)=>{
           const vp = page.getViewport({scale});
           const c = document.createElement('canvas');
@@ -1421,7 +1424,7 @@ function processQrPdf(file, cb){
             next();
           }).catch(()=>next());
         };
-        tryScale(2.5, ()=> tryScale(4, ()=> cb(null, false)));
+        tryScale(scaleFor(1800), ()=> tryScale(scaleFor(2800), ()=> cb(null, false)));
       }).catch(()=>cb(null, false));
     }).catch(()=>cb(null, false));
   };
