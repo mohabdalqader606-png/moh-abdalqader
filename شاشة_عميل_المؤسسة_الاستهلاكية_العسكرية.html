@@ -100,7 +100,14 @@
   #printOverlay{display:none; position:fixed; inset:0; background:#fff; z-index:1000; overflow:auto;}
   #printOverlay.active{display:block;}
   .print-toolbar{position:sticky; top:0; background:var(--paper); padding:10px 24px; border-bottom:1px solid var(--line); display:flex; gap:10px; z-index:2;}
-  .print-sheet{max-width:940px; margin:20px auto; padding:26px; border:1px solid #ccc; font-family:var(--disp); color:#000; background:#fff;}
+  .print-sheet{max-width:940px; margin:20px auto; padding:26px; border:1px solid #ccc; font-family:var(--disp); color:#000; background:#fff; display:flex; flex-direction:column; min-height:1270px; box-sizing:border-box;}
+  .ps-headimg img{width:100%; display:block;}
+  .ps-brandfoot{margin-top:auto; padding-top:16px;}
+  .ps-brandfoot img{width:100%; display:block;}
+  .ps-brandfoot .txtstrip{display:flex; justify-content:space-between; align-items:center; gap:10px; direction:ltr;}
+  .ps-brandfoot .brands{text-align:left; font-size:9px; color:#9aa0a8; letter-spacing:.6px; font-weight:700;}
+  .ps-brandfoot .iso{text-align:right; font-size:13px; color:#B23A34; font-weight:800; line-height:1.3;}
+  .ps-brandfoot .iso span{display:block; color:#1B2536; font-size:10.5px; font-weight:700; text-decoration:underline;}
   .ps-natno{text-align:right; font-size:11px; color:#1B2536; font-weight:700; margin:6px 0;}
   .ps-head{display:flex; justify-content:space-between; align-items:flex-start; border-bottom:2px solid #B23A34; padding-bottom:10px; margin-bottom:10px; gap:12px;}
   .ps-head .en{text-align:left; font-size:10.5px; line-height:1.65; direction:ltr;}
@@ -125,7 +132,7 @@
     #printOverlay, #printOverlay *{visibility:visible;}
     #printOverlay{position:absolute; top:0; left:0; width:100%; display:block;}
     .print-toolbar{display:none;}
-    .print-sheet{border:none; margin:0; max-width:100%; page-break-inside:avoid; break-inside:avoid;}
+    .print-sheet{border:none; margin:0; max-width:100%; height:275mm; min-height:0; page-break-inside:avoid; break-inside:avoid;}
     .print-sheet + .print-sheet{page-break-before:always; break-before:page;}
   }
 
@@ -364,6 +371,26 @@
         <span class="status-msg" id="batchPrintMsg"></span>
       </div>
     </div>
+    <div class="input-panel" style="border-bottom:1px solid var(--line);">
+      <details class="opt">
+        <summary>🖼️ شعارات الطباعة الرسمية (اختياري — مرة واحدة بس)</summary>
+        <div class="hint" style="margin-top:8px;">ارفع صورة الرأسية (شعار Kaylani + مركز الكيلاني) وصورة الذيل (شريط شعارات الموردين + ISO) مقصوصين من الفاتورة الأصلية — بيتخزنوا بالبرنامج وبضمن النسخة الاحتياطية، وكل طباعة بعدها بتطلع بالشعارات الحقيقية بالضبط بدل النص. الذيل بينطبع بآخر صفحة A4 تماماً متل الأصل.</div>
+        <div class="row-actions">
+          <label class="btn-ghost btn-sm" style="cursor:pointer; display:inline-flex; align-items:center;">📤 رفع صورة الرأسية
+            <input type="file" accept="image/*" style="display:none;" onchange="uploadPrintAsset(event,'headerImg')">
+          </label>
+          <span class="muted" style="font-size:11.5px;" id="headerImgStatus"></span>
+          <button class="btn-danger tiny-btn" id="headerImgClear" style="display:none;" onclick="clearPrintAsset('headerImg')">حذف</button>
+          <span style="width:14px;"></span>
+          <label class="btn-ghost btn-sm" style="cursor:pointer; display:inline-flex; align-items:center;">📤 رفع صورة الذيل
+            <input type="file" accept="image/*" style="display:none;" onchange="uploadPrintAsset(event,'footerImg')">
+          </label>
+          <span class="muted" style="font-size:11.5px;" id="footerImgStatus"></span>
+          <button class="btn-danger tiny-btn" id="footerImgClear" style="display:none;" onclick="clearPrintAsset('footerImg')">حذف</button>
+          <span class="status-msg" id="printAssetMsg"></span>
+        </div>
+      </details>
+    </div>
     <div class="list" id="printInvoicesList"></div>
   </section>
 
@@ -582,6 +609,7 @@ let TRANSFERS = []; // {docNum, docDate, fromWhs, toWhs, ourCode, ourName, qty, 
 let STATEMENT = []; // {theirCode, theirName, agreementNo, amanat, ghairMawrid, price, qtyDispatch, qtyAmman, qtyAqaba, totalValue}
 let DUMMY_INVOICES = []; // {id, docNum, date, branch, amount}
 let INVOICE_LOG = []; // {id, key, groupId, groupName, docType, docNo, docDate, printedAt, lines:[{theirCode,theirName,qty,price,net,taxPct,taxVal,total,whsPrice,whsTotal}]}
+let PRINT_ASSETS = {headerImg:'', footerImg:''}; // صور الرأسية والذيل الرسمية (base64) — لما تكون موجودة بتحل محل النص بالطباعة
 let BRANCHES = ['عمان', 'العقبة']; // قائمة أسماء الفروع القابلة للتعريف من داخل السجل
 const DEFAULT_BRANCH_CODE_MAP = {"1": "الكرامة", "10": "بني كنانة", "100": "الموقر", "101": "حي معصوم", "102": "عبد الله الرواحنة", "104": "القريقرة", "105": "الرئيسي", "106": "مغير الكرك", "107": "فقوع", "108": "محي", "109": "بصيرا", "11": "الرمثا", "110": "جرش الجديد", "111": "البادية الشمالية", "112": "الجفر", "12": "عجلون", "13": "سوف", "14": "الروابي", "15": "الطرة", "16": "سوق الفاروق", "17": "ساكب", "18": "عنجرة", "19": "مرج الحمام", "2": "اسواق طارق", "20": "السلط", "21": "السرو", "22": "صويلح", "23": "خالد", "24": "الحزام", "25": "ياجوز", "26": "المفرق", "27": "جعفر الطيار", "28": "القصر", "29": "هزاع المجالي", "3": "مجمع المقابلين", "30": "المزار الجنوبي", "31": "زيد بن الحارث", "32": "مؤتة", "33": "مادبا", "34": "سوق الرابية", "35": "سوق دير ابي سعيد", "36": "اسواق السلام", "37": "العيص", "38": "الطفيلة", "39": "القادسية", "4": "راس العين", "40": "وصفي التل الشهيد-اربد", "41": "الحارث بن عمير الازدي", "42": "اربد الشمالي", "43": "الشوبك", "44": "وادي موسى", "45": "الطيبة الشمالية", "46": "معان", "47": "خالد بن الوليد", "48": "العدنانية", "49": "راشد الزيود", "5": "شفا بدران", "50": "الصديق", "51": "الوفاء", "52": "كفرنجه", "53": "الوسطية", "54": "المزار الشمالي", "55": "منشية بني حسن", "56": "مثلث ارحابا", "57": "الاشرفية", "58": "الهاشمية", "59": "علان", "6": "مجمع الشهيد /سحاب", "60": "آيل", "61": "عوجان", "62": "الشونة الشمالية", "63": "غور الصافي", "64": "دير علا", "65": "الكريمة", "66": "الصبيحي", "67": "بلعما", "68": "القطرانة", "69": "الشونة الجنوبية", "7": "كفر يوبا", "70": "البتراء", "71": "النشامى-حسينية معان", "72": "الجيزة", "73": "ماركا", "74": "سوق مرصع", "75": "برما", "76": "الازرق", "77": "رحاب", "78": "مليح", "79": "ام العمد", "8": "الحصن", "80": "ام البساتين", "81": "ذيبان", "82": "الفاروق", "83": "الحسا", "84": "العقبة", "85": "جديتا", "86": "الطيبة", "87": "السعيدية", "88": "الخالدية", "89": "المنارة", "9": "عروس الشمال", "90": "سما السرحان", "91": "سوق صبحا", "92": "الريشة", "93": "القويرة", "94": "الديسة", "95": "اذرح", "96": "الفيصلية", "97": "الطيبة الجنوب", "98": "المدينة التدريبية -الزرقاء", "99": "سوق بدر الجديد"}; // ترجمة كود الفرع (UDF رقمي بـ SAP) إلى اسمه
 let BRANCH_CODE_MAP = {};
@@ -607,6 +635,7 @@ function loadState(){
       DUMMY_INVOICES = Array.isArray(d.DUMMY_INVOICES) ? d.DUMMY_INVOICES : [];
       // تجاهل سجلات قديمة الصيغة (قبل التعرف على الفاتورة بمعرّفها invId) — تكرار لسجلات جديدة موجودة أصلاً
       INVOICE_LOG = (Array.isArray(d.INVOICE_LOG) ? d.INVOICE_LOG : []).filter(r=>r.invId!==undefined);
+      if(d.PRINT_ASSETS && typeof d.PRINT_ASSETS==='object') PRINT_ASSETS = {headerImg:d.PRINT_ASSETS.headerImg||'', footerImg:d.PRINT_ASSETS.footerImg||''};
       if(Array.isArray(d.BRANCHES) && d.BRANCHES.length) BRANCHES = d.BRANCHES;
       if(d.BRANCH_CODE_MAP && typeof d.BRANCH_CODE_MAP==='object') BRANCH_CODE_MAP = d.BRANCH_CODE_MAP;
     }
@@ -639,7 +668,7 @@ function ensureInvoiceDefaults(inv){
   if(!inv.qty) inv.qty={};
 }
 function saveState(){
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, INVOICE_LOG, BRANCHES, BRANCH_CODE_MAP})); }
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, INVOICE_LOG, PRINT_ASSETS, BRANCHES, BRANCH_CODE_MAP})); }
   catch(e){ console.warn('تعذر الحفظ المحلي', e); }
 }
 
@@ -1271,6 +1300,37 @@ function computeInvoiceTitle(g, inv){
   return 'فاتورة مبيعات';
 }
 
+function uploadPrintAsset(evt, key){
+  const file = evt.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e=>{
+    PRINT_ASSETS[key] = e.target.result;
+    try{ saveState(); }
+    catch(err){ PRINT_ASSETS[key]=''; flash('printAssetMsg','الصورة كبيرة كتير على التخزين المحلي — صغّر دقتها وجرب من جديد.', false); return; }
+    refreshPrintAssetStatus();
+    flash('printAssetMsg','تم حفظ الصورة — كل الطباعات الجاية بتستخدمها تلقائياً.', true);
+  };
+  reader.readAsDataURL(file);
+  evt.target.value = '';
+}
+function clearPrintAsset(key){
+  PRINT_ASSETS[key] = '';
+  saveState();
+  refreshPrintAssetStatus();
+  flash('printAssetMsg','تم الحذف — رجعنا للنص المكتوب بدل الصورة.', true);
+}
+function refreshPrintAssetStatus(){
+  [['headerImg','الرأسية'],['footerImg','الذيل']].forEach(([key,label])=>{
+    const st = document.getElementById(key+'Status');
+    const btn = document.getElementById(key+'Clear');
+    if(!st||!btn) return;
+    const has = !!PRINT_ASSETS[key];
+    st.textContent = has ? `✓ صورة ${label} محفوظة` : `ما في صورة ${label} بعد`;
+    st.style.color = has ? 'var(--teal)' : '';
+    btn.style.display = has ? '' : 'none';
+  });
+}
 function getPrintableInvoices(g){
   const list = g.invoices.filter(inv=> inv.slot!==undefined || !isAutoManagedGroup(g));
   return list.slice().sort((a,b)=> (a.slot||0)-(b.slot||0));
@@ -1320,6 +1380,7 @@ function renderPrintPage(){
   document.getElementById('grpAgreementNo').value = g.agreementNo;
   document.getElementById('grpTaxExempt').checked = g.taxExempt;
   populateBatchPrintSelects(g);
+  refreshPrintAssetStatus();
 
   const list = document.getElementById('printInvoicesList');
   if(!g.invoices.length){
@@ -1462,9 +1523,9 @@ function buildPrintSheetHTML(g, inv, qtyOverride){
     <div>المجموع بعد الضريبة: <b>${fmt3(grandTotal)}</b></div>
   ` : `<div>المجموع: <b>${fmt3(grandTotal)}</b></div>`;
 
-  return `
-  <div class="print-sheet">
-    <div class="ps-head">
+  const headerHtml = PRINT_ASSETS.headerImg
+    ? `<div class="ps-headimg"><img src="${PRINT_ASSETS.headerImg}" alt=""></div>`
+    : `<div class="ps-head">
       <div class="ar">
         <div class="brand">مركز الكيلاني للأغذية</div>
         <div>تلفون المبيعات: (6-962+) 4300700</div>
@@ -1479,7 +1540,17 @@ function buildPrintSheetHTML(g, inv, qtyOverride){
         <div>P.O.Box 830574 Amman 11183 Jordan</div>
         <div>E-mail: sarah@kaylanifc.com</div>
       </div>
-    </div>
+    </div>`;
+  const brandFootHtml = PRINT_ASSETS.footerImg
+    ? `<div class="ps-brandfoot"><img src="${PRINT_ASSETS.footerImg}" alt=""></div>`
+    : `<div class="ps-brandfoot"><div class="txtstrip">
+        <div class="brands">GEL MATIC &nbsp; STOCKYARD &nbsp; Frico &nbsp; Schreiber &nbsp; CALLEBAUT &nbsp; LUTOSA &nbsp; Master Martini</div>
+        <div class="iso">ISO 22000-2018<span>www.kaylanifood.com</span></div>
+      </div></div>`;
+
+  return `
+  <div class="print-sheet">
+    ${headerHtml}
     <div class="ps-natno">الرقم الوطني: &nbsp;100047692</div>
     <div class="ps-boxes">
       <div class="ps-box">الرقم الضريبي<br>1503570</div>
@@ -1511,6 +1582,7 @@ function buildPrintSheetHTML(g, inv, qtyOverride){
       <div>مجموع بيع المؤسسة: <b>${fmt3(instTotal)}</b></div>
     </div>
     <div class="ps-words">${esc(numberToArabicWords(grandTotal))}</div>
+    ${brandFootHtml}
   </div>`;
 }
 
@@ -2471,7 +2543,7 @@ function renderStatementPage(){
 
 /* ==================== نسخ احتياطي ==================== */
 function downloadBackup(){
-  const data = {version:1, exportedAt: new Date().toISOString(), ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, INVOICE_LOG, BRANCHES, BRANCH_CODE_MAP};
+  const data = {version:1, exportedAt: new Date().toISOString(), ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, INVOICE_LOG, PRINT_ASSETS, BRANCHES, BRANCH_CODE_MAP};
   const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -2494,6 +2566,7 @@ function restoreBackup(evt){
       DUMMY_INVOICES = Array.isArray(d.DUMMY_INVOICES) ? d.DUMMY_INVOICES : [];
       // تجاهل سجلات قديمة الصيغة (قبل التعرف على الفاتورة بمعرّفها invId) — تكرار لسجلات جديدة موجودة أصلاً
       INVOICE_LOG = (Array.isArray(d.INVOICE_LOG) ? d.INVOICE_LOG : []).filter(r=>r.invId!==undefined);
+      if(d.PRINT_ASSETS && typeof d.PRINT_ASSETS==='object') PRINT_ASSETS = {headerImg:d.PRINT_ASSETS.headerImg||'', footerImg:d.PRINT_ASSETS.footerImg||''};
       if(Array.isArray(d.BRANCHES) && d.BRANCHES.length) BRANCHES = d.BRANCHES;
       if(d.BRANCH_CODE_MAP && typeof d.BRANCH_CODE_MAP==='object') BRANCH_CODE_MAP = d.BRANCH_CODE_MAP;
       GROUPS.forEach(g=>{ ensureGroupDefaults(g); (g.invoices||[]).forEach(ensureInvoiceDefaults); });
