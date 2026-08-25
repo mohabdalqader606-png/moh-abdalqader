@@ -76,12 +76,14 @@ function save(k,v){try{localStorage.setItem('WD_'+k,JSON.stringify(v))}catch(e){
 function defaultSettings(){return {offDays:[5],holidays:[],grace:0,leadTimeDays:3,alphaInterval:0.4,alphaQty:0.35,graceMissedMult:1.5,growthThreshold:0.15}}
 let ROWS=load('ROWS',[]);
 let STOCK=load('STOCK',[]);
+let QUOTES=load('QUOTES',[]);
+let RESERVED=load('RESERVED',[]);
 let SETTINGS=Object.assign(defaultSettings(),load('SETTINGS',{}));
 let FORECASTS=load('FORECASTS',{});
 let ACCURACY=load('ACCURACY',[]);
 let ACTIONLOG=load('ACTIONLOG',[]);
 let ROWKEYS=new Set(ROWS.map(rowKey));
-function persistAll(){save('ROWS',ROWS);save('STOCK',STOCK);save('SETTINGS',SETTINGS);save('FORECASTS',FORECASTS);save('ACCURACY',ACCURACY);save('ACTIONLOG',ACTIONLOG)}
+function persistAll(){save('ROWS',ROWS);save('STOCK',STOCK);save('QUOTES',QUOTES);save('RESERVED',RESERVED);save('SETTINGS',SETTINGS);save('FORECASTS',FORECASTS);save('ACCURACY',ACCURACY);save('ACTIONLOG',ACTIONLOG)}
 function rowKey(r){return [r.custCode,r.itemCode,r.wdDate,r.qty,r.uom].join('|')}
 
 /* ==================== أدوات عامة ==================== */
@@ -163,6 +165,46 @@ function parseStockText(text){
     STOCK.push({custCode,itemCode,type,date,qty:isNaN(qty)?0:qty});added++;
   }
   return added;
+}
+function parseQuotesText(text){
+  const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  let start=0;const c0=splitLine(lines[0]||'');
+  if(c0[5]!=null&&isNaN(parseFloat(c0[5])))start=1;
+  let added=0;
+  for(let i=start;i<lines.length;i++){
+    const c=splitLine(lines[i]);if(c.length<6)continue;
+    const custCode=(c[0]||'').trim(),custName=(c[1]||'').trim(),itemCode=(c[2]||'').trim(),itemName=(c[3]||'').trim();
+    const quoteDate=parseDate(c[4]);
+    const qty=parseFloat(c[5]);
+    const openQty=parseFloat(c[6]);
+    const rep=(c[7]||'').trim();
+    if(!custCode||!itemCode||!quoteDate)continue;
+    QUOTES.push({custCode,custName,itemCode,itemName,quoteDate,qty:isNaN(qty)?0:qty,openQty:isNaN(openQty)?null:openQty,rep});added++;
+  }
+  return added;
+}
+function parseReservedText(text){
+  const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  let start=0;const c0=splitLine(lines[0]||'');
+  if(c0[10]!=null&&isNaN(parseFloat(c0[10])))start=1;
+  let added=0;
+  for(let i=start;i<lines.length;i++){
+    const c=splitLine(lines[i]);if(c.length<11)continue;
+    const docNum=(c[0]||'').trim();
+    const invoiceDate=parseDate(c[1]);
+    const custCode=(c[2]||'').trim(),custName=(c[3]||'').trim(),itemCode=(c[4]||'').trim(),itemName=(c[5]||'').trim();
+    const undeliveredQty=parseFloat(c[10]);
+    if(!custCode||!itemCode||!invoiceDate||isNaN(undeliveredQty)||undeliveredQty<=0)continue;
+    RESERVED.push({docNum,invoiceDate,custCode,custName,itemCode,itemName,undeliveredQty});added++;
+  }
+  return added;
+}
+function matchSignal(g){
+  const q=QUOTES.filter(x=>x.custCode===g.custCode&&x.itemCode===g.itemCode&&x.quoteDate>=g.last.date).sort((a,b)=>a.quoteDate<b.quoteDate?1:-1)[0];
+  const r=RESERVED.filter(x=>x.custCode===g.custCode&&x.itemCode===g.itemCode&&x.invoiceDate>=g.last.date).sort((a,b)=>a.invoiceDate<b.invoiceDate?1:-1)[0];
+  if(r)return {kind:'reserved',date:r.invoiceDate,qty:r.undeliveredQty};
+  if(q)return {kind:'quote',date:q.quoteDate,qty:q.openQty!=null?q.openQty:q.qty};
+  return null;
 }
 
 /* ==================== محرك التحليل والتوقع ==================== */
@@ -442,6 +484,12 @@ function reason(g,type){
 function recAction(type){
   return {dueNow:'يوصى بالتواصل مع العميل خلال يوم عمل واحد.',due3:'يوصى بالتواصل خلال 1-2 يوم عمل قبل الموعد المتوقع.',due7:'أدرجه في خطة التواصل لهذا الأسبوع.',missed:'تواصل فوري لمعرفة السبب قبل فقدان العميل على هذا الصنف.',anomaly:'تحقق من سبب الانحراف (طلبية استثنائية، مشكلة تخزين، أو تحول جزئي لمورد آخر).',growth:'فرصة لزيادة السقف المقترح أو عرض بيع إضافي على هذا الصنف.'}[type];
 }
+function signalNote(g){
+  const s=matchSignal(g);
+  if(!s)return '';
+  const label=s.kind==='reserved'?'✅ طلب فعلاً (مؤكد) — فاتورة محجوزة بانتظار التسليم':'🔵 طلب فعلاً (مبدئي) — عرض سعر مفتوح';
+  return `<div class="reason" style="background:${s.kind==='reserved'?'var(--greenbg)':'#eaf2fc'};color:${s.kind==='reserved'?'var(--green)':'var(--blue)'}">${label} بتاريخ ${fmtDate(s.date)}، كمية ${fmtN(s.qty,0)}.</div>`;
+}
 function alertCard(g,type,color){
   const sup=isSuppressed(g,type);
   if(sup)return '';
@@ -461,6 +509,7 @@ function alertCard(g,type,color){
       <div><b>تصنيف العميل</b>${esc(g.custCategory||'—')}</div>
     </div>
     <div class="reason">📌 ${reason(g,type)}</div>
+    ${signalNote(g)}
     <div class="rec">✅ ${recAction(type)}</div>
     <div class="actions">
       <button class="btn sm" onclick="logAction(GMAP['${g.key}'],'${type}','contacted')">تم التواصل</button>
@@ -556,7 +605,21 @@ function renderImport(){
     <div id="wdMsg" class="hint">${esc(IMPORT_MSG)}</div>
   </div>
   <div class="card">
-    <h2>2) بيانات المخزون (اختياري — لتفعيل "المخزون التقديري")</h2>
+    <h2>2) عروض الأسعار المفتوحة (اختياري — إشارة مبدئية لطلب محتمل)</h2>
+    <p class="hint">الأعمدة: <b>كود العميل، اسم العميل، كود الصنف، اسم الصنف، تاريخ العرض، الكمية، الكمية المتبقية Open Qty، المندوب (اختياري)</b>.</p>
+    <textarea id="txQuotes" placeholder="الصق نتيجة كويري عروض الأسعار هنا..."></textarea>
+    <div class="row"><button class="btn" onclick="doImportQuotes()">تحميل عروض الأسعار</button></div>
+    <div id="quotesMsg" class="hint">${esc(QUOTES_MSG)}</div>
+  </div>
+  <div class="card">
+    <h2>3) فواتير محجوزة بانتظار تسليم (اختياري — إشارة مؤكدة لطلب فعلي)</h2>
+    <p class="hint">الأعمدة (بنفس ترتيب كويري "فواتير مفوترة وما طلعت توصيل"): <b>رقم الفاتورة، تاريخ الفاتورة، كود العميل، اسم العميل، كود الصنف، اسم الصنف، إجمالي كمية الفاتورة، إجمالي قيمة الفاتورة، إجمالي كمية الديليفري، الكمية المرتجعة، الكمية غير المسلمة الفعلية، قيمة الكمية غير المسلمة</b>.</p>
+    <textarea id="txReserved" placeholder="الصق نتيجة كويري الفواتير المحجوزة هنا..."></textarea>
+    <div class="row"><button class="btn" onclick="doImportReserved()">تحميل الفواتير المحجوزة</button></div>
+    <div id="reservedMsg" class="hint">${esc(RESERVED_MSG)}</div>
+  </div>
+  <div class="card">
+    <h2>4) بيانات المخزون (اختياري — لتفعيل "المخزون التقديري")</h2>
     <p class="hint">الأعمدة: <b>كود العميل، كود الصنف، النوع (Opening/Delivery)، التاريخ، الكمية</b>. بدون هذه البيانات يبقى النظام يعمل بالكامل بالاعتماد على التوقع من نمط السحب فقط.</p>
     <textarea id="txStock" placeholder="الصق بيانات الرصيد الافتتاحي والتوريدات هنا..."></textarea>
     <div class="row"><button class="btn" onclick="doImportStock()">تحميل بيانات المخزون</button></div>
@@ -569,11 +632,27 @@ function renderImport(){
       <div class="box"><b>${GROUPS.length}</b>زوج عميل×صنف</div>
       <div class="box"><b>${new Set(ROWS.map(r=>r.custCode)).size}</b>عميل</div>
       <div class="box"><b>${new Set(ROWS.map(r=>r.itemCode)).size}</b>صنف</div>
+      <div class="box"><b>${QUOTES.length}</b>عرض سعر مفتوح</div>
+      <div class="box"><b>${RESERVED.length}</b>فاتورة محجوزة</div>
       <div class="box"><b>${STOCK.length}</b>سطر مخزون</div>
     </div>
   </div>`;
 }
-let IMPORT_MSG='',STOCK_MSG='';
+let IMPORT_MSG='',STOCK_MSG='',QUOTES_MSG='',RESERVED_MSG='';
+function doImportQuotes(){
+  const ta=document.getElementById('txQuotes').value;
+  if(!ta.trim())return alert('الصق بيانات عروض الأسعار أولاً');
+  const n=parseQuotesText(ta);persistAll();
+  QUOTES_MSG=`تم تحميل ${n} سطر.`;
+  render();
+}
+function doImportReserved(){
+  const ta=document.getElementById('txReserved').value;
+  if(!ta.trim())return alert('الصق بيانات الفواتير المحجوزة أولاً');
+  const n=parseReservedText(ta);persistAll();
+  RESERVED_MSG=`تم تحميل ${n} سطر.`;
+  render();
+}
 function doImportWd(){
   const ta=document.getElementById('txWd').value;
   const file=document.getElementById('fWd').files[0];
@@ -603,8 +682,8 @@ function readFileSmart(file,cb){
   r.readAsArrayBuffer(file);
 }
 function clearAllData(){
-  if(!confirm('سيتم مسح كل البيانات (السحوبات، المخزون، التوقعات، السجل) نهائياً من هذا الجهاز. متابعة؟'))return;
-  ROWS=[];STOCK=[];FORECASTS={};ACCURACY=[];ACTIONLOG=[];ROWKEYS=new Set();GROUPS=[];
+  if(!confirm('سيتم مسح كل البيانات (السحوبات، المخزون، عروض الأسعار، الفواتير المحجوزة، التوقعات، السجل) نهائياً من هذا الجهاز. متابعة؟'))return;
+  ROWS=[];STOCK=[];QUOTES=[];RESERVED=[];FORECASTS={};ACCURACY=[];ACTIONLOG=[];ROWKEYS=new Set();GROUPS=[];
   persistAll();render();
 }
 
@@ -765,10 +844,20 @@ function renderSettings(){
     </div>
   </div>
   <div class="card">
-    <h2>كويري جاهز لسحب بيانات المسحوبات من SAP Business One (HANA)</h2>
-    <p class="hint">قالب تقريبي مبني على مستندات التسليم (Delivery Notes) — عدّل أسماء الجداول/الحقول حسب مخطط SAP B1 لديكم فعلياً (قد تكون "المسحوبات" فواتير OINV/INV1 أو حركة مخزون UDT مخصصة بدلاً من ODLN/DLN1).</p>
-    <textarea readonly style="min-height:260px">${esc(SAP_QUERY)}</textarea>
-    <button class="btn ghost sm" onclick="copyQuery()">نسخ الكويري</button>
+    <h2>1) كويري المسحوبات (معتمد ✅) — مصدر البيانات الأساسي</h2>
+    <p class="hint">مستندات التسليم (Delivery Notes) مع تصنيف العميل وفئة الصنف مدمجين مباشرة بالنتيجة.</p>
+    <textarea readonly style="min-height:220px">${esc(SAP_QUERY)}</textarea>
+    <button class="btn ghost sm" onclick="copyQuery('SAP_QUERY')">نسخ الكويري</button>
+  </div>
+  <div class="card">
+    <h2>2) كويري عروض الأسعار المفتوحة (معتمد ✅)</h2>
+    <textarea readonly style="min-height:160px">${esc(QUOTE_QUERY)}</textarea>
+    <button class="btn ghost sm" onclick="copyQuery('QUOTE_QUERY')">نسخ الكويري</button>
+  </div>
+  <div class="card">
+    <h2>3) كويري الفواتير المحجوزة بانتظار تسليم (معتمد ✅)</h2>
+    <textarea readonly style="min-height:280px">${esc(RESERVE_QUERY)}</textarea>
+    <button class="btn ghost sm" onclick="copyQuery('RESERVE_QUERY')">نسخ الكويري</button>
   </div>`;
 }
 function toggleOffDay(dow,checked){
@@ -790,31 +879,82 @@ function saveEngineSettings(){
   SETTINGS.growthThreshold=(+document.getElementById('setGrowth').value||15)/100;
   persistAll();recomputeAll(true);
 }
-const SAP_QUERY=`-- قالب تقريبي لسحب تاريخ مسحوبات العملاء من SAP B1 (HANA) — عدّله حسب مخططكم الفعلي
+const SAP_QUERY=`-- كويري المسحوبات المعتمد — مستندات تسليم + تصنيف العميل + فئة الصنف مدمجين
 SELECT
-  T0."CardCode"      AS "كود العميل",
-  T0."CardName"      AS "اسم العميل",
-  T1."ItemCode"      AS "كود الصنف",
-  T1."Dscription"    AS "اسم الصنف",
-  T0."DocDate"       AS "تاريخ السحب",
-  T1."Quantity"      AS "الكمية",
-  T1."UomCode"       AS "وحدة القياس",
-  T2."SlpName"       AS "مندوب المبيعات"
-FROM "ODLN" T0                 -- رأس مستند التسليم (بدّلها بـ OINV إذا المسحوبات = فواتير)
-INNER JOIN "DLN1" T1 ON T1."DocEntry" = T0."DocEntry"
-LEFT JOIN "OSLP" T2 ON T2."SlpCode" = T0."SlpCode"
-WHERE T0."DocDate" >= '2025-01-01'      -- عدّل نطاق التاريخ
+  T0."CardCode"        AS "CustCode",
+  T0."CardName"        AS "CustName",
+  T1."ItemCode"        AS "ItemCode",
+  T1."Dscription"      AS "ItemName",
+  T0."DocDate"         AS "WDDate",
+  DAYNAME(T0."DocDate") AS "DOW",
+  T1."Quantity"        AS "Qty",
+  T1."UomCode"         AS "UOM",
+  T2."SlpName"         AS "Rep",
+  T4."GroupName"       AS "CustCategory",
+  T6."ItmsGrpNam"      AS "ItemCategory"
+FROM ODLN T0
+INNER JOIN DLN1 T1 ON T1."DocEntry" = T0."DocEntry"
+LEFT JOIN OSLP T2 ON T2."SlpCode" = T0."SlpCode"
+LEFT JOIN OCRD T3 ON T3."CardCode" = T0."CardCode"
+LEFT JOIN OCRG T4 ON T4."GroupCode" = T3."GroupCode"
+LEFT JOIN OITM T5 ON T5."ItemCode" = T1."ItemCode"
+LEFT JOIN OITB T6 ON T6."ItmsGrpCod" = T5."ItmsGrpCod"
+WHERE T0."DocDate" >= '2025-01-01'      -- عدّل نطاق التاريخ حسب الحاجة
   AND T0."CANCELED" = 'N'
 ORDER BY T0."CardCode", T1."ItemCode", T0."DocDate";`;
-function copyQuery(){
-  const ta=document.createElement('textarea');ta.value=SAP_QUERY;ta.style.position='fixed';ta.style.top='-1000px';document.body.appendChild(ta);ta.focus();ta.select();
+
+const QUOTE_QUERY=`-- كويري عروض الأسعار المفتوحة المعتمد
+SELECT
+  T0."CardCode"   AS "CustCode",
+  T0."CardName"   AS "CustName",
+  T1."ItemCode"   AS "ItemCode",
+  T1."Dscription" AS "ItemName",
+  T0."DocDate"    AS "QuoteDate",
+  T1."Quantity"   AS "Qty",
+  T1."OpenQty"    AS "OpenQty",
+  T2."SlpName"    AS "Rep"
+FROM OQUT T0
+INNER JOIN QUT1 T1 ON T1."DocEntry" = T0."DocEntry"
+LEFT JOIN OSLP T2 ON T2."SlpCode" = T0."SlpCode"
+WHERE T1."LineStatus" = 'O'
+ORDER BY T0."CardCode", T1."ItemCode", T0."DocDate";`;
+
+const RESERVE_QUERY=`-- كويري الفواتير المحجوزة بانتظار تسليم المعتمد (isIns='Y'، بعد خصم التسليم والمرتجع الجزئي)
+SELECT
+    I0."DocNum" AS "DocNum", I0."DocDate" AS "InvoiceDate",
+    I0."CardCode" AS "CustCode", I0."CardName" AS "CustName",
+    I1."ItemCode" AS "ItemCode", I1."Dscription" AS "ItemName",
+    SUM(I1."Quantity") AS "TotalQty", SUM(I1."LineTotal") AS "TotalValue",
+    IFNULL((SELECT SUM(D1."Quantity") FROM DLN1 D1 INNER JOIN ODLN D0 ON D0."DocEntry"=D1."DocEntry"
+      WHERE D0."CANCELED"='N' AND D1."BaseType"=13 AND D1."BaseEntry"=I0."DocEntry" AND D1."ItemCode"=I1."ItemCode"),0) AS "DeliveredQty",
+    IFNULL((SELECT SUM(R1."Quantity") FROM RIN1 R1 INNER JOIN ORIN R0 ON R0."DocEntry"=R1."DocEntry"
+      WHERE R0."CancelDate" IS NULL AND R1."BaseType"=13 AND R1."BaseEntry"=I0."DocEntry" AND R1."ItemCode"=I1."ItemCode"),0) AS "ReturnedQty",
+    SUM(I1."Quantity")
+      - IFNULL((SELECT SUM(D1."Quantity") FROM DLN1 D1 INNER JOIN ODLN D0 ON D0."DocEntry"=D1."DocEntry"
+          WHERE D0."CANCELED"='N' AND D1."BaseType"=13 AND D1."BaseEntry"=I0."DocEntry" AND D1."ItemCode"=I1."ItemCode"),0)
+      - IFNULL((SELECT SUM(R1."Quantity") FROM RIN1 R1 INNER JOIN ORIN R0 ON R0."DocEntry"=R1."DocEntry"
+          WHERE R0."CancelDate" IS NULL AND R1."BaseType"=13 AND R1."BaseEntry"=I0."DocEntry" AND R1."ItemCode"=I1."ItemCode"),0) AS "UndeliveredQty"
+FROM OINV I0
+INNER JOIN INV1 I1 ON I0."DocEntry"=I1."DocEntry"
+WHERE I0."isIns"='Y'
+GROUP BY I0."DocNum",I0."DocDate",I0."CardCode",I0."CardName",I1."ItemCode",I1."Dscription",I0."DocEntry"
+HAVING SUM(I1."Quantity")
+      - IFNULL((SELECT SUM(D1."Quantity") FROM DLN1 D1 INNER JOIN ODLN D0 ON D0."DocEntry"=D1."DocEntry"
+          WHERE D0."CANCELED"='N' AND D1."BaseType"=13 AND D1."BaseEntry"=I0."DocEntry" AND D1."ItemCode"=I1."ItemCode"),0)
+      - IFNULL((SELECT SUM(R1."Quantity") FROM RIN1 R1 INNER JOIN ORIN R0 ON R0."DocEntry"=R1."DocEntry"
+          WHERE R0."CancelDate" IS NULL AND R1."BaseType"=13 AND R1."BaseEntry"=I0."DocEntry" AND R1."ItemCode"=I1."ItemCode"),0) > 0
+ORDER BY I0."DocDate", I0."DocNum", I1."ItemCode";`;
+
+function copyQuery(name){
+  const text={SAP_QUERY,QUOTE_QUERY,RESERVE_QUERY}[name];
+  const ta=document.createElement('textarea');ta.value=text;ta.style.position='fixed';ta.style.top='-1000px';document.body.appendChild(ta);ta.focus();ta.select();
   try{document.execCommand('copy')}catch(e){}
   document.body.removeChild(ta);alert('تم نسخ الكويري');
 }
 
 /* ---------- نسخ احتياطي ---------- */
 function backupJson(){
-  const data={ROWS,STOCK,SETTINGS,FORECASTS,ACCURACY,ACTIONLOG,exportedAt:new Date().toISOString()};
+  const data={ROWS,STOCK,QUOTES,RESERVED,SETTINGS,FORECASTS,ACCURACY,ACTIONLOG,exportedAt:new Date().toISOString()};
   downloadFile('نسخة_احتياطية_نظام_التنبؤ.json',JSON.stringify(data),'application/json');
 }
 function restoreJson(file){
@@ -822,7 +962,7 @@ function restoreJson(file){
   r.onload=()=>{
     try{
       const data=JSON.parse(r.result);
-      ROWS=data.ROWS||[];STOCK=data.STOCK||[];SETTINGS=Object.assign(defaultSettings(),data.SETTINGS||{});
+      ROWS=data.ROWS||[];STOCK=data.STOCK||[];QUOTES=data.QUOTES||[];RESERVED=data.RESERVED||[];SETTINGS=Object.assign(defaultSettings(),data.SETTINGS||{});
       FORECASTS=data.FORECASTS||{};ACCURACY=data.ACCURACY||[];ACTIONLOG=data.ACTIONLOG||[];
       ROWKEYS=new Set(ROWS.map(rowKey));
       persistAll();recomputeAll(false);render();
