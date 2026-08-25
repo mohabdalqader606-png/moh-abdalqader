@@ -72,7 +72,15 @@ footer{text-align:center;color:var(--ink2);font-size:11px;padding:20px}
 <script>
 /* ==================== التخزين ==================== */
 function load(k,d){try{const v=localStorage.getItem('WD_'+k);return v?JSON.parse(v):d}catch(e){return d}}
-function save(k,v){try{localStorage.setItem('WD_'+k,JSON.stringify(v))}catch(e){alert('تعذر الحفظ محلياً (قد تكون البيانات كبيرة جداً لـ localStorage): '+e.message)}}
+function save(k,v){
+  try{localStorage.setItem('WD_'+k,JSON.stringify(v))}
+  catch(e){
+    const quota=e.name==='QuotaExceededError'||e.code===22;
+    alert(quota
+      ?`تعذّر الحفظ: البيانات كبيرة جداً على تخزين المتصفح (localStorage، حده تقريباً 5-10 ميجا). قلّل نطاق التاريخ بالكويري وجرّب كمية أصغر — الحمل الكامل مكانه نسخة الداتابيز.`
+      :`تعذر الحفظ محلياً: ${e.message}`);
+  }
+}
 function defaultSettings(){return {offDays:[5],holidays:[],grace:0,leadTimeDays:3,alphaInterval:0.4,alphaQty:0.35,graceMissedMult:1.5,growthThreshold:0.15}}
 let ROWS=load('ROWS',[]);
 let STOCK=load('STOCK',[]);
@@ -103,7 +111,33 @@ function esc(s){return String(s==null?'':s).replace(/[&<>]/g,c=>({'&':'&amp;','<
 function holidaySet(){return new Set((SETTINGS.holidays||[]).map(h=>h.date))}
 function isWorkingDay(iso){const d=new Date(iso+'T00:00:00');if((SETTINGS.offDays||[5]).includes(d.getDay()))return false;if(holidaySet().has(iso))return false;return true}
 function addWorkingDays(iso,n){if(n==null||isNaN(n))return null;let d=new Date(iso+'T00:00:00');let steps=Math.round(n);const dir=steps>=0?1:-1;steps=Math.abs(steps);let guard=0;while(steps>0&&guard<20000){d.setDate(d.getDate()+dir);guard++;if(isWorkingDay(isoDate(d)))steps--}return isoDate(d)}
-function workingDaysBetween(iso1,iso2){if(!iso1||!iso2)return null;if(iso1===iso2)return 0;let sign=1,a=iso1,b=iso2;if(a>b){sign=-1;[a,b]=[b,a]}let d=new Date(a+'T00:00:00');const end=new Date(b+'T00:00:00');let cnt=0,guard=0;while(d<end&&guard<20000){d.setDate(d.getDate()+1);guard++;if(isWorkingDay(isoDate(d)))cnt++}return cnt*sign}
+// حساب مباشر (بدون تكرار يوم-بيوم) عشان يضل سريع حتى لو الفجوة بين تاريخين سنين طويلة
+// (كان قبل بيعلّق الشاشة لما يكون عندك عملاء/أصناف ما طلبوا من فترة بعيدة عن اليوم)
+function workingDaysBetween(iso1,iso2){
+  if(!iso1||!iso2)return null;
+  if(iso1===iso2)return 0;
+  let sign=1,a=iso1,b=iso2;
+  if(a>b){sign=-1;[a,b]=[b,a]}
+  const da=new Date(a+'T00:00:00'),db=new Date(b+'T00:00:00');
+  const totalDays=Math.round((db-da)/86400000);
+  const offDays=(SETTINGS.offDays&&SETTINGS.offDays.length)?SETTINGS.offDays:[5];
+  const offSet=new Set(offDays);
+  const startDow=(da.getDay()+1)%7;
+  const fullWeeks=Math.floor(totalDays/7);
+  let offWeekly=fullWeeks*offDays.length;
+  const rem=totalDays%7;
+  for(let i=0;i<rem;i++){const dow=(startDow+i)%7;if(offSet.has(dow))offWeekly++}
+  let workingDays=totalDays-offWeekly;
+  let holidayDeduct=0;
+  holidaySet().forEach(hd=>{
+    if(hd>a&&hd<=b){
+      const dow=new Date(hd+'T00:00:00').getDay();
+      if(!offSet.has(dow))holidayDeduct++;
+    }
+  });
+  workingDays-=holidayDeduct;
+  return workingDays*sign;
+}
 
 /* ==================== استيراد البيانات ==================== */
 function parseDate(v){
@@ -130,34 +164,45 @@ function detectOffset(cols,dateIdx){
   if(parseDate(cols[dateIdx+1]))return 1;
   return 0;
 }
+const BAD_SAMPLE_CAP=2000;
+function emptyBadResult(){return {added:0,dup:0,bad:0,reasons:{},badSample:[]}}
+function addBad(result,reason,rawLine){
+  result.bad++;
+  result.reasons[reason]=(result.reasons[reason]||0)+1;
+  if(result.badSample.length<BAD_SAMPLE_CAP)result.badSample.push({reason,line:rawLine});
+}
 function parseWithdrawalText(text){
   const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-  if(!lines.length)return {added:0,dup:0,bad:0};
+  const result=emptyBadResult();
+  if(!lines.length)return result;
   let start=0;
   const c0=splitLine(lines[0]);
   const qtyTest=c0[6];
   const dateTest=parseDate(c0[4]);
   if((qtyTest!=null&&isNaN(parseFloat(qtyTest)))||!dateTest)start=1;
-  if(start>=lines.length)return {added:0,dup:0,bad:0};
+  if(start>=lines.length)return result;
   const off=detectOffset(splitLine(lines[start]),4);
-  let added=0,dup=0,bad=0;
   for(let i=start;i<lines.length;i++){
     const c=splitLine(lines[i]);
-    if(c.length<7+off)continue;
+    if(c.length<7+off){addBad(result,`عدد أعمدة غير كافٍ (${c.length} من ${7+off} مطلوبة)`,lines[i]);continue}
     const custCode=(c[0+off]||'').trim(),custName=(c[1+off]||'').trim(),itemCode=(c[2+off]||'').trim(),itemName=(c[3+off]||'').trim();
-    const wdDate=parseDate(c[4+off]);
-    const qty=parseFloat(c[6+off]);
+    const wdDateRaw=c[4+off],qtyRaw=c[6+off];
+    const wdDate=parseDate(wdDateRaw);
+    const qty=parseFloat(qtyRaw);
     const uom=(c[7+off]||'').trim();
     const rep=(c[8+off]||'').trim();
     const custCategory=(c[9+off]||'').trim();
     const itemCategory=(c[10+off]||'').trim();
-    if(!custCode||!itemCode||!wdDate||isNaN(qty)){bad++;continue}
+    if(!custCode){addBad(result,'كود العميل فاضي',lines[i]);continue}
+    if(!itemCode){addBad(result,'كود الصنف فاضي',lines[i]);continue}
+    if(!wdDate){addBad(result,`تاريخ غير مفهوم: "${wdDateRaw}"`,lines[i]);continue}
+    if(isNaN(qty)){addBad(result,`كمية غير صالحة: "${qtyRaw}"`,lines[i]);continue}
     const r={custCode,custName,itemCode,itemName,wdDate,qty,uom,rep,custCategory,itemCategory};
     const k=rowKey(r);
-    if(ROWKEYS.has(k)){dup++;continue}
-    ROWKEYS.add(k);ROWS.push(r);added++;
+    if(ROWKEYS.has(k)){result.dup++;continue}
+    ROWKEYS.add(k);ROWS.push(r);result.added++;
   }
-  return {added,dup,bad};
+  return result;
 }
 function parseStockText(text){
   const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
@@ -580,8 +625,11 @@ function renderActionCenter(){
   </div>
   ${sections.map(([key,title,color])=>{
     const list=buckets[key];
-    const cards=list.map(g=>alertCard(g,key,color)).filter(Boolean);
-    return `<div class="card section-${color}"><h2>${title} <span class="badge b-${color}">${cards.length}</span></h2>${cards.length?cards.join(''):'<div class="empty">لا يوجد عناصر في هذا القسم حالياً.</div>'}</div>`;
+    const CARD_CAP=300;
+    const shown=list.slice(0,CARD_CAP);
+    const cards=shown.map(g=>alertCard(g,key,color)).filter(Boolean);
+    const more=list.length>CARD_CAP?`<div class="empty">و${list.length-CARD_CAP} عنصر إضافي مو معروض هون (تجنّباً لإبطاء الشاشة) — استخدم الفلاتر لتضييق النتائج، أو "تصدير CSV" لتشوفهم كلهم.</div>`:'';
+    return `<div class="card section-${color}"><h2>${title} <span class="badge b-${color}">${list.length}</span></h2>${cards.length?cards.join(''):'<div class="empty">لا يوجد عناصر في هذا القسم حالياً.</div>'}${more}</div>`;
   }).join('')}
   `;
 }
@@ -618,6 +666,7 @@ function renderImport(){
       <button class="btn ghost danger" style="color:#fff" onclick="clearAllData()">🗑️ مسح كل البيانات</button>
     </div>
     <div id="wdMsg" class="hint">${esc(IMPORT_MSG)}</div>
+    ${renderBadBreakdown()}
   </div>
   <div class="card">
     <h2>2) عروض الأسعار المفتوحة (اختياري — إشارة مبدئية لطلب محتمل)</h2>
@@ -642,6 +691,7 @@ function renderImport(){
   </div>
   <div class="card">
     <h2>ملخص البيانات المحمّلة</h2>
+    ${ROWS.length>30000?`<p class="hint" style="color:var(--red);font-weight:700">⚠️ ${ROWS.length.toLocaleString()} سطر — هاد قريب من حدود المتصفح (localStorage). لو الشاشة صارت بطيئة أو تعلّقت، قلّل نطاق التاريخ بالكويري لعينة أصغر. الحمل الكامل مكانه نسخة الداتابيز.</p>`:''}
     <div class="kpi">
       <div class="box"><b>${ROWS.length}</b>سطر سحب</div>
       <div class="box"><b>${GROUPS.length}</b>زوج عميل×صنف</div>
@@ -654,6 +704,20 @@ function renderImport(){
   </div>`;
 }
 let IMPORT_MSG='',STOCK_MSG='',QUOTES_MSG='',RESERVED_MSG='';
+let LAST_BAD_REASONS={},LAST_BAD_SAMPLE=[];
+function renderBadBreakdown(){
+  const entries=Object.entries(LAST_BAD_REASONS).sort((a,b)=>b[1]-a[1]);
+  if(!entries.length)return '';
+  return `<div class="pill-list" style="margin-top:6px">
+    ${entries.map(([reason,n])=>`<span class="pill">${esc(reason)}: <b>${n}</b></span>`).join('')}
+  </div>
+  <button class="btn ghost sm" style="margin-top:6px" onclick="exportBadRows()">⬇️ تنزيل عيّنة الأسطر المرفوضة (${Math.min(LAST_BAD_SAMPLE.length,BAD_SAMPLE_CAP)} سطر)</button>`;
+}
+function exportBadRows(){
+  let t='السبب\tالسطر الأصلي\n';
+  LAST_BAD_SAMPLE.forEach(x=>{t+=x.reason.replace(/\t/g,' ')+'\t'+x.line.replace(/\t/g,' | ')+'\n'});
+  downloadFile('أسطر_مرفوضة.csv','﻿'+t);
+}
 function doImportQuotes(){
   const ta=document.getElementById('txQuotes').value;
   if(!ta.trim())return alert('الصق بيانات عروض الأسعار أولاً');
@@ -674,6 +738,7 @@ function doImportWd(){
   const run=(text)=>{
     const r=parseWithdrawalText(text);
     recomputeAll(false);
+    LAST_BAD_REASONS=r.reasons;LAST_BAD_SAMPLE=r.badSample;
     IMPORT_MSG=`تم: ${r.added} سطر جديد، تم تجاهل ${r.dup} سطر مكرر، ${r.bad} سطر غير صالح.`;
     render();
   };
