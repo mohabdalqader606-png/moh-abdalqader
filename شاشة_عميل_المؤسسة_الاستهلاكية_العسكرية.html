@@ -479,7 +479,8 @@ ORDER BY T0."DocNum"</code>
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;">طريقة العرض
           <select id="sumMode">
             <option value="detail">تفصيلي (حسب الصنف)</option>
-            <option value="byInvoice">تجميعي (حسب الفاتورة)</option>
+            <option value="invoiceDetail">تفصيلي (حسب الفاتورة — كل فاتورة وأصنافها)</option>
+            <option value="byInvoice">تجميعي (حسب الفاتورة — مجاميع فقط)</option>
           </select>
         </label>
         <button class="btn-primary btn-sm" onclick="renderSummaryPage()">عرض</button>
@@ -1919,6 +1920,13 @@ function summaryByInvoice(){
     return {docNo:rec.docNo, docDate:rec.docDate, groupName:rec.groupName, itemCount:rec.lines.length, qty, net, tax, total, whs};
   }).sort((a,b)=> String(a.docDate||'').localeCompare(String(b.docDate||'')));
 }
+function summaryInvoiceDetail(){
+  let records = getFilteredInvoiceLogRecords();
+  populateDocNoFilter(records);
+  const docNoSel = document.getElementById('sumDocNo').value;
+  if(docNoSel) records = records.filter(r=>r.docNo===docNoSel);
+  return records.slice().sort((a,b)=> String(a.docDate||'').localeCompare(String(b.docDate||'')));
+}
 function renderSummaryPage(){
   if(currentPage!=='summary') return;
   const mode = document.getElementById('sumMode').value;
@@ -1967,6 +1975,53 @@ function renderSummaryPage(){
     return;
   }
 
+  if(mode==='invoiceDetail'){
+    thead.innerHTML = `<tr><th>رمز الصنف لدى المؤسسة</th><th>اسم الصنف</th><th>الكمية</th><th>سعر البيع</th><th>ضريبة المبيعات</th><th>الاجمالي</th><th>سعر بيع المؤسسة</th></tr>`;
+    const records = summaryInvoiceDetail();
+    if(!records.length){
+      tbody.innerHTML = ''; emptyHint.style.display = 'block'; document.getElementById('sumTotalsRow').innerHTML = '';
+      return;
+    }
+    emptyHint.style.display = 'none';
+    let grandQty=0, grandTax=0, grandTotal=0, grandWhs=0;
+    let html = '';
+    records.forEach(rec=>{
+      const dateStr = rec.docDate ? rec.docDate.split('-').reverse().join('/') : '—';
+      html += `<tr style="background:var(--paper);"><td colspan="7" style="text-align:right; font-weight:700;">فاتورة ${esc(rec.docNo)||'بدون رقم'} — ${dateStr} — ${esc(rec.groupName)}</td></tr>`;
+      let subQty=0, subTax=0, subTotal=0, subWhs=0;
+      rec.lines.forEach(ln=>{
+        subQty+=ln.qty; subTax+=ln.taxVal; subTotal+=ln.total; subWhs+=ln.whsTotal;
+        html += `<tr>
+          <td class="mono">${esc(ln.theirCode)}</td>
+          <td>${esc(ln.theirName)}</td>
+          <td class="mono">${fmtNum(ln.qty)}</td>
+          <td class="mono">${fmt4(ln.price)}</td>
+          <td class="mono">${fmt3(ln.taxVal)}</td>
+          <td class="mono">${fmt3(ln.total)}</td>
+          <td class="mono">${fmt3(ln.whsTotal)}</td>
+        </tr>`;
+      });
+      html += `<tr style="font-weight:700;">
+        <td colspan="2">إجمالي الفاتورة</td>
+        <td class="mono">${fmtNum(subQty)}</td>
+        <td></td>
+        <td class="mono">${fmt3(subTax)}</td>
+        <td class="mono">${fmt3(subTotal)}</td>
+        <td class="mono">${fmt3(subWhs)}</td>
+      </tr>`;
+      grandQty+=subQty; grandTax+=subTax; grandTotal+=subTotal; grandWhs+=subWhs;
+    });
+    tbody.innerHTML = html;
+    document.getElementById('sumTotalsRow').innerHTML = `
+      <div class="card"><div class="lbl">عدد الفواتير</div><div class="val">${records.length}</div></div>
+      <div class="card"><div class="lbl">إجمالي الكمية</div><div class="val">${fmtNum(grandQty)}</div></div>
+      <div class="card"><div class="lbl">إجمالي ضريبة المبيعات</div><div class="val">${fmt3(grandTax)}</div></div>
+      <div class="card"><div class="lbl">الإجمالي بعد الضريبة</div><div class="val">${fmt3(grandTotal)}</div></div>
+      <div class="card"><div class="lbl">إجمالي سعر بيع المؤسسة</div><div class="val">${fmt3(grandWhs)}</div></div>
+    `;
+    return;
+  }
+
   thead.innerHTML = `<tr>
     <th>رمز الصنف لدى المؤسسة</th><th>اسم الصنف</th>
     <th>رقم الفاتورة</th><th>التاريخ</th><th>المجموعة</th><th>الكمية</th>
@@ -2001,14 +2056,16 @@ function renderSummaryPage(){
         <td class="mono">${fmt3(r.whsTotal)}</td>
       </tr>`;
     });
-    html += `<tr style="background:var(--paper); font-weight:700;">
-      <td colspan="5">إجمالي ${esc(item.theirName)}</td>
-      <td class="mono">${fmtNum(subQty)}</td>
-      <td></td>
-      <td class="mono">${fmt3(subTax)}</td>
-      <td class="mono">${fmt3(subTotal)}</td>
-      <td class="mono">${fmt3(subWhs)}</td>
-    </tr>`;
+    if(item.rows.length>1){
+      html += `<tr style="background:var(--paper); font-weight:700;">
+        <td colspan="5">إجمالي ${esc(item.theirName)}</td>
+        <td class="mono">${fmtNum(subQty)}</td>
+        <td></td>
+        <td class="mono">${fmt3(subTax)}</td>
+        <td class="mono">${fmt3(subTotal)}</td>
+        <td class="mono">${fmt3(subWhs)}</td>
+      </tr>`;
+    }
     grandQty+=subQty; grandTax+=subTax; grandTotal+=subTotal; grandWhs+=subWhs;
   });
   tbody.innerHTML = html;
@@ -2038,6 +2095,28 @@ function exportSummaryExcel(){
     XLSX.utils.book_append_sheet(wb, ws, 'ملخص الفواتير');
     XLSX.writeFile(wb, `ملخص_الفواتير_الشهرية_تجميعي.xlsx`);
     flash('sumMsg', `تم تصدير ${invoices.length} فاتورة.`, true);
+    return;
+  }
+  if(mode==='invoiceDetail'){
+    const records = summaryInvoiceDetail();
+    if(!records.length){ flash('sumMsg','ما في بيانات لتصديرها بهاي الفترة.', false); return; }
+    const data = [['رقم الفاتورة','التاريخ','المجموعة','رمز الصنف لدى المؤسسة','اسم الصنف','الكمية','سعر البيع','ضريبة المبيعات','الاجمالي','سعر بيع المؤسسة']];
+    let grandQty=0, grandTax=0, grandTotal=0, grandWhs=0;
+    records.forEach(rec=>{
+      let subQty=0, subTax=0, subTotal=0, subWhs=0;
+      rec.lines.forEach(ln=>{
+        subQty+=ln.qty; subTax+=ln.taxVal; subTotal+=ln.total; subWhs+=ln.whsTotal;
+        data.push([rec.docNo, rec.docDate, rec.groupName, ln.theirCode, ln.theirName, ln.qty, ln.price, ln.taxVal, ln.total, ln.whsTotal]);
+      });
+      data.push(['','','','','إجمالي الفاتورة',subQty,'',subTax,subTotal,subWhs]);
+      grandQty+=subQty; grandTax+=subTax; grandTotal+=subTotal; grandWhs+=subWhs;
+    });
+    data.push(['','','','','الإجمالي العام',grandQty,'',grandTax,grandTotal,grandWhs]);
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'ملخص الفواتير');
+    XLSX.writeFile(wb, `ملخص_الفواتير_الشهرية_حسب_الفاتورة.xlsx`);
+    flash('sumMsg', `تم تصدير ${records.length} فاتورة.`, true);
     return;
   }
   const items = summaryByItem();
@@ -2220,7 +2299,7 @@ function renderStatementPage(){
 
 /* ==================== نسخ احتياطي ==================== */
 function downloadBackup(){
-  const data = {version:1, exportedAt: new Date().toISOString(), ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, BRANCHES, BRANCH_CODE_MAP};
+  const data = {version:1, exportedAt: new Date().toISOString(), ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, INVOICE_LOG, BRANCHES, BRANCH_CODE_MAP};
   const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
