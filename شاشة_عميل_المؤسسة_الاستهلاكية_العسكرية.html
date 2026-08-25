@@ -1924,7 +1924,7 @@ function summaryByItem(){
   items.forEach(item=> item.rows.sort(bySlotThenDate));
   return items;
 }
-const SUM_NUM_SORT_FIELDS = new Set(['slot','itemCount','qty','net','tax','total','whs']);
+const SUM_NUM_SORT_FIELDS = new Set(['itemCount','qty','net','tax','total','whs']);
 let sumSortKey = null;
 let sumSortDir = 1;
 function setSumSort(key){
@@ -1982,7 +1982,6 @@ function renderSummaryPage(){
 
   if(mode==='byInvoice'){
     thead.innerHTML = `<tr id="sumTheadRow">
-      <th id="thSum_slot" onclick="setSumSort('slot')">الترتيب</th>
       <th id="thSum_docNo" onclick="setSumSort('docNo')">رقم الفاتورة</th>
       <th id="thSum_docDate" onclick="setSumSort('docDate')">التاريخ</th>
       <th id="thSum_groupName" onclick="setSumSort('groupName')">المجموعة</th>
@@ -2005,7 +2004,6 @@ function renderSummaryPage(){
       grandQty+=inv.qty; grandNet+=inv.net; grandTax+=inv.tax; grandTotal+=inv.total; grandWhs+=inv.whs;
       const dateStr = inv.docDate ? inv.docDate.split('-').reverse().join('/') : '—';
       return `<tr>
-        <td class="mono">${(inv.slot===undefined||inv.slot===null)?'—':inv.slot}</td>
         <td class="mono">${esc(inv.docNo)||'—'}</td>
         <td>${dateStr}</td>
         <td>${esc(inv.groupName)}</td>
@@ -2017,7 +2015,7 @@ function renderSummaryPage(){
         <td class="mono">${fmt3(inv.whs)}</td>
       </tr>`;
     }).join('') + `<tr style="background:var(--paper); font-weight:700;">
-      <td colspan="5">الإجمالي العام</td>
+      <td colspan="4">الإجمالي العام</td>
       <td class="mono">${fmtNum(grandQty)}</td>
       <td class="mono">${fmt3(grandNet)}</td>
       <td class="mono">${fmt3(grandTax)}</td>
@@ -2047,8 +2045,7 @@ function renderSummaryPage(){
     let html = '';
     records.forEach(rec=>{
       const dateStr = rec.docDate ? rec.docDate.split('-').reverse().join('/') : '—';
-      const slotStr = (rec.slot===undefined||rec.slot===null) ? '' : `الترتيب ${rec.slot} — `;
-      html += `<tr style="background:var(--paper);"><td colspan="8" style="text-align:right; font-weight:700;">${slotStr}فاتورة ${esc(rec.docNo)||'بدون رقم'} — ${dateStr} — ${esc(rec.groupName)}</td></tr>`;
+      html += `<tr style="background:var(--paper);"><td colspan="8" style="text-align:right; font-weight:700;">فاتورة ${esc(rec.docNo)||'بدون رقم'} — ${dateStr} — ${esc(rec.groupName)}</td></tr>`;
       let subQty=0, subNet=0, subTax=0, subTotal=0, subWhs=0;
       rec.lines.forEach(ln=>{
         subQty+=ln.qty; subNet+=ln.net; subTax+=ln.taxVal; subTotal+=ln.total; subWhs+=ln.whsTotal;
@@ -2150,13 +2147,13 @@ function exportSummaryExcel(){
   if(mode==='byInvoice'){
     const invoices = summaryByInvoice();
     if(!invoices.length){ flash('sumMsg','ما في بيانات لتصديرها بهاي الفترة.', false); return; }
-    const data = [['الترتيب','رقم الفاتورة','التاريخ','المجموعة','عدد الأصناف','الكمية','الصافي قبل الضريبة','ضريبة المبيعات','الاجمالي','سعر بيع المؤسسة']];
+    const data = [['رقم الفاتورة','التاريخ','المجموعة','عدد الأصناف','الكمية','الصافي قبل الضريبة','ضريبة المبيعات','الاجمالي','سعر بيع المؤسسة']];
     let grandQty=0, grandNet=0, grandTax=0, grandTotal=0, grandWhs=0;
     invoices.forEach(inv=>{
-      data.push([inv.slot??'', inv.docNo, inv.docDate, inv.groupName, inv.itemCount, inv.qty, inv.net, inv.tax, inv.total, inv.whs]);
+      data.push([inv.docNo, inv.docDate, inv.groupName, inv.itemCount, inv.qty, inv.net, inv.tax, inv.total, inv.whs]);
       grandQty+=inv.qty; grandNet+=inv.net; grandTax+=inv.tax; grandTotal+=inv.total; grandWhs+=inv.whs;
     });
-    data.push(['','','الإجمالي العام','','',grandQty,grandNet,grandTax,grandTotal,grandWhs]);
+    data.push(['','الإجمالي العام','','',grandQty,grandNet,grandTax,grandTotal,grandWhs]);
     const ws = XLSX.utils.aoa_to_sheet(data);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'ملخص الفواتير');
