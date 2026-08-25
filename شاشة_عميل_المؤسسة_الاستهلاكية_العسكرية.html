@@ -345,6 +345,16 @@
       </div>
       <div class="hint" style="margin-top:8px;">دخّل الكمية لكل صنف — المجاميع والضريبة بتنحسب لحالها. لكل فاتورة اختار نوعها: "فاتورة مبيعات" عادية (تُطبع أول بأول، متل فواتير العقبة خلال الشهر من سندات التحويل) أو "كشف تجميعي" (مستند واحد بآخر الشهر، رقمه يتسلسل تلقائياً بين مستندات التجميع بنفس المجموعة). اضغط "معاينة وطباعة" لعرض الشكل النهائي.</div>
     </div>
+    <div class="input-panel" style="border-top:1px dashed var(--line); border-bottom:1px solid var(--line);">
+      <div class="hint" style="margin:0 0 8px;">توزيع أرقام مستندات ✕ تاريخ دفعة واحدة على كل الفواتير (باقي المملكة + كشف تجميعي العقبة) بترتيبها (فاتورة 1، 2، 3...) — بدل ما تدخل كل رقم يدوياً بكل فاتورة لحالها:</div>
+      <div class="row-actions" style="margin-top:0;">
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">من رقم مستند <input type="text" id="bulkDocNoFrom" placeholder="مثال: M26167" style="width:120px; direction:ltr; text-align:left;"></label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">إلى رقم مستند <input type="text" id="bulkDocNoTo" placeholder="مثال: M26183" style="width:120px; direction:ltr; text-align:left;"></label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">التاريخ (لكل الفواتير) <input type="date" id="bulkDocDate"></label>
+        <button class="btn-primary btn-sm" onclick="bulkAssignInvoiceNumbers()">توزيع الأرقام</button>
+        <span class="status-msg" id="bulkAssignMsg"></span>
+      </div>
+    </div>
     <div class="list" id="printInvoicesList"></div>
   </section>
 
@@ -782,10 +792,11 @@ function rebuildGroupCategory(groupId, docType, orderField, invField){
       inv = legacyInvoices.shift();
       if(inv){ inv.slot = slot; }
       else{
-        inv = {id: uid(), name:(docType==='aggregate'?'كشف تجميعي ':'فاتورة ')+slot, docType, slot, docNo:'', docDate:'', qty:{}, itemKeys:[]};
+        inv = {id: uid(), name:'', docType, slot, docNo:'', docDate:'', qty:{}, itemKeys:[]};
         g.invoices.push(inv);
       }
     }
+    inv.name = (docType==='aggregate'?'كشف تجميعي رقم ':'فاتورة ')+slot;
     inv.itemKeys = arr.map(x=>x.key);
   });
   g.invoices.forEach(iv=>{
@@ -1163,6 +1174,47 @@ function updateInvoiceField(invId, field, value){
   inv[field] = value;
   saveState();
   if(field==='docType') setTimeout(renderPrintPage, 0);
+}
+
+function parseDocNoParts(s){
+  const m = /^(\D*)(\d+)$/.exec(String(s||'').trim());
+  if(!m) return null;
+  return {prefix:m[1], digits:m[2], num:parseInt(m[2],10)};
+}
+function bulkAssignInvoiceNumbers(){
+  const fromRaw = document.getElementById('bulkDocNoFrom').value;
+  const toRaw = document.getElementById('bulkDocNoTo').value;
+  const date = document.getElementById('bulkDocDate').value;
+  const from = parseDocNoParts(fromRaw);
+  const to = parseDocNoParts(toRaw);
+  if(!from || !to){ flash('bulkAssignMsg','صيغة رقم المستند لازم تكون حرف (اختياري) + أرقام، متل M26167.', false); return; }
+  if(from.prefix !== to.prefix){ flash('bulkAssignMsg','الحرف الثابت لازم يكون نفسه بأول وآخر رقم (مثلاً M مع M).', false); return; }
+  if(to.num < from.num){ flash('bulkAssignMsg','رقم النهاية لازم يكون أكبر من أو يساوي رقم البداية.', false); return; }
+
+  const invoices = [];
+  GROUPS.forEach(g=>{
+    if(!isAutoManagedGroup(g)) return;
+    g.invoices.forEach(inv=>{ if(inv.slot!==undefined) invoices.push({g, inv}); });
+  });
+  invoices.sort((a,b)=> a.inv.slot - b.inv.slot);
+
+  const count = to.num - from.num + 1;
+  if(count !== invoices.length){
+    flash('bulkAssignMsg', `المدى يلي دخّلته فيه ${count} رقم، بس عندك ${invoices.length} فاتورة (باقي المملكة + كشف تجميعي العقبة). صحّح المدى وحاول مرة ثانية.`, false);
+    return;
+  }
+  if(!confirm(`رح يتوزع رقم مستند من ${fromRaw} إلى ${toRaw} وتاريخ ${date||'(بدون تاريخ)'} على ${invoices.length} فاتورة بترتيبها. متابعة؟`)) return;
+
+  const digitWidth = from.digits.length;
+  invoices.forEach(({g, inv}, idx)=>{
+    ensureInvoiceDefaults(inv);
+    inv.docNo = from.prefix + String(from.num + idx).padStart(digitWidth, '0');
+    inv.docDate = date;
+    logInvoicePrint('design', inv.id, g, inv, null);
+  });
+  saveState();
+  renderPrintPage();
+  flash('bulkAssignMsg', `تم توزيع الأرقام على ${invoices.length} فاتورة.`, true);
 }
 function updateQty(invId, key, value){
   const g = GROUPS.find(x=>x.id===currentGroupId);
