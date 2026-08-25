@@ -899,7 +899,7 @@ LEFT JOIN OCRD T3 ON T3."CardCode" = T0."CardCode"
 LEFT JOIN OCRG T4 ON T4."GroupCode" = T3."GroupCode"
 LEFT JOIN OITM T5 ON T5."ItemCode" = T1."ItemCode"
 LEFT JOIN OITB T6 ON T6."ItmsGrpCod" = T5."ItmsGrpCod"
-WHERE T0."DocDate" >= '2025-01-01'      -- عدّل نطاق التاريخ حسب الحاجة
+WHERE T0."DocDate" >= [%0]      -- بيسألك SAP B1 عن تاريخ البداية كل ما تشغّل الكويري
   AND T0."CANCELED" = 'N'
 ORDER BY T0."CardCode", T1."ItemCode", T0."DocDate";`;
 
@@ -937,12 +937,16 @@ SELECT
 FROM OINV I0
 INNER JOIN INV1 I1 ON I0."DocEntry"=I1."DocEntry"
 WHERE I0."isIns"='Y'
+  AND I0."DocDate" >= [%0]      -- بيسألك SAP B1 عن التاريخ كل ما تشغّل الكويري (اكتب مثلاً 2026-01-01)
 GROUP BY I0."DocNum",I0."DocDate",I0."CardCode",I0."CardName",I1."ItemCode",I1."Dscription",I0."DocEntry"
 HAVING SUM(I1."Quantity")
       - IFNULL((SELECT SUM(D1."Quantity") FROM DLN1 D1 INNER JOIN ODLN D0 ON D0."DocEntry"=D1."DocEntry"
           WHERE D0."CANCELED"='N' AND D1."BaseType"=13 AND D1."BaseEntry"=I0."DocEntry" AND D1."ItemCode"=I1."ItemCode"),0)
       - IFNULL((SELECT SUM(R1."Quantity") FROM RIN1 R1 INNER JOIN ORIN R0 ON R0."DocEntry"=R1."DocEntry"
           WHERE R0."CancelDate" IS NULL AND R1."BaseType"=13 AND R1."BaseEntry"=I0."DocEntry" AND R1."ItemCode"=I1."ItemCode"),0) > 0
+  -- استبعاد أي سطر عليه مرتجع نهائياً (بدل خصمه فقط) لتفادي بيانات المرتجعات غير الموثوقة
+  AND IFNULL((SELECT SUM(R1."Quantity") FROM RIN1 R1 INNER JOIN ORIN R0 ON R0."DocEntry"=R1."DocEntry"
+          WHERE R0."CancelDate" IS NULL AND R1."BaseType"=13 AND R1."BaseEntry"=I0."DocEntry" AND R1."ItemCode"=I1."ItemCode"),0) = 0
 ORDER BY I0."DocDate", I0."DocNum", I1."ItemCode";`;
 
 function copyQuery(name){
