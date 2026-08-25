@@ -40,6 +40,35 @@ CREATE TABLE IF NOT EXISTS stock_feed(
 );
 CREATE INDEX IF NOT EXISTS idx_stock_pair ON stock_feed(cust_code,item_code);
 
+CREATE TABLE IF NOT EXISTS quotes(
+  id BIGSERIAL PRIMARY KEY,
+  cust_code TEXT NOT NULL,
+  cust_name TEXT,
+  item_code TEXT NOT NULL,
+  item_name TEXT,
+  quote_date DATE NOT NULL,
+  qty NUMERIC,
+  open_qty NUMERIC,
+  rep TEXT,
+  source_file TEXT,
+  imported_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_quotes_pair ON quotes(cust_code,item_code);
+
+CREATE TABLE IF NOT EXISTS reserved_invoices(
+  id BIGSERIAL PRIMARY KEY,
+  doc_num TEXT,
+  invoice_date DATE NOT NULL,
+  cust_code TEXT NOT NULL,
+  cust_name TEXT,
+  item_code TEXT NOT NULL,
+  item_name TEXT,
+  undelivered_qty NUMERIC NOT NULL,
+  source_file TEXT,
+  imported_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_reserved_pair ON reserved_invoices(cust_code,item_code);
+
 CREATE TABLE IF NOT EXISTS holidays(
   hol_date DATE PRIMARY KEY,
   description TEXT

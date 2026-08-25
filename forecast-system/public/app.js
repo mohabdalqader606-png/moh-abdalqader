@@ -92,6 +92,14 @@ async function render() {
 
 /* ---------- مركز إجراءات اليوم ---------- */
 function reasonText(g, type) { return g.reason; }
+function signalNote(g) {
+  if (!g.signal) return '';
+  const s = g.signal;
+  const label = s.kind === 'reserved' ? '✅ طلب فعلاً (مؤكد) — فاتورة محجوزة بانتظار التسليم' : '🔵 طلب فعلاً (مبدئي) — عرض سعر مفتوح';
+  const bg = s.kind === 'reserved' ? 'var(--greenbg)' : '#eaf2fc';
+  const fg = s.kind === 'reserved' ? 'var(--green)' : 'var(--blue)';
+  return `<div class="reason" style="background:${bg};color:${fg}">${label} بتاريخ ${fmtDate(s.date)}، كمية ${fmtN(s.qty, 0)}.</div>`;
+}
 function alertCard(g, type, color) {
   return `<div class="alert-card">
     <div class="alert-head">
@@ -109,6 +117,7 @@ function alertCard(g, type, color) {
       <div><b>تصنيف العميل</b>${esc(g.cust_category || '—')}</div>
     </div>
     <div class="reason">📌 ${esc(g.reason)}</div>
+    ${signalNote(g)}
     <div class="rec">✅ ${esc(g.recommendedAction)}</div>
     <div class="actions">
       <button class="btn sm" onclick="doAction('${g.cust_code}','${g.item_code}','${type}','contacted')">تم التواصل</button>
@@ -311,8 +320,13 @@ async function renderSync() {
   return `
   <div class="card">
     <h2>تغذية البيانات عبر GitHub</h2>
-    <p class="hint">حط ملفات <b>.csv / .txt</b> (نفس ترتيب الأعمدة المعتاد) داخل مجلد <code>data/incoming/withdrawals/</code> لملفات المسحوبات، أو <code>data/incoming/stock/</code> لبيانات الرصيد الافتتاحي والتوريدات — من جهازك عبر GitHub Desktop (Commit + Push). عند إعادة نشر Railway تلقائياً، يفحص السيرفر المجلدين ويستورد أي ملف جديد بدون تكرار.</p>
-    <p class="hint">أعمدة ملفات المسحوبات: <b>كود العميل، اسم العميل، كود الصنف، اسم الصنف، تاريخ السحب، يوم السحب (يُتجاهل)، الكمية، وحدة القياس، مندوب المبيعات، تصنيف العميل، فئة الصنف</b>.<br>أعمدة ملفات المخزون: <b>كود العميل، كود الصنف، النوع (Opening/Delivery)، التاريخ، الكمية</b>.</p>
+    <p class="hint">حط ملفات <b>.csv / .txt</b> (نفس ترتيب الأعمدة المعتاد) داخل المجلد المناسب — من جهازك عبر GitHub Desktop (Commit + Push). عند إعادة نشر Railway تلقائياً، يفحص السيرفر المجلدات ويستورد أي ملف جديد بدون تكرار. يكتشف تلقائياً عمود "#" اللي بيضيفه SAP B1 Query Generator أحياناً بأول الصفوف.</p>
+    <p class="hint">
+      <code>data/incoming/withdrawals/</code>: كود العميل، اسم العميل، كود الصنف، اسم الصنف، تاريخ السحب، يوم السحب (يُتجاهل)، الكمية، وحدة القياس، مندوب المبيعات، تصنيف العميل، فئة الصنف.<br>
+      <code>data/incoming/quotes/</code>: كود العميل، اسم العميل، كود الصنف، اسم الصنف، تاريخ العرض، الكمية، الكمية المتبقية Open Qty، المندوب.<br>
+      <code>data/incoming/reserved/</code>: رقم الفاتورة، تاريخ الفاتورة، كود العميل، اسم العميل، كود الصنف، اسم الصنف، إجمالي كمية الفاتورة، إجمالي قيمة الفاتورة، إجمالي كمية الديليفري، الكمية المرتجعة، الكمية غير المسلمة الفعلية.<br>
+      <code>data/incoming/stock/</code> (اختياري): كود العميل، كود الصنف، النوع (Opening/Delivery)، التاريخ، الكمية.
+    </p>
     <button class="btn" onclick="syncNow()">🔄 فحص المجلدات الآن يدوياً</button>
     <div id="syncMsg" class="hint"></div>
   </div>
@@ -326,8 +340,10 @@ async function renderSync() {
 async function syncNow() {
   document.getElementById('syncMsg').textContent = 'جاري الفحص...';
   const r = await apiPost('/sync');
-  const added = [...r.importResult.withdrawals, ...r.importResult.stock].reduce((s, x) => s + (x.added || 0), 0);
-  document.getElementById('syncMsg').textContent = `تم: ${added} سطر جديد، أُعيد حساب ${r.recomputeResult.pairs} زوج عميل×صنف.`;
+  const all = [...r.importResult.withdrawals, ...r.importResult.stock, ...r.importResult.quotes, ...r.importResult.reserved];
+  const added = all.reduce((s, x) => s + (x.added || 0), 0);
+  const bad = r.importResult.withdrawals.reduce((s, x) => s + (x.bad || 0), 0);
+  document.getElementById('syncMsg').innerHTML = `تم: ${added} سطر جديد${bad ? `، ${bad} سطر مسحوبات غير صالح` : ''}، أُعيد حساب ${r.recomputeResult.pairs} زوج عميل×صنف.`;
   render();
 }
 

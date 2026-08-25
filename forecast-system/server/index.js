@@ -51,7 +51,7 @@ async function start() {
   await seedAdmin();
   try {
     const importResult = await scanAndImportAll();
-    const totalAdded = [...importResult.withdrawals, ...importResult.stock].reduce((s, r) => s + (r.added || 0), 0);
+    const totalAdded = [...importResult.withdrawals, ...importResult.stock, ...importResult.quotes, ...importResult.reserved].reduce((s, r) => s + (r.added || 0), 0);
     console.log(`[startup import] ${totalAdded} سطر جديد من ملفات data/incoming`);
   } catch (e) {
     console.error('[startup import] فشل الاستيراد التلقائي:', e.message);

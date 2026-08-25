@@ -39,7 +39,30 @@ router.get('/', requireAuth, async (req, res) => {
   if (minConf) { params.push(+minConf); where += ` AND confidence >= $${params.length}`; }
   if (q) { params.push(`%${q}%`); where += ` AND (cust_name ILIKE $${params.length} OR cust_code ILIKE $${params.length} OR item_name ILIKE $${params.length} OR item_code ILIKE $${params.length})`; }
 
-  const { rows } = await pool.query(`SELECT * FROM forecasts ${where} ORDER BY cust_name,item_name`, params);
+  const { rows: rawRows } = await pool.query(
+    `SELECT f.*,
+       q.quote_date, q.qty AS quote_qty, q.open_qty AS quote_open_qty,
+       r.invoice_date, r.undelivered_qty
+     FROM forecasts f
+     LEFT JOIN LATERAL (
+       SELECT quote_date, qty, open_qty FROM quotes
+       WHERE cust_code=f.cust_code AND item_code=f.item_code AND quote_date >= f.last_wd_date
+       ORDER BY quote_date DESC LIMIT 1
+     ) q ON true
+     LEFT JOIN LATERAL (
+       SELECT invoice_date, undelivered_qty FROM reserved_invoices
+       WHERE cust_code=f.cust_code AND item_code=f.item_code AND invoice_date >= f.last_wd_date
+       ORDER BY invoice_date DESC LIMIT 1
+     ) r ON true
+     ${where} ORDER BY f.cust_name,f.item_name`,
+    params
+  );
+  const rows = rawRows.map((g) => {
+    let signal = null;
+    if (g.invoice_date) signal = { kind: 'reserved', date: g.invoice_date, qty: g.undelivered_qty };
+    else if (g.quote_date) signal = { kind: 'quote', date: g.quote_date, qty: g.quote_open_qty != null ? g.quote_open_qty : g.quote_qty };
+    return { ...g, signal };
+  });
 
   // استبعاد التنبيهات المخفية عبر سجل الإجراءات (تم التواصل اليوم / مؤجل / مغلق نهائياً)
   const today = isoDate(new Date());
