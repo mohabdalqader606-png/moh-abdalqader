@@ -123,6 +123,13 @@ function parseDate(v){
   return null;
 }
 function splitLine(line){return line.includes('\t')?line.split('\t'):line.split(',')}
+// SAP B1 Query Generator بيضيف أحياناً عمود ترقيم صفوف "#" بأول كل سطر عند النسخ من الشبكة،
+// فبيزيح كل الأعمدة خانة وحدة لليمين. نكتشف هذا تلقائياً بدل ما نطلب من المستخدم يشيله يدوياً كل مرة.
+function detectOffset(cols,dateIdx){
+  if(parseDate(cols[dateIdx]))return 0;
+  if(parseDate(cols[dateIdx+1]))return 1;
+  return 0;
+}
 function parseWithdrawalText(text){
   const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
   if(!lines.length)return {added:0,dup:0,bad:0};
@@ -131,17 +138,19 @@ function parseWithdrawalText(text){
   const qtyTest=c0[6];
   const dateTest=parseDate(c0[4]);
   if((qtyTest!=null&&isNaN(parseFloat(qtyTest)))||!dateTest)start=1;
+  if(start>=lines.length)return {added:0,dup:0,bad:0};
+  const off=detectOffset(splitLine(lines[start]),4);
   let added=0,dup=0,bad=0;
   for(let i=start;i<lines.length;i++){
     const c=splitLine(lines[i]);
-    if(c.length<7)continue;
-    const custCode=(c[0]||'').trim(),custName=(c[1]||'').trim(),itemCode=(c[2]||'').trim(),itemName=(c[3]||'').trim();
-    const wdDate=parseDate(c[4]);
-    const qty=parseFloat(c[6]);
-    const uom=(c[7]||'').trim();
-    const rep=(c[8]||'').trim();
-    const custCategory=(c[9]||'').trim();
-    const itemCategory=(c[10]||'').trim();
+    if(c.length<7+off)continue;
+    const custCode=(c[0+off]||'').trim(),custName=(c[1+off]||'').trim(),itemCode=(c[2+off]||'').trim(),itemName=(c[3+off]||'').trim();
+    const wdDate=parseDate(c[4+off]);
+    const qty=parseFloat(c[6+off]);
+    const uom=(c[7+off]||'').trim();
+    const rep=(c[8+off]||'').trim();
+    const custCategory=(c[9+off]||'').trim();
+    const itemCategory=(c[10+off]||'').trim();
     if(!custCode||!itemCode||!wdDate||isNaN(qty)){bad++;continue}
     const r={custCode,custName,itemCode,itemName,wdDate,qty,uom,rep,custCategory,itemCategory};
     const k=rowKey(r);
@@ -154,13 +163,15 @@ function parseStockText(text){
   const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
   let start=0;const c0=splitLine(lines[0]||'');
   if(c0[3]!=null&&isNaN(parseFloat(c0[3])))start=1;
+  if(start>=lines.length)return 0;
+  const off=detectOffset(splitLine(lines[start]),3);
   let added=0;
   for(let i=start;i<lines.length;i++){
-    const c=splitLine(lines[i]);if(c.length<4)continue;
-    const custCode=(c[0]||'').trim(),itemCode=(c[1]||'').trim();
-    const type=(c[2]||'').trim().toLowerCase().includes('open')?'opening':'delivery';
-    const date=parseDate(c[3])||todayIso();
-    const qty=parseFloat(c[4]!=null?c[4]:c[3]);
+    const c=splitLine(lines[i]);if(c.length<4+off)continue;
+    const custCode=(c[0+off]||'').trim(),itemCode=(c[1+off]||'').trim();
+    const type=(c[2+off]||'').trim().toLowerCase().includes('open')?'opening':'delivery';
+    const date=parseDate(c[3+off])||todayIso();
+    const qty=parseFloat(c[4+off]!=null?c[4+off]:c[3+off]);
     if(!custCode||!itemCode)continue;
     STOCK.push({custCode,itemCode,type,date,qty:isNaN(qty)?0:qty});added++;
   }
@@ -170,14 +181,16 @@ function parseQuotesText(text){
   const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
   let start=0;const c0=splitLine(lines[0]||'');
   if(c0[5]!=null&&isNaN(parseFloat(c0[5])))start=1;
+  if(start>=lines.length)return 0;
+  const off=detectOffset(splitLine(lines[start]),4);
   let added=0;
   for(let i=start;i<lines.length;i++){
-    const c=splitLine(lines[i]);if(c.length<6)continue;
-    const custCode=(c[0]||'').trim(),custName=(c[1]||'').trim(),itemCode=(c[2]||'').trim(),itemName=(c[3]||'').trim();
-    const quoteDate=parseDate(c[4]);
-    const qty=parseFloat(c[5]);
-    const openQty=parseFloat(c[6]);
-    const rep=(c[7]||'').trim();
+    const c=splitLine(lines[i]);if(c.length<6+off)continue;
+    const custCode=(c[0+off]||'').trim(),custName=(c[1+off]||'').trim(),itemCode=(c[2+off]||'').trim(),itemName=(c[3+off]||'').trim();
+    const quoteDate=parseDate(c[4+off]);
+    const qty=parseFloat(c[5+off]);
+    const openQty=parseFloat(c[6+off]);
+    const rep=(c[7+off]||'').trim();
     if(!custCode||!itemCode||!quoteDate)continue;
     QUOTES.push({custCode,custName,itemCode,itemName,quoteDate,qty:isNaN(qty)?0:qty,openQty:isNaN(openQty)?null:openQty,rep});added++;
   }
@@ -187,13 +200,15 @@ function parseReservedText(text){
   const lines=text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
   let start=0;const c0=splitLine(lines[0]||'');
   if(c0[10]!=null&&isNaN(parseFloat(c0[10])))start=1;
+  if(start>=lines.length)return 0;
+  const off=detectOffset(splitLine(lines[start]),1);
   let added=0;
   for(let i=start;i<lines.length;i++){
-    const c=splitLine(lines[i]);if(c.length<11)continue;
-    const docNum=(c[0]||'').trim();
-    const invoiceDate=parseDate(c[1]);
-    const custCode=(c[2]||'').trim(),custName=(c[3]||'').trim(),itemCode=(c[4]||'').trim(),itemName=(c[5]||'').trim();
-    const undeliveredQty=parseFloat(c[10]);
+    const c=splitLine(lines[i]);if(c.length<11+off)continue;
+    const docNum=(c[0+off]||'').trim();
+    const invoiceDate=parseDate(c[1+off]);
+    const custCode=(c[2+off]||'').trim(),custName=(c[3+off]||'').trim(),itemCode=(c[4+off]||'').trim(),itemName=(c[5+off]||'').trim();
+    const undeliveredQty=parseFloat(c[10+off]);
     if(!custCode||!itemCode||!invoiceDate||isNaN(undeliveredQty)||undeliveredQty<=0)continue;
     RESERVED.push({docNum,invoiceDate,custCode,custName,itemCode,itemName,undeliveredQty});added++;
   }
