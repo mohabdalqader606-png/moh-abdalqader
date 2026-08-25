@@ -203,6 +203,7 @@
           انسخ من الإكسل صف العناوين + الصفوف والصقهم هون مباشرة (Ctrl+V من الإكسل بينسخ تلقائياً Tab-separated). ترتيب الأعمدة حر، بس لازم أسماء العناوين تكون بالضبط متل تحت (نفس عناوين ملف الربط الأصلي). عمود "الكمية" لو موجود بينتجاهَل — مو جزء من جدول الربط.
           <code class="block">رمز العميل	اسم الصنف لدى العميل	رمز الشركة	اسم الصنف لدى الشركة	بلد المنشأ	نسبة ضريبة المبيعات	الوحدة لدينا	التعبئة	سعر البيع /الوحدة	سعر البيع /الحبة	سعر المستودعات/الوحدة	سعر المستودعات/الحبة
 11365702	مونتانا فاصوليا خضراء مجمده 400غم كيس	FVL00109	فاصوليا مجمدة مصرية مونتانا20*400غم	مصري	0	Carton	20	9	0.45	10	0.5</code>
+          عمود اختياري "سعر بيع المؤسسة - العقبة" (سعر الحبة): بينستخدم بعمود سعر بيع المؤسسة بكشوف وفواتير العقبة بدل سعر مستودع/حبة العادي (يلي بيضل لباقي المملكة) — لو فاضي بينرجع للسعر العادي مؤقتاً.
           عمودياً اختياريين لكل مجموعة (ترتيب الصنف داخل الفاتورة + رقم الفاتورة يلي ينحط فيها) — بيبنوا فواتير "باقي المملكة" و"كشف تجميعي العقبة" تلقائياً بدون ما تحتاج تروح لصفحة "تصميم ترتيب الفواتير":
           <code class="block">ترتيب - عمان	رقم فاتورة - عمان	ترتيب - تجميعي العقبة	رقم فاتورة - تجميعي العقبة	ترتيب - فواتير العقبة	رقم فاتورة - فواتير العقبة
 1	1	1	1	1	1</code>
@@ -232,6 +233,7 @@
         <input type="number" id="mIn_salePricePiece" placeholder="سعر البيع/الحبة" style="width:110px;" step="any">
         <input type="number" id="mIn_whsPriceUnit" placeholder="سعر المستودع/الوحدة" style="width:130px;" step="any">
         <input type="number" id="mIn_whsPricePiece" placeholder="سعر المستودع/الحبة" style="width:120px;" step="any">
+        <input type="number" id="mIn_aqabaWhsPricePiece" placeholder="سعر بيع المؤسسة - العقبة" style="width:150px;" step="any">
         <input type="number" id="mIn_ammanOrder" placeholder="ترتيب - عمان" style="width:100px;" step="1" min="1">
         <input type="number" id="mIn_ammanInvoiceNo" placeholder="رقم فاتورة - عمان" style="width:120px;" step="1" min="1">
         <input type="number" id="mIn_aqabaAggOrder" placeholder="ترتيب - تجميعي العقبة" style="width:130px;" step="1" min="1">
@@ -271,6 +273,7 @@
             <th id="thMap_salePricePiece" onclick="setMapSort('salePricePiece')">سعر بيع/حبة</th>
             <th id="thMap_whsPriceUnit" onclick="setMapSort('whsPriceUnit')">سعر مستودع/وحدة</th>
             <th id="thMap_whsPricePiece" onclick="setMapSort('whsPricePiece')">سعر مستودع/حبة</th>
+            <th id="thMap_aqabaWhsPricePiece" title="سعر بيع المؤسسة بفواتير وكشوف العقبة — لو فاضي بيستخدم سعر مستودع/حبة العادي" onclick="setMapSort('aqabaWhsPricePiece')">سعر بيع المؤسسة - العقبة</th>
             <th id="thMap_ammanOrder" title="ترتيب الصنف بفاتورة باقي المملكة" onclick="setMapSort('ammanOrder')">ترتيب عمان</th>
             <th id="thMap_ammanInvoiceNo" title="رقم فاتورة باقي المملكة" onclick="setMapSort('ammanInvoiceNo')">فاتورة عمان</th>
             <th id="thMap_aqabaAggOrder" title="ترتيب الصنف بكشف تجميعي العقبة" onclick="setMapSort('aqabaAggOrder')">ترتيب تجميعي العقبة</th>
@@ -719,12 +722,13 @@ const MAP_HEADER_ALIASES = {
   'سعر البيع /الحبة':'salePricePiece', 'سعر البيع/الحبة':'salePricePiece',
   'سعر المستودعات/الوحدة':'whsPriceUnit', 'سعر المستودعات /الوحدة':'whsPriceUnit',
   'سعر المستودعات/الحبة':'whsPricePiece', 'سعر المستودعات /الحبة':'whsPricePiece',
+  'سعر بيع المؤسسة - العقبة':'aqabaWhsPricePiece', 'سعر بيع المؤسسة-العقبة':'aqabaWhsPricePiece', 'سعر مستودع العقبة/الحبة':'aqabaWhsPricePiece',
   'ترتيب - عمان':'ammanOrder', 'رقم فاتورة - عمان':'ammanInvoiceNo',
   'ترتيب - تجميعي العقبة':'aqabaAggOrder', 'رقم فاتورة - تجميعي العقبة':'aqabaAggInvoiceNo',
   'ترتيب - فواتير العقبة':'aqabaVoucherOrder', 'رقم فاتورة - فواتير العقبة':'aqabaVoucherInvoiceNo',
   'الكمية':null, '#':null
 };
-const NUM_FIELDS = ['taxRate','factor','salePriceUnit','salePricePiece','whsPriceUnit','whsPricePiece',
+const NUM_FIELDS = ['taxRate','factor','salePriceUnit','salePricePiece','whsPriceUnit','whsPricePiece','aqabaWhsPricePiece',
   'ammanOrder','ammanInvoiceNo','aqabaAggOrder','aqabaAggInvoiceNo','aqabaVoucherOrder','aqabaVoucherInvoiceNo'];
 const ORDER_FIELD_SETS = [
   {group:'amman', docType:'invoice', orderField:'ammanOrder', invField:'ammanInvoiceNo'},
@@ -782,6 +786,7 @@ function addManualItem(){
     salePricePiece: parseNum(document.getElementById('mIn_salePricePiece').value),
     whsPriceUnit: parseNum(document.getElementById('mIn_whsPriceUnit').value),
     whsPricePiece: parseNum(document.getElementById('mIn_whsPricePiece').value),
+    aqabaWhsPricePiece: parseNum(document.getElementById('mIn_aqabaWhsPricePiece').value),
     ammanOrder: parseNum(document.getElementById('mIn_ammanOrder').value),
     ammanInvoiceNo: parseNum(document.getElementById('mIn_ammanInvoiceNo').value),
     aqabaAggOrder: parseNum(document.getElementById('mIn_aqabaAggOrder').value),
@@ -793,7 +798,7 @@ function addManualItem(){
   const k = rec.ourCode+'|'+rec.theirCode;
   const existingIdx = ITEMS.findIndex(it=>itemKey(it)===k);
   if(existingIdx>=0) ITEMS[existingIdx] = rec; else ITEMS.push(rec);
-  ['mIn_ourCode','mIn_ourName','mIn_ourUnit','mIn_theirCode','mIn_theirName','mIn_origin','mIn_taxRate','mIn_factor','mIn_salePriceUnit','mIn_salePricePiece','mIn_whsPriceUnit','mIn_whsPricePiece',
+  ['mIn_ourCode','mIn_ourName','mIn_ourUnit','mIn_theirCode','mIn_theirName','mIn_origin','mIn_taxRate','mIn_factor','mIn_salePriceUnit','mIn_salePricePiece','mIn_whsPriceUnit','mIn_whsPricePiece','mIn_aqabaWhsPricePiece',
    'mIn_ammanOrder','mIn_ammanInvoiceNo','mIn_aqabaAggOrder','mIn_aqabaAggInvoiceNo','mIn_aqabaVoucherOrder','mIn_aqabaVoucherInvoiceNo'].forEach(id=>document.getElementById(id).value='');
   rebuildAutoInvoices();
   saveState();
@@ -861,7 +866,7 @@ function editItemField(key, field, value){
   saveState();
 }
 
-const MAP_NUM_SORT_FIELDS = new Set(['taxRate','factor','salePriceUnit','salePricePiece','whsPriceUnit','whsPricePiece',
+const MAP_NUM_SORT_FIELDS = new Set(['taxRate','factor','salePriceUnit','salePricePiece','whsPriceUnit','whsPricePiece','aqabaWhsPricePiece',
   'ammanOrder','ammanInvoiceNo','aqabaAggOrder','aqabaAggInvoiceNo','aqabaVoucherOrder','aqabaVoucherInvoiceNo']);
 function setMapSort(key){
   if(mapSortKey === key) mapSortDir *= -1;
@@ -920,6 +925,7 @@ function renderMappingTable(){
       <td><input type="number" step="any" value="${fmt4(it.salePricePiece)}" onchange="editItemField('${k}','salePricePiece',this.value)"></td>
       <td><input type="number" step="any" value="${fmt4(it.whsPriceUnit)}" onchange="editItemField('${k}','whsPriceUnit',this.value)"></td>
       <td><input type="number" step="any" value="${fmt4(it.whsPricePiece)}" onchange="editItemField('${k}','whsPricePiece',this.value)"></td>
+      <td><input type="number" step="any" value="${it.aqabaWhsPricePiece?fmt4(it.aqabaWhsPricePiece):''}" placeholder="—" onchange="editItemField('${k}','aqabaWhsPricePiece',this.value)"></td>
       <td><input type="number" step="1" min="1" style="width:56px;" value="${it.ammanOrder||''}" onchange="editItemField('${k}','ammanOrder',this.value)"></td>
       <td><input type="number" step="1" min="1" style="width:56px;" value="${it.ammanInvoiceNo||''}" onchange="editItemField('${k}','ammanInvoiceNo',this.value)"></td>
       <td><input type="number" step="1" min="1" style="width:56px;" value="${it.aqabaAggOrder||''}" onchange="editItemField('${k}','aqabaAggOrder',this.value)"></td>
@@ -1300,6 +1306,12 @@ function computeLine(item, qty, taxExempt){
   return {net, taxPct, taxVal, total};
 }
 function isAqabaGroup(g){ return /عقبة/.test(g.name); }
+/* سعر بيع المؤسسة حسب المجموعة: العقبة إلها سعرها الخاص (سعر بيع المؤسسة - العقبة)،
+   ولو لسا مش معبّى بينرجع لسعر مستودع/حبة العادي مؤقتاً */
+function whsPriceFor(g, it){
+  if(isAqabaGroup(g) && it.aqabaWhsPricePiece) return it.aqabaWhsPricePiece;
+  return it.whsPricePiece||0;
+}
 function computeInvoiceTitle(g, inv){
   if(inv.docType==='aggregate'){
     const aggInvoices = g.invoices.filter(i=>i.docType==='aggregate');
@@ -1406,7 +1418,7 @@ function renderPrintPage(){
       if(!it) return '';
       const qty = inv.qty[k]||0;
       const {net,taxPct,taxVal,total} = computeLine(it, qty, g.taxExempt);
-      netTotal+=net; taxTotal+=taxVal; grandTotal+=total; instTotal += qty*(it.whsPricePiece||0);
+      netTotal+=net; taxTotal+=taxVal; grandTotal+=total; instTotal += qty*whsPriceFor(g, it);
       return `<tr>
         <td>${idx+1}</td>
         <td class="mono">${esc(it.theirCode)}</td>
@@ -1471,7 +1483,7 @@ function logInvoicePrint(sourcePrefix, invId, g, inv, qtyOverride){
     const qty = qtyOverride ? (qtyOverride.get(k)||0) : (inv.qty[k]||0);
     if(!qty) return null;
     const {net,taxPct,taxVal,total} = computeLine(it, qty, g.taxExempt);
-    return {theirCode:it.theirCode, theirName:it.theirName, ourCode:it.ourCode, qty, price:it.salePricePiece||0, net, taxPct, taxVal, total, whsPrice:it.whsPricePiece||0, whsTotal: qty*(it.whsPricePiece||0)};
+    return {theirCode:it.theirCode, theirName:it.theirName, ourCode:it.ourCode, qty, price:it.salePricePiece||0, net, taxPct, taxVal, total, whsPrice:whsPriceFor(g, it), whsTotal: qty*whsPriceFor(g, it)};
   }).filter(Boolean);
   if(!lines.length) return;
   const docNo = inv.docNo || '';
@@ -1505,7 +1517,7 @@ function buildPrintSheetHTML(g, inv, qtyOverride){
     if(!it) return '';
     const qty = qtyOverride ? (qtyOverride.get(k)||0) : (inv.qty[k]||0);
     const {net,taxPct,taxVal,total} = computeLine(it, qty, g.taxExempt);
-    netTotal+=net; taxTotal+=taxVal; grandTotal+=total; instTotal += qty*(it.whsPricePiece||0);
+    netTotal+=net; taxTotal+=taxVal; grandTotal+=total; instTotal += qty*whsPriceFor(g, it);
     return `<tr>
       <td class="mono">${esc(it.theirCode)}</td>
       <td style="text-align:right;">${esc(it.theirName)}</td>
@@ -1517,7 +1529,7 @@ function buildPrintSheetHTML(g, inv, qtyOverride){
       <td>${(taxPct*100).toFixed(0)}%</td>
       <td>${fmt3(taxVal)}</td>
       <td>${fmt3(total)}</td>
-      <td>${fmt4(it.whsPricePiece)}</td>
+      <td>${fmt4(whsPriceFor(g, it))}</td>
     </tr>`;
   }).join('');
 
