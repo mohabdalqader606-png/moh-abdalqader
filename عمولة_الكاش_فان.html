@@ -215,7 +215,8 @@ ORDER BY 1,2</textarea>
  <div class="card">
   <h2>احتساب عمولة الكاش فان</h2>
   <p class="hint">العمولة = 2% من صافي المبيعات + مكافأة بيع (حتى 50 د.أ بالتناسب مع هدف المبيعات) + مكافأة جودة تحصيل (حتى 50 د.أ حسب نسبة الشيكات الضعيفة) + مكافأة مدير يدوية − خصم 2% من الشيكات المرتجعة − مقابل استخدام مساعد.</p>
-  <div class="row noprint"><label>من شهر</label><input type="month" id="cvFrom" onchange="renderComm()"><label>إلى شهر</label><input type="month" id="cvTo" onchange="renderComm()"><button class="btn sm" onclick="renderComm()">تحديث</button><button class="btn gold sm" onclick="window.print()">🖨 طباعة</button></div>
+  <div class="row noprint"><label>من شهر</label><input type="month" id="cvFrom" onchange="document.getElementById('cvTo').value=this.value;renderComm()"><label>إلى شهر</label><input type="month" id="cvTo" onchange="renderComm()"><button class="btn sm" onclick="renderComm()">تحديث</button><button class="btn gold sm" onclick="window.print()">🖨 طباعة</button></div>
+  <p class="hint noprint">تغيير "من شهر" بيحدّث "إلى شهر" ليطابقه (فترة شهر واحد). لفترة أطول، غيّر "إلى شهر" بعدها يدوياً.</p>
   <div class="grid g6" id="cvKpi" style="margin-top:10px"></div>
   <details class="noprint" style="margin-top:10px" open><summary>⚙️ إعدادات معادلة العمولة (عدّل أي رقم وبيتحدّث الجدول فوراً)</summary>
    <div class="row" style="margin-top:8px" id="cvParams"></div>
@@ -355,6 +356,17 @@ function computeCV(fromISO,toISO){
  });
  return {rows,PD,P,key};
 }
+function setBonusOv(key,repId,field,input){
+ const raw=input.value;
+ const man=periodData(key).perRep[repId]=periodData(key).perRep[repId]||{mgrBonus:0,retChq:0,assistFee:0,salesBonusOv:null,collBonusOv:null};
+ if(raw===''){man[field]=null}
+ else{
+  const num=+raw,calc=+input.dataset.calc||0;
+  // لو القيمة المدخلة نفسها المحسوبة تلقائياً (زي لو انضغطت الخانة بالغلط)، اعتبرها أوتوماتيك مش تعديل يدوي حقيقي
+  man[field]=Math.abs(num-calc)<0.01?null:num;
+ }
+ saveState();renderComm();
+}
 function cvRowHtml(r,X,P){
  const capNote=r.salesBonusCalc>P.salesBonus?` — تجاوز الهدف فأخذ الحد الأقصى ${P.salesBonus}`:'';
  const tSales=`مسجّلة بتبويب المبيعات الشهرية`;
@@ -374,21 +386,24 @@ function cvRowHtml(r,X,P){
  return `<tr><td><b>${r.rep.name}</b></td>`
   +`<td class="num" title="${tSales}">${fmt(r.sales)}</td>`
   +`<td class="num" title="${tComm}">${fmt(r.salesComm)}</td>`
-  +`<td class="num"${ovMark(r.salesBonusOv)} title="${tBonus}"><input type="number" step="any" placeholder="${fmt(r.salesBonusCalc)}" value="${r.salesBonusOv!=null?r.salesBonusOv:''}" style="width:55px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].salesBonusOv=this.value===''?null:+this.value;saveState();renderComm()">${r.salesBonusOv!=null?' ✏':''}</td>`
+  +`<td class="num"${ovMark(r.salesBonusOv)} title="${tBonus}"><input type="number" step="any" autocomplete="off" placeholder="${fmt(r.salesBonusCalc)}" data-calc="${r.salesBonusCalc}" value="${r.salesBonusOv!=null?r.salesBonusOv:''}" style="width:55px" onchange="setBonusOv('${X.key}','${r.rep.id}','salesBonusOv',this)">${r.salesBonusOv!=null?' ✏':''}</td>`
   +`<td class="num" title="${tCollTot}">${fmt(r.collTot)}</td>`
   +`<td class="num ${r.collWeak?'neg':''}" title="${tCollWeak}">${fmt(r.collWeak)}</td>`
   +`<td class="num" title="${tWeakPct}">${pct(r.weakRatio)}</td>`
-  +`<td class="num"${ovMark(r.collBonusOv)} title="${tCollBonus}"><input type="number" step="any" placeholder="${fmt(r.collBonusCalc)}" value="${r.collBonusOv!=null?r.collBonusOv:''}" style="width:55px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].collBonusOv=this.value===''?null:+this.value;saveState();renderComm()">${r.collBonusOv!=null?' ✏':''}</td>`
-  +`<td class="num" title="تُدخل يدوياً"><input type="number" step="any" value="${r.mgrBonus}" style="width:55px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].mgrBonus=+this.value;saveState();renderComm()"></td>`
-  +`<td class="num" title="تُدخل يدوياً"><input type="number" step="any" value="${r.retChq}" style="width:65px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].retChq=+this.value;saveState();renderComm()"></td>`
+  +`<td class="num"${ovMark(r.collBonusOv)} title="${tCollBonus}"><input type="number" step="any" autocomplete="off" placeholder="${fmt(r.collBonusCalc)}" data-calc="${r.collBonusCalc}" value="${r.collBonusOv!=null?r.collBonusOv:''}" style="width:55px" onchange="setBonusOv('${X.key}','${r.rep.id}','collBonusOv',this)">${r.collBonusOv!=null?' ✏':''}</td>`
+  +`<td class="num" title="تُدخل يدوياً"><input type="number" step="any" autocomplete="off" value="${r.mgrBonus}" style="width:55px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].mgrBonus=+this.value;saveState();renderComm()"></td>`
+  +`<td class="num" title="تُدخل يدوياً"><input type="number" step="any" autocomplete="off" value="${r.retChq}" style="width:65px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].retChq=+this.value;saveState();renderComm()"></td>`
   +`<td class="num" title="${tRetDed}">${fmt(r.retDed)}</td>`
-  +`<td class="num" title="تُدخل يدوياً"><input type="number" step="any" value="${r.assistFee}" style="width:65px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].assistFee=+this.value;saveState();renderComm()"></td>`
+  +`<td class="num" title="تُدخل يدوياً"><input type="number" step="any" autocomplete="off" value="${r.assistFee}" style="width:65px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].assistFee=+this.value;saveState();renderComm()"></td>`
   +`<td class="num" title="${tTotal}"><b>${fmt(r.total)}</b></td>`
   +`<td class="noprint"><button class="btn ghost sm" onclick="printRepSlip('${r.rep.id}')" title="طباعة ملخص عمولة هذا المندوب">🖨</button></td></tr>`;
 }
 function renderComm(){
  const fEl=document.getElementById('cvFrom'),tEl=document.getElementById('cvTo');
- if(!fEl.value){const now=new Date();const m=(now.getMonth()+1+'').padStart(2,'0');fEl.value=tEl.value=now.getFullYear()+'-'+m}
+ // لو الاثنين فاضيين، عبّيهم بالشهر الحالي؛ لو وحدة بس فاضية، خليها نفس الثانية (مش تدخل شهر النظام الحقيقي وتعمل فترة هجينة غلط)
+ if(!fEl.value&&!tEl.value){const now=new Date();const m=(now.getMonth()+1+'').padStart(2,'0');fEl.value=tEl.value=now.getFullYear()+'-'+m}
+ else if(!fEl.value)fEl.value=tEl.value;
+ else if(!tEl.value)tEl.value=fEl.value;
  const f=fEl.value,t=tEl.value;
  const fromISO=f+'-01';const [ty,tm]=t.split('-').map(Number);const toISO=endOfMonth(ty,tm-1).toISOString().slice(0,10);
  const X=computeCV(fromISO,toISO);window._CV=X;const P=X.P,PD=X.PD;
