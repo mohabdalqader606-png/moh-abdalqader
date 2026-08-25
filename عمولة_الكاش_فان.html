@@ -240,6 +240,10 @@ function loadState(){try{const j=localStorage.getItem(LSK);if(j){const o=JSON.pa
 let _saveT=null;
 function saveState(){clearTimeout(_saveT);_saveT=setTimeout(()=>{try{localStorage.setItem(LSK,JSON.stringify(ST))}catch(e){alert('تعذّر الحفظ محلياً — خذ نسخة احتياطية JSON بشكل دوري')}},200)}
 function uid(){return 'id'+Date.now().toString(36)+Math.random().toString(36).slice(2,8)}
+function splitPasteLine(line){
+ if(line.includes('\t'))return line.split('\t').map(x=>x.trim());
+ return line.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(x=>x.trim());
+}
 function copyQuery(id){const el=document.getElementById(id);el.select();el.setSelectionRange(0,el.value.length);let ok=false;try{ok=document.execCommand('copy')}catch(e){}
  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(el.value).then(()=>alert('تم نسخ الكويري ✓')).catch(()=>{if(!ok)alert('تعذّر النسخ التلقائي — حدد النص يدوياً (Ctrl+A) وانسخه (Ctrl+C)')})}
  else if(ok)alert('تم نسخ الكويري ✓');else alert('تعذّر النسخ التلقائي — حدد النص يدوياً (Ctrl+A) وانسخه (Ctrl+C)')}
@@ -274,7 +278,7 @@ function renderReps(){const el=document.getElementById('repsTbl');const q=(docum
  el.innerHTML=list.map(r=>{const ns=ST.sales.filter(s=>s.repId===r.id).length,nc=ST.coll.filter(c=>c.repId===r.id).length;return `<tr><td><b>${r.name}</b></td><td class="num">${ns}</td><td class="num">${nc}</td><td><button class="btn danger sm" onclick="delRep('${r.id}')">حذف</button></td></tr>`}).join('')||'<tr><td colspan="4" class="hint">لا يوجد مندوبون بعد</td></tr>'}
 function importRepsPaste(){const txt=document.getElementById('repsPaste').value;if(!txt.trim())return;let n=0;
  txt.split(/\r?\n/).forEach(line=>{if(!line.trim()||line.trim().startsWith('--'))return;
-  const parts=line.split(/\t|,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(x=>x.trim()).filter(x=>x!=='');if(!parts.length)return;
+  const parts=splitPasteLine(line).filter(x=>x!=='');if(!parts.length)return;
   const name=parts.length>=2?parts[1]:parts[0];
   if(!name||/^(المندوب|slpname|كود المندوب|القسم|dept)$/i.test(name))return;
   if(ST.reps.some(r=>r.name===name))return;
@@ -288,7 +292,7 @@ function delSale(id){ST.sales=ST.sales.filter(s=>s.id!==id);saveState();renderSa
 function renderSales(){const el=document.getElementById('salesTbl');const q=(document.getElementById('salesSearch').value||'').trim().toLowerCase();
  const rows=ST.sales.filter(s=>!q||repName(s.repId).toLowerCase().includes(q)).sort((a,b)=>b.month.localeCompare(a.month));
  el.innerHTML=rows.map(s=>`<tr><td>${repName(s.repId)}</td><td>${s.month}</td><td class="num">${fmt(s.amount)}</td><td><button class="btn danger sm" onclick="delSale('${s.id}')">حذف</button></td></tr>`).join('')||'<tr><td colspan="4" class="hint">لا توجد سجلات مبيعات بعد</td></tr>'}
-function importSalesPaste(){const txt=document.getElementById('salesPaste').value;if(!txt.trim())return;let n=0;txt.split(/\r?\n/).forEach(line=>{if(!line.trim())return;const parts=line.split(/\t|,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(x=>x.trim());if(parts.length<3)return;const [name,month,amt]=parts;if(!/^\d{4}-\d{2}/.test(month))return;const rep=repByName(name);if(!rep)return;ST.sales.push({id:uid(),repId:rep.id,month:month.slice(0,7),amount:+amt.replace(/,/g,'')||0});n++});document.getElementById('salesPaste').value='';saveState();renderSales();renderReps();fillRepSelects();alert('تم استيراد '+n+' سطر')}
+function importSalesPaste(){const txt=document.getElementById('salesPaste').value;if(!txt.trim())return;let n=0;txt.split(/\r?\n/).forEach(line=>{if(!line.trim())return;const parts=splitPasteLine(line);if(parts.length<3)return;const [name,month,amt]=parts;if(!/^\d{4}-\d{2}/.test(month))return;const rep=repByName(name);if(!rep)return;ST.sales.push({id:uid(),repId:rep.id,month:month.slice(0,7),amount:+amt.replace(/,/g,'')||0});n++});document.getElementById('salesPaste').value='';saveState();renderSales();renderReps();fillRepSelects();alert('تم استيراد '+n+' سطر')}
 
 /* ================= COLLECTIONS ================= */
 function toggleDueField(){const isChq=document.getElementById('collMethod').value==='chq';document.getElementById('collDue').style.display=isChq?'':'none';document.getElementById('collDueLbl').style.display=isChq?'':'none'}
@@ -299,7 +303,7 @@ function renderColl(){const el=document.getElementById('collTbl');const q=(docum
  const rows=ST.coll.filter(c=>!q||repName(c.repId).toLowerCase().includes(q)).sort((a,b)=>b.entry.localeCompare(a.entry));const P=ST.params;
  el.innerHTML=rows.map(c=>{const dur=collDur(c);const weak=dur!=null&&dur>P.collWeakDays;const grade=c.method!=='chq'?'<span class="badge">نقد/حوالة</span>':weak?'<span class="badge neg">ضعيف</span>':'<span class="badge pos">ممتاز</span>';
   return `<tr><td>${repName(c.repId)}</td><td>${c.entry}</td><td>${c.method==='chq'?'شيك':'نقد/حوالة'}</td><td>${c.due||'—'}</td><td class="num">${fmt(c.amount)}</td><td class="num">${dur==null?'—':dur}</td><td>${grade}</td><td><button class="btn danger sm" onclick="delColl('${c.id}')">حذف</button></td></tr>`}).join('')||'<tr><td colspan="8" class="hint">لا توجد سجلات تحصيل بعد</td></tr>'}
-function importCollPaste(){const txt=document.getElementById('collPaste').value;if(!txt.trim())return;let n=0;txt.split(/\r?\n/).forEach(line=>{if(!line.trim())return;const parts=line.split(/\t|,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(x=>x.trim());if(parts.length<5)return;const [name,entry,methodTxt,due,amt]=parts;if(!/^\d{4}-\d{2}-\d{2}/.test(entry))return;const rep=repByName(name);if(!rep)return;const isChq=/شيك|chq|check/i.test(methodTxt);ST.coll.push({id:uid(),repId:rep.id,entry:entry.slice(0,10),method:isChq?'chq':'cash',due:isChq?due.slice(0,10):'',amount:+amt.replace(/,/g,'')||0});n++});document.getElementById('collPaste').value='';saveState();renderColl();renderReps();fillRepSelects();alert('تم استيراد '+n+' سطر')}
+function importCollPaste(){const txt=document.getElementById('collPaste').value;if(!txt.trim())return;let n=0;txt.split(/\r?\n/).forEach(line=>{if(!line.trim())return;const parts=splitPasteLine(line);if(parts.length<5)return;const [name,entry,methodTxt,due,amt]=parts;if(!/^\d{4}-\d{2}-\d{2}/.test(entry))return;const rep=repByName(name);if(!rep)return;const isChq=/شيك|chq|check/i.test(methodTxt);ST.coll.push({id:uid(),repId:rep.id,entry:entry.slice(0,10),method:isChq?'chq':'cash',due:isChq?due.slice(0,10):'',amount:+amt.replace(/,/g,'')||0});n++});document.getElementById('collPaste').value='';saveState();renderColl();renderReps();fillRepSelects();alert('تم استيراد '+n+' سطر')}
 
 /* ================= COMMISSION ================= */
 function periodData(key){ST.periods[key]=ST.periods[key]||{mgrAmt:0,supAmt:0,assistants:[],perRep:{}};return ST.periods[key]}
