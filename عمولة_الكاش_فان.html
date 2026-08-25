@@ -97,10 +97,10 @@ th .sort-arrow{margin-inline-start:4px;font-size:10px;opacity:.8}
    <button class="btn sm" style="margin-top:6px" onclick="importRepsPaste()">استيراد</button>
   </details>
   <details style="margin-top:8px"><summary>🗄️ كويري SAP لجلب مندوبي الكاش فان فقط (انسخه شغّله بمدير الكويريات)</summary>
-   <p class="hint">القسم عندكم مسجّل بحقل مخصص اسمه الحقيقي "U_SlpType" على شاشة مندوبي المبيعات (بيظهر بعنوان "Department" بالشاشة فقط)، وقيمته لمندوبي الكاش فان "CashVan".</p>
+   <p class="hint">القسم عندكم مسجّل بحقل مخصص اسمه الحقيقي "U_SlpType" على شاشة مندوبي المبيعات (بيظهر بعنوان "Department" بالشاشة فقط)، وقيمته لمندوبي الكاش فان "CashVan". مفلتر كمان على النشيطين فقط (Active = 'Y') — أي مندوب موقوف/غير فعّال ما رح يطلع.</p>
    <textarea id="qReps" readonly style="min-height:90px">SELECT T0."SlpCode" AS "كود المندوب", T0."SlpName" AS "المندوب", T0."U_SlpType" AS "القسم"
 FROM OSLP T0
-WHERE T0."U_SlpType" = 'CashVan'
+WHERE T0."U_SlpType" = 'CashVan' AND T0."Active" = 'Y'
 ORDER BY T0."SlpName"</textarea>
    <button class="btn ghost sm" style="margin-top:6px" onclick="copyQuery('qReps')">📋 نسخ الكويري</button>
   </details>
@@ -133,20 +133,20 @@ FROM (
            SUM(T0."DocTotal" - T0."VatSum") AS "صافي"
     FROM OINV T0
     INNER JOIN OSLP T4 ON T4."SlpCode" = T0."SlpCode"
-    WHERE T0."CANCELED" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1] AND T4."U_SlpType" = 'CashVan'
+    WHERE T0."CANCELED" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1] AND T4."U_SlpType" = 'CashVan' AND T4."Active" = 'Y'
     GROUP BY T4."SlpName", TO_VARCHAR(T0."DocDate",'YYYY-MM')
     UNION ALL
     SELECT T4."SlpName", TO_VARCHAR(T0."DocDate",'YYYY-MM'),
            -SUM(T0."DocTotal" - T0."VatSum")
     FROM ORIN T0
     INNER JOIN OSLP T4 ON T4."SlpCode" = T0."SlpCode"
-    WHERE T0."CANCELED" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1] AND T4."U_SlpType" = 'CashVan'
+    WHERE T0."CANCELED" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1] AND T4."U_SlpType" = 'CashVan' AND T4."Active" = 'Y'
     GROUP BY T4."SlpName", TO_VARCHAR(T0."DocDate",'YYYY-MM')
 ) X
 GROUP BY "المندوب", "الشهر"
 ORDER BY "المندوب", "الشهر"</textarea>
    <button class="btn ghost sm" style="margin-top:6px" onclick="copyQuery('qSales')">📋 نسخ الكويري</button>
-   <p class="hint">صافي المبيعات = فواتير المبيعات (OINV) ناقص المرتجعات (ORIN)، حسب المندوب المسجّل على كل فاتورة. مفلتر تلقائياً على مندوبي الكاش فان فقط (SlpType = 'CashVan').</p>
+   <p class="hint">صافي المبيعات = فواتير المبيعات (OINV) ناقص المرتجعات (ORIN)، حسب المندوب المسجّل على كل فاتورة. مفلتر تلقائياً على مندوبي الكاش فان النشيطين فقط (U_SlpType = 'CashVan' وActive = 'Y').</p>
   </details>
   <div class="row"><label>بحث</label><input type="text" id="salesSearch" placeholder="اسم المندوب..." style="width:220px" oninput="renderSales()"><button class="btn ghost sm" style="border-color:var(--coral);color:var(--coral)" onclick="clearSales()">🗑 امسح كل بيانات المبيعات</button></div>
   <p class="hint">لصق بيانات نفس المندوب/الشهر بيستبدل القيمة القديمة تلقائياً (مش بيكرّرها) — بس لو عندك سجلات قديمة خاطئة من قبل هالتحديث، امسحها كلها بالزر واعد اللصق من جديد.</p>
@@ -184,7 +184,7 @@ INNER JOIN OCRD T1 ON T1."CardCode" = T0."CardCode"
 INNER JOIN OSLP T2 ON T2."SlpCode" = T1."SlpCode"
 WHERE T0."Canceled" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1]
   AND (COALESCE(T0."CashSum",0) + COALESCE(T0."TrsfrSum",0)) > 0
-  AND T2."U_SlpType" = 'CashVan'
+  AND T2."U_SlpType" = 'CashVan' AND T2."Active" = 'Y'
 
 UNION ALL
 
@@ -198,11 +198,11 @@ INNER JOIN RCT1 T3 ON T3."DocNum" = T0."DocEntry"
 INNER JOIN OCRD T1 ON T1."CardCode" = T0."CardCode"
 INNER JOIN OSLP T2 ON T2."SlpCode" = T1."SlpCode"
 WHERE T0."Canceled" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1]
-  AND T2."U_SlpType" = 'CashVan'
+  AND T2."U_SlpType" = 'CashVan' AND T2."Active" = 'Y'
 
 ORDER BY 1,2</textarea>
    <button class="btn ghost sm" style="margin-top:6px" onclick="copyQuery('qColl')">📋 نسخ الكويري</button>
-   <p class="hint">المندوب هون هو مندوب العميل المسجّل بكرت العميل (مش مندوب الفاتورة). مفلتر تلقائياً على مندوبي الكاش فان فقط (SlpType = 'CashVan').</p>
+   <p class="hint">المندوب هون هو مندوب العميل المسجّل بكرت العميل (مش مندوب الفاتورة). مفلتر تلقائياً على مندوبي الكاش فان النشيطين فقط (U_SlpType = 'CashVan' وActive = 'Y').</p>
   </details>
   <div class="row"><label>بحث</label><input type="text" id="collSearch" placeholder="اسم المندوب..." style="width:220px" oninput="renderColl()"><button class="btn ghost sm" style="border-color:var(--coral);color:var(--coral)" onclick="clearColl()">🗑 امسح كل بيانات التحصيل</button></div>
   <p class="hint">عندك سجلات قديمة خاطئة من قبل تصليح اللصق؟ امسحها كلها بالزر واعد لصق نتيجة الكويري من جديد لتفادي التكرار.</p>
