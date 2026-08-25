@@ -217,7 +217,7 @@ ORDER BY 1,2</textarea>
   <p class="hint">العمولة = 2% من صافي المبيعات + مكافأة بيع (حتى 50 د.أ بالتناسب مع هدف المبيعات) + مكافأة جودة تحصيل (حتى 50 د.أ حسب نسبة الشيكات الضعيفة) + مكافأة مدير يدوية − خصم 2% من الشيكات المرتجعة − مقابل استخدام مساعد.</p>
   <div class="row noprint"><label>من شهر</label><input type="month" id="cvFrom" onchange="renderComm()"><label>إلى شهر</label><input type="month" id="cvTo" onchange="renderComm()"><button class="btn sm" onclick="renderComm()">تحديث</button><button class="btn gold sm" onclick="window.print()">🖨 طباعة</button></div>
   <div class="grid g6" id="cvKpi" style="margin-top:10px"></div>
-  <details class="noprint" style="margin-top:10px"><summary>⚙️ إعدادات معادلة العمولة</summary>
+  <details class="noprint" style="margin-top:10px" open><summary>⚙️ إعدادات معادلة العمولة (عدّل أي رقم وبيتحدّث الجدول فوراً)</summary>
    <div class="row" style="margin-top:8px" id="cvParams"></div>
   </details>
  </div>
@@ -229,7 +229,23 @@ ORDER BY 1,2</textarea>
  <div class="card">
   <h3>مندوبو الكاش فان</h3>
   <div class="row noprint"><label>بحث</label><input type="text" id="cvSearch" placeholder="اسم المندوب..." style="width:220px" oninput="renderComm()"></div>
-  <div class="tblwrap"><table><tr><th>المندوب</th><th class="num">صافي المبيعات</th><th class="num">عمولة %</th><th class="num">مكافأة البيع</th><th class="num">تحصيل الفترة</th><th class="num">شيكات ضعيفة</th><th class="num">%ضعيف</th><th class="num">مكافأة التحصيل</th><th class="num">مكافأة المدير</th><th class="num">شيكات مرتجعة</th><th class="num">خصم المرتجع</th><th class="num">مقابل مساعد</th><th class="num">الإجمالي</th><th class="noprint"></th></tr><tbody id="cvTbl"></tbody></table></div>
+  <p class="hint noprint">💡 مرّر الماوس فوق أي رقم بالجدول لتشوف معادلته بالأرقام الفعلية.</p>
+  <div class="tblwrap"><table><tr>
+   <th title="من تبويب المندوبين">المندوب</th>
+   <th class="num" title="مجموع صافي المبيعات المسجّلة لهذا المندوب بالفترة المختارة (من تبويب المبيعات الشهرية)">صافي المبيعات</th>
+   <th class="num" title="عمولة ثابتة = صافي المبيعات × نسبة العمولة % (قابلة للتعديل بإعدادات المعادلة فوق)">عمولة %</th>
+   <th class="num" title="مكافأة تناسبية حتى سقف معيّن: (صافي المبيعات ÷ هدف المبيعات) × قيمة المكافأة الكاملة، وما بتتجاوز القيمة الكاملة حتى لو باع أكتر من الهدف">مكافأة البيع</th>
+   <th class="num" title="مجموع كل ما حصّله المندوب بالفترة: نقد + حوالات بنكية + شيكات (فورية ومؤجلة) — من تبويب التحصيل والشيكات">تحصيل الفترة</th>
+   <th class="num" title="مجموع قيمة الشيكات الي تاريخ استحقاقها أبعد من حد الأيام المحدد بإعدادات المعادلة (افتراضياً 7 أيام) عن تاريخ القبض">شيكات ضعيفة</th>
+   <th class="num" title="نسبة الشيكات الضعيفة من كامل تحصيل المندوب = الشيكات الضعيفة ÷ تحصيل الفترة">%ضعيف</th>
+   <th class="num" title="مكافأة جودة التحصيل = قيمة المكافأة الكاملة × (1 − نسبة الشيكات الضعيفة). ما عنده شيكات ضعيفة = ياخذ المكافأة كاملة، وكل ما زادت نسبة الضعيف كل ما قلّت">مكافأة التحصيل</th>
+   <th class="num" title="مكافأة يقرّرها المدير يدوياً لكل مندوب ولكل فترة — مش محسوبة بمعادلة">مكافأة المدير</th>
+   <th class="num" title="قيمة الشيكات المرتجعة على هذا المندوب — تُدخل يدوياً">شيكات مرتجعة</th>
+   <th class="num" title="خصم = قيمة الشيكات المرتجعة × نسبة الخصم % (قابلة للتعديل بإعدادات المعادلة فوق)">خصم المرتجع</th>
+   <th class="num" title="خصم يدوي مقابل استخدام المندوب لمساعد بالتوزيع">مقابل مساعد</th>
+   <th class="num" title="الإجمالي = عمولة المبيعات + مكافأة البيع + مكافأة التحصيل + مكافأة المدير − خصم المرتجع − مقابل المساعد">الإجمالي</th>
+   <th class="noprint"></th>
+  </tr><tbody id="cvTbl"></tbody></table></div>
  </div>
 </section>
 <div id="printArea"></div>
@@ -335,6 +351,33 @@ function computeCV(fromISO,toISO){
  });
  return {rows,PD,P,key};
 }
+function cvRowHtml(r,X,P){
+ const salesBonusRaw=r.sales>0?(r.sales/P.salesTarget)*P.salesBonus:0;
+ const capNote=salesBonusRaw>P.salesBonus?` — تجاوز الهدف فأخذ الحد الأقصى ${P.salesBonus}`:'';
+ const tSales=`مسجّلة بتبويب المبيعات الشهرية`;
+ const tComm=`${fmt(r.sales)} × ${P.salesRate}% = ${fmt(r.salesComm)}`;
+ const tBonus=`(${fmt(r.sales)} ÷ ${fmt(P.salesTarget)}) × ${P.salesBonus} = ${fmt(salesBonusRaw)}${capNote} → ${fmt(r.salesBonus)}`;
+ const tCollTot=`نقد وحوالات وشيكات مسجّلة بتبويب التحصيل والشيكات`;
+ const tCollWeak=`شيكات استحقاقها أكثر من ${P.collWeakDays} يوم من تاريخ القبض`;
+ const tWeakPct=`${fmt(r.collWeak)} ÷ ${fmt(r.collTot)} = ${pct(r.weakRatio)}`;
+ const tCollBonus=`${P.collBonus} × (1 − ${pct(r.weakRatio)}) = ${fmt(r.collBonus)}`;
+ const tRetDed=`${fmt(r.retChq)} × ${P.retChqRate}% = ${fmt(r.retDed)} خصم`;
+ const tTotal=`${fmt(r.salesComm)} + ${fmt(r.salesBonus)} + ${fmt(r.collBonus)} + ${fmt(r.mgrBonus)} − ${fmt(r.retDed)} − ${fmt(r.assistFee)} = ${fmt(r.total)}`;
+ return `<tr><td><b>${r.rep.name}</b></td>`
+  +`<td class="num" title="${tSales}">${fmt(r.sales)}</td>`
+  +`<td class="num" title="${tComm}">${fmt(r.salesComm)}</td>`
+  +`<td class="num" title="${tBonus}">${fmt(r.salesBonus)}</td>`
+  +`<td class="num" title="${tCollTot}">${fmt(r.collTot)}</td>`
+  +`<td class="num ${r.collWeak?'neg':''}" title="${tCollWeak}">${fmt(r.collWeak)}</td>`
+  +`<td class="num" title="${tWeakPct}">${pct(r.weakRatio)}</td>`
+  +`<td class="num" title="${tCollBonus}">${fmt(r.collBonus)}</td>`
+  +`<td class="num" title="تُدخل يدوياً"><input type="number" step="any" value="${r.mgrBonus}" style="width:55px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].mgrBonus=+this.value;saveState();renderComm()"></td>`
+  +`<td class="num" title="تُدخل يدوياً"><input type="number" step="any" value="${r.retChq}" style="width:65px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].retChq=+this.value;saveState();renderComm()"></td>`
+  +`<td class="num" title="${tRetDed}">${fmt(r.retDed)}</td>`
+  +`<td class="num" title="تُدخل يدوياً"><input type="number" step="any" value="${r.assistFee}" style="width:65px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].assistFee=+this.value;saveState();renderComm()"></td>`
+  +`<td class="num" title="${tTotal}"><b>${fmt(r.total)}</b></td>`
+  +`<td class="noprint"><button class="btn ghost sm" onclick="printRepSlip('${r.rep.id}')" title="طباعة ملخص عمولة هذا المندوب">🖨</button></td></tr>`;
+}
 function renderComm(){
  const fEl=document.getElementById('cvFrom'),tEl=document.getElementById('cvTo');
  if(!fEl.value){const now=new Date();const m=(now.getMonth()+1+'').padStart(2,'0');fEl.value=tEl.value=now.getFullYear()+'-'+m}
@@ -358,7 +401,7 @@ function renderComm(){
  document.getElementById('cvAssist').innerHTML=`<table><tr><th>الاسم</th><th class="num">المبلغ</th><th></th></tr>${(PD.assistants||[]).map((a,i)=>`<tr><td><input type="text" value="${(a.name||'').replace(/"/g,'&quot;')}" style="width:110px" onchange="periodData('${X.key}').assistants[${i}].name=this.value;saveState()"></td><td class="num"><input type="number" step="any" value="${a.amt||0}" style="width:70px" onchange="periodData('${X.key}').assistants[${i}].amt=+this.value;saveState();renderComm()"></td><td><button class="btn danger sm" onclick="periodData('${X.key}').assistants.splice(${i},1);saveState();renderComm()">✕</button></td></tr>`).join('')||'<tr><td colspan="3" class="hint">لا يوجد</td></tr>'}</table><button class="btn ghost sm" style="margin-top:6px" onclick="periodData('${X.key}').assistants.push({name:'مساعد جديد',amt:0});saveState();renderComm()">+ مساعد</button><p class="hint">إجمالي هذا الشهر: ${fmt(assistTot)}</p>`;
  const cvq=(document.getElementById('cvSearch').value||'').trim().toLowerCase();
  const dispRows=X.rows.filter(r=>!cvq||r.rep.name.toLowerCase().includes(cvq));
- document.getElementById('cvTbl').innerHTML=dispRows.map(r=>`<tr><td><b>${r.rep.name}</b></td><td class="num">${fmt(r.sales)}</td><td class="num">${fmt(r.salesComm)}</td><td class="num">${fmt(r.salesBonus)}</td><td class="num">${fmt(r.collTot)}</td><td class="num ${r.collWeak?'neg':''}">${fmt(r.collWeak)}</td><td class="num">${pct(r.weakRatio)}</td><td class="num">${fmt(r.collBonus)}</td><td class="num"><input type="number" step="any" value="${r.mgrBonus}" style="width:55px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].mgrBonus=+this.value;saveState();renderComm()"></td><td class="num"><input type="number" step="any" value="${r.retChq}" style="width:65px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].retChq=+this.value;saveState();renderComm()"></td><td class="num">${fmt(r.retDed)}</td><td class="num"><input type="number" step="any" value="${r.assistFee}" style="width:65px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].assistFee=+this.value;saveState();renderComm()"></td><td class="num"><b>${fmt(r.total)}</b></td><td class="noprint"><button class="btn ghost sm" onclick="printRepSlip('${r.rep.id}')" title="طباعة ملخص عمولة هذا المندوب">🖨</button></td></tr>`).join('')+(dispRows.length?`<tr class="tot"><td>الإجمالي</td><td class="num">${fmt(T.sales)}</td><td class="num">${fmt(T.salesComm)}</td><td class="num">${fmt(T.salesBonus)}</td><td colspan="2"></td><td></td><td class="num">${fmt(T.collBonus)}</td><td class="num">${fmt(T.mgrBonus)}</td><td></td><td class="num">${fmt(T.retDed)}</td><td class="num">${fmt(T.assistFee)}</td><td class="num">${fmt(T.total)}</td><td class="noprint"></td></tr>`:'')||'<tr><td colspan="14" class="hint">أضف مندوبين أولاً من تبويب "المندوبون"</td></tr>';
+ document.getElementById('cvTbl').innerHTML=dispRows.map(r=>cvRowHtml(r,X,P)).join('')+(dispRows.length?`<tr class="tot"><td>الإجمالي</td><td class="num">${fmt(T.sales)}</td><td class="num">${fmt(T.salesComm)}</td><td class="num">${fmt(T.salesBonus)}</td><td colspan="2"></td><td></td><td class="num">${fmt(T.collBonus)}</td><td class="num">${fmt(T.mgrBonus)}</td><td></td><td class="num">${fmt(T.retDed)}</td><td class="num">${fmt(T.assistFee)}</td><td class="num">${fmt(T.total)}</td><td class="noprint"></td></tr>`:'')||'<tr><td colspan="14" class="hint">أضف مندوبين أولاً من تبويب "المندوبون"</td></tr>';
 }
 
 /* ================= PRINT SINGLE REP ================= */
