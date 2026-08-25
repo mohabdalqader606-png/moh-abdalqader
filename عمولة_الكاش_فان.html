@@ -54,7 +54,17 @@ textarea{width:100%;min-height:90px;font-family:'Consolas',monospace;font-size:1
 .neg{color:var(--coral)}
 .pos{color:var(--teal)}
 details summary{cursor:pointer;font-weight:600;color:var(--navy);font-size:13px}
-@media print{header,nav,.noprint{display:none!important}.tab{display:block!important}main{max-width:100%}}
+th .sort-arrow{margin-inline-start:4px;font-size:10px;opacity:.8}
+#printArea{display:none}
+@media print{
+ header,nav,.noprint{display:none!important}
+ .tab{display:block!important}
+ main{max-width:100%}
+ body.print-single-mode>*:not(#printArea){display:none!important}
+ body.print-single-mode #printArea{display:block!important}
+}
+#printArea table{margin-top:10px}
+#printArea .tot td{font-weight:700;background:#f7f9fd}
 </style>
 </head>
 <body>
@@ -93,6 +103,7 @@ WHERE T0."U_SlpType" = 'CashVan'
 ORDER BY T0."SlpName"</textarea>
    <button class="btn ghost sm" style="margin-top:6px" onclick="copyQuery('qReps')">📋 نسخ الكويري</button>
   </details>
+  <div class="row"><label>بحث</label><input type="text" id="repsSearch" placeholder="اسم المندوب..." style="width:220px" oninput="renderReps()"></div>
   <div class="tblwrap" style="max-height:none"><table><tr><th>المندوب</th><th class="num">مبيعات مسجّلة (سطر)</th><th class="num">تحصيل مسجّل (سطر)</th><th></th></tr><tbody id="repsTbl"></tbody></table></div>
  </div>
 </section>
@@ -136,6 +147,7 @@ ORDER BY "المندوب", "الشهر"</textarea>
    <button class="btn ghost sm" style="margin-top:6px" onclick="copyQuery('qSales')">📋 نسخ الكويري</button>
    <p class="hint">صافي المبيعات = فواتير المبيعات (OINV) ناقص المرتجعات (ORIN)، حسب المندوب المسجّل على كل فاتورة. مفلتر تلقائياً على مندوبي الكاش فان فقط (SlpType = 'CashVan').</p>
   </details>
+  <div class="row"><label>بحث</label><input type="text" id="salesSearch" placeholder="اسم المندوب..." style="width:220px" oninput="renderSales()"></div>
   <div class="tblwrap" style="margin-top:10px"><table><tr><th>المندوب</th><th>الشهر</th><th class="num">صافي المبيعات</th><th></th></tr><tbody id="salesTbl"></tbody></table></div>
  </div>
 </section>
@@ -190,6 +202,7 @@ ORDER BY 1,2</textarea>
    <button class="btn ghost sm" style="margin-top:6px" onclick="copyQuery('qColl')">📋 نسخ الكويري</button>
    <p class="hint">المندوب هون هو مندوب العميل المسجّل بكرت العميل (مش مندوب الفاتورة). مفلتر تلقائياً على مندوبي الكاش فان فقط (SlpType = 'CashVan').</p>
   </details>
+  <div class="row"><label>بحث</label><input type="text" id="collSearch" placeholder="اسم المندوب..." style="width:220px" oninput="renderColl()"></div>
   <div class="tblwrap" style="margin-top:10px"><table><tr><th>المندوب</th><th>تاريخ القبض</th><th>الطريقة</th><th>استحقاق الشيك</th><th class="num">المبلغ</th><th class="num">المدة (يوم)</th><th>التقييم</th><th></th></tr><tbody id="collTbl"></tbody></table></div>
  </div>
 </section>
@@ -212,9 +225,11 @@ ORDER BY 1,2</textarea>
  </div>
  <div class="card">
   <h3>مندوبو الكاش فان</h3>
-  <div class="tblwrap"><table><tr><th>المندوب</th><th class="num">صافي المبيعات</th><th class="num">عمولة %</th><th class="num">مكافأة البيع</th><th class="num">تحصيل الفترة</th><th class="num">شيكات ضعيفة</th><th class="num">%ضعيف</th><th class="num">مكافأة التحصيل</th><th class="num">مكافأة المدير</th><th class="num">شيكات مرتجعة</th><th class="num">خصم المرتجع</th><th class="num">مقابل مساعد</th><th class="num">الإجمالي</th></tr><tbody id="cvTbl"></tbody></table></div>
+  <div class="row noprint"><label>بحث</label><input type="text" id="cvSearch" placeholder="اسم المندوب..." style="width:220px" oninput="renderComm()"></div>
+  <div class="tblwrap"><table><tr><th>المندوب</th><th class="num">صافي المبيعات</th><th class="num">عمولة %</th><th class="num">مكافأة البيع</th><th class="num">تحصيل الفترة</th><th class="num">شيكات ضعيفة</th><th class="num">%ضعيف</th><th class="num">مكافأة التحصيل</th><th class="num">مكافأة المدير</th><th class="num">شيكات مرتجعة</th><th class="num">خصم المرتجع</th><th class="num">مقابل مساعد</th><th class="num">الإجمالي</th><th class="noprint"></th></tr><tbody id="cvTbl"></tbody></table></div>
  </div>
 </section>
+<div id="printArea"></div>
 
 </main>
 <script>
@@ -242,7 +257,9 @@ function fillRepSelects(){const opts=ST.reps.map(r=>`<option value="${r.id}">${r
 /* ================= REPS ================= */
 function addRep(){const el=document.getElementById('newRepName');const name=el.value.trim();if(!name)return;if(ST.reps.some(r=>r.name===name)){alert('المندوب موجود أصلاً');return}ST.reps.push({id:uid(),name});el.value='';saveState();renderReps();fillRepSelects()}
 function delRep(id){if(!confirm('حذف المندوب؟ (بيضل سجلات مبيعاته/تحصيله لحاله بدون ما تنحذف)'))return;ST.reps=ST.reps.filter(r=>r.id!==id);saveState();renderReps();fillRepSelects()}
-function renderReps(){const el=document.getElementById('repsTbl');el.innerHTML=ST.reps.map(r=>{const ns=ST.sales.filter(s=>s.repId===r.id).length,nc=ST.coll.filter(c=>c.repId===r.id).length;return `<tr><td><b>${r.name}</b></td><td class="num">${ns}</td><td class="num">${nc}</td><td><button class="btn danger sm" onclick="delRep('${r.id}')">حذف</button></td></tr>`}).join('')||'<tr><td colspan="4" class="hint">لا يوجد مندوبون بعد</td></tr>'}
+function renderReps(){const el=document.getElementById('repsTbl');const q=(document.getElementById('repsSearch').value||'').trim().toLowerCase();
+ const list=ST.reps.filter(r=>!q||r.name.toLowerCase().includes(q));
+ el.innerHTML=list.map(r=>{const ns=ST.sales.filter(s=>s.repId===r.id).length,nc=ST.coll.filter(c=>c.repId===r.id).length;return `<tr><td><b>${r.name}</b></td><td class="num">${ns}</td><td class="num">${nc}</td><td><button class="btn danger sm" onclick="delRep('${r.id}')">حذف</button></td></tr>`}).join('')||'<tr><td colspan="4" class="hint">لا يوجد مندوبون بعد</td></tr>'}
 function importRepsPaste(){const txt=document.getElementById('repsPaste').value;if(!txt.trim())return;let n=0;
  txt.split(/\r?\n/).forEach(line=>{if(!line.trim()||line.trim().startsWith('--'))return;
   const parts=line.split(/\t|,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(x=>x.trim()).filter(x=>x!=='');if(!parts.length)return;
@@ -256,7 +273,9 @@ function importRepsPaste(){const txt=document.getElementById('repsPaste').value;
 /* ================= SALES ================= */
 function addSale(){const repId=document.getElementById('salesRep').value,month=document.getElementById('salesMonth').value,amt=+document.getElementById('salesAmt').value;if(!repId){alert('أضف مندوباً أولاً واختره');return}if(!month){alert('اختر الشهر');return}ST.sales.push({id:uid(),repId,month,amount:amt||0});document.getElementById('salesAmt').value='';saveState();renderSales();renderReps()}
 function delSale(id){ST.sales=ST.sales.filter(s=>s.id!==id);saveState();renderSales();renderReps()}
-function renderSales(){const el=document.getElementById('salesTbl');const rows=ST.sales.slice().sort((a,b)=>b.month.localeCompare(a.month));el.innerHTML=rows.map(s=>`<tr><td>${repName(s.repId)}</td><td>${s.month}</td><td class="num">${fmt(s.amount)}</td><td><button class="btn danger sm" onclick="delSale('${s.id}')">حذف</button></td></tr>`).join('')||'<tr><td colspan="4" class="hint">لا توجد سجلات مبيعات بعد</td></tr>'}
+function renderSales(){const el=document.getElementById('salesTbl');const q=(document.getElementById('salesSearch').value||'').trim().toLowerCase();
+ const rows=ST.sales.filter(s=>!q||repName(s.repId).toLowerCase().includes(q)).sort((a,b)=>b.month.localeCompare(a.month));
+ el.innerHTML=rows.map(s=>`<tr><td>${repName(s.repId)}</td><td>${s.month}</td><td class="num">${fmt(s.amount)}</td><td><button class="btn danger sm" onclick="delSale('${s.id}')">حذف</button></td></tr>`).join('')||'<tr><td colspan="4" class="hint">لا توجد سجلات مبيعات بعد</td></tr>'}
 function importSalesPaste(){const txt=document.getElementById('salesPaste').value;if(!txt.trim())return;let n=0;txt.split(/\r?\n/).forEach(line=>{if(!line.trim())return;const parts=line.split(/\t|,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(x=>x.trim());if(parts.length<3)return;const [name,month,amt]=parts;if(!/^\d{4}-\d{2}/.test(month))return;const rep=repByName(name);if(!rep)return;ST.sales.push({id:uid(),repId:rep.id,month:month.slice(0,7),amount:+amt.replace(/,/g,'')||0});n++});document.getElementById('salesPaste').value='';saveState();renderSales();renderReps();fillRepSelects();alert('تم استيراد '+n+' سطر')}
 
 /* ================= COLLECTIONS ================= */
@@ -264,7 +283,8 @@ function toggleDueField(){const isChq=document.getElementById('collMethod').valu
 function addColl(){const repId=document.getElementById('collRep').value,entry=document.getElementById('collEntry').value,method=document.getElementById('collMethod').value,due=document.getElementById('collDue').value,amt=+document.getElementById('collAmt').value;if(!repId){alert('أضف مندوباً أولاً واختره');return}if(!entry){alert('اختر تاريخ القبض');return}if(method==='chq'&&!due){alert('اختر تاريخ استحقاق الشيك');return}ST.coll.push({id:uid(),repId,entry,method,due:method==='chq'?due:'',amount:amt||0});document.getElementById('collAmt').value='';saveState();renderColl();renderReps()}
 function delColl(id){ST.coll=ST.coll.filter(c=>c.id!==id);saveState();renderColl();renderReps()}
 function collDur(c){if(c.method!=='chq'||!c.due)return null;const raw=Math.round((new Date(c.due)-new Date(c.entry))/864e5);return raw<=0?1:raw+1}
-function renderColl(){const el=document.getElementById('collTbl');const rows=ST.coll.slice().sort((a,b)=>b.entry.localeCompare(a.entry));const P=ST.params;
+function renderColl(){const el=document.getElementById('collTbl');const q=(document.getElementById('collSearch').value||'').trim().toLowerCase();
+ const rows=ST.coll.filter(c=>!q||repName(c.repId).toLowerCase().includes(q)).sort((a,b)=>b.entry.localeCompare(a.entry));const P=ST.params;
  el.innerHTML=rows.map(c=>{const dur=collDur(c);const weak=dur!=null&&dur>P.collWeakDays;const grade=c.method!=='chq'?'<span class="badge">نقد/حوالة</span>':weak?'<span class="badge neg">ضعيف</span>':'<span class="badge pos">ممتاز</span>';
   return `<tr><td>${repName(c.repId)}</td><td>${c.entry}</td><td>${c.method==='chq'?'شيك':'نقد/حوالة'}</td><td>${c.due||'—'}</td><td class="num">${fmt(c.amount)}</td><td class="num">${dur==null?'—':dur}</td><td>${grade}</td><td><button class="btn danger sm" onclick="delColl('${c.id}')">حذف</button></td></tr>`}).join('')||'<tr><td colspan="8" class="hint">لا توجد سجلات تحصيل بعد</td></tr>'}
 function importCollPaste(){const txt=document.getElementById('collPaste').value;if(!txt.trim())return;let n=0;txt.split(/\r?\n/).forEach(line=>{if(!line.trim())return;const parts=line.split(/\t|,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(x=>x.trim());if(parts.length<5)return;const [name,entry,methodTxt,due,amt]=parts;if(!/^\d{4}-\d{2}-\d{2}/.test(entry))return;const rep=repByName(name);if(!rep)return;const isChq=/شيك|chq|check/i.test(methodTxt);ST.coll.push({id:uid(),repId:rep.id,entry:entry.slice(0,10),method:isChq?'chq':'cash',due:isChq?due.slice(0,10):'',amount:+amt.replace(/,/g,'')||0});n++});document.getElementById('collPaste').value='';saveState();renderColl();renderReps();fillRepSelects();alert('تم استيراد '+n+' سطر')}
@@ -293,7 +313,7 @@ function renderComm(){
  if(!fEl.value){const now=new Date();const m=(now.getMonth()+1+'').padStart(2,'0');fEl.value=tEl.value=now.getFullYear()+'-'+m}
  const f=fEl.value,t=tEl.value;
  const fromISO=f+'-01';const [ty,tm]=t.split('-').map(Number);const toISO=endOfMonth(ty,tm-1).toISOString().slice(0,10);
- const X=computeCV(fromISO,toISO);const P=X.P,PD=X.PD;
+ const X=computeCV(fromISO,toISO);window._CV=X;const P=X.P,PD=X.PD;
  document.getElementById('cvParams').innerHTML=[['salesRate','% عمولة المبيعات'],['salesTarget','هدف المبيعات لمكافأة كاملة'],['salesBonus','قيمة مكافأة البيع الكاملة'],['collBonus','قيمة مكافأة التحصيل الممتاز'],['collWeakDays','حد الأيام (أكثر = ضعيف)'],['retChqRate','% خصم الشيكات المرتجعة']].map(([k,l])=>`<label>${l}</label><input type="number" step="any" value="${P[k]}" onchange="ST.params['${k}']=+this.value;saveState();renderComm()">`).join('');
  const T=X.rows.reduce((a,r)=>{['sales','salesComm','salesBonus','collBonus','mgrBonus','retDed','assistFee','total'].forEach(k=>a[k]=(a[k]||0)+r[k]);return a},{sales:0,salesComm:0,salesBonus:0,collBonus:0,mgrBonus:0,retDed:0,assistFee:0,total:0});
  const assistTot=(PD.assistants||[]).reduce((a,x)=>a+(+x.amt||0),0);
@@ -309,8 +329,75 @@ function renderComm(){
  document.getElementById('mgrBox').innerHTML=`<div class="row"><label>عمولة ثابتة (د.أ)</label><input type="number" step="any" value="${PD.mgrAmt||0}" onchange="periodData('${X.key}').mgrAmt=+this.value;saveState();renderComm()"></div><p class="hint">تُدخل يدوياً لكل فترة — مش مربوطة بمندوب من الشاشة.</p>`;
  document.getElementById('supBox').innerHTML=`<div class="row"><label>عمولة ثابتة (د.أ)</label><input type="number" step="any" value="${PD.supAmt||0}" onchange="periodData('${X.key}').supAmt=+this.value;saveState();renderComm()"></div><p class="hint">تُدخل يدوياً لكل فترة — مش مربوطة بمندوب من الشاشة.</p>`;
  document.getElementById('cvAssist').innerHTML=`<table><tr><th>الاسم</th><th class="num">المبلغ</th><th></th></tr>${(PD.assistants||[]).map((a,i)=>`<tr><td><input type="text" value="${(a.name||'').replace(/"/g,'&quot;')}" style="width:110px" onchange="periodData('${X.key}').assistants[${i}].name=this.value;saveState()"></td><td class="num"><input type="number" step="any" value="${a.amt||0}" style="width:70px" onchange="periodData('${X.key}').assistants[${i}].amt=+this.value;saveState();renderComm()"></td><td><button class="btn danger sm" onclick="periodData('${X.key}').assistants.splice(${i},1);saveState();renderComm()">✕</button></td></tr>`).join('')||'<tr><td colspan="3" class="hint">لا يوجد</td></tr>'}</table><button class="btn ghost sm" style="margin-top:6px" onclick="periodData('${X.key}').assistants.push({name:'مساعد جديد',amt:0});saveState();renderComm()">+ مساعد</button><p class="hint">إجمالي هذا الشهر: ${fmt(assistTot)}</p>`;
- document.getElementById('cvTbl').innerHTML=X.rows.map(r=>`<tr><td><b>${r.rep.name}</b></td><td class="num">${fmt(r.sales)}</td><td class="num">${fmt(r.salesComm)}</td><td class="num">${fmt(r.salesBonus)}</td><td class="num">${fmt(r.collTot)}</td><td class="num ${r.collWeak?'neg':''}">${fmt(r.collWeak)}</td><td class="num">${pct(r.weakRatio)}</td><td class="num">${fmt(r.collBonus)}</td><td class="num"><input type="number" step="any" value="${r.mgrBonus}" style="width:55px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].mgrBonus=+this.value;saveState();renderComm()"></td><td class="num"><input type="number" step="any" value="${r.retChq}" style="width:65px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].retChq=+this.value;saveState();renderComm()"></td><td class="num">${fmt(r.retDed)}</td><td class="num"><input type="number" step="any" value="${r.assistFee}" style="width:65px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].assistFee=+this.value;saveState();renderComm()"></td><td class="num"><b>${fmt(r.total)}</b></td></tr>`).join('')+`<tr class="tot"><td>الإجمالي</td><td class="num">${fmt(T.sales)}</td><td class="num">${fmt(T.salesComm)}</td><td class="num">${fmt(T.salesBonus)}</td><td colspan="2"></td><td></td><td class="num">${fmt(T.collBonus)}</td><td class="num">${fmt(T.mgrBonus)}</td><td></td><td class="num">${fmt(T.retDed)}</td><td class="num">${fmt(T.assistFee)}</td><td class="num">${fmt(T.total)}</td></tr>`||'<tr><td colspan="13" class="hint">أضف مندوبين أولاً من تبويب "المندوبون"</td></tr>';
+ const cvq=(document.getElementById('cvSearch').value||'').trim().toLowerCase();
+ const dispRows=X.rows.filter(r=>!cvq||r.rep.name.toLowerCase().includes(cvq));
+ document.getElementById('cvTbl').innerHTML=dispRows.map(r=>`<tr><td><b>${r.rep.name}</b></td><td class="num">${fmt(r.sales)}</td><td class="num">${fmt(r.salesComm)}</td><td class="num">${fmt(r.salesBonus)}</td><td class="num">${fmt(r.collTot)}</td><td class="num ${r.collWeak?'neg':''}">${fmt(r.collWeak)}</td><td class="num">${pct(r.weakRatio)}</td><td class="num">${fmt(r.collBonus)}</td><td class="num"><input type="number" step="any" value="${r.mgrBonus}" style="width:55px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].mgrBonus=+this.value;saveState();renderComm()"></td><td class="num"><input type="number" step="any" value="${r.retChq}" style="width:65px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].retChq=+this.value;saveState();renderComm()"></td><td class="num">${fmt(r.retDed)}</td><td class="num"><input type="number" step="any" value="${r.assistFee}" style="width:65px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].assistFee=+this.value;saveState();renderComm()"></td><td class="num"><b>${fmt(r.total)}</b></td><td class="noprint"><button class="btn ghost sm" onclick="printRepSlip('${r.rep.id}')" title="طباعة ملخص عمولة هذا المندوب">🖨</button></td></tr>`).join('')+(dispRows.length?`<tr class="tot"><td>الإجمالي</td><td class="num">${fmt(T.sales)}</td><td class="num">${fmt(T.salesComm)}</td><td class="num">${fmt(T.salesBonus)}</td><td colspan="2"></td><td></td><td class="num">${fmt(T.collBonus)}</td><td class="num">${fmt(T.mgrBonus)}</td><td></td><td class="num">${fmt(T.retDed)}</td><td class="num">${fmt(T.assistFee)}</td><td class="num">${fmt(T.total)}</td><td class="noprint"></td></tr>`:'')||'<tr><td colspan="14" class="hint">أضف مندوبين أولاً من تبويب "المندوبون"</td></tr>';
 }
+
+/* ================= PRINT SINGLE REP ================= */
+function printRepSlip(repId){
+ const X=window._CV;if(!X)return;
+ const r=X.rows.find(x=>x.rep.id===repId);if(!r)return;
+ const per=(document.getElementById('cvFrom').value||'—')+' → '+(document.getElementById('cvTo').value||'—');
+ const P=X.P;
+ const line=(l,m,v)=>`<tr><td>${l}</td><td class="hint">${m}</td><td class="num">${v}</td></tr>`;
+ const body=line('صافي المبيعات','—',fmt(r.sales))
+  +line('عمولة المبيعات',`صافي المبيعات × ${P.salesRate}%`,fmt(r.salesComm))
+  +line('مكافأة البيع',`(صافي المبيعات ÷ ${fmt(P.salesTarget)}) × ${P.salesBonus} — بحد أقصى ${P.salesBonus}`,fmt(r.salesBonus))
+  +line('تحصيل الفترة (نقد + حوالات + شيكات)','—',fmt(r.collTot))
+  +line('منها شيكات "ضعيفة"',`استحقاقها أكثر من ${P.collWeakDays} يوم من تاريخ القبض`,fmt(r.collWeak)+' ('+pct(r.weakRatio)+')')
+  +line('مكافأة جودة التحصيل',`${P.collBonus} × (1 − نسبة الشيكات الضعيفة)`,fmt(r.collBonus))
+  +line('مكافأة المدير','تُدخل يدوياً',fmt(r.mgrBonus))
+  +line('شيكات مرتجعة',`المدخلة ${fmt(r.retChq)} × خصم ${P.retChqRate}%`,'−'+fmt(r.retDed))
+  +line('مقابل استخدام مساعد','تُدخل يدوياً','−'+fmt(r.assistFee));
+ document.getElementById('printArea').innerHTML=`
+  <h1>ملخص عمولة الكاش فان</h1>
+  <h2>${r.rep.name}</h2>
+  <p>الفترة: ${per} — تاريخ الطباعة: ${new Date().toLocaleDateString('ar-JO')}</p>
+  <table><tr><th>البند</th><th>طريقة الاحتساب</th><th class="num">القيمة (د.أ)</th></tr>${body}
+  <tr class="tot"><td colspan="2">إجمالي عمولة المندوب</td><td class="num">${fmt(r.total)}</td></tr></table>`;
+ document.body.classList.add('print-single-mode');
+ window.print();
+}
+window.addEventListener('afterprint',()=>document.body.classList.remove('print-single-mode'));
+
+/* ================= SORTABLE TABLES ================= */
+function sortCellValue(td){
+ const txt=(td.textContent||'').trim();
+ if(!txt||txt==='—'||txt==='-')return {n:-Infinity,s:''};
+ const cleaned=txt.replace(/[,٬%\s]/g,'').replace(/^\+/,'');
+ const num=parseFloat(cleaned.replace(/^\((.*)\)$/,'-$1'));
+ if(!isNaN(num)&&/^[\-\d.]/.test(cleaned.replace(/^\(/,'')))return {n:num,s:txt};
+ return {n:null,s:txt};
+}
+function sortTableBy(table,colIdx,dir){
+ const tbody=table.tBodies[0]||table;
+ const allRows=[...tbody.rows];
+ const rows=allRows.filter(r=>!r.querySelector('th')&&!r.classList.contains('tot'));
+ const totRow=allRows.find(r=>r.classList.contains('tot'));
+ const vals=rows.map(r=>{const cell=r.cells[colIdx];return cell?sortCellValue(cell):{n:null,s:''}});
+ const allNum=vals.every(v=>v.n!=null);
+ const paired=rows.map((r,i)=>[r,vals[i]]);
+ paired.sort((a,b)=>{let cmp;if(allNum)cmp=(a[1].n-b[1].n);else cmp=a[1].s.localeCompare(b[1].s,'ar');return dir==='asc'?cmp:-cmp});
+ paired.forEach(([r])=>tbody.appendChild(r));
+ if(totRow)tbody.appendChild(totRow);
+}
+document.addEventListener('click',e=>{
+ const th=e.target.closest('table th');
+ if(!th)return;
+ if(th.onclick||th.getAttribute('onclick'))return;
+ const table=th.closest('table');if(!table||!table.tBodies.length)return;
+ const headerRow=th.parentElement;const colIdx=[...headerRow.children].indexOf(th);
+ if(colIdx<0)return;
+ const cur=table.dataset.sortCol;const curDir=table.dataset.sortDir;
+ const dir=(cur==String(colIdx)&&curDir==='asc')?'desc':'asc';
+ table.dataset.sortCol=colIdx;table.dataset.sortDir=dir;
+ [...headerRow.children].forEach(h=>h.querySelectorAll('.sort-arrow').forEach(a=>a.remove()));
+ const arrow=document.createElement('span');arrow.className='sort-arrow';arrow.textContent=dir==='asc'?'▲':'▼';
+ th.appendChild(arrow);
+ sortTableBy(table,colIdx,dir);
+});
+document.addEventListener('mouseover',e=>{const th=e.target.closest('table th');if(th&&!th.onclick&&!th.getAttribute('onclick'))th.style.cursor='pointer'});
 
 /* ================= NAV & INIT ================= */
 document.querySelectorAll('nav button[data-t]').forEach(b=>b.onclick=()=>{
