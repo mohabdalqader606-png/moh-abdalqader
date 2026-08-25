@@ -160,40 +160,31 @@ ORDER BY "المندوب", "الشهر"</textarea>
   </details>
   <details style="margin-top:8px"><summary>🗄️ كويري SAP لجلب هذي البيانات (انسخه شغّله بمدير الكويريات)</summary>
    <p class="hint">شغّل الكويري بمدير الكويريات بـSAP، حدد الفترة (بيسألك من-إلى تلقائياً)، انسخ نتيجة الجدول والصقها بخانة الاستيراد فوق مباشرة. بيرجّع سطر لكل قبض نقدي، سطر لكل حوالة، وسطر لكل شيك لحاله بتاريخ استحقاقه.</p>
-   <textarea id="qColl" readonly style="min-height:230px">SELECT T4."SlpName" AS "المندوب",
+   <textarea id="qColl" readonly style="min-height:180px">SELECT T2."SlpName" AS "المندوب",
        TO_VARCHAR(T0."DocDate",'YYYY-MM-DD') AS "تاريخ القبض",
        'نقد' AS "الطريقة",
        '' AS "تاريخ استحقاق الشيك",
-       T0."CashSum" AS "المبلغ"
+       (COALESCE(T0."CashSum",0) + COALESCE(T0."TrsfrSum",0)) AS "المبلغ"
 FROM ORCT T0
-INNER JOIN OCRD T3 ON T3."CardCode" = T0."CardCode"
-INNER JOIN OSLP T4 ON T4."SlpCode" = T3."SlpCode"
-WHERE T0."DocDate" BETWEEN [%0] AND [%1] AND T0."CashSum" <> 0 AND T4."U_SlpType" = 'CashVan'
+INNER JOIN OCRD T1 ON T1."CardCode" = T0."CardCode"
+INNER JOIN OSLP T2 ON T2."SlpCode" = T1."SlpCode"
+WHERE T0."Canceled" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1]
+  AND (COALESCE(T0."CashSum",0) + COALESCE(T0."TrsfrSum",0)) > 0
+  AND T2."U_SlpType" = 'CashVan'
 
 UNION ALL
 
-SELECT T4."SlpName",
-       TO_VARCHAR(T0."DocDate",'YYYY-MM-DD'),
-       'حوالة',
-       '',
-       T0."TrsfrSum"
-FROM ORCT T0
-INNER JOIN OCRD T3 ON T3."CardCode" = T0."CardCode"
-INNER JOIN OSLP T4 ON T4."SlpCode" = T3."SlpCode"
-WHERE T0."DocDate" BETWEEN [%0] AND [%1] AND T0."TrsfrSum" <> 0 AND T4."U_SlpType" = 'CashVan'
-
-UNION ALL
-
-SELECT T4."SlpName",
+SELECT T2."SlpName",
        TO_VARCHAR(T0."DocDate",'YYYY-MM-DD'),
        'شيك',
-       TO_VARCHAR(T1."DueDate",'YYYY-MM-DD'),
-       T1."CheckSum"
+       TO_VARCHAR(T3."DueDate",'YYYY-MM-DD'),
+       T3."CheckSum"
 FROM ORCT T0
-INNER JOIN RCT2 T1 ON T1."DocNum" = T0."DocEntry"
-INNER JOIN OCRD T3 ON T3."CardCode" = T0."CardCode"
-INNER JOIN OSLP T4 ON T4."SlpCode" = T3."SlpCode"
-WHERE T0."DocDate" BETWEEN [%0] AND [%1] AND T4."U_SlpType" = 'CashVan'
+INNER JOIN RCT1 T3 ON T3."DocNum" = T0."DocEntry"
+INNER JOIN OCRD T1 ON T1."CardCode" = T0."CardCode"
+INNER JOIN OSLP T2 ON T2."SlpCode" = T1."SlpCode"
+WHERE T0."Canceled" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1]
+  AND T2."U_SlpType" = 'CashVan'
 
 ORDER BY 1,2</textarea>
    <button class="btn ghost sm" style="margin-top:6px" onclick="copyQuery('qColl')">📋 نسخ الكويري</button>
