@@ -1283,7 +1283,7 @@ function openPrintPreview(groupId, invId, mode){
   const inv = g && g.invoices.find(i=>i.id===invId);
   if(!g||!inv) return;
   const html = (mode==='company') ? buildCompanySheetHTML(g, inv) : buildPrintSheetHTML(g, inv);
-  if(mode!=='company') logInvoicePrint('design-'+inv.id+'|'+(inv.docNo||''), g, inv, null);
+  if(mode!=='company') logInvoicePrint('design', inv.id, g, inv, null);
   document.getElementById('printSheetContent').innerHTML = html;
   document.getElementById('printOverlay').classList.add('active');
 }
@@ -1292,7 +1292,7 @@ function closePrintPreview(){
 }
 
 /* ==================== ملخص الفواتير (تسجيل كل فاتورة اتطبعت فعلياً) ==================== */
-function logInvoicePrint(key, g, inv, qtyOverride){
+function logInvoicePrint(sourcePrefix, invId, g, inv, qtyOverride){
   const lines = inv.itemKeys.map(k=>{
     const it = findItem(k);
     if(!it) return null;
@@ -1302,8 +1302,15 @@ function logInvoicePrint(key, g, inv, qtyOverride){
     return {theirCode:it.theirCode, theirName:it.theirName, ourCode:it.ourCode, qty, price:it.salePricePiece||0, net, taxPct, taxVal, total, whsPrice:it.whsPricePiece||0, whsTotal: qty*(it.whsPricePiece||0)};
   }).filter(Boolean);
   if(!lines.length) return;
-  INVOICE_LOG = INVOICE_LOG.filter(r=> r.key!==key);
-  INVOICE_LOG.push({id:uid(), key, groupId:g.id, groupName:g.name, docType:inv.docType, docNo:inv.docNo, docDate:inv.docDate, printedAt:new Date().toISOString(), lines});
+  const docNo = inv.docNo || '';
+  // نستبدل: نفس رقم الفاتورة (إعادة توزيع/طباعة)، أو سطر قديم بلا رقم فاتورة لنفس الفاتورة (كان placeholder وصار إله رقم حقيقي الآن)
+  INVOICE_LOG = INVOICE_LOG.filter(r=>{
+    if(r.sourcePrefix!==sourcePrefix || r.invId!==invId) return true;
+    if(r.docNo===docNo) return false;
+    if(docNo && !r.docNo) return false;
+    return true;
+  });
+  INVOICE_LOG.push({id:uid(), sourcePrefix, invId, groupId:g.id, groupName:g.name, docType:inv.docType, docNo, docDate:inv.docDate, printedAt:new Date().toISOString(), lines});
   saveState();
 }
 function copyPrintTableTSV(){
@@ -1724,7 +1731,7 @@ function printAqabaVoucherInvoices(){
     const keys = slots.get(slot).map(x=>x.key);
     const fakeInv = {id:'aqaba-voucher-slot-'+slot, name:'فاتورة سند '+slot, docType:'invoice', docNo, docDate, itemKeys:keys, qty:{}};
     html += buildPrintSheetHTML(g, fakeInv, qtyMap);
-    logInvoicePrint('voucher-'+slot+'|'+(docNo||''), g, fakeInv, qtyMap);
+    logInvoicePrint('voucher', 'aqaba-voucher-slot-'+slot, g, fakeInv, qtyMap);
   });
   document.getElementById('printSheetContent').innerHTML = html;
   document.getElementById('printOverlay').classList.add('active');
@@ -2239,6 +2246,7 @@ function distributeStatement(){
 
   let placed = 0;
   const unmapped = [], unassigned = [];
+  const touchedInvoices = new Map(); // invId -> {g, inv}
   STATEMENT.forEach(row=>{
     const it = ITEMS.find(x=>x.theirCode===row.theirCode);
     if(!it){ unmapped.push(row); return; }
@@ -2251,12 +2259,16 @@ function distributeStatement(){
         ensureInvoiceDefaults(inv);
         inv.qty[key] = targetQty;
         foundAny = true; placed++;
+        touchedInvoices.set(inv.id, {g, inv});
       }
     });
     if(!foundAny && (row.qtyAmman || row.qtyAqaba)){
       unassigned.push({...row, ourCode:it.ourCode, ourName:it.ourName});
     }
   });
+  // كل فاتورة توزعت عليها كمية بهاي العملية تنسجل تلقائياً بملخص الفواتير —
+  // ما في داعي تفتح "معاينة وطباعة" لكل فاتورة يدوياً بس عشان تظهر بالملخص
+  touchedInvoices.forEach(({g, inv})=> logInvoicePrint('design', inv.id, g, inv, null));
   saveState();
   renderStatementPage();
   renderPrintPage();
