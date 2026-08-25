@@ -334,7 +334,7 @@ function renderColl(){const el=document.getElementById('collTbl');const q=(docum
 function importCollPaste(){const txt=document.getElementById('collPaste').value;if(!txt.trim())return;let n=0;txt.split(/\r?\n/).forEach(line=>{if(!line.trim())return;const parts=splitPasteLine(line);if(parts.length<5)return;const [name,entry,methodTxt,due,amt]=parts;if(!/^\d{4}-\d{2}-\d{2}/.test(entry))return;const rep=repByName(name);if(!rep)return;const isChq=/شيك|chq|check/i.test(methodTxt);ST.coll.push({id:uid(),repId:rep.id,entry:entry.slice(0,10),method:isChq?'chq':'cash',due:isChq?due.slice(0,10):'',amount:+amt.replace(/,/g,'')||0});n++});document.getElementById('collPaste').value='';saveState();renderColl();renderReps();fillRepSelects();alert('تم استيراد '+n+' سطر')}
 
 /* ================= COMMISSION ================= */
-function periodData(key){ST.periods[key]=ST.periods[key]||{mgrAmt:0,supAmt:0,assistants:[],perRep:{}};return ST.periods[key]}
+function periodData(key){ST.periods[key]=ST.periods[key]||{mgrName:'',mgrAmt:0,supName:'',supAmt:0,assistants:[],perRep:{}};return ST.periods[key]}
 function computeCV(fromISO,toISO){
  const key=fromISO+'|'+toISO;const PD=periodData(key);const P=ST.params;
  const salesByRep={};ST.sales.forEach(s=>{const d=s.month+'-01';if(d<fromISO||d>toISO)return;salesByRep[s.repId]=(salesByRep[s.repId]||0)+(+s.amount||0)});
@@ -389,17 +389,22 @@ function cvRowHtml(r,X,P){
  return `<tr><td><b>${r.rep.name}</b></td>`
   +`<td class="num" title="${tSales}">${fmt(r.sales)}</td>`
   +`<td class="num" title="${tComm}">${fmt(r.salesComm)}</td>`
-  +`<td class="num"${ovMark(r.salesBonusOv)} title="${tBonus}"><input type="number" step="any" autocomplete="off" placeholder="${fmt(r.salesBonusCalc)}" data-calc="${r.salesBonusCalc}" value="${r.salesBonusOv!=null?r.salesBonusOv:''}" style="width:55px" onchange="setBonusOv('${X.key}','${r.rep.id}','salesBonusOv',this)">${r.salesBonusOv!=null?' ✏':''}</td>`
+  +`<td class="num"${ovMark(r.salesBonusOv)} title="${tBonus}"><input type="number" step="any" autocomplete="off" placeholder="${fmt(r.salesBonusCalc)}" data-calc="${r.salesBonusCalc}" value="${r.salesBonusOv!=null?r.salesBonusOv:''}" style="width:75px" onchange="setBonusOv('${X.key}','${r.rep.id}','salesBonusOv',this)">${r.salesBonusOv!=null?' ✏':''}</td>`
   +`<td class="num" title="${tCollTot}">${fmt(r.collTot)}</td>`
   +`<td class="num ${r.collWeak?'neg':''}" title="${tCollWeak}">${fmt(r.collWeak)}</td>`
   +`<td class="num" title="${tWeakPct}">${pct(r.weakRatio)}</td>`
-  +`<td class="num"${ovMark(r.collBonusOv)} title="${tCollBonus}"><input type="number" step="any" autocomplete="off" placeholder="${fmt(r.collBonusCalc)}" data-calc="${r.collBonusCalc}" value="${r.collBonusOv!=null?r.collBonusOv:''}" style="width:55px" onchange="setBonusOv('${X.key}','${r.rep.id}','collBonusOv',this)">${r.collBonusOv!=null?' ✏':''}</td>`
-  +`<td class="num" title="تُدخل يدوياً"><input type="number" step="any" autocomplete="off" value="${r.mgrBonus}" style="width:55px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].mgrBonus=+this.value;saveState();renderComm()"></td>`
-  +`<td class="num" title="تُدخل يدوياً"><input type="number" step="any" autocomplete="off" value="${r.retChq}" style="width:65px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].retChq=+this.value;saveState();renderComm()"></td>`
+  +`<td class="num"${ovMark(r.collBonusOv)} title="${tCollBonus}"><input type="number" step="any" autocomplete="off" placeholder="${fmt(r.collBonusCalc)}" data-calc="${r.collBonusCalc}" value="${r.collBonusOv!=null?r.collBonusOv:''}" style="width:75px" onchange="setBonusOv('${X.key}','${r.rep.id}','collBonusOv',this)">${r.collBonusOv!=null?' ✏':''}</td>`
+  +`<td class="num" title="تُدخل يدوياً"><input type="number" step="any" autocomplete="off" value="${r.mgrBonus}" style="width:70px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].mgrBonus=+this.value;saveState();renderComm()"></td>`
+  +`<td class="num" title="تُدخل يدوياً"><input type="number" step="any" autocomplete="off" value="${r.retChq}" style="width:75px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].retChq=+this.value;saveState();renderComm()"></td>`
   +`<td class="num" title="${tRetDed}">${fmt(r.retDed)}</td>`
-  +`<td class="num" title="تُدخل يدوياً"><input type="number" step="any" autocomplete="off" value="${r.assistFee}" style="width:65px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].assistFee=+this.value;saveState();renderComm()"></td>`
+  +`<td class="num" title="تُدخل يدوياً"><input type="number" step="any" autocomplete="off" value="${r.assistFee}" style="width:75px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].assistFee=+this.value;saveState();renderComm()"></td>`
   +`<td class="num" title="${tTotal}"><b>${fmt(r.total)}</b></td>`
   +`<td class="noprint"><button class="btn ghost sm" onclick="printRepSlip('${r.rep.id}')" title="طباعة ملخص عمولة هذا المندوب">🖨</button></td></tr>`;
+}
+function specialRowHtml(label,name,amount){
+ return `<tr style="background:#fbf8ef"><td><b>${label}</b>${name?' — '+name:''}</td>`
+  +Array(11).fill('<td class="num">—</td>').join('')
+  +`<td class="num"><b>${fmt(amount)}</b></td><td class="noprint"></td></tr>`;
 }
 function renderComm(){
  const fEl=document.getElementById('cvFrom'),tEl=document.getElementById('cvTo');
@@ -422,12 +427,15 @@ function renderComm(){
   ['إجمالي عمولات المندوبين',fmt(T.total),''],
   ['الإجمالي الكلي',fmt(grand),'+ مدير '+fmt(PD.mgrAmt||0)+' مشرف '+fmt(PD.supAmt||0)+' مساعدين '+fmt(assistTot)]
  ].map(([l,v,s])=>`<div class="kpi"><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${s}</div></div>`).join('');
- document.getElementById('mgrBox').innerHTML=`<div class="row"><label>عمولة ثابتة (د.أ)</label><input type="number" step="any" value="${PD.mgrAmt||0}" onchange="periodData('${X.key}').mgrAmt=+this.value;saveState();renderComm()"></div><p class="hint">تُدخل يدوياً لكل فترة — مش مربوطة بمندوب من الشاشة.</p>`;
- document.getElementById('supBox').innerHTML=`<div class="row"><label>عمولة ثابتة (د.أ)</label><input type="number" step="any" value="${PD.supAmt||0}" onchange="periodData('${X.key}').supAmt=+this.value;saveState();renderComm()"></div><p class="hint">تُدخل يدوياً لكل فترة — مش مربوطة بمندوب من الشاشة.</p>`;
+ document.getElementById('mgrBox').innerHTML=`<div class="row"><label>الاسم</label><input type="text" value="${(PD.mgrName||'').replace(/"/g,'&quot;')}" style="width:140px" placeholder="اسم مدير المبيعات" onchange="periodData('${X.key}').mgrName=this.value;saveState();renderComm()"></div><div class="row"><label>عمولة ثابتة (د.أ)</label><input type="number" step="any" value="${PD.mgrAmt||0}" onchange="periodData('${X.key}').mgrAmt=+this.value;saveState();renderComm()"></div><p class="hint">تُدخل يدوياً لكل فترة — مش مربوطة بمندوب من الشاشة، وبتظهر بجدول المندوبين تحت.</p>`;
+ document.getElementById('supBox').innerHTML=`<div class="row"><label>الاسم</label><input type="text" value="${(PD.supName||'').replace(/"/g,'&quot;')}" style="width:140px" placeholder="اسم مشرف المبيعات" onchange="periodData('${X.key}').supName=this.value;saveState();renderComm()"></div><div class="row"><label>عمولة ثابتة (د.أ)</label><input type="number" step="any" value="${PD.supAmt||0}" onchange="periodData('${X.key}').supAmt=+this.value;saveState();renderComm()"></div><p class="hint">تُدخل يدوياً لكل فترة — مش مربوطة بمندوب من الشاشة، وبتظهر بجدول المندوبين تحت.</p>`;
  document.getElementById('cvAssist').innerHTML=`<table><tr><th>الاسم</th><th class="num">المبلغ</th><th></th></tr>${(PD.assistants||[]).map((a,i)=>`<tr><td><input type="text" value="${(a.name||'').replace(/"/g,'&quot;')}" style="width:110px" onchange="periodData('${X.key}').assistants[${i}].name=this.value;saveState()"></td><td class="num"><input type="number" step="any" value="${a.amt||0}" style="width:70px" onchange="periodData('${X.key}').assistants[${i}].amt=+this.value;saveState();renderComm()"></td><td><button class="btn danger sm" onclick="periodData('${X.key}').assistants.splice(${i},1);saveState();renderComm()">✕</button></td></tr>`).join('')||'<tr><td colspan="3" class="hint">لا يوجد</td></tr>'}</table><button class="btn ghost sm" style="margin-top:6px" onclick="periodData('${X.key}').assistants.push({name:'مساعد جديد',amt:0});saveState();renderComm()">+ مساعد</button><p class="hint">إجمالي هذا الشهر: ${fmt(assistTot)}</p>`;
  const cvq=(document.getElementById('cvSearch').value||'').trim().toLowerCase();
  const dispRows=X.rows.filter(r=>!cvq||r.rep.name.toLowerCase().includes(cvq));
- document.getElementById('cvTbl').innerHTML=dispRows.map(r=>cvRowHtml(r,X,P)).join('')+(dispRows.length?`<tr class="tot"><td>الإجمالي</td><td class="num">${fmt(T.sales)}</td><td class="num">${fmt(T.salesComm)}</td><td class="num">${fmt(T.salesBonus)}</td><td colspan="2"></td><td></td><td class="num">${fmt(T.collBonus)}</td><td class="num">${fmt(T.mgrBonus)}</td><td></td><td class="num">${fmt(T.retDed)}</td><td class="num">${fmt(T.assistFee)}</td><td class="num">${fmt(T.total)}</td><td class="noprint"></td></tr>`:'')||'<tr><td colspan="14" class="hint">أضف مندوبين أولاً من تبويب "المندوبون"</td></tr>';
+ const specialRows=(!cvq||'مدير المبيعات'.includes(cvq)||(PD.mgrName||'').toLowerCase().includes(cvq)?specialRowHtml('مدير المبيعات',PD.mgrName,PD.mgrAmt||0):'')
+  +(!cvq||'مشرف المبيعات'.includes(cvq)||(PD.supName||'').toLowerCase().includes(cvq)?specialRowHtml('مشرف المبيعات',PD.supName,PD.supAmt||0):'')
+  +(PD.assistants||[]).filter(a=>!cvq||'مساعد'.includes(cvq)||(a.name||'').toLowerCase().includes(cvq)).map(a=>specialRowHtml('مساعد',a.name,a.amt||0)).join('');
+ document.getElementById('cvTbl').innerHTML=dispRows.map(r=>cvRowHtml(r,X,P)).join('')+specialRows+((dispRows.length||specialRows)?`<tr class="tot"><td>الإجمالي</td><td class="num">${fmt(T.sales)}</td><td class="num">${fmt(T.salesComm)}</td><td class="num">${fmt(T.salesBonus)}</td><td colspan="2"></td><td></td><td class="num">${fmt(T.collBonus)}</td><td class="num">${fmt(T.mgrBonus)}</td><td></td><td class="num">${fmt(T.retDed)}</td><td class="num">${fmt(T.assistFee)}</td><td class="num">${fmt(grand)}</td><td class="noprint"></td></tr>`:'')||'<tr><td colspan="14" class="hint">أضف مندوبين أولاً من تبويب "المندوبون"</td></tr>';
 }
 
 /* ================= PRINT SINGLE REP ================= */
