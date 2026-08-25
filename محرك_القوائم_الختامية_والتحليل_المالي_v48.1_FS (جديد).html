@@ -189,6 +189,10 @@ body.glass #tip{background:rgba(255,255,255,.95);backdrop-filter:blur(8px)}
    <button data-t="report">التقرير التحليلي التفصيلي</button>
    <button data-t="board">تقرير مجلس الإدارة</button>
   </div>
+  <button class="ng-toggle" data-grp="g7">▸ المندوبون والعمولات</button>
+  <div class="tabgrp" id="grp-g7" hidden>
+   <button data-t="cvcomm">عمولة الكاش فان</button>
+  </div>
 </nav>
 <main>
 
@@ -468,6 +472,27 @@ body.glass #tip{background:rgba(255,255,255,.95);backdrop-filter:blur(8px)}
 <section class="tab" id="tab-board">
  <div class="row noprint"><button class="btn gold" onclick="printTab('board')">طباعة تقرير مجلس الإدارة</button><span class="hint">صفحة واحدة تنفيذية بأسلوب التقارير السنوية للشركات العالمية</span></div>
  <div class="board" id="boardPage"></div>
+</section>
+
+<!-- ============ CASH VAN COMMISSION ============ -->
+<section class="tab" id="tab-cvcomm">
+ <div class="card">
+  <h2>نظام عمولة الكاش فان</h2>
+  <p class="hint">يشمل تلقائياً كل مندوب قسمه "كاش فان" على شاشة الموظفين. العمولة = 2% من صافي المبيعات + مكافأة بيع (حتى 50 د.أ عند بلوغ الهدف) + مكافأة جودة تحصيل (حتى 50 د.أ حسب نسبة الشيكات الضعيفة) + مكافأة مدير (يدوية) − خصم شيكات مرتجعة − مقابل استخدام مساعد.</p>
+  <div class="row"><label>من شهر</label><input type="month" id="cvFrom" onchange="renderCVComm()"><label>إلى شهر</label><input type="month" id="cvTo" onchange="renderCVComm()"><button class="btn sm" onclick="renderCVComm()">تحديث</button></div>
+  <div class="grid g6" id="cvKpi" style="margin-top:10px"></div>
+  <details style="margin-top:10px"><summary style="cursor:pointer;font-weight:600;color:var(--navy)">⚙️ إعدادات معادلة العمولة (اضغط للتعديل)</summary>
+   <div class="row" style="margin-top:8px" id="cvParams"></div>
+  </details>
+ </div>
+ <div class="grid g2">
+  <div class="card"><h3>مدير ومشرف المبيعات (عمولة ثابتة يدوية غير مرتبطة بمندوب على الشاشة)</h3><div id="cvMgrSup"></div></div>
+  <div class="card"><h3>المساعدون (يُدخلون يدوياً كل شهر، عادة 3-4)</h3><div id="cvAssist"></div></div>
+ </div>
+ <div class="card">
+  <h3>مندوبو الكاش فان</h3>
+  <div class="tblwrap" id="cvTbl"></div>
+ </div>
 </section>
 </main>
 <div id="tip" style="display:none;position:fixed;z-index:95;max-width:460px;background:#fff;color:var(--text);border:1px solid var(--line);border-inline-start:4px solid var(--gold);border-radius:8px;padding:10px 12px;box-shadow:0 8px 28px rgba(11,31,58,.25);font-size:12.5px;line-height:1.8"><div id="tipT" style="font-weight:700;color:var(--navy);margin-bottom:4px"></div><div id="tipB"></div><div class="hint" style="margin-top:4px">اضغط F1 لتثبيت الشرح</div></div>
@@ -1912,8 +1937,9 @@ const HOME=[
  {t:'ratios',ic:'📐',n:'النسب والتحليل المتقدم',k:()=>R?`تداول ${rfmt('CR',R.RAT.CR)} · DSO ${rfmt('DSO',R.RAT.DSO)} · ROE ${pct(R.RAT.ROE)} · Z' ${rfmt('Z',R.RAT.Z)}`:'—',sub:['adv','budget','cash13']},
  {t:'bank',ic:'🏦',n:'البنوك',k:()=>{const el=document.getElementById('bankPos');const t=el?el.textContent.match(/إجمالي البنوك[^]*?(\(?[\d,]+\)?)/):null;return Object.values(S.bank||{}).filter(b=>b.bank).length+' حساب مربوط · '+(S.banks||[]).length+' بنوك'}},
  {t:'report',ic:'📄',n:'التقارير',k:()=>'التقرير التحليلي التفصيلي · تقرير مجلس الإدارة',sub:['board']},
- {t:'map',ic:'⚙️',n:'التصنيف والتعديلات',k:()=>{const un=R?R.codes.filter(c=>effLine(c)==='UNMAP').length:0;return `${un} حساب غير مصنف · ${(S.adj||[]).length} قيد يدوي`},sub:['adj']}];
-const NAV_IC={home:'🏠',data:'🗄️',adj:'✍️',map:'⚙️',dash:'📊',is:'📈',bs:'🏛️',cf:'💧',ratios:'📐',adv:'🔬',budget:'🎯',cash13:'📅',pc:'🏢',cust:'👥',sales:'🛒',cts:'💎',reps:'🧑‍💼',seg:'🧭',pricing:'🏷️',fleet:'🚚',bank:'🏦',acct:'📒',forensic:'🔎',report:'📄',board:'🏆'};
+ {t:'map',ic:'⚙️',n:'التصنيف والتعديلات',k:()=>{const un=R?R.codes.filter(c=>effLine(c)==='UNMAP').length:0;return `${un} حساب غير مصنف · ${(S.adj||[]).length} قيد يدوي`},sub:['adj']},
+ {t:'cvcomm',ic:'💰',n:'عمولة الكاش فان',k:()=>window._CV?`${window._CV.rows.length} مندوب · إجمالي عمولاتهم ${fmt(window._CV.rows.reduce((a,r)=>a+r.total,0))}`:'اختر فترة واحتسب عمولة مندوبي الكاش فان'}];
+const NAV_IC={home:'🏠',data:'🗄️',adj:'✍️',map:'⚙️',dash:'📊',is:'📈',bs:'🏛️',cf:'💧',ratios:'📐',adv:'🔬',budget:'🎯',cash13:'📅',pc:'🏢',cust:'👥',sales:'🛒',cts:'💎',reps:'🧑‍💼',seg:'🧭',pricing:'🏷️',fleet:'🚚',bank:'🏦',acct:'📒',forensic:'🔎',report:'📄',board:'🏆',cvcomm:'💰'};
 document.querySelectorAll('nav button').forEach(b=>{b.dataset.ic=NAV_IC[b.dataset.t]||'•';b.textContent=b.textContent.replace(/^[١٢٣٤٥٦٧٨٩٠\d]+\s*/,'').replace('🏠 ','')});
 function renderHome(){const el=document.getElementById('homeCards');if(!el)return;
  const K=document.getElementById('homeKpis'),CH=document.getElementById('homeCharts');if(K){if(R){const is=R.IS.TOT,r=R.RAT,cf=R.CF,cm=R.CMP;K.innerHTML=[kpi('الإيرادات',fmt(is.NETSALES),cm?d(is.NETSALES,cm.IS.TOT.NETSALES):R.per.length+' شهر',cm&&dc(is.NETSALES,cm.IS.TOT.NETSALES),1,['NETSALES','IS']),kpi('مجمل الربح',fmt(is.GP),'هامش '+pct(r.GM),'',1,['GP','IS']),kpi('صافي الربح',fmt(is.NI),cm?d(is.NI,cm.IS.TOT.NI):'هامش '+pct(r.NM),cm&&dc(is.NI,cm.IS.TOT.NI),1,['NI','IS']),kpi('التدفق التشغيلي',fmt(cf.CFO),'حر '+fmt(cf.FCF),cf.CFO>=0?'pos':'neg',1,['CASH','BS']),kpi('الذمم المدينة',fmt(R.BSc.AR),'DSO '+rfmt('DSO',r.DSO)+' يوم','',1,['AR','BS']),kpi('صافي البنوك/الدين',fmt(-R.BSc.NETDEBT),'ND/EBITDA '+rfmt('ND_EBITDA',r.ND_EBITDA)+'x',R.BSc.NETDEBT>0?'neg':'pos',1,['STL','BS'])].join('');
@@ -1922,7 +1948,7 @@ function renderHome(){const el=document.getElementById('homeCards');if(!el)retur
    CH2.innerHTML=`<div class="card" data-tip="الذمم المدينة والتحصيل"><h2>الذمم المدينة والتحصيل</h2>${gauge(collected!=null?collected*100:0,0,100,[{to:60,col:'#F0B8B8',n:'ضعيف'},{to:85,col:'#F6E1A8',n:'متوسط'},{to:100,col:'#BFE6DF',n:'جيد'}],collected!=null?'المحصّل من مبيعات الفترة %':'حمّل عمر الذمة',300)}<table><tr><td>مبيعات الفترة</td><td class="num">${fmt(is.NETSALES)}</td></tr><tr><td>الذمم القائمة</td><td class="num">${fmt(R.BSc.AR)}</td></tr><tr><td>DSO</td><td class="num">${rfmt('DSO',r.DSO)} يوم</td></tr></table></div><div class="card" data-tip="تحليل الربحية الفرعية"><h2>تحليل الربحية الفرعية</h2>${(()=>{const Q={};R.per.forEach(k=>{const q='الربع '+Math.ceil(+k.slice(5)/3)+' '+k.slice(0,4);Q[q]=Q[q]||{gp:0,ni:0};Q[q].gp+=R.IS[k].GP;Q[q].ni+=R.IS[k].NI});const ks=Object.keys(Q).slice(-8);return barsH(ks.flatMap(k=>[{n:k+' مجمل',v:Q[k].gp,col:C.gold},{n:k+' صافي',v:Q[k].ni,col:C.navy}]),560)})()}</div><div class="card" data-tip="حالة البيانات وجودتها"><h2>حالة البيانات وجودتها</h2><div style="text-align:center;padding:10px 0"><div style="width:130px;height:130px;margin:0 auto;border-radius:50%;background:conic-gradient(#3B6FE0 ${health*3.6}deg,#e5e9f3 0);display:flex;align-items:center;justify-content:center;box-shadow:0 10px 24px rgba(59,111,224,.25)"><div style="width:100px;height:100px;border-radius:50%;background:#fff;display:flex;flex-direction:column;align-items:center;justify-content:center"><b style="font-size:26px;color:#1b2b4a">${health}%</b><span class="hint">جودة البيانات</span></div></div></div><table>${[['ميزان افتتاحي متوازن',chk[0]],['المركز المالي متوازن',chk[1]],['التدفقات مفسرة',chk[2]],['كل الحسابات مصنفة',chk[3]],['عمر الذمة محمّل (لسيولة 13 أسبوعاً)',chk[4]]].map(([n,ok])=>`<tr><td>${n}</td><td>${ok?'<span class="badge ok">✓</span>':'<span class="badge warn">—</span>'}</td></tr>`).join('')}</table></div>`}else{K.innerHTML='';CH.innerHTML='';const c2=document.getElementById('homeCharts2');if(c2)c2.innerHTML=''}}el.innerHTML=HOME.map(h=>`<div class="hcard" onclick="goTab('${h.t}')"><div class="ic">${h.ic}</div><b>${h.n}</b><div class="k">${(()=>{try{return h.k()}catch(e){return ''}})()}</div><div class="go">فتح ←</div></div>`).join('');
  const st=document.getElementById('homeStatus');if(st)st.innerHTML=R?`الفترة ${R.per[0]} → ${R.per[R.per.length-1]} · ${R.per.length} شهر<br>آخر احتساب ${new Date().toLocaleTimeString('ar-JO')}`:'لم يُحتسب بعد';document.getElementById('homeTitle').textContent=S.settings.co+' — محرك القوائم والتحليل'}
 function goTab(t){const b=document.querySelector(`nav [data-t="${t}"]`);if(b)b.click()}
-const LAZY={adv:'renderAdv',budget:'renderBudget',cash13:'renderCash13',report:'renderReport',bank:'renderBankTab',acct:'renderAcct'};const DONE={};
+const LAZY={adv:'renderAdv',budget:'renderBudget',cash13:'renderCash13',report:'renderReport',bank:'renderBankTab',acct:'renderAcct',cvcomm:'renderCVComm'};const DONE={};
 /* ================= تقرير العميل الشامل — مستقل عن الدراسة، بفترة مرنة يختارها المستخدم ================= */
 function custMergeKey(cc,cn){
  cn=String(cn||'');
@@ -2832,6 +2858,60 @@ function renderSeg(){const P=S.segP;const PP=document.getElementById('segParams'
   ${dups.length?`<h3>عينة زيارات مكررة (${dups.length})</h3><table><tr><th>العميل</th><th>اليوم</th><th>السائقون</th></tr>${dups.slice(0,40).map(([k,s])=>`<tr><td>${k.split('|')[0]} ${(dv.find(r=>r.cc===k.split('|')[0])||{}).cn||''}</td><td>${k.split('|')[1]}</td><td>${[...s].join('، ')}</td></tr>`).join('')}</table>`:''}`}
  else{const DC=X.DC;const names={cashvan:'المبيعات/كاش فان',presale:'المبيعات (بيع مسبق ومشرفون)',print:'الطباعة/إدخال البيانات',move:'الحركة والتوزيع',wh:'المستودعات',coord:'التنسيق',other:'أخرى'};const totPay=Object.values(DC).reduce((a,o)=>a+o.cost,0)||1;
   B.innerHTML=`<p class="hint">كلفة كل قسم من مصدقة الرواتب بعد مطابقة الأسماء مع ملف الموظفين وتصنيف المسمى/القسم. الحركة تُضاف إليها كلفة الأسطول (${fmt(X.fleetCost)}). المعدلات: طباعة/فاتورة ${X.cPrint.toFixed(3)} · مستودعات وتنسيق/سطر ${X.cWh.toFixed(3)} · حركة/توقّف ${X.cMove.toFixed(2)}.</p><table><tr><th>القسم</th><th class="num">موظفون</th><th class="num">كلفة الفترة</th><th class="num">حصة</th><th class="num">شهرياً</th><th class="num">مُوزّع على</th></tr>${Object.entries(names).map(([k,n])=>`<tr><td>${n}</td><td class="num">${DC[k].n}</td><td class="num">${fmt(DC[k].cost)}</td><td class="num">${pct(DC[k].cost/totPay)}</td><td class="num">${fmt(DC[k].cost/R.nMo)}</td><td class="hint">${k==='print'?X.totInv+' فاتورة':k==='wh'||k==='coord'?X.totLines+' سطر':k==='move'?X.totStops+' توقّف':''}</td></tr>`).join('')}<tr class="tot"><td>الإجمالي</td><td class="num">${Object.values(DC).reduce((a,o)=>a+o.n,0)}</td><td class="num">${fmt(totPay)}</td><td></td><td class="num">${fmt(totPay/R.nMo)}</td><td></td></tr></table>`}}
+
+/* ================= MODULE: Cash Van Commission ================= */
+const DEFAULT_CVCOMM_P={salesRate:2,salesTarget:13000,salesBonus:50,collBonus:50,collWeakDays:7,retChqRate:2};
+function cvCommS(){S.cvComm=S.cvComm||{params:{...DEFAULT_CVCOMM_P},periods:{}};S.cvComm.params=S.cvComm.params||{...DEFAULT_CVCOMM_P};S.cvComm.periods=S.cvComm.periods||{};return S.cvComm}
+function cvPeriodData(key){const CV=cvCommS();CV.periods[key]=CV.periods[key]||{mgrAmt:0,supAmt:0,assistants:[],perRep:{}};return CV.periods[key]}
+// عمولة الكاش فان: 2% من صافي المبيعات + مكافأة بيع (تناسب حتى سقف المبيعات) + مكافأة تحصيل (تخصم بنسبة الشيكات "الضعيفة": استحقاقها أكثر من X يوم من تاريخ القبض) − خصم على الشيكات المرتجعة − مقابل استخدام مساعد (يدوي). الشيك اللي استحقاقه بتاريخ القبض أو قبله (فوري) يُحتسب استحقاقه يوم واحد دايماً.
+function cvCommCompute(fromISO,toISO){
+ const CV=cvCommS();const P=CV.params;const key=fromISO+'|'+toISO;const PD=cvPeriodData(key);
+ const REPMAP=custRepMap();
+ const salesByRep={};
+ (S.prof||[]).forEach(r=>{if(!r.d||r.d<fromISO||r.d>toISO)return;if(custIsExcluded(r.cn,r.cc))return;const rp=r.rep||REPMAP[r.cc]||'';if(!rp||repChannel(rp)!=='cashvan')return;salesByRep[rp]=(salesByRep[rp]||0)+r.net});
+ const collByRep={};
+ (S.coll||[]).forEach(x=>{if(!x.entry||!x.due||x.amt<=0||x.entry<fromISO||x.entry>toISO)return;const rp=REPMAP[x.code]||'';if(!rp||repChannel(rp)!=='cashvan')return;
+  const o=collByRep[rp]=collByRep[rp]||{tot:0,weak:0,chq:0};
+  o.tot+=x.amt;
+  if(!/شيك/.test(x.pm||''))return; // نقد أو حوالة بنكية: يدخل بالإجمالي بلا فحص استحقاق
+  o.chq+=x.amt;
+  const raw=Math.round((new Date(x.due)-new Date(x.entry))/864e5);
+  const dur=raw<=0?1:raw+1; // شيك فوري (استحقاقه بتاريخ القبض أو قبله) = يوم واحد دايماً؛ شيك مؤجل = عدّ شامل من تاريخ القبض لتاريخ الاستحقاق (١-٧ إلى ٢٠-٧ = ٢٠ يوماً)
+  if(dur>P.collWeakDays)o.weak+=x.amt;
+ });
+ const reps=[...new Set([...Object.keys(salesByRep),...Object.keys(collByRep),...Object.keys(PD.perRep)])].sort((a,b)=>(salesByRep[b]||0)-(salesByRep[a]||0));
+ const rows=reps.map(rep=>{
+  const sales=salesByRep[rep]||0;
+  const coll=collByRep[rep]||{tot:0,weak:0,chq:0};
+  const salesComm=sales*P.salesRate/100;
+  const salesBonus=sales>0?Math.min(1,sales/P.salesTarget)*P.salesBonus:0;
+  const weakRatio=coll.tot>0?coll.weak/coll.tot:0;
+  const collBonus=coll.tot>0?Math.max(0,P.collBonus*(1-weakRatio)):0;
+  const man=PD.perRep[rep]=PD.perRep[rep]||{mgrBonus:0,retChq:0,assistFee:0};
+  const retDed=(+man.retChq||0)*P.retChqRate/100;
+  const total=salesComm+salesBonus+collBonus+(+man.mgrBonus||0)-retDed-(+man.assistFee||0);
+  return {rep,sales,salesComm,salesBonus,collTot:coll.tot,collWeak:coll.weak,weakRatio,collBonus,mgrBonus:+man.mgrBonus||0,retChq:+man.retChq||0,retDed,assistFee:+man.assistFee||0,total};
+ });
+ return {rows,PD,P,key};
+}
+function renderCVComm(){
+ const fEl=document.getElementById('cvFrom'),tEl=document.getElementById('cvTo');
+ const K=document.getElementById('cvKpi'),B=document.getElementById('cvTbl'),MS=document.getElementById('cvMgrSup'),AS=document.getElementById('cvAssist'),PP=document.getElementById('cvParams');
+ if(!fEl.value&&R&&R.per.length){fEl.value=R.per[0];tEl.value=R.per[R.per.length-1]}
+ const f=fEl.value,t=tEl.value;
+ if(!f||!t){K.innerHTML='<p class="hint">اختر فترة (من - إلى) فوق.</p>';B.innerHTML='';MS.innerHTML='';AS.innerHTML='';PP.innerHTML='';return}
+ const fromISO=f+'-01';const [ty,tm]=t.split('-').map(Number);const toISO=endOfMonth(ty,tm-1).toISOString().slice(0,10);
+ const X=cvCommCompute(fromISO,toISO);window._CV=X;
+ const P=X.P,PD=X.PD;
+ PP.innerHTML=[['salesRate','% عمولة المبيعات'],['salesTarget','هدف المبيعات لمكافأة كاملة (د.أ)'],['salesBonus','قيمة مكافأة البيع الكاملة (د.أ)'],['collBonus','قيمة مكافأة التحصيل الممتاز (د.أ)'],['collWeakDays','حد الأيام (شيك أكثر منها = ضعيف)'],['retChqRate','% خصم على قيمة الشيكات المرتجعة']].map(([k,l])=>`<label>${l}</label><input type="number" step="any" value="${P[k]}" style="width:80px" onchange="cvCommS().params['${k}']=+this.value;saveState();renderCVComm()">`).join('');
+ const T=X.rows.reduce((a,r)=>{['sales','salesComm','salesBonus','collBonus','mgrBonus','retDed','assistFee','total'].forEach(k=>a[k]=(a[k]||0)+r[k]);return a},{});
+ const assistTot=(PD.assistants||[]).reduce((a,x)=>a+(+x.amt||0),0);
+ const grand=T.total+(+PD.mgrAmt||0)+(+PD.supAmt||0)+assistTot;
+ K.innerHTML=`<div class="grid g6">${kpi('مندوبو الكاش فان',X.rows.length,'','',1)}${kpi('صافي مبيعاتهم',fmt(T.sales),'عمولة '+P.salesRate+'% = '+fmt(T.salesComm),'',1)}${kpi('مكافآت البيع والتحصيل',fmt(T.salesBonus+T.collBonus),'بيع '+fmt(T.salesBonus)+' + تحصيل '+fmt(T.collBonus),'',1)}${kpi('خصومات المندوبين',fmt(T.retDed+T.assistFee),'مرتجعات '+fmt(T.retDed)+' + مقابل مساعد '+fmt(T.assistFee),'neg',1)}${kpi('إجمالي عمولات المندوبين',fmt(T.total),'',T.total>=0?'pos':'neg',1)}${kpi('الإجمالي الكلي',fmt(grand),'+ مدير '+fmt(PD.mgrAmt||0)+' + مشرف '+fmt(PD.supAmt||0)+' + مساعدين '+fmt(assistTot),'',1)}</div>`;
+ MS.innerHTML=`<div class="row"><label>عمولة مدير المبيعات الثابتة (د.أ)</label><input type="number" step="any" value="${PD.mgrAmt||0}" style="width:100px" onchange="cvPeriodData('${X.key}').mgrAmt=+this.value;saveState();renderCVComm()"></div><div class="row" style="margin-top:6px"><label>عمولة مشرف المبيعات الثابتة (د.أ)</label><input type="number" step="any" value="${PD.supAmt||0}" style="width:100px" onchange="cvPeriodData('${X.key}').supAmt=+this.value;saveState();renderCVComm()"></div><p class="hint">غير مرتبطين بمندوب على شاشة الموظفين — تُدخل يدوياً لكل فترة.</p>`;
+ AS.innerHTML=`<table><tr><th>المساعد</th><th class="num">المبلغ</th><th></th></tr>${(PD.assistants||[]).map((a,i)=>`<tr><td><input type="text" value="${(a.name||'').replace(/"/g,'&quot;')}" style="width:150px" onchange="cvPeriodData('${X.key}').assistants[${i}].name=this.value;saveState();renderCVComm()"></td><td class="num"><input type="number" step="any" value="${a.amt||0}" style="width:75px" onchange="cvPeriodData('${X.key}').assistants[${i}].amt=+this.value;saveState();renderCVComm()"></td><td><button class="btn sm danger" onclick="cvPeriodData('${X.key}').assistants.splice(${i},1);saveState();renderCVComm()">✕</button></td></tr>`).join('')||'<tr><td colspan="3" class="hint">لا مساعدون بعد</td></tr>'}</table><button class="btn ghost sm" style="margin-top:6px" onclick="cvPeriodData('${X.key}').assistants.push({name:'مساعد جديد',amt:0});saveState();renderCVComm()">+ مساعد</button><p class="hint">إجمالي المساعدين هذه الفترة: ${fmt(assistTot)}</p>`;
+ B.innerHTML=`<table><tr><th>المندوب</th><th class="num">صافي المبيعات</th><th class="num">عمولة ${P.salesRate}%</th><th class="num">مكافأة البيع</th><th class="num">تحصيل الفترة</th><th class="num">شيكات ضعيفة</th><th class="num">%ضعيف</th><th class="num">مكافأة التحصيل</th><th class="num">مكافأة المدير</th><th class="num">شيكات مرتجعة</th><th class="num">خصم المرتجع</th><th class="num">مقابل مساعد</th><th class="num">الإجمالي</th></tr>${X.rows.map(r=>{const rk=r.rep.replace(/'/g,"\\'");return `<tr><td>${r.rep}</td><td class="num">${fmt(r.sales)}</td><td class="num">${fmt(r.salesComm)}</td><td class="num">${fmt(r.salesBonus)}</td><td class="num">${fmt(r.collTot)}</td><td class="num ${r.collWeak?'neg':''}">${fmt(r.collWeak)}</td><td class="num">${pct(r.weakRatio)}</td><td class="num">${fmt(r.collBonus)}</td><td class="num"><input type="number" step="any" value="${r.mgrBonus}" style="width:55px" onchange="cvPeriodData('${X.key}').perRep['${rk}'].mgrBonus=+this.value;saveState();renderCVComm()"></td><td class="num"><input type="number" step="any" value="${r.retChq}" style="width:65px" onchange="cvPeriodData('${X.key}').perRep['${rk}'].retChq=+this.value;saveState();renderCVComm()"></td><td class="num">${fmt(r.retDed)}</td><td class="num"><input type="number" step="any" value="${r.assistFee}" style="width:65px" onchange="cvPeriodData('${X.key}').perRep['${rk}'].assistFee=+this.value;saveState();renderCVComm()"></td><td class="num"><b>${fmt(r.total)}</b></td></tr>`}).join('')||'<tr><td colspan="13" class="hint">لا مندوبي كاش فان بهذه الفترة — تحقق من تصنيف "القسم" لهم كـ"كاش فان" بملف الموظفين (بند 19)، ومن تحميل ربحية العميل (15) والتحصيل التفصيلي (21)</td></tr>'}</table>`;
+}
 
 /* ---------- Margin bands & last-10 transactions ---------- */
 const BANDS=[[-Infinity,0,'خسارة'],[0,0.05,'0–5%'],[0.05,0.10,'5–10%'],[0.10,0.15,'10–15%'],[0.15,0.20,'15–20%'],[0.20,0.25,'20–25%'],[0.25,0.30,'25–30%'],[0.30,0.35,'30–35%'],[0.35,0.40,'35–40%'],[0.40,Infinity,'40%+']];
