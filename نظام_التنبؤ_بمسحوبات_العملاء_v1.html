@@ -70,28 +70,55 @@ footer{text-align:center;color:var(--ink2);font-size:11px;padding:20px}
 <footer>Prototype v1 — يعمل بالكامل في المتصفح (بدون سيرفر)، البيانات محفوظة محلياً في هذا الجهاز فقط.</footer>
 
 <script>
-/* ==================== التخزين ==================== */
-function load(k,d){try{const v=localStorage.getItem('WD_'+k);return v?JSON.parse(v):d}catch(e){return d}}
-function save(k,v){
-  try{localStorage.setItem('WD_'+k,JSON.stringify(v))}
-  catch(e){
-    const quota=e.name==='QuotaExceededError'||e.code===22;
-    alert(quota
-      ?`تعذّر الحفظ: البيانات كبيرة جداً على تخزين المتصفح (localStorage، حده تقريباً 5-10 ميجا). قلّل نطاق التاريخ بالكويري وجرّب كمية أصغر — الحمل الكامل مكانه نسخة الداتابيز.`
-      :`تعذر الحفظ محلياً: ${e.message}`);
-  }
+/* ==================== التخزين (IndexedDB — يتحمل ملايين السطور، بعكس localStorage اللي كان محدود ~5-10 ميجا) ==================== */
+const IDB_NAME='WD_STORE_DB',IDB_STORE='kv';
+let idbHandle=null;
+function openIdb(){
+  if(idbHandle)return idbHandle;
+  idbHandle=new Promise((resolve,reject)=>{
+    if(!window.indexedDB){reject(new Error('هذا المتصفح لا يدعم IndexedDB'));return}
+    const req=indexedDB.open(IDB_NAME,1);
+    req.onupgradeneeded=()=>{req.result.createObjectStore(IDB_STORE)};
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error);
+  });
+  return idbHandle;
 }
+async function idbGet(key){
+  const db=await openIdb();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(IDB_STORE,'readonly');
+    const req=tx.objectStore(IDB_STORE).get(key);
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error);
+  });
+}
+async function idbSet(key,value){
+  const db=await openIdb();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(IDB_STORE,'readwrite');
+    tx.objectStore(IDB_STORE).put(value,key);
+    tx.oncomplete=()=>resolve();
+    tx.onerror=()=>reject(tx.error);
+  });
+}
+const STORE_KEYS=['ROWS','STOCK','QUOTES','RESERVED','SETTINGS','FORECASTS','ACCURACY','ACTIONLOG'];
 function defaultSettings(){return {offDays:[5],holidays:[],grace:0,leadTimeDays:3,alphaInterval:0.4,alphaQty:0.35,graceMissedMult:1.5,growthThreshold:0.15}}
-let ROWS=load('ROWS',[]);
-let STOCK=load('STOCK',[]);
-let QUOTES=load('QUOTES',[]);
-let RESERVED=load('RESERVED',[]);
-let SETTINGS=Object.assign(defaultSettings(),load('SETTINGS',{}));
-let FORECASTS=load('FORECASTS',{});
-let ACCURACY=load('ACCURACY',[]);
-let ACTIONLOG=load('ACTIONLOG',[]);
-let ROWKEYS=new Set(ROWS.map(rowKey));
-function persistAll(){save('ROWS',ROWS);save('STOCK',STOCK);save('QUOTES',QUOTES);save('RESERVED',RESERVED);save('SETTINGS',SETTINGS);save('FORECASTS',FORECASTS);save('ACCURACY',ACCURACY);save('ACTIONLOG',ACTIONLOG)}
+let ROWS=[],STOCK=[],QUOTES=[],RESERVED=[],SETTINGS=defaultSettings(),FORECASTS={},ACCURACY=[],ACTIONLOG=[],ROWKEYS=new Set();
+async function loadAll(){
+  const vals=await Promise.all(STORE_KEYS.map(k=>idbGet(k).catch(()=>undefined)));
+  ROWS=vals[0]||[];STOCK=vals[1]||[];QUOTES=vals[2]||[];RESERVED=vals[3]||[];
+  SETTINGS=Object.assign(defaultSettings(),vals[4]||{});
+  FORECASTS=vals[5]||{};ACCURACY=vals[6]||[];ACTIONLOG=vals[7]||[];
+  ROWKEYS=new Set(ROWS.map(rowKey));
+}
+// حفظ بالخلفية (لا نوقف الواجهة بانتظاره) — IndexedDB غير متزامن أصلاً وموثوق حتى بدون انتظار النتيجة هون
+function persistAll(){
+  const values={ROWS,STOCK,QUOTES,RESERVED,SETTINGS,FORECASTS,ACCURACY,ACTIONLOG};
+  Promise.all(STORE_KEYS.map(k=>idbSet(k,values[k]))).catch(e=>{
+    alert(`تعذّر الحفظ الدائم (${e.message}) — البيانات ظلّت شغالة بهالجلسة الحالية بس ممكن ما تنحفظ بعد إغلاق الصفحة. لو مستمر، فرّغ مساحة تخزين بالجهاز.`);
+  });
+}
 function rowKey(r){return [r.custCode,r.itemCode,r.wdDate,r.qty,r.uom].join('|')}
 
 /* ==================== أدوات عامة ==================== */
@@ -691,7 +718,7 @@ function renderImport(){
   </div>
   <div class="card">
     <h2>ملخص البيانات المحمّلة</h2>
-    ${ROWS.length>30000?`<p class="hint" style="color:var(--red);font-weight:700">⚠️ ${ROWS.length.toLocaleString()} سطر — هاد قريب من حدود المتصفح (localStorage). لو الشاشة صارت بطيئة أو تعلّقت، قلّل نطاق التاريخ بالكويري لعينة أصغر. الحمل الكامل مكانه نسخة الداتابيز.</p>`:''}
+    ${ROWS.length>700000?`<p class="hint" style="color:var(--orange);font-weight:700">⚠️ ${ROWS.length.toLocaleString()} سطر — بيانات كبيرة جداً، إعادة الحساب ممكن تاخذ عدة ثواني كل مرة. البيانات محفوظة بـ IndexedDB (مش localStorage) فما في حد تخزين فعلي قريب، بس بيضل أفضل حل طويل المدى هو نسخة الداتابيز لسرعة أعلى ودخول متعدد المستخدمين.</p>`:''}
     <div class="kpi">
       <div class="box"><b>${ROWS.length}</b>سطر سحب</div>
       <div class="box"><b>${GROUPS.length}</b>زوج عميل×صنف</div>
@@ -732,17 +759,20 @@ function doImportReserved(){
   RESERVED_MSG=`تم تحميل ${n} سطر.`;
   render();
 }
-function doImportWd(){
+async function doImportWd(){
   const ta=document.getElementById('txWd').value;
   const file=document.getElementById('fWd').files[0];
-  const run=(text)=>{
+  const run=async(text)=>{
+    IMPORT_MSG='⏳ جاري المعالجة... (ممكن تاخذ عدة ثواني لو البيانات كبيرة، الشاشة رح تستجيب بعدها)';
+    render();
+    await new Promise(r=>setTimeout(r,20)); // نعطي المتصفح فرصة يرسم الرسالة قبل الشغل الثقيل المتزامن
     const r=parseWithdrawalText(text);
     recomputeAll(false);
     LAST_BAD_REASONS=r.reasons;LAST_BAD_SAMPLE=r.badSample;
     IMPORT_MSG=`تم: ${r.added} سطر جديد، تم تجاهل ${r.dup} سطر مكرر، ${r.bad} سطر غير صالح.`;
     render();
   };
-  if(file){readFileSmart(file,run)}else if(ta.trim()){run(ta)}else{alert('الصق بيانات أو اختر ملفاً أولاً')}
+  if(file){readFileSmart(file,run)}else if(ta.trim()){await run(ta)}else{alert('الصق بيانات أو اختر ملفاً أولاً')}
 }
 function doImportStock(){
   const ta=document.getElementById('txStock').value;
@@ -1061,6 +1091,10 @@ function wireDynamic(){
 }
 
 /* ==================== تشغيل ==================== */
-recomputeAll(false);
-render();
+window.APP_READY=(async()=>{
+  document.getElementById('main').innerHTML='<div class="card">جاري تحميل البيانات المحفوظة...</div>';
+  try{await loadAll()}catch(e){console.error('فشل تحميل IndexedDB:',e)}
+  recomputeAll(false);
+  render();
+})();
 </script>
