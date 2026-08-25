@@ -80,6 +80,26 @@ details summary{cursor:pointer;font-weight:600;color:var(--navy);font-size:13px}
   <h2>مندوبو الكاش فان</h2>
   <p class="hint">أضف هون كل مندوبي الكاش فان. هاد البرنامج مخصص لهدول فقط.</p>
   <div class="row"><input type="text" id="newRepName" placeholder="اسم المندوب" style="width:220px" onkeydown="if(event.key==='Enter')addRep()"><button class="btn" onclick="addRep()">+ إضافة مندوب</button></div>
+  <details style="margin-top:8px"><summary>📋 استيراد لصق دفعة وحدة (من إكسل أو من نتيجة الكويري تحت)</summary>
+   <p class="hint">الصق سطر لكل مندوب — إما اسم بعمود وحيد، أو (كود، اسم، قسم) متل نتيجة الكويري تحت مباشرة. الأسماء المكررة بتتجاهل تلقائياً.</p>
+   <textarea id="repsPaste" placeholder="C1	أحمد محمد	كاش فان"></textarea>
+   <button class="btn sm" style="margin-top:6px" onclick="importRepsPaste()">استيراد</button>
+  </details>
+  <details style="margin-top:8px"><summary>🗄️ كويري SAP لجلب مندوبي الكاش فان فقط (انسخه شغّله بمدير الكويريات)</summary>
+   <p class="hint">بيرجّع مندوبي المبيعات (OSLP) المربوطين بموظف قسمه "كاش فان" بملف الموظفين (HR). لازم يكون مندوب المبيعات مربوط بموظف HR (حقل "Employee" بشاشة تعريف مندوب المبيعات) حتى يشتغل. عدّل نص البحث "%كاش فان%" لو التسمية عندكم مختلفة (مثلاً Cash Van بالإنجليزي) — أو شغّل أول سطر تعليق (بعد --) لتشوف كل أسماء الأقسام المتوفرة عندكم وتاخذ التسمية الدقيقة.</p>
+   <textarea id="qReps" readonly style="min-height:140px">-- لمعرفة أسماء الأقسام المتوفرة أول مرة، شغّل هذا لحاله:
+-- SELECT DISTINCT "dept", "Name" FROM OHED ORDER BY "Name"
+
+SELECT T0."SlpCode" AS "كود المندوب", T0."SlpName" AS "المندوب", T3."Name" AS "القسم"
+FROM OSLP T0
+LEFT JOIN OHEM T1 ON T1."empID" = T0."Employee"
+LEFT JOIN OHED T3 ON T3."dept" = T1."Department"
+WHERE T0."Active" = 'Y'
+  AND T3."Name" LIKE '%كاش فان%'
+ORDER BY T0."SlpName"</textarea>
+   <button class="btn ghost sm" style="margin-top:6px" onclick="copyQuery('qReps')">📋 نسخ الكويري</button>
+   <p class="hint">لو مندوبو المبيعات عندكم مش مربوطين بموظف HR (النتيجة طلعت فاضية بس تأكدت إن عندكم مندوبي كاش فان)، احذف شرط "T3.Name LIKE" وقارن يدوياً، أو خبرني كيف مسجّل تصنيف "كاش فان" عندكم بالضبط لأعدّل الكويري.</p>
+  </details>
   <div class="tblwrap" style="max-height:none"><table><tr><th>المندوب</th><th class="num">مبيعات مسجّلة (سطر)</th><th class="num">تحصيل مسجّل (سطر)</th><th></th></tr><tbody id="repsTbl"></tbody></table></div>
  </div>
 </section>
@@ -155,7 +175,7 @@ ORDER BY "المندوب", "الشهر"</textarea>
 FROM ORCT T0
 INNER JOIN OCRD T3 ON T3."CardCode" = T0."CardCode"
 LEFT JOIN OSLP T4 ON T4."SlpCode" = T3."SlpCode"
-WHERE T0."CANCELED" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1] AND T0."CashSum" <> 0
+WHERE T0."DocDate" BETWEEN [%0] AND [%1] AND T0."CashSum" <> 0
 
 UNION ALL
 
@@ -167,7 +187,7 @@ SELECT T4."SlpName",
 FROM ORCT T0
 INNER JOIN OCRD T3 ON T3."CardCode" = T0."CardCode"
 LEFT JOIN OSLP T4 ON T4."SlpCode" = T3."SlpCode"
-WHERE T0."CANCELED" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1] AND T0."TrsfrSum" <> 0
+WHERE T0."DocDate" BETWEEN [%0] AND [%1] AND T0."TrsfrSum" <> 0
 
 UNION ALL
 
@@ -180,7 +200,7 @@ FROM ORCT T0
 INNER JOIN RCT2 T1 ON T1."DocNum" = T0."DocEntry"
 INNER JOIN OCRD T3 ON T3."CardCode" = T0."CardCode"
 LEFT JOIN OSLP T4 ON T4."SlpCode" = T3."SlpCode"
-WHERE T0."CANCELED" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1]
+WHERE T0."DocDate" BETWEEN [%0] AND [%1]
 
 ORDER BY 1,2</textarea>
    <button class="btn ghost sm" style="margin-top:6px" onclick="copyQuery('qColl')">📋 نسخ الكويري</button>
@@ -239,6 +259,15 @@ function fillRepSelects(){const opts=ST.reps.map(r=>`<option value="${r.id}">${r
 function addRep(){const el=document.getElementById('newRepName');const name=el.value.trim();if(!name)return;if(ST.reps.some(r=>r.name===name)){alert('المندوب موجود أصلاً');return}ST.reps.push({id:uid(),name});el.value='';saveState();renderReps();fillRepSelects()}
 function delRep(id){if(!confirm('حذف المندوب؟ (بيضل سجلات مبيعاته/تحصيله لحاله بدون ما تنحذف)'))return;ST.reps=ST.reps.filter(r=>r.id!==id);saveState();renderReps();fillRepSelects()}
 function renderReps(){const el=document.getElementById('repsTbl');el.innerHTML=ST.reps.map(r=>{const ns=ST.sales.filter(s=>s.repId===r.id).length,nc=ST.coll.filter(c=>c.repId===r.id).length;return `<tr><td><b>${r.name}</b></td><td class="num">${ns}</td><td class="num">${nc}</td><td><button class="btn danger sm" onclick="delRep('${r.id}')">حذف</button></td></tr>`}).join('')||'<tr><td colspan="4" class="hint">لا يوجد مندوبون بعد</td></tr>'}
+function importRepsPaste(){const txt=document.getElementById('repsPaste').value;if(!txt.trim())return;let n=0;
+ txt.split(/\r?\n/).forEach(line=>{if(!line.trim()||line.trim().startsWith('--'))return;
+  const parts=line.split(/\t|,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(x=>x.trim()).filter(x=>x!=='');if(!parts.length)return;
+  const name=parts.length>=2?parts[1]:parts[0];
+  if(!name||/^(المندوب|slpname|كود المندوب|القسم|dept)$/i.test(name))return;
+  if(ST.reps.some(r=>r.name===name))return;
+  ST.reps.push({id:uid(),name});n++
+ });
+ document.getElementById('repsPaste').value='';saveState();renderReps();fillRepSelects();alert('تم إضافة '+n+' مندوب جديد')}
 
 /* ================= SALES ================= */
 function addSale(){const repId=document.getElementById('salesRep').value,month=document.getElementById('salesMonth').value,amt=+document.getElementById('salesAmt').value;if(!repId){alert('أضف مندوباً أولاً واختره');return}if(!month){alert('اختر الشهر');return}ST.sales.push({id:uid(),repId,month,amount:amt||0});document.getElementById('salesAmt').value='';saveState();renderSales();renderReps()}
