@@ -86,19 +86,12 @@ details summary{cursor:pointer;font-weight:600;color:var(--navy);font-size:13px}
    <button class="btn sm" style="margin-top:6px" onclick="importRepsPaste()">استيراد</button>
   </details>
   <details style="margin-top:8px"><summary>🗄️ كويري SAP لجلب مندوبي الكاش فان فقط (انسخه شغّله بمدير الكويريات)</summary>
-   <p class="hint">بيرجّع مندوبي المبيعات (OSLP) المربوطين بموظف قسمه "كاش فان" بملف الموظفين (HR). لازم يكون مندوب المبيعات مربوط بموظف HR (حقل "Employee" بشاشة تعريف مندوب المبيعات) حتى يشتغل. عدّل نص البحث "%كاش فان%" لو التسمية عندكم مختلفة (مثلاً Cash Van بالإنجليزي) — أو شغّل أول سطر تعليق (بعد --) لتشوف كل أسماء الأقسام المتوفرة عندكم وتاخذ التسمية الدقيقة.</p>
-   <textarea id="qReps" readonly style="min-height:140px">-- لمعرفة أسماء الأقسام المتوفرة أول مرة، شغّل هذا لحاله:
--- SELECT DISTINCT "dept", "Name" FROM OHED ORDER BY "Name"
-
-SELECT T0."SlpCode" AS "كود المندوب", T0."SlpName" AS "المندوب", T3."Name" AS "القسم"
+   <p class="hint">القسم عندكم مسجّل بحقل مخصص اسمه الحقيقي "SlpType" على شاشة مندوبي المبيعات (بيظهر بعنوان "Department" بالشاشة فقط)، وقيمته لمندوبي الكاش فان "CashVan".</p>
+   <textarea id="qReps" readonly style="min-height:90px">SELECT T0."SlpCode" AS "كود المندوب", T0."SlpName" AS "المندوب", T0."SlpType" AS "القسم"
 FROM OSLP T0
-LEFT JOIN OHEM T1 ON T1."empID" = T0."Employee"
-LEFT JOIN OHED T3 ON T3."dept" = T1."Department"
-WHERE T0."Active" = 'Y'
-  AND T3."Name" LIKE '%كاش فان%'
+WHERE T0."SlpType" = 'CashVan'
 ORDER BY T0."SlpName"</textarea>
    <button class="btn ghost sm" style="margin-top:6px" onclick="copyQuery('qReps')">📋 نسخ الكويري</button>
-   <p class="hint">لو مندوبو المبيعات عندكم مش مربوطين بموظف HR (النتيجة طلعت فاضية بس تأكدت إن عندكم مندوبي كاش فان)، احذف شرط "T3.Name LIKE" وقارن يدوياً، أو خبرني كيف مسجّل تصنيف "كاش فان" عندكم بالضبط لأعدّل الكويري.</p>
   </details>
   <div class="tblwrap" style="max-height:none"><table><tr><th>المندوب</th><th class="num">مبيعات مسجّلة (سطر)</th><th class="num">تحصيل مسجّل (سطر)</th><th></th></tr><tbody id="repsTbl"></tbody></table></div>
  </div>
@@ -128,20 +121,20 @@ FROM (
            SUM(T0."DocTotal" - T0."VatSum") AS "صافي"
     FROM OINV T0
     INNER JOIN OSLP T4 ON T4."SlpCode" = T0."SlpCode"
-    WHERE T0."CANCELED" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1]
+    WHERE T0."CANCELED" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1] AND T4."SlpType" = 'CashVan'
     GROUP BY T4."SlpName", TO_VARCHAR(T0."DocDate",'YYYY-MM')
     UNION ALL
     SELECT T4."SlpName", TO_VARCHAR(T0."DocDate",'YYYY-MM'),
            -SUM(T0."DocTotal" - T0."VatSum")
     FROM ORIN T0
     INNER JOIN OSLP T4 ON T4."SlpCode" = T0."SlpCode"
-    WHERE T0."CANCELED" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1]
+    WHERE T0."CANCELED" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1] AND T4."SlpType" = 'CashVan'
     GROUP BY T4."SlpName", TO_VARCHAR(T0."DocDate",'YYYY-MM')
 ) X
 GROUP BY "المندوب", "الشهر"
 ORDER BY "المندوب", "الشهر"</textarea>
    <button class="btn ghost sm" style="margin-top:6px" onclick="copyQuery('qSales')">📋 نسخ الكويري</button>
-   <p class="hint">صافي المبيعات = فواتير المبيعات (OINV) ناقص المرتجعات (ORIN)، حسب المندوب المسجّل على كل فاتورة. الكويري بيرجّع كل المندوبين — الصق بس أسطر مندوبي الكاش فان.</p>
+   <p class="hint">صافي المبيعات = فواتير المبيعات (OINV) ناقص المرتجعات (ORIN)، حسب المندوب المسجّل على كل فاتورة. مفلتر تلقائياً على مندوبي الكاش فان فقط (SlpType = 'CashVan').</p>
   </details>
   <div class="tblwrap" style="margin-top:10px"><table><tr><th>المندوب</th><th>الشهر</th><th class="num">صافي المبيعات</th><th></th></tr><tbody id="salesTbl"></tbody></table></div>
  </div>
@@ -174,8 +167,8 @@ ORDER BY "المندوب", "الشهر"</textarea>
        T0."CashSum" AS "المبلغ"
 FROM ORCT T0
 INNER JOIN OCRD T3 ON T3."CardCode" = T0."CardCode"
-LEFT JOIN OSLP T4 ON T4."SlpCode" = T3."SlpCode"
-WHERE T0."DocDate" BETWEEN [%0] AND [%1] AND T0."CashSum" <> 0
+INNER JOIN OSLP T4 ON T4."SlpCode" = T3."SlpCode"
+WHERE T0."DocDate" BETWEEN [%0] AND [%1] AND T0."CashSum" <> 0 AND T4."SlpType" = 'CashVan'
 
 UNION ALL
 
@@ -186,8 +179,8 @@ SELECT T4."SlpName",
        T0."TrsfrSum"
 FROM ORCT T0
 INNER JOIN OCRD T3 ON T3."CardCode" = T0."CardCode"
-LEFT JOIN OSLP T4 ON T4."SlpCode" = T3."SlpCode"
-WHERE T0."DocDate" BETWEEN [%0] AND [%1] AND T0."TrsfrSum" <> 0
+INNER JOIN OSLP T4 ON T4."SlpCode" = T3."SlpCode"
+WHERE T0."DocDate" BETWEEN [%0] AND [%1] AND T0."TrsfrSum" <> 0 AND T4."SlpType" = 'CashVan'
 
 UNION ALL
 
@@ -199,12 +192,12 @@ SELECT T4."SlpName",
 FROM ORCT T0
 INNER JOIN RCT2 T1 ON T1."DocNum" = T0."DocEntry"
 INNER JOIN OCRD T3 ON T3."CardCode" = T0."CardCode"
-LEFT JOIN OSLP T4 ON T4."SlpCode" = T3."SlpCode"
-WHERE T0."DocDate" BETWEEN [%0] AND [%1]
+INNER JOIN OSLP T4 ON T4."SlpCode" = T3."SlpCode"
+WHERE T0."DocDate" BETWEEN [%0] AND [%1] AND T4."SlpType" = 'CashVan'
 
 ORDER BY 1,2</textarea>
    <button class="btn ghost sm" style="margin-top:6px" onclick="copyQuery('qColl')">📋 نسخ الكويري</button>
-   <p class="hint">المندوب هون هو مندوب العميل المسجّل بكرت العميل (مش مندوب الفاتورة). الكويري بيرجّع كل المندوبين — الصق بس أسطر مندوبي الكاش فان.</p>
+   <p class="hint">المندوب هون هو مندوب العميل المسجّل بكرت العميل (مش مندوب الفاتورة). مفلتر تلقائياً على مندوبي الكاش فان فقط (SlpType = 'CashVan').</p>
   </details>
   <div class="tblwrap" style="margin-top:10px"><table><tr><th>المندوب</th><th>تاريخ القبض</th><th>الطريقة</th><th>استحقاق الشيك</th><th class="num">المبلغ</th><th class="num">المدة (يوم)</th><th>التقييم</th><th></th></tr><tbody id="collTbl"></tbody></table></div>
  </div>
