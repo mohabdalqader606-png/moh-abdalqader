@@ -346,7 +346,7 @@
       <div class="hint" style="margin-top:8px;">دخّل الكمية لكل صنف — المجاميع والضريبة بتنحسب لحالها. لكل فاتورة اختار نوعها: "فاتورة مبيعات" عادية (تُطبع أول بأول، متل فواتير العقبة خلال الشهر من سندات التحويل) أو "كشف تجميعي" (مستند واحد بآخر الشهر، رقمه يتسلسل تلقائياً بين مستندات التجميع بنفس المجموعة). اضغط "معاينة وطباعة" لعرض الشكل النهائي.</div>
     </div>
     <div class="input-panel" style="border-top:1px dashed var(--line); border-bottom:1px solid var(--line);">
-      <div class="hint" style="margin:0 0 8px;">توزيع أرقام مستندات ✕ تاريخ دفعة واحدة على كل الفواتير (باقي المملكة + كشف تجميعي العقبة) بترتيبها (فاتورة 1، 2، 3...) — بدل ما تدخل كل رقم يدوياً بكل فاتورة لحالها:</div>
+      <div class="hint" style="margin:0 0 8px;">توزيع أرقام مستندات ✕ تاريخ دفعة واحدة على فواتير <b>المجموعة المفتوحة حالياً</b> (التبويب فوق) بترتيبها (فاتورة 1، 2، 3...) — بدل ما تدخل كل رقم يدوياً بكل فاتورة لحالها. باقي المملكة والعقبة عادة برقمين مختلفين، فبدّل التبويب ونفّذ لكل وحدة لحالها.</div>
       <div class="row-actions" style="margin-top:0;">
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;">من رقم مستند <input type="text" id="bulkDocNoFrom" placeholder="مثال: M26167" style="width:120px; direction:ltr; text-align:left;"></label>
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;">إلى رقم مستند <input type="text" id="bulkDocNoTo" placeholder="مثال: M26183" style="width:120px; direction:ltr; text-align:left;"></label>
@@ -1191,19 +1191,17 @@ function bulkAssignInvoiceNumbers(){
   if(from.prefix !== to.prefix){ flash('bulkAssignMsg','الحرف الثابت لازم يكون نفسه بأول وآخر رقم (مثلاً M مع M).', false); return; }
   if(to.num < from.num){ flash('bulkAssignMsg','رقم النهاية لازم يكون أكبر من أو يساوي رقم البداية.', false); return; }
 
-  const invoices = [];
-  GROUPS.forEach(g=>{
-    if(!isAutoManagedGroup(g)) return;
-    g.invoices.forEach(inv=>{ if(inv.slot!==undefined) invoices.push({g, inv}); });
-  });
+  const g = GROUPS.find(x=>x.id===currentGroupId);
+  if(!g){ flash('bulkAssignMsg','ما في مجموعة مختارة.', false); return; }
+  const invoices = isAutoManagedGroup(g) ? g.invoices.filter(inv=>inv.slot!==undefined).map(inv=>({g, inv})) : [];
   invoices.sort((a,b)=> a.inv.slot - b.inv.slot);
 
   const count = to.num - from.num + 1;
   if(count !== invoices.length){
-    flash('bulkAssignMsg', `المدى يلي دخّلته فيه ${count} رقم، بس عندك ${invoices.length} فاتورة (باقي المملكة + كشف تجميعي العقبة). صحّح المدى وحاول مرة ثانية.`, false);
+    flash('bulkAssignMsg', `المدى يلي دخّلته فيه ${count} رقم، بس عندك ${invoices.length} فاتورة بمجموعة "${esc(g.name)}" الحالية. صحّح المدى، أو بدّل التبويب للمجموعة الصح، وحاول مرة ثانية.`, false);
     return;
   }
-  if(!confirm(`رح يتوزع رقم مستند من ${fromRaw} إلى ${toRaw} وتاريخ ${date||'(بدون تاريخ)'} على ${invoices.length} فاتورة بترتيبها. متابعة؟`)) return;
+  if(!confirm(`رح يتوزع رقم مستند من ${fromRaw} إلى ${toRaw} وتاريخ ${date||'(بدون تاريخ)'} على ${invoices.length} فاتورة بمجموعة "${g.name}" بترتيبها. متابعة؟`)) return;
 
   const digitWidth = from.digits.length;
   invoices.forEach(({g, inv}, idx)=>{
