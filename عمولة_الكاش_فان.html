@@ -147,7 +147,8 @@ ORDER BY "المندوب", "الشهر"</textarea>
    <button class="btn ghost sm" style="margin-top:6px" onclick="copyQuery('qSales')">📋 نسخ الكويري</button>
    <p class="hint">صافي المبيعات = فواتير المبيعات (OINV) ناقص المرتجعات (ORIN)، حسب المندوب المسجّل على كل فاتورة. مفلتر تلقائياً على مندوبي الكاش فان فقط (SlpType = 'CashVan').</p>
   </details>
-  <div class="row"><label>بحث</label><input type="text" id="salesSearch" placeholder="اسم المندوب..." style="width:220px" oninput="renderSales()"></div>
+  <div class="row"><label>بحث</label><input type="text" id="salesSearch" placeholder="اسم المندوب..." style="width:220px" oninput="renderSales()"><button class="btn ghost sm" style="border-color:var(--coral);color:var(--coral)" onclick="clearSales()">🗑 امسح كل بيانات المبيعات</button></div>
+  <p class="hint">لصق بيانات نفس المندوب/الشهر بيستبدل القيمة القديمة تلقائياً (مش بيكرّرها) — بس لو عندك سجلات قديمة خاطئة من قبل هالتحديث، امسحها كلها بالزر واعد اللصق من جديد.</p>
   <div class="tblwrap" style="margin-top:10px"><table><tr><th>المندوب</th><th>الشهر</th><th class="num">صافي المبيعات</th><th></th></tr><tbody id="salesTbl"></tbody></table></div>
  </div>
 </section>
@@ -202,7 +203,8 @@ ORDER BY 1,2</textarea>
    <button class="btn ghost sm" style="margin-top:6px" onclick="copyQuery('qColl')">📋 نسخ الكويري</button>
    <p class="hint">المندوب هون هو مندوب العميل المسجّل بكرت العميل (مش مندوب الفاتورة). مفلتر تلقائياً على مندوبي الكاش فان فقط (SlpType = 'CashVan').</p>
   </details>
-  <div class="row"><label>بحث</label><input type="text" id="collSearch" placeholder="اسم المندوب..." style="width:220px" oninput="renderColl()"></div>
+  <div class="row"><label>بحث</label><input type="text" id="collSearch" placeholder="اسم المندوب..." style="width:220px" oninput="renderColl()"><button class="btn ghost sm" style="border-color:var(--coral);color:var(--coral)" onclick="clearColl()">🗑 امسح كل بيانات التحصيل</button></div>
+  <p class="hint">عندك سجلات قديمة خاطئة من قبل تصليح اللصق؟ امسحها كلها بالزر واعد لصق نتيجة الكويري من جديد لتفادي التكرار.</p>
   <div class="tblwrap" style="margin-top:10px"><table><tr><th>المندوب</th><th>تاريخ القبض</th><th>الطريقة</th><th>استحقاق الشيك</th><th class="num">المبلغ</th><th class="num">المدة (يوم)</th><th>التقييم</th><th></th></tr><tbody id="collTbl"></tbody></table></div>
  </div>
 </section>
@@ -287,12 +289,15 @@ function importRepsPaste(){const txt=document.getElementById('repsPaste').value;
  document.getElementById('repsPaste').value='';saveState();renderReps();fillRepSelects();alert('تم إضافة '+n+' مندوب جديد')}
 
 /* ================= SALES ================= */
-function addSale(){const repId=document.getElementById('salesRep').value,month=document.getElementById('salesMonth').value,amt=+document.getElementById('salesAmt').value;if(!repId){alert('أضف مندوباً أولاً واختره');return}if(!month){alert('اختر الشهر');return}ST.sales.push({id:uid(),repId,month,amount:amt||0});document.getElementById('salesAmt').value='';saveState();renderSales();renderReps()}
+function upsertSale(repId,month,amount){const ex=ST.sales.find(s=>s.repId===repId&&s.month===month);if(ex){ex.amount=amount;return false}ST.sales.push({id:uid(),repId,month,amount});return true}
+function addSale(){const repId=document.getElementById('salesRep').value,month=document.getElementById('salesMonth').value,amt=+document.getElementById('salesAmt').value;if(!repId){alert('أضف مندوباً أولاً واختره');return}if(!month){alert('اختر الشهر');return}upsertSale(repId,month,amt||0);document.getElementById('salesAmt').value='';saveState();renderSales();renderReps()}
+function clearSales(){if(!ST.sales.length){alert('ما في بيانات مبيعات أصلاً');return}if(!confirm(`رح تنحذف كل بيانات المبيعات (${ST.sales.length} سطر) لكل المندوبين والأشهر. متابعة؟`))return;ST.sales=[];saveState();renderSales();renderReps();renderComm()}
+function clearColl(){if(!ST.coll.length){alert('ما في بيانات تحصيل أصلاً');return}if(!confirm(`رح تنحذف كل بيانات التحصيل (${ST.coll.length} سطر) لكل المندوبين. متابعة؟`))return;ST.coll=[];saveState();renderColl();renderReps();renderComm()}
 function delSale(id){ST.sales=ST.sales.filter(s=>s.id!==id);saveState();renderSales();renderReps()}
 function renderSales(){const el=document.getElementById('salesTbl');const q=(document.getElementById('salesSearch').value||'').trim().toLowerCase();
  const rows=ST.sales.filter(s=>!q||repName(s.repId).toLowerCase().includes(q)).sort((a,b)=>b.month.localeCompare(a.month));
  el.innerHTML=rows.map(s=>`<tr><td>${repName(s.repId)}</td><td>${s.month}</td><td class="num">${fmt(s.amount)}</td><td><button class="btn danger sm" onclick="delSale('${s.id}')">حذف</button></td></tr>`).join('')||'<tr><td colspan="4" class="hint">لا توجد سجلات مبيعات بعد</td></tr>'}
-function importSalesPaste(){const txt=document.getElementById('salesPaste').value;if(!txt.trim())return;let n=0;txt.split(/\r?\n/).forEach(line=>{if(!line.trim())return;const parts=splitPasteLine(line);if(parts.length<3)return;const [name,month,amt]=parts;if(!/^\d{4}-\d{2}/.test(month))return;const rep=repByName(name);if(!rep)return;ST.sales.push({id:uid(),repId:rep.id,month:month.slice(0,7),amount:+amt.replace(/,/g,'')||0});n++});document.getElementById('salesPaste').value='';saveState();renderSales();renderReps();fillRepSelects();alert('تم استيراد '+n+' سطر')}
+function importSalesPaste(){const txt=document.getElementById('salesPaste').value;if(!txt.trim())return;let nNew=0,nUpd=0;txt.split(/\r?\n/).forEach(line=>{if(!line.trim())return;const parts=splitPasteLine(line);if(parts.length<3)return;const [name,month,amt]=parts;if(!/^\d{4}-\d{2}/.test(month))return;const rep=repByName(name);if(!rep)return;const isNew=upsertSale(rep.id,month.slice(0,7),+amt.replace(/,/g,'')||0);if(isNew)nNew++;else nUpd++});document.getElementById('salesPaste').value='';saveState();renderSales();renderReps();fillRepSelects();alert(`تم: ${nNew} سطر جديد، ${nUpd} سطر محدَّث (استبدل القديم لنفس المندوب/الشهر)`)}
 
 /* ================= COLLECTIONS ================= */
 function toggleDueField(){const isChq=document.getElementById('collMethod').value==='chq';document.getElementById('collDue').style.display=isChq?'':'none';document.getElementById('collDueLbl').style.display=isChq?'':'none'}
