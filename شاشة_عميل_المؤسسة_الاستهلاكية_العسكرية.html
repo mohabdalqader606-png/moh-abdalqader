@@ -101,6 +101,8 @@
   #printOverlay.active{display:block;}
   .print-toolbar{position:sticky; top:0; background:var(--paper); padding:10px 24px; border-bottom:1px solid var(--line); display:flex; gap:10px; z-index:2;}
   .print-sheet{max-width:940px; margin:20px auto; padding:26px; border:1px solid #ccc; font-family:var(--disp); color:#000; background:#fff; display:flex; flex-direction:column; min-height:1270px; box-sizing:border-box;}
+  .ps-qr{text-align:center; margin:2px 0 4px;}
+  .ps-qr img{height:20mm; width:auto;}
   /* أبعاد الصورتين مطابقة لأبعاد عرضهما بالفاتورة الأصلية (الرأسية 30مم والذيل 19مم بكامل العرض، مشدودتين) */
   .ps-headimg img{width:100%; height:30mm; object-fit:fill; display:block;}
   .ps-brandfoot{margin-top:auto; padding-top:16px;}
@@ -463,6 +465,11 @@ ORDER BY T0."DocNum"</code>
       <div class="row-actions" id="trAqabaPrintBox" style="display:none; margin-top:8px; padding-top:8px; border-top:1px dashed var(--line);">
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;">رقم الفاتورة <input type="text" id="trAqabaPrintDocNo" style="width:150px;"></label>
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;">التاريخ <input type="date" id="trAqabaPrintDocDate"></label>
+        <label class="btn-ghost btn-sm" style="cursor:pointer; display:inline-flex; align-items:center; gap:4px;" title="صورة QR خاصة بهاي الفاتورة — بتنطبع فوق مربع الرقم الضريبي">
+          <span id="trAqabaQrLabel">📤 QR الفاتورة</span>
+          <input type="file" accept="image/*" style="display:none;" onchange="uploadTrAqabaQr(event)">
+        </label>
+        <button class="btn-danger tiny-btn" id="trAqabaQrClear" style="display:none;" onclick="clearTrAqabaQr()">✕</button>
         <button class="btn-primary btn-sm" onclick="printAqabaVoucherInvoices()">🖨️ طباعة فاتورة العقبة لهاي السند/السندات</button>
       </div>
     </div>
@@ -677,6 +684,7 @@ function ensureInvoiceDefaults(inv){
   if(inv.docNo===undefined) inv.docNo='';
   if(inv.docDate===undefined) inv.docDate='';
   if(inv.docType===undefined) inv.docType='invoice'; // 'invoice' = فاتورة مبيعات | 'aggregate' = كشف تجميعي
+  if(inv.qrImg===undefined) inv.qrImg=''; // صورة QR خاصة بهاي الفاتورة (كل فاتورة إلها QR مختلف)
   if(!inv.qty) inv.qty={};
 }
 function saveState(){
@@ -1321,6 +1329,47 @@ function computeInvoiceTitle(g, inv){
   return 'فاتورة مبيعات';
 }
 
+/* تصغير صورة الـQR قبل التخزين (بحد أقصى 500px) عشان ما يمتلي التخزين المحلي بصور كبيرة */
+function readImageDownscaled(file, maxDim, cb){
+  const reader = new FileReader();
+  reader.onload = e=>{
+    const img = new Image();
+    img.onload = ()=>{
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const w = Math.round(img.width*scale), h = Math.round(img.height*scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      cb(canvas.toDataURL('image/png'));
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+function uploadInvoiceQr(evt, invId){
+  const file = evt.target.files[0];
+  evt.target.value = '';
+  if(!file) return;
+  readImageDownscaled(file, 500, dataUrl=>{
+    const g = GROUPS.find(x=>x.id===currentGroupId);
+    const inv = g && g.invoices.find(i=>i.id===invId);
+    if(!inv) return;
+    ensureInvoiceDefaults(inv);
+    inv.qrImg = dataUrl;
+    try{ saveState(); }
+    catch(err){ inv.qrImg=''; alert('صورة الـQR كبيرة كتير على التخزين — جرب صورة أصغر.'); return; }
+    renderPrintPage();
+  });
+}
+function clearInvoiceQr(invId){
+  const g = GROUPS.find(x=>x.id===currentGroupId);
+  const inv = g && g.invoices.find(i=>i.id===invId);
+  if(!inv) return;
+  inv.qrImg = '';
+  saveState();
+  renderPrintPage();
+}
+
 function uploadPrintAsset(evt, key){
   const file = evt.target.files[0];
   if(!file) return;
@@ -1445,6 +1494,10 @@ function renderPrintPage(){
         <label style="font-size:11.5px; display:flex; align-items:center; gap:5px;">رقم المستند <input type="text" value="${esc(inv.docNo)}" style="width:110px;" onchange="updateInvoiceField('${inv.id}','docNo',this.value)"></label>
         <label style="font-size:11.5px; display:flex; align-items:center; gap:5px;">التاريخ <input type="date" value="${esc(inv.docDate)}" onchange="updateInvoiceField('${inv.id}','docDate',this.value)"></label>
         <span style="flex:1;"></span>
+        <label class="btn-ghost btn-sm" style="cursor:pointer; display:inline-flex; align-items:center; gap:4px;" title="صورة QR خاصة بهاي الفاتورة — بتنطبع فوق مربع الرقم الضريبي">${inv.qrImg?'✓ QR':'📤 QR'}
+          <input type="file" accept="image/*" style="display:none;" onchange="uploadInvoiceQr(event,'${inv.id}')">
+        </label>
+        ${inv.qrImg?`<button class="btn-danger tiny-btn" onclick="clearInvoiceQr('${inv.id}')" title="حذف صورة QR">✕</button>`:''}
         <button class="btn-ghost btn-sm" onclick="resetQty('${inv.id}')">مسح الكميات</button>
         <button class="btn-primary btn-sm" onclick="openPrintPreview('${g.id}','${inv.id}')">🖨️ معاينة وطباعة (حسب المؤسسة)</button>
         <button class="btn-ghost btn-sm" onclick="openPrintPreview('${g.id}','${inv.id}','company')" title="قائمة برموزنا وأسمائنا وسعرنا — لإدخالها بـ SAP">🏢 حسب الشركة (SAP)</button>
@@ -1573,6 +1626,7 @@ function buildPrintSheetHTML(g, inv, qtyOverride){
   <div class="print-sheet">
     ${headerHtml}
     <div class="ps-natno">الرقم الوطني: &nbsp;100047692</div>
+    ${inv.qrImg?`<div class="ps-qr"><img src="${inv.qrImg}" alt="QR"></div>`:''}
     <div class="ps-boxes">
       <div class="ps-box">الرقم الضريبي<br>1503570</div>
       <div class="ps-box">${esc(title)}</div>
@@ -1880,6 +1934,7 @@ function matchTransferVouchers(){
   lastTrMatch = {mappedRows, unmapped, vouchers: Array.from(voucherMap.values())};
   document.getElementById('trTableToolbar').style.display = '';
   document.getElementById('trAqabaPrintBox').style.display = '';
+  clearTrAqabaQr(); // مطابقة جديدة = فاتورة جديدة = QR جديد — منصفّر القديم عشان ما ينطبع بالغلط
   const firstVoucher = lastTrMatch.vouchers[0];
   document.getElementById('trAqabaPrintDocNo').value = lastTrMatch.vouchers.map(v=>v.docNum).join(' / ');
   const isoDate = firstVoucher && /^\d{4}-\d{2}-\d{2}$/.test(firstVoucher.docDate||'') ? firstVoucher.docDate : '';
@@ -1914,6 +1969,22 @@ function buildAqabaVoucherSlots(){
   bySlot.forEach(arr=> arr.sort((a,b)=>a.order-b.order));
   return bySlot;
 }
+let trAqabaQrImg = ''; // صورة QR للفاتورة الجاي طباعتها من سند التحويل (بتتصفر بعد كل مطابقة جديدة)
+function uploadTrAqabaQr(evt){
+  const file = evt.target.files[0];
+  evt.target.value = '';
+  if(!file) return;
+  readImageDownscaled(file, 500, dataUrl=>{
+    trAqabaQrImg = dataUrl;
+    document.getElementById('trAqabaQrLabel').textContent = '✓ QR جاهز';
+    document.getElementById('trAqabaQrClear').style.display = '';
+  });
+}
+function clearTrAqabaQr(){
+  trAqabaQrImg = '';
+  document.getElementById('trAqabaQrLabel').textContent = '📤 QR الفاتورة';
+  document.getElementById('trAqabaQrClear').style.display = 'none';
+}
 function printAqabaVoucherInvoices(){
   if(!lastTrMatch || !lastTrMatch.mappedRows.length){ flash('trMatchMsg','اعمل "مطابقة" للسند/السندات أول.', false); return; }
   const slots = buildAqabaVoucherSlots();
@@ -1928,7 +1999,7 @@ function printAqabaVoucherInvoices(){
   let html = '';
   Array.from(slots.keys()).sort((a,b)=>a-b).forEach(slot=>{
     const keys = slots.get(slot).map(x=>x.key);
-    const fakeInv = {id:'aqaba-voucher-slot-'+slot, slot, name:'فاتورة سند '+slot, docType:'invoice', docNo, docDate, itemKeys:keys, qty:{}};
+    const fakeInv = {id:'aqaba-voucher-slot-'+slot, slot, name:'فاتورة سند '+slot, docType:'invoice', docNo, docDate, qrImg:trAqabaQrImg, itemKeys:keys, qty:{}};
     html += buildPrintSheetHTML(g, fakeInv, qtyMap);
     logInvoicePrint('voucher', 'aqaba-voucher-slot-'+slot, g, fakeInv, qtyMap);
   });
