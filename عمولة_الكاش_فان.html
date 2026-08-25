@@ -229,16 +229,16 @@ ORDER BY 1,2</textarea>
  <div class="card">
   <h3>مندوبو الكاش فان</h3>
   <div class="row noprint"><label>بحث</label><input type="text" id="cvSearch" placeholder="اسم المندوب..." style="width:220px" oninput="renderComm()"></div>
-  <p class="hint noprint">💡 مرّر الماوس فوق أي رقم بالجدول لتشوف معادلته بالأرقام الفعلية.</p>
+  <p class="hint noprint">💡 مرّر الماوس فوق أي رقم بالجدول لتشوف معادلته بالأرقام الفعلية. "مكافأة البيع" و"مكافأة التحصيل" خانتان قابلتان للتعديل يدوياً لكل مندوب لحاله — عدّل أي وحدة منهم وبتتحدد بعلامة ✏ (لونها ذهبي) عشان تعرف إنها قيمة يدوية مش محسوبة تلقائياً؛ امسح الخانة لترجيعها للحساب التلقائي.</p>
   <div class="tblwrap"><table><tr>
    <th title="من تبويب المندوبين">المندوب</th>
    <th class="num" title="مجموع صافي المبيعات المسجّلة لهذا المندوب بالفترة المختارة (من تبويب المبيعات الشهرية)">صافي المبيعات</th>
    <th class="num" title="عمولة ثابتة = صافي المبيعات × نسبة العمولة % (قابلة للتعديل بإعدادات المعادلة فوق)">عمولة %</th>
-   <th class="num" title="مكافأة تناسبية حتى سقف معيّن: (صافي المبيعات ÷ هدف المبيعات) × قيمة المكافأة الكاملة، وما بتتجاوز القيمة الكاملة حتى لو باع أكتر من الهدف">مكافأة البيع</th>
+   <th class="num" title="مكافأة تناسبية حتى سقف معيّن: (صافي المبيعات ÷ هدف المبيعات) × قيمة المكافأة الكاملة. قابلة للتعديل يدوياً لكل مندوب — اكتب رقم بالخانة ليصير هو القيمة الفعلية (بيتحدد بعلامة ✏)، أو امسحها لترجيعها للحساب التلقائي">مكافأة البيع</th>
    <th class="num" title="مجموع كل ما حصّله المندوب بالفترة: نقد + حوالات بنكية + شيكات (فورية ومؤجلة) — من تبويب التحصيل والشيكات">تحصيل الفترة</th>
    <th class="num" title="مجموع قيمة الشيكات الي تاريخ استحقاقها أبعد من حد الأيام المحدد بإعدادات المعادلة (افتراضياً 7 أيام) عن تاريخ القبض">شيكات ضعيفة</th>
    <th class="num" title="نسبة الشيكات الضعيفة من كامل تحصيل المندوب = الشيكات الضعيفة ÷ تحصيل الفترة">%ضعيف</th>
-   <th class="num" title="مكافأة جودة التحصيل = قيمة المكافأة الكاملة × (1 − نسبة الشيكات الضعيفة). ما عنده شيكات ضعيفة = ياخذ المكافأة كاملة، وكل ما زادت نسبة الضعيف كل ما قلّت">مكافأة التحصيل</th>
+   <th class="num" title="مكافأة جودة التحصيل = قيمة المكافأة الكاملة × (1 − نسبة الشيكات الضعيفة). قابلة للتعديل يدوياً لكل مندوب — اكتب رقم بالخانة ليصير هو القيمة الفعلية (بيتحدد بعلامة ✏)، أو امسحها لترجيعها للحساب التلقائي">مكافأة التحصيل</th>
    <th class="num" title="مكافأة يقرّرها المدير يدوياً لكل مندوب ولكل فترة — مش محسوبة بمعادلة">مكافأة المدير</th>
    <th class="num" title="قيمة الشيكات المرتجعة على هذا المندوب — تُدخل يدوياً">شيكات مرتجعة</th>
    <th class="num" title="خصم = قيمة الشيكات المرتجعة × نسبة الخصم % (قابلة للتعديل بإعدادات المعادلة فوق)">خصم المرتجع</th>
@@ -341,36 +341,44 @@ function computeCV(fromISO,toISO){
  const rows=ST.reps.map(rep=>{
   const sales=salesByRep[rep.id]||0;const coll=collByRep[rep.id]||{tot:0,weak:0};
   const salesComm=sales*P.salesRate/100;
-  const salesBonus=sales>0?Math.min(1,sales/P.salesTarget)*P.salesBonus:0;
+  const salesBonusCalc=sales>0?Math.min(1,sales/P.salesTarget)*P.salesBonus:0;
   const weakRatio=coll.tot>0?coll.weak/coll.tot:0;
-  const collBonus=coll.tot>0?Math.max(0,P.collBonus*(1-weakRatio)):0;
-  const man=PD.perRep[rep.id]=PD.perRep[rep.id]||{mgrBonus:0,retChq:0,assistFee:0};
+  const collBonusCalc=coll.tot>0?Math.max(0,P.collBonus*(1-weakRatio)):0;
+  const man=PD.perRep[rep.id]=PD.perRep[rep.id]||{mgrBonus:0,retChq:0,assistFee:0,salesBonusOv:null,collBonusOv:null};
+  const salesBonusOv=man.salesBonusOv!=null&&man.salesBonusOv!==''?+man.salesBonusOv:null;
+  const collBonusOv=man.collBonusOv!=null&&man.collBonusOv!==''?+man.collBonusOv:null;
+  const salesBonus=salesBonusOv!=null?salesBonusOv:salesBonusCalc;
+  const collBonus=collBonusOv!=null?collBonusOv:collBonusCalc;
   const retDed=(+man.retChq||0)*P.retChqRate/100;
   const total=salesComm+salesBonus+collBonus+(+man.mgrBonus||0)-retDed-(+man.assistFee||0);
-  return {rep,sales,salesComm,salesBonus,collTot:coll.tot,collWeak:coll.weak,weakRatio,collBonus,mgrBonus:+man.mgrBonus||0,retChq:+man.retChq||0,retDed,assistFee:+man.assistFee||0,total};
+  return {rep,sales,salesComm,salesBonusCalc,salesBonus,salesBonusOv,collTot:coll.tot,collWeak:coll.weak,weakRatio,collBonusCalc,collBonus,collBonusOv,mgrBonus:+man.mgrBonus||0,retChq:+man.retChq||0,retDed,assistFee:+man.assistFee||0,total};
  });
  return {rows,PD,P,key};
 }
 function cvRowHtml(r,X,P){
- const salesBonusRaw=r.sales>0?(r.sales/P.salesTarget)*P.salesBonus:0;
- const capNote=salesBonusRaw>P.salesBonus?` — تجاوز الهدف فأخذ الحد الأقصى ${P.salesBonus}`:'';
+ const capNote=r.salesBonusCalc>P.salesBonus?` — تجاوز الهدف فأخذ الحد الأقصى ${P.salesBonus}`:'';
  const tSales=`مسجّلة بتبويب المبيعات الشهرية`;
  const tComm=`${fmt(r.sales)} × ${P.salesRate}% = ${fmt(r.salesComm)}`;
- const tBonus=`(${fmt(r.sales)} ÷ ${fmt(P.salesTarget)}) × ${P.salesBonus} = ${fmt(salesBonusRaw)}${capNote} → ${fmt(r.salesBonus)}`;
+ const tBonus=r.salesBonusOv!=null
+  ?`✏ قيمة يدوية أدخلتها بنفسك (بدل المحسوبة تلقائياً ${fmt(r.salesBonusCalc)}). امسح الخانة لترجيعها أوتوماتيك.`
+  :`(${fmt(r.sales)} ÷ ${fmt(P.salesTarget)}) × ${P.salesBonus} = ${fmt(r.salesBonusCalc)}${capNote}`;
  const tCollTot=`نقد وحوالات وشيكات مسجّلة بتبويب التحصيل والشيكات`;
  const tCollWeak=`شيكات استحقاقها أكثر من ${P.collWeakDays} يوم من تاريخ القبض`;
  const tWeakPct=`${fmt(r.collWeak)} ÷ ${fmt(r.collTot)} = ${pct(r.weakRatio)}`;
- const tCollBonus=`${P.collBonus} × (1 − ${pct(r.weakRatio)}) = ${fmt(r.collBonus)}`;
+ const tCollBonus=r.collBonusOv!=null
+  ?`✏ قيمة يدوية أدخلتها بنفسك (بدل المحسوبة تلقائياً ${fmt(r.collBonusCalc)}). امسح الخانة لترجيعها أوتوماتيك.`
+  :`${P.collBonus} × (1 − ${pct(r.weakRatio)}) = ${fmt(r.collBonusCalc)}`;
  const tRetDed=`${fmt(r.retChq)} × ${P.retChqRate}% = ${fmt(r.retDed)} خصم`;
  const tTotal=`${fmt(r.salesComm)} + ${fmt(r.salesBonus)} + ${fmt(r.collBonus)} + ${fmt(r.mgrBonus)} − ${fmt(r.retDed)} − ${fmt(r.assistFee)} = ${fmt(r.total)}`;
+ const ovMark=v=>v!=null?' style="color:#c9a94d;font-weight:700"':'';
  return `<tr><td><b>${r.rep.name}</b></td>`
   +`<td class="num" title="${tSales}">${fmt(r.sales)}</td>`
   +`<td class="num" title="${tComm}">${fmt(r.salesComm)}</td>`
-  +`<td class="num" title="${tBonus}">${fmt(r.salesBonus)}</td>`
+  +`<td class="num"${ovMark(r.salesBonusOv)} title="${tBonus}"><input type="number" step="any" placeholder="${fmt(r.salesBonusCalc)}" value="${r.salesBonusOv!=null?r.salesBonusOv:''}" style="width:55px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].salesBonusOv=this.value===''?null:+this.value;saveState();renderComm()">${r.salesBonusOv!=null?' ✏':''}</td>`
   +`<td class="num" title="${tCollTot}">${fmt(r.collTot)}</td>`
   +`<td class="num ${r.collWeak?'neg':''}" title="${tCollWeak}">${fmt(r.collWeak)}</td>`
   +`<td class="num" title="${tWeakPct}">${pct(r.weakRatio)}</td>`
-  +`<td class="num" title="${tCollBonus}">${fmt(r.collBonus)}</td>`
+  +`<td class="num"${ovMark(r.collBonusOv)} title="${tCollBonus}"><input type="number" step="any" placeholder="${fmt(r.collBonusCalc)}" value="${r.collBonusOv!=null?r.collBonusOv:''}" style="width:55px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].collBonusOv=this.value===''?null:+this.value;saveState();renderComm()">${r.collBonusOv!=null?' ✏':''}</td>`
   +`<td class="num" title="تُدخل يدوياً"><input type="number" step="any" value="${r.mgrBonus}" style="width:55px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].mgrBonus=+this.value;saveState();renderComm()"></td>`
   +`<td class="num" title="تُدخل يدوياً"><input type="number" step="any" value="${r.retChq}" style="width:65px" onchange="periodData('${X.key}').perRep['${r.rep.id}'].retChq=+this.value;saveState();renderComm()"></td>`
   +`<td class="num" title="${tRetDed}">${fmt(r.retDed)}</td>`
@@ -413,10 +421,10 @@ function printRepSlip(repId){
  const line=(l,m,v)=>`<tr><td>${l}</td><td class="hint">${m}</td><td class="num">${v}</td></tr>`;
  const body=line('صافي المبيعات','—',fmt(r.sales))
   +line('عمولة المبيعات',`صافي المبيعات × ${P.salesRate}%`,fmt(r.salesComm))
-  +line('مكافأة البيع',`(صافي المبيعات ÷ ${fmt(P.salesTarget)}) × ${P.salesBonus} — بحد أقصى ${P.salesBonus}`,fmt(r.salesBonus))
+  +line('مكافأة البيع',r.salesBonusOv!=null?'✏ قيمة يدوية (بدل المحسوبة تلقائياً '+fmt(r.salesBonusCalc)+')':`(صافي المبيعات ÷ ${fmt(P.salesTarget)}) × ${P.salesBonus} — بحد أقصى ${P.salesBonus}`,fmt(r.salesBonus))
   +line('تحصيل الفترة (نقد + حوالات + شيكات)','—',fmt(r.collTot))
   +line('منها شيكات "ضعيفة"',`استحقاقها أكثر من ${P.collWeakDays} يوم من تاريخ القبض`,fmt(r.collWeak)+' ('+pct(r.weakRatio)+')')
-  +line('مكافأة جودة التحصيل',`${P.collBonus} × (1 − نسبة الشيكات الضعيفة)`,fmt(r.collBonus))
+  +line('مكافأة جودة التحصيل',r.collBonusOv!=null?'✏ قيمة يدوية (بدل المحسوبة تلقائياً '+fmt(r.collBonusCalc)+')':`${P.collBonus} × (1 − نسبة الشيكات الضعيفة)`,fmt(r.collBonus))
   +line('مكافأة المدير','تُدخل يدوياً',fmt(r.mgrBonus))
   +line('شيكات مرتجعة',`المدخلة ${fmt(r.retChq)} × خصم ${P.retChqRate}%`,'−'+fmt(r.retDed))
   +line('مقابل استخدام مساعد','تُدخل يدوياً','−'+fmt(r.assistFee));
