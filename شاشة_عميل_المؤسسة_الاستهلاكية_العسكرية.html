@@ -469,15 +469,13 @@ ORDER BY T0."DocNum"</code>
         <button class="btn-primary btn-sm" onclick="matchTransferVouchers()">مطابقة</button>
         <span class="status-msg" id="trMatchMsg"></span>
       </div>
-      <div class="row-actions" id="trAqabaPrintBox" style="display:none; margin-top:8px; padding-top:8px; border-top:1px dashed var(--line);">
-        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">رقم الفاتورة <input type="text" id="trAqabaPrintDocNo" style="width:150px;"></label>
-        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">التاريخ <input type="date" id="trAqabaPrintDocDate"></label>
-        <label class="btn-ghost btn-sm" style="cursor:pointer; display:inline-flex; align-items:center; gap:4px;" title="صورة QR خاصة بهاي الفاتورة — بتنطبع فوق مربع الرقم الضريبي">
-          <span id="trAqabaQrLabel">📤 QR الفاتورة</span>
-          <input type="file" accept="image/*,application/pdf" style="display:none;" onchange="uploadTrAqabaQr(event)">
-        </label>
-        <button class="btn-danger tiny-btn" id="trAqabaQrClear" style="display:none;" onclick="clearTrAqabaQr()">✕</button>
-        <button class="btn-primary btn-sm" onclick="printAqabaVoucherInvoices()">🖨️ طباعة فاتورة العقبة لهاي السند/السندات</button>
+      <div id="trAqabaPrintBox" style="display:none; margin-top:8px; padding-top:8px; border-top:1px dashed var(--line);">
+        <div class="hint" style="margin:0 0 6px;">فواتير العقبة يلي رح تنطبع لهاي السند/السندات (حسب توزيعك بربط الأصناف) — لكل فاتورة رقمها والـQR الخاص فيها:</div>
+        <div id="trAqabaSlotsBox"></div>
+        <div class="row-actions" style="margin-top:6px;">
+          <label style="font-size:12px; display:flex; align-items:center; gap:6px;">التاريخ (لكل الفواتير) <input type="date" id="trAqabaPrintDocDate"></label>
+          <button class="btn-primary btn-sm" onclick="printAqabaVoucherInvoices()">🖨️ طباعة فاتورة العقبة لهاي السند/السندات</button>
+        </div>
       </div>
     </div>
 
@@ -2042,9 +2040,10 @@ function matchTransferVouchers(){
   lastTrMatch = {mappedRows, unmapped, vouchers: Array.from(voucherMap.values())};
   document.getElementById('trTableToolbar').style.display = '';
   document.getElementById('trAqabaPrintBox').style.display = '';
-  clearTrAqabaQr(); // مطابقة جديدة = فاتورة جديدة = QR جديد — منصفّر القديم عشان ما ينطبع بالغلط
+  // مطابقة جديدة = فواتير جديدة = أرقام وQR جداد — منصفّر بيانات المطابقة السابقة عشان ما تنطبع بالغلط
+  trAqabaSlotData = {};
+  renderTrAqabaSlots(lastTrMatch.vouchers.map(v=>v.docNum).join(' / '));
   const firstVoucher = lastTrMatch.vouchers[0];
-  document.getElementById('trAqabaPrintDocNo').value = lastTrMatch.vouchers.map(v=>v.docNum).join(' / ');
   const isoDate = firstVoucher && /^\d{4}-\d{2}-\d{2}$/.test(firstVoucher.docDate||'') ? firstVoucher.docDate : '';
   document.getElementById('trAqabaPrintDocDate').value = isoDate;
   renderTransferResultTable();
@@ -2077,23 +2076,45 @@ function buildAqabaVoucherSlots(){
   bySlot.forEach(arr=> arr.sort((a,b)=>a.order-b.order));
   return bySlot;
 }
-let trAqabaQrImg = ''; // صورة QR للفاتورة الجاي طباعتها من سند التحويل (بتتصفر بعد كل مطابقة جديدة)
-function uploadTrAqabaQr(evt){
+let trAqabaSlotData = {}; // {slot: {docNo, qrImg, qrOk}} — بيانات كل فاتورة عقبة رح تنطبع من هاي المطابقة (بتتصفر مع كل مطابقة جديدة)
+function renderTrAqabaSlots(prefillDocNo){
+  const box = document.getElementById('trAqabaSlotsBox');
+  if(!box) return;
+  const slots = Array.from(buildAqabaVoucherSlots().keys()).sort((a,b)=>a-b);
+  if(!slots.length){
+    box.innerHTML = '<div class="hint" style="color:var(--crimson);">ما في أصناف إلها "ترتيب - فواتير العقبة" و"رقم فاتورة - فواتير العقبة" بصفحة ربط الأصناف بعد.</div>';
+    return;
+  }
+  slots.forEach(s=>{ if(!trAqabaSlotData[s]) trAqabaSlotData[s] = {docNo: prefillDocNo||'', qrImg:'', qrOk:false}; });
+  box.innerHTML = slots.map(s=>{
+    const d = trAqabaSlotData[s];
+    return `<div class="row-actions" style="margin-top:4px;">
+      <b style="font-size:12px; min-width:90px;">فاتورة سند ${s}</b>
+      <label style="font-size:12px; display:flex; align-items:center; gap:6px;">رقم الفاتورة <input type="text" value="${esc(d.docNo)}" style="width:140px;" onchange="trAqabaSlotData[${s}].docNo=this.value"></label>
+      <label class="btn-ghost btn-sm" style="cursor:pointer; display:inline-flex; align-items:center; gap:4px;" title="صورة/PDF فاتورة الفوترة — بيقرأ الـQR منها ويولّده نظيف">
+        <span>${d.qrImg ? (d.qrOk?'✓ QR جاهز':'⚠ QR (ما انقرأ)') : '📤 QR'}</span>
+        <input type="file" accept="image/*,application/pdf" style="display:none;" onchange="uploadTrAqabaSlotQr(event, ${s})">
+      </label>
+      ${d.qrImg?`<button class="btn-danger tiny-btn" onclick="clearTrAqabaSlotQr(${s})">✕</button>`:''}
+    </div>`;
+  }).join('');
+}
+function uploadTrAqabaSlotQr(evt, slot){
   const file = evt.target.files[0];
   evt.target.value = '';
   if(!file) return;
   processQrFile(file, (dataUrl, decoded)=>{
     if(!dataUrl){ alert('ما لقيت QR مقروء بهاد الملف — تأكد إنه فاتورة فيها QR واضح وجرب من جديد.'); return; }
-    trAqabaQrImg = dataUrl;
-    document.getElementById('trAqabaQrLabel').textContent = decoded ? '✓ QR منقرئ وجاهز' : '⚠ QR (ما انقرأ)';
-    document.getElementById('trAqabaQrClear').style.display = '';
+    if(!trAqabaSlotData[slot]) trAqabaSlotData[slot] = {docNo:'', qrImg:'', qrOk:false};
+    trAqabaSlotData[slot].qrImg = dataUrl;
+    trAqabaSlotData[slot].qrOk = decoded;
+    renderTrAqabaSlots();
     if(!decoded) alert(QR_UNREADABLE_MSG);
   });
 }
-function clearTrAqabaQr(){
-  trAqabaQrImg = '';
-  document.getElementById('trAqabaQrLabel').textContent = '📤 QR الفاتورة';
-  document.getElementById('trAqabaQrClear').style.display = 'none';
+function clearTrAqabaSlotQr(slot){
+  if(trAqabaSlotData[slot]){ trAqabaSlotData[slot].qrImg=''; trAqabaSlotData[slot].qrOk=false; }
+  renderTrAqabaSlots();
 }
 function printAqabaVoucherInvoices(){
   if(!lastTrMatch || !lastTrMatch.mappedRows.length){ flash('trMatchMsg','اعمل "مطابقة" للسند/السندات أول.', false); return; }
@@ -2104,12 +2125,12 @@ function printAqabaVoucherInvoices(){
   ensureGroupDefaults(g);
   const qtyMap = new Map();
   lastTrMatch.mappedRows.forEach(r=> qtyMap.set(r.ourCode+'|'+r.theirCode, r.theirQty));
-  const docNo = document.getElementById('trAqabaPrintDocNo').value.trim();
   const docDate = document.getElementById('trAqabaPrintDocDate').value;
   let html = '';
   Array.from(slots.keys()).sort((a,b)=>a-b).forEach(slot=>{
     const keys = slots.get(slot).map(x=>x.key);
-    const fakeInv = {id:'aqaba-voucher-slot-'+slot, slot, name:'فاتورة سند '+slot, docType:'invoice', docNo, docDate, qrImg:trAqabaQrImg, itemKeys:keys, qty:{}};
+    const d = trAqabaSlotData[slot] || {docNo:'', qrImg:''};
+    const fakeInv = {id:'aqaba-voucher-slot-'+slot, slot, name:'فاتورة سند '+slot, docType:'invoice', docNo:(d.docNo||'').trim(), docDate, qrImg:d.qrImg||'', itemKeys:keys, qty:{}};
     html += buildPrintSheetHTML(g, fakeInv, qtyMap);
     logInvoicePrint('voucher', 'aqaba-voucher-slot-'+slot, g, fakeInv, qtyMap);
   });
