@@ -207,7 +207,7 @@ body.glass .kpi{background:rgba(255,255,255,.96)}
   <label class="btn ghost sm" style="cursor:pointer" title="يستعيد بيانات من ملف نسخة احتياطية سابق">↩️ استعادة نسخة احتياطية<input type="file" id="fJsonQuick" accept=".json" style="display:none"></label>
   <button class="btn ghost sm" onclick="exportClassBank()" title="يحفظ التصنيف (بند القوائم لكل حساب) وربط البنوك فقط بملف صغير مستقل — لحمايتهم من أي حذف أو مسح للبيانات المالية">📎 نسخة تصنيف وبنوك</button>
   <label class="btn ghost sm" style="cursor:pointer" title="يستعيد التصنيف وربط البنوك من ملف محفوظ سابقاً — يدمجهم فوق الموجود حالياً، ما يمسح شي">📎 استعادة تصنيف وبنوك<input type="file" id="fClassBank" accept=".json" style="display:none"></label>
-  <button class="btn ghost sm" style="color:var(--coral,#c0392b);border-color:var(--coral,#c0392b)" onclick="clearAllQueries()" title="⚠️ يمسح كل شي بهذا الملف الشركة: الحسابات، الأرصدة، الحركات، شركاء الأعمال، التصنيف، ربط البنوك — كل شي. ما يبقى إلا اسم الشركة والعملة. لا رجعة عنه إلا بنسخة احتياطية.">🗑️ حذف كل الكويريات</button>
+  <button class="btn ghost sm" style="color:var(--coral,#c0392b);border-color:var(--coral,#c0392b)" onclick="clearAllQueries()" title="⚠️ يمسح بيانات هذا الملف: الحسابات، الأرصدة، الحركات، شركاء الأعمال، تسوية توقيت الإيراد وكل المصادر الاختيارية. التصنيف وربط البنوك محفوظين تلقائياً ومش بينمسحوا. لا رجعة عن مسح البيانات إلا بنسخة احتياطية.">🗑️ حذف كل الكويريات (يحافظ على التصنيف والبنوك)</button>
   <span class="hint">قبل أي حذف، خذ نسخة احتياطية أولاً — الاستعادة سهلة بملف واحد. أو خذ «نسخة تصنيف وبنوك» الخفيفة بعد أي جلسة تصنيف طويلة</span>
  </div>
  <div class="row" style="margin:8px 0"><span id="dataCenterSum" class="badge ok" style="font-size:13px"></span><span class="hint">البنود الملوّنة أدناه ✓ محمّلة مسبقاً وتظهر مطوية — افتحها بالضغط لو حبيت تستبدل بياناتها</span></div>
@@ -1753,10 +1753,10 @@ async function clearFeedItem(n){
  toast('تم حذف بيانات هذا البند')
 }
 async function clearAllQueries(){
- if(!confirm('⚠️ هذا رح يمسح كل شي بهذا الملف الشركة: الحسابات، الأرصدة الافتتاحية، الحركات، شركاء الأعمال، التصنيف (كل حساب صنّفته يدوياً)، وربط البنوك — كل شي. ما يبقى إلا اسم الشركة والعملة.\\n\\nهل أخذت نسخة احتياطية؟ لو لأ، اضغط إلغاء وخذ نسخة أولاً.\\n\\nمتابعة الحذف؟'))return;
- const keepSettings=S.settings,keepBench=S.bench;
+ if(!confirm('⚠️ هذا رح يمسح بيانات هذا الملف: الحسابات، الأرصدة الافتتاحية، الحركات، شركاء الأعمال، تسوية توقيت الإيراد، وكل المصادر الاختيارية.\\n\\n✅ التصنيف (كل حساب صنّفته يدوياً) وربط البنوك محفوظين تلقائياً ومش رح يتمسحوا.\\n\\nهل أخذت نسخة احتياطية؟ لو لأ، اضغط إلغاء وخذ نسخة أولاً.\\n\\nمتابعة الحذف؟'))return;
+ const keepSettings=S.settings,keepBench=S.bench,keepMap=S.map,keepBank=S.bank,keepBanks=S.banks,keepBankManual=S.bankManual;
  for(const k of BIGKEYS){await idbDel(LSK+':'+k)}
- S={accounts:{},opening:{},moves:{},adj:[],bank:{},banks:[],bp:{},bpOpen:{},bpMoves:{},timing:[],timingOn:true,budget:{},due:[],pcMoves:{},cust:[],aging:{rows:[],chq:[],snap:''},sales:[],purch:[],ben:[],prof:[],deliv:[],transf:[],findings:{},payroll:[],repMap:{},emps:[],ecl:{rates:[0.005,0.02,0.05,0.15,0.4,0.8],overlay:0,acct:'',on:false,hist:[]},segP:{a:70000,c:7000,perMonths:7,stopsDay:20,days:26,vanCost:975,vanRepCost:0,leak:0.1,mgrComm:0.5,dupWin:0},ctsP:{inv:0.229,line:1.216,stop:6.15,rate:8,ret:1.5,retDays:2},fleetP:{truck:975,cap:3,fuel:0},map:{},bench:keepBench,settings:keepSettings};
+ S={accounts:{},opening:{},moves:{},adj:[],bank:keepBank||{},banks:keepBanks||[],bp:{},bpOpen:{},bpMoves:{},timing:[],timingOn:true,budget:{},due:[],pcMoves:{},cust:[],aging:{rows:[],chq:[],snap:''},sales:[],purch:[],ben:[],prof:[],deliv:[],transf:[],findings:{},payroll:[],repMap:{},emps:[],ecl:{rates:[0.005,0.02,0.05,0.15,0.4,0.8],overlay:0,acct:'',on:false,hist:[]},segP:{a:70000,c:7000,perMonths:7,stopsDay:20,days:26,vanCost:975,vanRepCost:0,leak:0.1,mgrComm:0.5,dupWin:0},ctsP:{inv:0.229,line:1.216,stop:6.15,rate:8,ret:1.5,retDays:2},fleetP:{truck:975,cap:3,fuel:0},map:keepMap||{},bankManual:keepBankManual||{},bankCleaned:true,bankAutoDone:true,bench:keepBench,settings:keepSettings};
  await idbSet(LSK,packState());
  location.reload();
 }
