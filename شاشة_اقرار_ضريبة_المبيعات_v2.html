@@ -223,9 +223,21 @@
       <div id="salesRatesWrap"><div class="empty-state">ارفع الكشف أولاً</div></div>
 
       <div class="grp-title" style="margin-top:20px;"><span class="num">ب</span> ✅ المطابقة بالفلس — الجهات الثلاث مقابل كشف غير الخاضعة</div>
+      <div class="toolrow">
+        <div class="field"><label>حد السماح لفروقات تقريب النظام (دينار)</label>
+        <input type="number" class="num" id="reconTol" value="0.01" step="0.001" min="0" style="width:100px;" onchange="recomputeAll()"></div>
+      </div>
       <div id="reconWrap"><div class="empty-state">يلزم رفع الكشفين (١) و(٢)</div></div>
       <div id="reconCustWrap"></div>
       <div id="salesWarnWrap"></div>
+
+      <div class="grp-title" style="margin-top:20px;"><span class="num">ج</span> تفصيل المبيعات حسب الصنف</div>
+      <div class="toolrow">
+        <input type="text" id="itemSearch" placeholder="بحث بكود الصنف أو اسمه…" style="width:280px;" oninput="renderItems()">
+        <button class="btn-ghost btn-sm" onclick="exportItemsCSV()">⬇️ تنزيل التفصيل كامل (Excel/CSV)</button>
+        <span class="hint">التفصيل متاح بعد رفع الملف في هذه الجلسة (لا يُخزَّن مركزياً لضخامته) — نزّله CSV للأرشفة.</span>
+      </div>
+      <div class="scrollbox" id="itemsWrap" style="max-height:460px;"><div class="empty-state">ارفع الكشف أولاً</div></div>
     </div>
   </section>
 
@@ -332,6 +344,7 @@ let sb=null, curUser=null, curProfile=null, canEdit=false;
 let curDeclId=null, curDeclStatus=null, profilesMap={};
 let ccMap = {};        // تصنيفات العملاء من قاعدة البيانات: code -> {name, class}
 let ccDirty = false;
+let ITEMS = {};        // تفصيل الأصناف (بالذاكرة فقط — يُعاد بناؤه عند رفع ملف المبيعات)
 
 /* حالة العمل الحالية */
 function freshST(){ return {
@@ -520,7 +533,8 @@ async function onFileSales(inp){
   const rows=tsvRows(text);
   const hdr=rows[0];
   const iType=findCol(hdr,'نوع الحركة'), iNo=findCol(hdr,'رقم المستند'), iCode=findCol(hdr,'كود العميل'),
-        iName=findCol(hdr,'اسم العميل'), iTax=findCol(hdr,'رمز الضريبة');
+        iName=findCol(hdr,'اسم العميل'), iTax=findCol(hdr,'رمز الضريبة'),
+        iItem=findCol(hdr,'كود الصنف'), iItemName=findCol(hdr,'اسم الصنف'), iQty=findCol(hdr,'الكمية');
   const col={
     exp:[findCol(hdr,'مبيعات تصدير'),findCol(hdr,'ضريبة تصدير')],
     zero:[findCol(hdr,/^مبيعات جهات صفرية$/),findCol(hdr,/^ضريبة جهات صفرية$/)],
@@ -541,6 +555,7 @@ async function onFileSales(inp){
   const cust={};   // code -> {name, exp, zero, exm}
   const docAgg={}; // docNo(في كشف غير الخاضعة) -> {code, exp, zero, exm, br:{code:base}}
   const unk={};
+  ITEMS={};        // كود الصنف -> {name, qty, cols:{...b/t}}
   const dataRows=rows.slice(1);
   // مسح أولي لاتجاه الإشارة
   for(const r of dataRows){ if(iType>=0 && /مردود|مرتجع/.test(r[iType]||'')){ retSeen=true;
@@ -554,16 +569,22 @@ async function onFileSales(inp){
     const docNo=String(r[iNo]||'').trim();
     const code=iCode>=0?String(r[iCode]||'').trim():'';
     const tcode=iTax>=0?String(r[iTax]||'').trim().toUpperCase():'';
+    // تفصيل الصنف
+    let IT=null;
+    if(iItem>=0){ const ic=String(r[iItem]||'').trim();
+      if(ic){ if(!ITEMS[ic]) ITEMS[ic]={name:iItemName>=0?(r[iItemName]||''):'', qty:0, c:{}};
+        IT=ITEMS[ic]; IT.qty+=iQty>=0?pnum(r[iQty])*sign:0; } }
+    const itAdd=(k,b,t)=>{ if(IT&&(b||t)){ if(!IT.c[k]) IT.c[k]={b:0,t:0}; IT.c[k].b+=b; IT.c[k].t+=t; } };
     // النسب
     for(const rk in rateCols){ const [bi,ti]=rateCols[rk];
       const b=pnum(r[bi])*sign, t=ti>=0?pnum(r[ti])*sign:0;
-      if(b||t){ rate[rk].b+=b; rate[rk].t+=t; } }
+      if(b||t){ rate[rk].b+=b; rate[rk].t+=t; itAdd('r'+rk,b,t); } }
     // أصناف معفاة/صفر
-    if(col.x0[0]>=0){ const b=pnum(r[col.x0[0]])*sign; if(b){ x0b+=b; } if(col.x0[1]>=0) x0t+=pnum(r[col.x0[1]])*sign; }
-    if(col.out0[0]>=0){ const b=pnum(r[col.out0[0]])*sign; if(b){ out0b+=b; } }
+    if(col.x0[0]>=0){ const b=pnum(r[col.x0[0]])*sign; if(b){ x0b+=b; itAdd('x0',b,0); } if(col.x0[1]>=0) x0t+=pnum(r[col.x0[1]])*sign; }
+    if(col.out0[0]>=0){ const b=pnum(r[col.out0[0]])*sign; if(b){ out0b+=b; itAdd('out0',b,0); } }
     // أعمدة الجهات
     let bktSum=0; const bkt={};
-    for(const k of ['exp','zero','exm']){ const b=col[k][0]>=0?pnum(r[col[k][0]])*sign:0; if(b){ bkt[k]=b; bktSum+=b; } }
+    for(const k of ['exp','zero','exm']){ const b=col[k][0]>=0?pnum(r[col[k][0]])*sign:0; if(b){ bkt[k]=b; bktSum+=b; itAdd(k,b,0); } }
     if(bktSum){
       if(!cust[code]) cust[code]={name:iName>=0?(r[iName]||''):'', exp:0, zero:0, exm:0};
       for(const k in bkt) cust[code][k]+=bkt[k];
@@ -578,7 +599,46 @@ async function onFileSales(inp){
   }
   ST.sales={rate, x0b:r3(x0b), x0t:r3(x0t), out0b:r3(out0b), cust, docAgg, unk, fname:f.name, rowsN:dataRows.length, retFactor};
   setMsg('salesParseMsg',`تمت المعالجة: ${dataRows.length.toLocaleString()} سطر ✔ ${retFactor===-1?'(عُكست إشارة المرتجعات تلقائياً)':''}`,'ok');
-  recomputeAll();
+  recomputeAll(); renderItems();
+}
+
+/* تفصيل الأصناف */
+const ITEM_COLS=[['r16','16%'],['r10','10%'],['r5','5%'],['r4','4%'],['r2','2%'],['x0','أصناف معفاة X0'],['out0','أصناف صفر Out0'],['exp','جهات تصدير'],['zero','جهات صفرية'],['exm','جهات معفاة']];
+function itemTotal(v){ let s=0; for(const k in v.c) s+=v.c[k].b; return s; }
+function itemTax(v){ let s=0; for(const k in v.c) s+=v.c[k].t; return s; }
+function renderItems(){
+  const wrap=$('itemsWrap'); if(!wrap) return;
+  const codes=Object.keys(ITEMS);
+  if(!codes.length){ wrap.innerHTML='<div class="empty-state">التفصيل متاح بعد رفع ملف تحليل المبيعات في هذه الجلسة.</div>'; return; }
+  const q=($('itemSearch')?.value||'').trim();
+  let list=codes.map(c=>({code:c, ...ITEMS[c], tot:itemTotal(ITEMS[c]), tax:itemTax(ITEMS[c])}));
+  if(q) list=list.filter(x=>x.code.includes(q)||String(x.name).includes(q));
+  list.sort((a,b)=>Math.abs(b.tot)-Math.abs(a.tot));
+  const used=ITEM_COLS.filter(([k])=>list.some(x=>x.c[k]));
+  const shown=list.slice(0,300);
+  wrap.innerHTML=`<table class="t"><thead><tr><th>الكود</th><th>الصنف</th><th class="num">الكمية</th>`+
+    used.map(([k,l])=>`<th class="num">${l}</th><th class="num">ضريبة</th>`).join('')+
+    `<th class="num">إجمالي المبيعات</th><th class="num">إجمالي الضريبة</th></tr></thead><tbody>`+
+    shown.map(x=>`<tr><td class="num">${esc(x.code)}</td><td style="white-space:normal; min-width:220px;">${esc(x.name)}</td><td class="num">${x.qty?x.qty.toLocaleString('en-US',{maximumFractionDigits:2}):''}</td>`+
+      used.map(([k])=>`<td class="num">${x.c[k]?fmt(x.c[k].b):''}</td><td class="num">${x.c[k]&&x.c[k].t?fmt(x.c[k].t):''}</td>`).join('')+
+      `<td class="num" style="font-weight:700;">${fmt(x.tot)}</td><td class="num" style="font-weight:700;">${fmt(x.tax)}</td></tr>`).join('')+
+    '</tbody></table>'+(list.length>300?`<div class="hint" style="padding:8px 12px;">يعرض أعلى 300 من ${list.length.toLocaleString()} صنف — استخدم البحث أو نزّل CSV للتفصيل الكامل.</div>`:'');
+}
+function exportItemsCSV(){
+  const codes=Object.keys(ITEMS);
+  if(!codes.length){ alert('لا تفصيل متاح — ارفع ملف تحليل المبيعات أولاً.'); return; }
+  const qq=s=>'"'+String(s??'').replace(/"/g,'""')+'"';
+  const used=ITEM_COLS.filter(([k])=>codes.some(c=>ITEMS[c].c[k]));
+  const head=['كود الصنف','اسم الصنف','الكمية', ...used.flatMap(([k,l])=>['مبيعات '+l,'ضريبة '+l]), 'إجمالي المبيعات','إجمالي الضريبة'];
+  const lines=[head.map(qq).join(',')];
+  const list=codes.map(c=>({code:c,...ITEMS[c],tot:itemTotal(ITEMS[c]),tax:itemTax(ITEMS[c])})).sort((a,b)=>Math.abs(b.tot)-Math.abs(a.tot));
+  for(const x of list){
+    lines.push([x.code, x.name, r3(x.qty), ...used.flatMap(([k])=>[x.c[k]?r3(x.c[k].b):0, x.c[k]?r3(x.c[k].t):0]), r3(x.tot), r3(x.tax)].map(qq).join(','));
+  }
+  const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`تفصيل_المبيعات_حسب_الصنف_${$('fYear').value}_ف${$('fPeriod').value}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
 }
 
 /* ================= 3) المشتريات المحلية ================= */
@@ -806,7 +866,8 @@ function renderAll(C){
        <tr><td>جهات معفاة</td><td class="num">${fmt(C.bkt.exempt)}</td><td class="num">0.000</td></tr></tbody>
       <tfoot><tr><td>الإجمالي</td><td class="num">${fmt(C.totalSales)}</td><td class="num">${fmt(C.outTax)}</td></tfoot></table>`;
     if(ST.nt){
-      const rows=['export','zero','exempt'].map(k=>{ const a=C.ntTot[k], b=C.bkt[k], d=r3(a-b), ok=Math.abs(d)<0.0005;
+      const tol=Math.max(0,num('reconTol'));
+      const rows=['export','zero','exempt'].map(k=>{ const a=C.ntTot[k], b=C.bkt[k], d=r3(a-b), ok=Math.abs(d)<=tol+1e-9;
         if(!ok) salesOK=false;
         return `<tr class="${ok?'recon-ok':'recon-bad'}"><td>جهات ${CLS_AR[k]}</td><td class="num">${fmt(a)}</td><td class="num">${fmt(b)}</td><td class="num" style="font-weight:700;">${fmt(d)}</td><td>${OKB(ok)}</td></tr>`; });
       $('reconWrap').innerHTML=`<table class="t"><thead><tr><th>الجهة</th><th class="num">كشف غير الخاضعة</th><th class="num">تحليل المبيعات</th><th class="num">الفرق</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>`;
@@ -814,7 +875,7 @@ function renderAll(C){
       const diffs=[];
       const allK=new Set([...Object.keys(C.ntPerCust),...Object.keys(C.bktPerCust)]);
       for(const k of allK){ const a=C.ntPerCust[k]?.total||0, b=r3(C.bktPerCust[k]?.total||0), d=r3(a-b);
-        if(Math.abs(d)>=0.0005){ const src=C.ntPerCust[k]||C.bktPerCust[k]; diffs.push({name:src.name||src.code, cls:src.cls, a,b,d}); } }
+        if(Math.abs(d)>tol+1e-9){ const src=C.ntPerCust[k]||C.bktPerCust[k]; diffs.push({name:src.name||src.code, cls:src.cls, a,b,d}); } }
       diffs.sort((x,y)=>Math.abs(y.d)-Math.abs(x.d));
       $('reconCustWrap').innerHTML = diffs.length ? `<div class="hint" style="margin-top:10px;">أكبر الفروقات على مستوى العميل (${diffs.length}):</div>
         <div class="scrollbox" style="max-height:260px;"><table class="t"><thead><tr><th>العميل</th><th>الجهة</th><th class="num">غير الخاضعة</th><th class="num">تحليل المبيعات</th><th class="num">الفرق</th></tr></thead><tbody>`+
@@ -862,7 +923,7 @@ function renderAll(C){
       ['مبيعات الأمانات مقابل ضريبة تحليل المبيعات', C.trust.sal, C.outTax],
       ['مشتريات الأمانات مقابل ضريبة المشتريات المحلية', C.trust.loc, C.purchTax],
       ['مستوردات الأمانات مقابل ضريبة المستوردات', C.trust.imp, C.importsTax],
-    ].map(([l,a,b])=>{ const d=r3(a-b), ok=Math.abs(d)<0.0005; if(!ok) trustOK=false;
+    ].map(([l,a,b])=>{ const tol=Math.max(0,num('reconTol')); const d=r3(a-b), ok=Math.abs(d)<=tol+1e-9; if(!ok) trustOK=false;
       return `<tr class="${ok?'recon-ok':'recon-bad'}"><td>${l}</td><td class="num">${fmt(a)}</td><td class="num">${fmt(b)}</td><td class="num" style="font-weight:700;">${fmt(d)}</td><td>${OKB(ok)}</td></tr>`; });
     $('trustReconWrap').innerHTML=`<table class="t"><thead><tr><th>المطابقة</th><th class="num">حساب الأمانات</th><th class="num">الكشف</th><th class="num">الفرق</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>`+
       (C.trust.unN?`<div class="hint" style="color:var(--crimson); margin-top:6px;">⚠ يوجد ${C.trust.unN} حركة غير مصنفة — صنّفها قبل اعتماد المطابقة.</div>`:'');
@@ -960,7 +1021,7 @@ function printDecl(){
   const y=$('fYear').value, p=+$('fPeriod').value;
   const rateRows=RATE_KEYS.filter(r=>C.rate[r].b||C.rate[r].t)
     .map(r=>`<tr><td>مبيعات خاضعة ${r}%</td><td class="num">${fmt(C.rate[r].b)}</td><td class="num">${fmt(C.rate[r].t)}</td></tr>`).join('');
-  const recon = (a,b)=>Math.abs(r3(a-b))<0.0005?'مطابق ✔':'فرق: '+fmt(r3(a-b));
+  const recon = (a,b)=>Math.abs(r3(a-b))<=Math.max(0,num('reconTol'))+1e-9?'مطابق ✔':'فرق: '+fmt(r3(a-b));
   $('printSheet').innerHTML=`
   <div class="phead">
     <h2>مركز الكيلاني للأغذية</h2>
