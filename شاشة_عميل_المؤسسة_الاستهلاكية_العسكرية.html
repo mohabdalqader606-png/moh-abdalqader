@@ -137,6 +137,7 @@
     body{padding:0!important; background:#fff!important;}
     #printOverlay{display:block; position:static; overflow:visible; inset:auto;}
     .print-toolbar{display:none!important;}
+    .ps-copy-btn{display:none!important;}
     .print-sheet{border:none; margin:0; max-width:100%; height:auto; min-height:273mm; page-break-inside:avoid; break-inside:avoid;}
     .print-sheet + .print-sheet{page-break-before:always; break-before:page;}
     /* صناديق التمرير جوّا الفاتورة لازم تتمدد بالطباعة مو تنقص وتظهر أشرطة تمرير */
@@ -475,6 +476,7 @@ ORDER BY T0."DocNum"</code>
         <div class="row-actions" style="margin-top:6px;">
           <label style="font-size:12px; display:flex; align-items:center; gap:6px;">التاريخ (لكل الفواتير) <input type="date" id="trAqabaPrintDocDate"></label>
           <button class="btn-primary btn-sm" onclick="printAqabaVoucherInvoices()">🖨️ طباعة فاتورة العقبة لهاي السند/السندات</button>
+          <button class="btn-ghost btn-sm" onclick="printAqabaVoucherInvoices('company')" title="نفس الفواتير بس برموزنا وكمياتنا وسعرنا — انسخها والصقها بـ SAP">🏢 حسب الشركة (SAP)</button>
         </div>
       </div>
     </div>
@@ -1656,15 +1658,34 @@ function logInvoicePrint(sourcePrefix, invId, g, inv, qtyOverride){
   INVOICE_LOG.push({id:uid(), sourcePrefix, invId, slot:inv.slot, groupId:g.id, groupName:g.name, docType:inv.docType, docNo, docDate:inv.docDate, printedAt:new Date().toISOString(), lines});
   saveState();
 }
-function copyPrintTableTSV(){
-  const table = document.querySelector('#printSheetContent .ps-table');
-  if(!table){ flash('printCopyMsg','ما في جدول لنسخه.', false); return; }
-  const rows = Array.from(table.querySelectorAll('tr')).map(tr=>
+function tableToTSV(table){
+  return Array.from(table.querySelectorAll('tr')).map(tr=>
     Array.from(tr.children).map(cell=>cell.textContent.trim().replace(/\s+/g,' ')).join('\t')
-  );
-  navigator.clipboard.writeText(rows.join('\n')).then(
-    ()=>flash('printCopyMsg','تم نسخ الجدول — الصقه بإكسل أو SAP.', true),
+  ).join('\n');
+}
+function copyPrintTableTSV(){
+  const sheets = Array.from(document.querySelectorAll('#printSheetContent .print-sheet')).filter(s=>s.querySelector('.ps-table'));
+  if(!sheets.length){ flash('printCopyMsg','ما في جدول لنسخه.', false); return; }
+  const blocks = sheets.map(sheet=>{
+    const tsv = tableToTSV(sheet.querySelector('.ps-table'));
+    if(sheets.length === 1) return tsv;
+    const metaDiv = sheet.querySelector('.ps-meta div');
+    const label = metaDiv ? metaDiv.textContent.trim().replace(/\s+/g,' ') : '';
+    return (label ? label+'\n' : '') + tsv;
+  });
+  navigator.clipboard.writeText(blocks.join('\n\n')).then(
+    ()=>flash('printCopyMsg', sheets.length===1 ? 'تم نسخ الجدول — الصقه بإكسل أو SAP.' : 'تم نسخ جداول الفواتير الـ'+sheets.length+' كلها — الصقهم بإكسل أو SAP.', true),
     ()=>flash('printCopyMsg','تعذر النسخ التلقائي.', false)
+  );
+}
+function copySheetTSV(btn){
+  const sheet = btn.closest('.print-sheet');
+  const table = sheet && sheet.querySelector('.ps-table');
+  if(!table) return;
+  const orig = '📋 نسخ هاي الفاتورة';
+  navigator.clipboard.writeText(tableToTSV(table)).then(
+    ()=>{ btn.textContent = '✓ تم النسخ'; setTimeout(()=>{ btn.textContent = orig; }, 1800); },
+    ()=>{ btn.textContent = '✗ تعذر النسخ'; setTimeout(()=>{ btn.textContent = orig; }, 1800); }
   );
 }
 
@@ -1800,7 +1821,10 @@ function buildCompanySheetHTML(g, inv){
 
   return `
   <div class="print-sheet">
-    <div class="ps-natno">قائمة إدخال SAP (رموزنا) — مرجعية داخلية، مو للإرسال للمؤسسة</div>
+    <div class="ps-natno" style="display:flex; align-items:center; gap:8px; justify-content:space-between;">
+      <span>قائمة إدخال SAP (رموزنا) — مرجعية داخلية، مو للإرسال للمؤسسة</span>
+      <button class="btn-ghost btn-sm ps-copy-btn" onclick="copySheetTSV(this)">📋 نسخ هاي الفاتورة</button>
+    </div>
     <div class="ps-head">
       <div class="ar">
         <div class="brand">مركز الكيلاني للأغذية</div>
@@ -2116,7 +2140,7 @@ function clearTrAqabaSlotQr(slot){
   if(trAqabaSlotData[slot]){ trAqabaSlotData[slot].qrImg=''; trAqabaSlotData[slot].qrOk=false; }
   renderTrAqabaSlots();
 }
-function printAqabaVoucherInvoices(){
+function printAqabaVoucherInvoices(mode){
   if(!lastTrMatch || !lastTrMatch.mappedRows.length){ flash('trMatchMsg','اعمل "مطابقة" للسند/السندات أول.', false); return; }
   const slots = buildAqabaVoucherSlots();
   if(!slots.size){ flash('trMatchMsg','ما في أصناف إلها "ترتيب - فواتير العقبة" و"رقم فاتورة - فواتير العقبة" بصفحة ربط الأصناف بعد.', false); return; }
@@ -2130,9 +2154,15 @@ function printAqabaVoucherInvoices(){
   Array.from(slots.keys()).sort((a,b)=>a-b).forEach(slot=>{
     const keys = slots.get(slot).map(x=>x.key);
     const d = trAqabaSlotData[slot] || {docNo:'', qrImg:''};
-    const fakeInv = {id:'aqaba-voucher-slot-'+slot, slot, name:'فاتورة سند '+slot, docType:'invoice', docNo:(d.docNo||'').trim(), docDate, qrImg:d.qrImg||'', itemKeys:keys, qty:{}};
-    html += buildPrintSheetHTML(g, fakeInv, qtyMap);
-    logInvoicePrint('voucher', 'aqaba-voucher-slot-'+slot, g, fakeInv, qtyMap);
+    const qty = {};
+    keys.forEach(k=> qty[k] = qtyMap.get(k)||0);
+    const fakeInv = {id:'aqaba-voucher-slot-'+slot, slot, name:'فاتورة سند '+slot, docType:'invoice', docNo:(d.docNo||'').trim(), docDate, qrImg:d.qrImg||'', itemKeys:keys, qty};
+    if(mode==='company'){
+      html += buildCompanySheetHTML(g, fakeInv);
+    }else{
+      html += buildPrintSheetHTML(g, fakeInv, qtyMap);
+      logInvoicePrint('voucher', 'aqaba-voucher-slot-'+slot, g, fakeInv, qtyMap);
+    }
   });
   document.getElementById('printSheetContent').innerHTML = html;
   document.getElementById('printOverlay').classList.add('active');
