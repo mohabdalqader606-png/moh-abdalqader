@@ -533,15 +533,18 @@ ORDER BY T0."DocNum"</code>
   <section class="panel" id="summaryPage" style="display:none;">
     <div class="input-panel" style="border-bottom:1px solid var(--line);">
       <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;"><b style="font-size:13px;">ملخص الفواتير الشهرية</b></div>
-      <div class="hint">ملخص كل الفواتير يلي انطبعت فعلياً (باقي المملكة + كشف تجميعي العقبة + فواتير العقبة حسب السند) — حسب الصنف وحسب الفترة، مع مجاميع. الفاتورة بتنسجل بالملخص أول ما تفتحها من زر "🖨️ معاينة وطباعة".</div>
+      <div class="hint">ملخص كل الفواتير يلي انطبعت فعلياً (باقي المملكة + كشف تجميعي العقبة + فواتير العقبة حسب السند) — حسب الصنف وحسب الفترة، مع مجاميع. الفاتورة بتنسجل بالملخص أول ما تفتحها من زر "🖨️ معاينة وطباعة". <b>هاد سجل محفوظ دائم</b> — حذف الفاتورة من صفحة التصميم أو مسح كمياتها ما بيشيلها من هون؛ للحذف من السجل استعمل زر 🗑 جنب الفاتورة (بعرض "حسب الفاتورة") أو زر "حذف يلي ظاهر". اختار شهر معين وبيطلعلك تقرير هداك الشهر أي وقت.</div>
       <div class="row-actions">
-        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">من تاريخ <input type="date" id="sumFrom"></label>
-        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">إلى تاريخ <input type="date" id="sumTo"></label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">الشهر <input type="month" id="sumMonth" onchange="if(this.value){document.getElementById('sumFrom').value='';document.getElementById('sumTo').value='';} resetSumSort(); renderSummaryPage();" title="اختار شهر وبيطلعلك تقرير كل فواتير هداك الشهر — بديل سريع عن من/إلى تاريخ"></label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">من تاريخ <input type="date" id="sumFrom" onchange="if(this.value)document.getElementById('sumMonth').value='';"></label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">إلى تاريخ <input type="date" id="sumTo" onchange="if(this.value)document.getElementById('sumMonth').value='';"></label>
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;">المجموعة
-          <select id="sumGroup">
+          <select id="sumGroup" onchange="resetSumSort(); renderSummaryPage();">
             <option value="">الكل</option>
             <option value="amman">باقي المملكة</option>
-            <option value="aqaba">العقبة</option>
+            <option value="aqaba-voucher">فواتير العقبة (حسب السند)</option>
+            <option value="aqaba-agg">كشف تجميعي العقبة</option>
+            <option value="aqaba">العقبة (الكل)</option>
           </select>
         </label>
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;">رقم الفاتورة
@@ -557,6 +560,7 @@ ORDER BY T0."DocNum"</code>
         <button class="btn-primary btn-sm" onclick="resetSumSort(); renderSummaryPage()">عرض</button>
         <button class="btn-ghost btn-sm" onclick="resetSumSort(); renderSummaryPage()" title="يلغي أي ترتيب دوستَه بالضغط على عناوين الأعمدة، ويرجع للترتيب الافتراضي حسب رقم الفاتورة">↺ الترتيب الافتراضي</button>
         <button class="btn-ghost btn-sm" onclick="exportSummaryExcel()">📊 تصدير Excel</button>
+        <button class="btn-danger btn-sm" onclick="deleteFilteredLoggedInvoices()" title="بيحذف من السجل كل الفواتير الظاهرة حالياً حسب الفلاتر (الشهر/الفترة/المجموعة/رقم الفاتورة) — برسالتين تأكيد">🗑️ حذف يلي ظاهر من السجل</button>
         <span class="status-msg" id="sumMsg"></span>
       </div>
     </div>
@@ -661,6 +665,7 @@ function loadState(){
       DUMMY_INVOICES = Array.isArray(d.DUMMY_INVOICES) ? d.DUMMY_INVOICES : [];
       // تجاهل سجلات قديمة الصيغة (قبل التعرف على الفاتورة بمعرّفها invId) — تكرار لسجلات جديدة موجودة أصلاً
       INVOICE_LOG = (Array.isArray(d.INVOICE_LOG) ? d.INVOICE_LOG : []).filter(r=>r.invId!==undefined);
+      INVOICE_LOG.forEach(r=>{ if(!r.id) r.id = uid(); });
       if(d.PRINT_ASSETS && typeof d.PRINT_ASSETS==='object') PRINT_ASSETS = {headerImg:d.PRINT_ASSETS.headerImg||DEFAULT_PRINT_ASSETS.headerImg, footerImg:d.PRINT_ASSETS.footerImg||DEFAULT_PRINT_ASSETS.footerImg};
       if(Array.isArray(d.BRANCHES) && d.BRANCHES.length) BRANCHES = d.BRANCHES;
       if(d.BRANCH_CODE_MAP && typeof d.BRANCH_CODE_MAP==='object') BRANCH_CODE_MAP = d.BRANCH_CODE_MAP;
@@ -2311,12 +2316,20 @@ function exportDummyInvoicesExcel(){
 function getFilteredInvoiceLogRecords(){
   const from = document.getElementById('sumFrom').value;
   const to = document.getElementById('sumTo').value;
+  const month = document.getElementById('sumMonth').value;
   const groupFilter = document.getElementById('sumGroup').value;
   return INVOICE_LOG.filter(rec=>{
-    if(groupFilter && rec.groupId!==groupFilter) return false;
-    if((from||to) && !rec.docDate) return false;
-    if(from && rec.docDate < from) return false;
-    if(to && rec.docDate > to) return false;
+    if(groupFilter==='amman' && rec.groupId!=='amman') return false;
+    if(groupFilter==='aqaba' && rec.groupId!=='aqaba') return false;
+    if(groupFilter==='aqaba-voucher' && !(rec.groupId==='aqaba' && rec.docType!=='aggregate')) return false;
+    if(groupFilter==='aqaba-agg' && !(rec.groupId==='aqaba' && rec.docType==='aggregate')) return false;
+    if(month){
+      if(!rec.docDate || rec.docDate.slice(0,7)!==month) return false;
+    }else{
+      if((from||to) && !rec.docDate) return false;
+      if(from && rec.docDate < from) return false;
+      if(to && rec.docDate > to) return false;
+    }
     return true;
   });
 }
@@ -2335,6 +2348,28 @@ function getSummaryFilteredLines(){
   const rows = [];
   records.forEach(rec=> rec.lines.forEach(ln=> rows.push({...ln, docNo:rec.docNo, docDate:rec.docDate, groupName:rec.groupName, slot:rec.slot})));
   return rows;
+}
+function deleteLoggedInvoice(recId){
+  const rec = INVOICE_LOG.find(r=>r.id===recId);
+  if(!rec) return;
+  if(!confirm('حذف الفاتورة "'+(rec.docNo||'بدون رقم')+'" ('+rec.groupName+') من سجل الملخص نهائياً؟')) return;
+  INVOICE_LOG = INVOICE_LOG.filter(r=>r.id!==recId);
+  saveState();
+  renderSummaryPage();
+  flash('sumMsg','انحذفت من السجل.', true);
+}
+function deleteFilteredLoggedInvoices(){
+  let records = getFilteredInvoiceLogRecords();
+  const docNoSel = document.getElementById('sumDocNo').value;
+  if(docNoSel) records = records.filter(r=>r.docNo===docNoSel);
+  if(!records.length){ flash('sumMsg','ما في فواتير ظاهرة لحذفها.', false); return; }
+  if(!confirm('حذف كل الفواتير الظاهرة حسب الفلاتر الحالية ('+records.length+' فاتورة) من سجل الملخص؟')) return;
+  if(!confirm('أكيد؟ الحذف نهائي وما بيرجع إلا من نسخة احتياطية.')) return;
+  const ids = new Set(records.map(r=>r.id));
+  INVOICE_LOG = INVOICE_LOG.filter(r=>!ids.has(r.id));
+  saveState();
+  renderSummaryPage();
+  flash('sumMsg','انحذفت '+ids.size+' فاتورة من السجل.', true);
 }
 function bySlotThenDate(a, b){
   const as = (a.slot===undefined||a.slot===null) ? Infinity : a.slot;
@@ -2381,7 +2416,7 @@ function summaryByInvoice(){
   const list = records.map(rec=>{
     let qty=0, net=0, tax=0, total=0, whs=0;
     rec.lines.forEach(ln=>{ qty+=ln.qty; net+=ln.net; tax+=ln.taxVal; total+=ln.total; whs+=ln.whsTotal; });
-    return {docNo:rec.docNo, docDate:rec.docDate, groupName:rec.groupName, slot:rec.slot, itemCount:rec.lines.length, qty, net, tax, total, whs};
+    return {recId:rec.id, docNo:rec.docNo, docDate:rec.docDate, groupName:rec.groupName, slot:rec.slot, itemCount:rec.lines.length, qty, net, tax, total, whs};
   });
   if(sumSortKey){
     list.sort((a,b)=>{
@@ -2419,6 +2454,7 @@ function renderSummaryPage(){
       <th id="thSum_tax" onclick="setSumSort('tax')">ضريبة المبيعات</th>
       <th id="thSum_total" onclick="setSumSort('total')">الاجمالي</th>
       <th id="thSum_whs" onclick="setSumSort('whs')">سعر بيع المؤسسة</th>
+      <th style="width:36px;">حذف</th>
     </tr>`;
     const invoices = summaryByInvoice();
     if(!invoices.length){
@@ -2441,6 +2477,7 @@ function renderSummaryPage(){
         <td class="mono">${fmt3(inv.tax)}</td>
         <td class="mono">${fmt3(inv.total)}</td>
         <td class="mono">${fmt3(inv.whs)}</td>
+        <td><button class="btn-danger tiny-btn" onclick="deleteLoggedInvoice('${esc(inv.recId)}')" title="حذف هاي الفاتورة من سجل الملخص">🗑</button></td>
       </tr>`;
     }).join('') + `<tr style="background:var(--paper); font-weight:700;">
       <td colspan="4">الإجمالي العام</td>
@@ -2449,6 +2486,7 @@ function renderSummaryPage(){
       <td class="mono">${fmt3(grandTax)}</td>
       <td class="mono">${fmt3(grandTotal)}</td>
       <td class="mono">${fmt3(grandWhs)}</td>
+      <td></td>
     </tr>`;
     document.getElementById('sumTotalsRow').innerHTML = `
       <div class="card"><div class="lbl">عدد الفواتير</div><div class="val">${invoices.length}</div></div>
@@ -2473,7 +2511,7 @@ function renderSummaryPage(){
     let html = '';
     records.forEach(rec=>{
       const dateStr = rec.docDate ? rec.docDate.split('-').reverse().join('/') : '—';
-      html += `<tr style="background:var(--paper);"><td colspan="8" style="text-align:right; font-weight:700;">فاتورة ${esc(rec.docNo)||'بدون رقم'} — ${dateStr} — ${esc(rec.groupName)}</td></tr>`;
+      html += `<tr style="background:var(--paper);"><td colspan="8" style="text-align:right; font-weight:700;">فاتورة ${esc(rec.docNo)||'بدون رقم'} — ${dateStr} — ${esc(rec.groupName)} <button class="btn-danger tiny-btn" style="margin-inline-start:8px;" onclick="deleteLoggedInvoice('${esc(rec.id)}')" title="حذف هاي الفاتورة من سجل الملخص">🗑</button></td></tr>`;
       let subQty=0, subNet=0, subTax=0, subTotal=0, subWhs=0;
       rec.lines.forEach(ln=>{
         subQty+=ln.qty; subNet+=ln.net; subTax+=ln.taxVal; subTotal+=ln.total; subWhs+=ln.whsTotal;
@@ -2819,6 +2857,7 @@ function restoreBackup(evt){
       DUMMY_INVOICES = Array.isArray(d.DUMMY_INVOICES) ? d.DUMMY_INVOICES : [];
       // تجاهل سجلات قديمة الصيغة (قبل التعرف على الفاتورة بمعرّفها invId) — تكرار لسجلات جديدة موجودة أصلاً
       INVOICE_LOG = (Array.isArray(d.INVOICE_LOG) ? d.INVOICE_LOG : []).filter(r=>r.invId!==undefined);
+      INVOICE_LOG.forEach(r=>{ if(!r.id) r.id = uid(); });
       if(d.PRINT_ASSETS && typeof d.PRINT_ASSETS==='object') PRINT_ASSETS = {headerImg:d.PRINT_ASSETS.headerImg||DEFAULT_PRINT_ASSETS.headerImg, footerImg:d.PRINT_ASSETS.footerImg||DEFAULT_PRINT_ASSETS.footerImg};
       if(Array.isArray(d.BRANCHES) && d.BRANCHES.length) BRANCHES = d.BRANCHES;
       if(d.BRANCH_CODE_MAP && typeof d.BRANCH_CODE_MAP==='object') BRANCH_CODE_MAP = d.BRANCH_CODE_MAP;
