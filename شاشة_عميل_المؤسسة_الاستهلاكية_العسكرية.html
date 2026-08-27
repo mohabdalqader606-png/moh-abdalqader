@@ -471,7 +471,7 @@ ORDER BY T0."DocNum"</code>
         <span class="status-msg" id="trMatchMsg"></span>
       </div>
       <div id="trAqabaPrintBox" style="display:none; margin-top:8px; padding-top:8px; border-top:1px dashed var(--line);">
-        <div class="hint" style="margin:0 0 6px;">فواتير العقبة يلي رح تنطبع لهاي السند/السندات (حسب توزيعك بربط الأصناف) — لكل فاتورة رقمها والـQR الخاص فيها:</div>
+        <div class="hint" style="margin:0 0 6px;">فواتير العقبة يلي رح تنطبع لهاي السند/السندات — التوزيع تلقائي: الأصناف بتترتب حسب نسبة الضريبة ثم الاسم، وبتتوزع على فواتير بحد أقصى 10 أصناف بالفاتورة. لكل فاتورة رقمها والـQR الخاص فيها:</div>
         <div id="trAqabaSlotsBox"></div>
         <div class="row-actions" style="margin-top:6px;">
           <label style="font-size:12px; display:flex; align-items:center; gap:6px;">التاريخ (لكل الفواتير) <input type="date" id="trAqabaPrintDocDate"></label>
@@ -2108,37 +2108,42 @@ function matchTransferVouchers(){
   flash('trMatchMsg', `تمت المطابقة: ${voucherMap.size} سند، ${mappedRows.length+unmapped.length} صنف.`, true);
 }
 
-/* ترتيب/تجميع فواتير العقبة يلي بتنطبع خلال الشهر حسب سند تحويل — محدد من عمودي
-   "ترتيب - فواتير العقبة" و"رقم فاتورة - فواتير العقبة" بجدول ربط الأصناف. الكمية بتجي
-   تلقائياً من مطابقة السند فوق (لآخر سند/سندات اتعملتلهم مطابقة) — كل أصناف القالب بتظهر
-   دايماً حتى لو كميتها صفر بهاد السند تحديداً. */
-function buildAqabaVoucherSlots(){
-  const bySlot = new Map();
-  ITEMS.forEach(it=>{
-    const slotRaw = it.aqabaVoucherInvoiceNo;
-    if(slotRaw===undefined || slotRaw===null || slotRaw==='') return;
-    const slot = parseInt(slotRaw,10);
-    if(!slot || slot<1) return;
-    if(!bySlot.has(slot)) bySlot.set(slot, []);
-    bySlot.get(slot).push({key:itemKey(it), order:(+it.aqabaVoucherOrder)||0});
+/* فواتير العقبة يلي بتنطبع خلال الشهر حسب سند تحويل — توزيع تلقائي:
+   كل الأصناف المطابقة من السند/السندات (يلي إلها كمية) بتترتب حسب نسبة الضريبة ثم الاسم،
+   وبتتوزع بالترتيب على فواتير بحد أقصى 10 أصناف بالفاتورة الواحدة. */
+const TR_AQABA_MAX_ITEMS = 10;
+function buildTrAqabaDynamicSlots(){
+  if(!lastTrMatch || !lastTrMatch.mappedRows) return [];
+  const entries = [];
+  lastTrMatch.mappedRows.forEach(r=>{
+    if(!(r.theirQty>0)) return;
+    const key = r.ourCode+'|'+r.theirCode;
+    const it = findItem(key);
+    if(!it) return;
+    entries.push({key, taxRate: it.taxRate||0, theirName: it.theirName||''});
   });
-  bySlot.forEach(arr=> arr.sort((a,b)=>a.order-b.order));
-  return bySlot;
+  entries.sort((a,b)=> (a.taxRate-b.taxRate) || a.theirName.localeCompare(b.theirName,'ar'));
+  const chunks = [];
+  for(let i=0; i<entries.length; i+=TR_AQABA_MAX_ITEMS){
+    chunks.push(entries.slice(i, i+TR_AQABA_MAX_ITEMS).map(e=>e.key));
+  }
+  return chunks;
 }
 let trAqabaSlotData = {}; // {slot: {docNo, qrImg, qrOk}} — بيانات كل فاتورة عقبة رح تنطبع من هاي المطابقة (بتتصفر مع كل مطابقة جديدة)
 function renderTrAqabaSlots(prefillDocNo){
   const box = document.getElementById('trAqabaSlotsBox');
   if(!box) return;
-  const slots = Array.from(buildAqabaVoucherSlots().keys()).sort((a,b)=>a-b);
-  if(!slots.length){
-    box.innerHTML = '<div class="hint" style="color:var(--crimson);">ما في أصناف إلها "ترتيب - فواتير العقبة" و"رقم فاتورة - فواتير العقبة" بصفحة ربط الأصناف بعد.</div>';
+  const chunks = buildTrAqabaDynamicSlots();
+  if(!chunks.length){
+    box.innerHTML = '<div class="hint" style="color:var(--crimson);">ما في أصناف مطابقة من السند/السندات لتوزيعها على فواتير — اعمل "مطابقة" أول.</div>';
     return;
   }
-  slots.forEach(s=>{ if(!trAqabaSlotData[s]) trAqabaSlotData[s] = {docNo: prefillDocNo||'', qrImg:'', qrOk:false}; });
-  box.innerHTML = slots.map(s=>{
+  chunks.forEach((c,i)=>{ const s=i+1; if(!trAqabaSlotData[s]) trAqabaSlotData[s] = {docNo: prefillDocNo||'', qrImg:'', qrOk:false}; });
+  box.innerHTML = chunks.map((c,i)=>{
+    const s = i+1;
     const d = trAqabaSlotData[s];
     return `<div class="row-actions" style="margin-top:4px;">
-      <b style="font-size:12px; min-width:90px;">فاتورة سند ${s}</b>
+      <b style="font-size:12px; min-width:130px;">فاتورة سند ${s} <span style="font-weight:400; color:var(--ink-soft);">(${c.length} صنف)</span></b>
       <label style="font-size:12px; display:flex; align-items:center; gap:6px;">رقم الفاتورة <input type="text" value="${esc(d.docNo)}" style="width:140px;" onchange="trAqabaSlotData[${s}].docNo=this.value"></label>
       <label class="btn-ghost btn-sm" style="cursor:pointer; display:inline-flex; align-items:center; gap:4px;" title="صورة/PDF فاتورة الفوترة — بيقرأ الـQR منها ويولّده نظيف">
         <span>${d.qrImg ? (d.qrOk?'✓ QR جاهز':'⚠ QR (ما انقرأ)') : '📤 QR'}</span>
@@ -2167,17 +2172,34 @@ function clearTrAqabaSlotQr(slot){
 }
 function printAqabaVoucherInvoices(mode){
   if(!lastTrMatch || !lastTrMatch.mappedRows.length){ flash('trMatchMsg','اعمل "مطابقة" للسند/السندات أول.', false); return; }
-  const slots = buildAqabaVoucherSlots();
-  if(!slots.size){ flash('trMatchMsg','ما في أصناف إلها "ترتيب - فواتير العقبة" و"رقم فاتورة - فواتير العقبة" بصفحة ربط الأصناف بعد.', false); return; }
+  const chunks = buildTrAqabaDynamicSlots();
+  if(!chunks.length){ flash('trMatchMsg','ما في أصناف مطابقة من السند/السندات لتوزيعها على فواتير.', false); return; }
   const g = GROUPS.find(x=>x.id==='aqaba');
   if(!g){ flash('trMatchMsg','ما في مجموعة العقبة.', false); return; }
   ensureGroupDefaults(g);
+  // فحص الأسعار الناقصة قبل الطباعة — ما منطبع فاتورة بسعر فاضي
+  const missing = [];
+  chunks.flat().forEach(k=>{
+    const it = findItem(k);
+    if(!it) return;
+    const label = (it.theirName||it.ourName||'') + ' (' + it.ourCode + ')';
+    if(mode==='company'){
+      if(!it.salePriceUnit) missing.push(label + ' — سعر البيع/الوحدة');
+    }else{
+      if(!it.salePricePiece) missing.push(label + ' — سعر البيع/الحبة');
+      if(!it.aqabaWhsPricePiece) missing.push(label + ' — سعر بيع المؤسسة - العقبة');
+    }
+  });
+  if(missing.length){
+    alert('يرجى تعبئة سعر المادة قبل الطباعة (من صفحة "ربط الأصناف"):\n\n• ' + missing.join('\n• '));
+    return;
+  }
   const qtyMap = new Map();
   lastTrMatch.mappedRows.forEach(r=> qtyMap.set(r.ourCode+'|'+r.theirCode, r.theirQty));
   const docDate = document.getElementById('trAqabaPrintDocDate').value;
   let html = '';
-  Array.from(slots.keys()).sort((a,b)=>a-b).forEach(slot=>{
-    const keys = slots.get(slot).map(x=>x.key);
+  chunks.forEach((keys, i)=>{
+    const slot = i+1;
     const d = trAqabaSlotData[slot] || {docNo:'', qrImg:''};
     const qty = {};
     keys.forEach(k=> qty[k] = qtyMap.get(k)||0);
