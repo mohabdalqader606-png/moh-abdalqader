@@ -674,6 +674,7 @@ function loadState(){
   if(!localStorage.getItem(STORAGE_KEY)){
     ITEMS = DEFAULT_ITEMS.map(it=>({...it}));
   }
+  backfillAqabaPrices();
   if(!Object.keys(BRANCH_CODE_MAP).length){
     BRANCH_CODE_MAP = {...DEFAULT_BRANCH_CODE_MAP};
   }
@@ -686,6 +687,16 @@ function loadState(){
   GROUPS.forEach(g=>{ ensureGroupDefaults(g); (g.invoices||[]).forEach(ensureInvoiceDefaults); });
   rebuildAutoInvoices();
   currentGroupId = GROUPS[0].id;
+}
+// تعبئة "سعر بيع المؤسسة - العقبة" تلقائياً من أسعار مستودعات العقبة المدمجة بالبرنامج، للأصناف يلي سعرها لسا فاضي (بدون ما نلمس أي سعر معبّى يدوياً)
+function backfillAqabaPrices(){
+  const defAqabaPrice = new Map(DEFAULT_ITEMS.filter(d=>d.aqabaWhsPricePiece).map(d=>[d.ourCode+'|'+d.theirCode, d.aqabaWhsPricePiece]));
+  ITEMS.forEach(it=>{
+    if(!it.aqabaWhsPricePiece){
+      const p = defAqabaPrice.get(it.ourCode+'|'+it.theirCode);
+      if(p) it.aqabaWhsPricePiece = p;
+    }
+  });
 }
 function ensureGroupDefaults(g){
   if(g.custCode===undefined) g.custCode='';
@@ -1643,13 +1654,16 @@ function closePrintPreview(){
 
 /* ==================== ملخص الفواتير (تسجيل كل فاتورة اتطبعت فعلياً) ==================== */
 function logInvoicePrint(sourcePrefix, invId, g, inv, qtyOverride){
+  // نفس منطق الطباعة: الكشف التجميعي للعقبة بينسجل بسعر بيع المؤسسة العادي (متل عموده الأساسي بالطباعة)، وفواتير العقبة بسعر العقبة
+  const isAqabaAgg = isAqabaGroup(g) && inv.docType==='aggregate';
   const lines = inv.itemKeys.map(k=>{
     const it = findItem(k);
     if(!it) return null;
     const qty = qtyOverride ? (qtyOverride.get(k)||0) : (inv.qty[k]||0);
     if(!qty) return null;
     const {net,taxPct,taxVal,total} = computeLine(it, qty, g.taxExempt);
-    return {theirCode:it.theirCode, theirName:it.theirName, ourCode:it.ourCode, qty, price:it.salePricePiece||0, net, taxPct, taxVal, total, whsPrice:whsPriceFor(g, it), whsTotal: qty*whsPriceFor(g, it)};
+    const instPrice = isAqabaAgg ? (it.whsPricePiece||0) : whsPriceFor(g, it);
+    return {theirCode:it.theirCode, theirName:it.theirName, ourCode:it.ourCode, qty, price:it.salePricePiece||0, net, taxPct, taxVal, total, whsPrice:instPrice, whsTotal: qty*instPrice};
   }).filter(Boolean);
   if(!lines.length) return;
   const docNo = inv.docNo || '';
@@ -1696,13 +1710,18 @@ function copySheetTSV(btn){
 
 function buildPrintSheetHTML(g, inv, qtyOverride){
   ensureGroupDefaults(g); ensureInvoiceDefaults(inv);
-  let netTotal=0, taxTotal=0, grandTotal=0, instTotal=0;
+  // بالكشف التجميعي للعقبة: عمود "سعر بيع المؤسسة" بيضل السعر العادي، وبنضيف عامود أخير "سعر بيع المؤسسة - العقبة".
+  // أما فواتير العقبة (حسب السند): عمود "سعر بيع المؤسسة" نفسه بيقرأ من سعر العقبة مباشرة (whsPriceFor).
+  const isAqabaAgg = isAqabaGroup(g) && inv.docType==='aggregate';
+  let netTotal=0, taxTotal=0, grandTotal=0, instTotal=0, aqabaInstTotal=0;
   const rowsHtml = inv.itemKeys.map(k=>{
     const it = findItem(k);
     if(!it) return '';
     const qty = qtyOverride ? (qtyOverride.get(k)||0) : (inv.qty[k]||0);
     const {net,taxPct,taxVal,total} = computeLine(it, qty, g.taxExempt);
-    netTotal+=net; taxTotal+=taxVal; grandTotal+=total; instTotal += qty*whsPriceFor(g, it);
+    const instPrice = isAqabaAgg ? (it.whsPricePiece||0) : whsPriceFor(g, it);
+    netTotal+=net; taxTotal+=taxVal; grandTotal+=total; instTotal += qty*instPrice;
+    if(isAqabaAgg) aqabaInstTotal += qty*(it.aqabaWhsPricePiece||0);
     return `<tr>
       <td class="mono">${esc(it.theirCode)}</td>
       <td style="text-align:right;">${esc(it.theirName)}</td>
@@ -1714,7 +1733,8 @@ function buildPrintSheetHTML(g, inv, qtyOverride){
       <td>${(taxPct*100).toFixed(0)}%</td>
       <td>${fmt3(taxVal)}</td>
       <td>${fmt3(total)}</td>
-      <td>${fmt4(whsPriceFor(g, it))}</td>
+      <td>${fmt4(instPrice)}</td>
+      ${isAqabaAgg?`<td>${fmt4(it.aqabaWhsPricePiece||0)}</td>`:''}
     </tr>`;
   }).join('');
 
@@ -1779,14 +1799,14 @@ function buildPrintSheetHTML(g, inv, qtyOverride){
       <thead><tr>
         <th>رمز المادة</th><th>اسم المادة</th><th>بلد المنشأ</th><th>الكمية</th><th>الوحدة</th>
         <th>سعر الوحدة</th><th>الصافي قبل الضريبة</th><th>نسبة الضريبة</th><th>قيمة الضريبة</th>
-        <th>المجموع بعد الضريبة</th><th>سعر بيع المؤسسة</th>
+        <th>المجموع بعد الضريبة</th><th>سعر بيع المؤسسة</th>${isAqabaAgg?'<th>سعر بيع المؤسسة - العقبة</th>':''}
       </tr></thead>
-      <tbody>${rowsHtml || '<tr><td colspan="11">ما في أصناف</td></tr>'}</tbody>
+      <tbody>${rowsHtml || `<tr><td colspan="${isAqabaAgg?12:11}">ما في أصناف</td></tr>`}</tbody>
     </table>
     </div>
     <div class="ps-footer">
       <div class="lines">${footerLines}</div>
-      <div>مجموع بيع المؤسسة: <b>${fmt3(instTotal)}</b></div>
+      <div>مجموع بيع المؤسسة: <b>${fmt3(instTotal)}</b>${isAqabaAgg?`<br>مجموع بيع المؤسسة - العقبة: <b>${fmt3(aqabaInstTotal)}</b>`:''}</div>
     </div>
     <div class="ps-words">${esc(numberToArabicWords(grandTotal))}</div>
     ${brandFootHtml}
@@ -2861,6 +2881,7 @@ function restoreBackup(evt){
       if(d.PRINT_ASSETS && typeof d.PRINT_ASSETS==='object') PRINT_ASSETS = {headerImg:d.PRINT_ASSETS.headerImg||DEFAULT_PRINT_ASSETS.headerImg, footerImg:d.PRINT_ASSETS.footerImg||DEFAULT_PRINT_ASSETS.footerImg};
       if(Array.isArray(d.BRANCHES) && d.BRANCHES.length) BRANCHES = d.BRANCHES;
       if(d.BRANCH_CODE_MAP && typeof d.BRANCH_CODE_MAP==='object') BRANCH_CODE_MAP = d.BRANCH_CODE_MAP;
+      backfillAqabaPrices();
       GROUPS.forEach(g=>{ ensureGroupDefaults(g); (g.invoices||[]).forEach(ensureInvoiceDefaults); });
       rebuildAutoInvoices();
       currentGroupId = GROUPS[0] ? GROUPS[0].id : null;
