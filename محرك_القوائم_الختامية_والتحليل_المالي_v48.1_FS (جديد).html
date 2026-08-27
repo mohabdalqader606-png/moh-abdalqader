@@ -609,11 +609,11 @@ function renderBPList(){document.getElementById('bpList').innerHTML=Object.entri
 /* ---- تسوية توقيت الإيراد: فواتير احتياطية غير مسلّمة / تسليمات غير مفوترة ---- */
 function timingBalances(ms){ // returns balances at each month end: def (deferred revenue from undelivered reserve invoices), unb (unbilled deliveries)
  const at={};const endOf=k=>{const [y,m]=k.split('-').map(Number);return new Date(y,m,0)};const openD=(()=>{const y=S.settings.openYear,m=S.settings.openMonth;return new Date(y,m,0)})();
- const calcAt=(D)=>{let def=0,unb=0;(S.timing||[]).forEach(r=>{const d1=new Date(r.date);if(d1>D)return;const total=r.amt,q=r.qty||1;let matched=0;(r.m||[]).forEach(x=>{if(new Date(x.d)<=D)matched+=x.q});const rem=Math.max(0,q-matched)/q*total;if(r.type==='RI')def+=rem;else unb+=rem});return {def,unb}};
+ const calcAt=(D)=>{let def=0,unb=0,revDef=0;(S.timing||[]).forEach(r=>{const d1=new Date(r.date);if(d1>D)return;const total=r.amt,q=r.qty||1;let matched=0,matchedD=0;(r.m||[]).forEach(x=>{if(new Date(x.d)<=D){matched+=x.q;if((x.t||'D')==='D')matchedD+=x.q}});const rem=Math.max(0,q-matched)/q*total;if(r.type==='RI'){def+=rem;revDef+=Math.max(0,q-matchedD)/q*total}else unb+=rem});return {def,unb,revDef}};
  ms.forEach(k=>at[k]=calcAt(endOf(k)));return {at,open:calcAt(openD)}}
 function loadTiming(txt){txt=txt||document.getElementById('txTM').value;if(!txt||!String(txt).trim()){toast('الخانة فارغة — الصق النتيجة أو اختر ملفاً (الملف المختار يُحمَّل تلقائياً)');return}const {h,rows}=parseTable(txt);
- const it=col(h,['type','نوع'],0),ik=col(h,['key','docentry','مفتاح'],1),il=col(h,['linenum','line','rownumber'],2),id=col(h,['docdate','date','التاريخ','postingdate'],3),ia=col(h,['linetotal','amount','المبلغ','rowtotal'],4),iq=col(h,['quantity','qty','الكمية'],5),imd=col(h,['matchdate','dlvdate','invdate'],6),imq=col(h,['matchqty','dlvqty','invqty'],7),idn=col(h,['docnum'],-1),icc=col(h,['cardcode'],-1),icn=col(h,['cardname'],-1),iic=col(h,['itemcode'],-1),iin=col(h,['itemname','dscription'],-1),irp=col(h,['rep','slpname'],-1);const v=(r,i)=>i>=0?(r[i]||''):'';
- const map={};(S.timing||[]).forEach(t=>map[t.type+'|'+t.key+'|'+(t.line||'0')]=t);let n=0;const seen=new Set();rows.forEach(r=>{const key=(r[it]||'RI').toUpperCase().startsWith('D')?'DL':'RI';const id_=key+'|'+r[ik]+'|'+(r[il]||'0').trim();if(!seen.has(id_)){seen.add(id_);map[id_]={type:key,key:r[ik],line:(r[il]||'0').trim(),date:normDate(r[id]),amt:num(r[ia]),qty:num(r[iq])||1,m:[],docnum:v(r,idn),cc:v(r,icc),cn:v(r,icn),item:v(r,iic),iname:v(r,iin),rep:v(r,irp)}}const md=normDate(r[imd]);if(md&&num(r[imq]))map[id_].m.push({d:md,q:num(r[imq])});n++});
+ const it=col(h,['type','نوع'],0),ik=col(h,['key','docentry','مفتاح'],1),il=col(h,['linenum','line','rownumber'],2),id=col(h,['docdate','date','التاريخ','postingdate'],3),ia=col(h,['linetotal','amount','المبلغ','rowtotal'],4),iq=col(h,['quantity','qty','الكمية'],5),imd=col(h,['matchdate','dlvdate','invdate'],6),imq=col(h,['matchqty','dlvqty','invqty'],7),imt=col(h,['matchtype','نوعالمطابقة'],-1),idn=col(h,['docnum'],-1),icc=col(h,['cardcode'],-1),icn=col(h,['cardname'],-1),iic=col(h,['itemcode'],-1),iin=col(h,['itemname','dscription'],-1),irp=col(h,['rep','slpname'],-1);const v=(r,i)=>i>=0?(r[i]||''):'';
+ const map={};(S.timing||[]).forEach(t=>map[t.type+'|'+t.key+'|'+(t.line||'0')]=t);let n=0;const seen=new Set();rows.forEach(r=>{const key=(r[it]||'RI').toUpperCase().startsWith('D')?'DL':'RI';const id_=key+'|'+r[ik]+'|'+(r[il]||'0').trim();if(!seen.has(id_)){seen.add(id_);map[id_]={type:key,key:r[ik],line:(r[il]||'0').trim(),date:normDate(r[id]),amt:num(r[ia]),qty:num(r[iq])||1,m:[],docnum:v(r,idn),cc:v(r,icc),cn:v(r,icn),item:v(r,iic),iname:v(r,iin),rep:v(r,irp)}}const md=normDate(r[imd]);if(md&&num(r[imq])){const mt=(imt>=0?(r[imt]||'D'):'D').toUpperCase().startsWith('R')?'R':'D';map[id_].m.push({d:md,q:num(r[imq]),t:mt})}n++});
  S.timing=Object.values(map).filter(t=>t.date&&t.amt);saveBig('timing');saveState();renderTiming();if(R)recalcAll();toast('إجمالي '+S.timing.length+' سطر فاتورة/تسليم (تراكمي) — تم إعادة الاحتساب تلقائياً')}
 function renderTiming(){const el=document.getElementById('mTM');if(!el)return;const t=S.timing||[];const ri=t.filter(x=>x.type==='RI'),dl=t.filter(x=>x.type==='DL');el.textContent=t.length?`${ri.length} سطر فاتورة احتياطية | ${dl.length} سطر تسليم`:'لم يتم التحميل';el.className='badge '+(t.length?'ok':'');document.getElementById('tmOn').checked=S.timingOn!==false;
  if(R&&t.length){const TB=timingBalances(R.per);const last=R.per[R.per.length-1];const b=TB.at[last];document.getElementById('tmSummary').innerHTML=`<p class="hint">في نهاية ${last}: فواتير احتياطية غير مسلّمة (إيراد مؤجل) <b>${fmt(b.def)}</b> | تسليمات غير مفوترة (إيراد مستحق) <b>${fmt(b.unb)}</b>. ${S.timingOn!==false?'التسوية مطبقة على القوائم.':'التسوية معطلة — القوائم تعرض أرقام SAP كما هي.'}</p>`}}
@@ -684,8 +684,8 @@ async function saveStateNow(){clearTimeout(_saveTimer);const packed=packState();
 let MV={};
 function buildMV(){MV={};Object.keys(S.moves).forEach(k=>{MV[k]={};Object.entries(S.moves[k]).forEach(([c,v])=>MV[k][c]={d:v.d,c:v.c})});
  Object.entries(S.bpMoves||{}).forEach(([k,m])=>{if(!MV[k])MV[k]={};Object.entries(m).forEach(([c,v])=>{const b=S.bp[c];if(!b)return;const vc=bpCode(c);const o=MV[k][vc]||{d:0,c:0};o.d+=v.d;o.c+=v.c;MV[k][vc]=o;if(b.ctrl){const p=MV[k][b.ctrl]||{d:0,c:0};p.d-=v.d;p.c-=v.c;MV[k][b.ctrl]=p}})});
- if(S.timingOn!==false&&(S.timing||[]).length){const ms=months();const TB=timingBalances(ms);let pd=TB.open.def,pu=TB.open.unb;ms.forEach(k=>{const t=TB.at[k];const dd=t.def-pd,du=t.unb-pu;pd=t.def;pu=t.unb;if(!MV[k])MV[k]={};const add=(c,d,cr)=>{const o=MV[k][c]||{d:0,c:0};o.d+=d;o.c+=cr;MV[k][c]=o};
-   if(dd>0){add('~TM~DEF',0,dd);add('~TM~SAL',dd,0)}else if(dd<0){add('~TM~DEF',-dd,0);add('~TM~SAL',0,-dd)}
+ if(S.timingOn!==false&&(S.timing||[]).length){const ms=months();const TB=timingBalances(ms);let prd=TB.open.revDef,pu=TB.open.unb;ms.forEach(k=>{const t=TB.at[k];const rdd=t.revDef-prd,du=t.unb-pu;prd=t.revDef;pu=t.unb;if(!MV[k])MV[k]={};const add=(c,d,cr)=>{const o=MV[k][c]||{d:0,c:0};o.d+=d;o.c+=cr;MV[k][c]=o};
+   if(rdd>0){add('~TM~DEF',0,rdd);add('~TM~SAL',rdd,0)}else if(rdd<0){add('~TM~DEF',-rdd,0);add('~TM~SAL',0,-rdd)}
    if(du>0){add('~TM~UNB',du,0);add('~TM~SAL',0,du)}else if(du<0){add('~TM~UNB',0,-du);add('~TM~SAL',-du,0)}})}
  if(S.ecl&&S.ecl.on&&S.ecl.amount){const k=S.ecl.month||months().slice(-1)[0];if(k){if(!MV[k])MV[k]={};const a=S.ecl.amount;const add=(c,d,cr)=>{const o=MV[k][c]||{d:0,c:0};o.d+=d;o.c+=cr;MV[k][c]=o};if(a>0){add('~EC~EXP',a,0);add('~EC~ALLOW',0,a)}else{add('~EC~ALLOW',-a,0);add('~EC~EXP',0,-a)}}}
  (S.adj||[]).filter(a=>a.active!==false).forEach(a=>{if(!MV[a.month])MV[a.month]={};a.lines.forEach(l=>{if(!l.code)return;const o=MV[a.month][l.code]||{d:0,c:0};o.d+=+l.d||0;o.c+=+l.c||0;MV[a.month][l.code]=o})})}
@@ -696,7 +696,7 @@ function calc(from,to,noSelf){
  const ms=months(),per=range(from,to);
  // closing balance at end of month k = opening + sum moves up to k
  const bal={},cum={};const codes=new Set([...Object.keys(S.accounts),...Object.keys(S.opening)]);ms.forEach(k=>Object.keys(MV[k]).forEach(c=>codes.add(c)));
- codes.forEach(c=>{cum[c]=S.opening[c]||0});if(S.timingOn!==false&&(S.timing||[]).length){const o=timingBalances([]).open;['~TM~DEF','~TM~UNB','~TM~SAL'].forEach(c=>codes.add(c));cum['~TM~DEF']=-o.def;cum['~TM~UNB']=o.unb;cum['~TM~SAL']=o.def-o.unb}Object.entries(S.bpOpen||{}).forEach(([c,v])=>{const b=S.bp[c];if(!b)return;const vc=bpCode(c);codes.add(vc);cum[vc]=(cum[vc]||0)+v;if(b.ctrl){codes.add(b.ctrl);cum[b.ctrl]=(cum[b.ctrl]||0)-v}});bal['__open']={...cum};
+ codes.forEach(c=>{cum[c]=S.opening[c]||0});if(S.timingOn!==false&&(S.timing||[]).length){const o=timingBalances([]).open;['~TM~DEF','~TM~UNB','~TM~SAL'].forEach(c=>codes.add(c));cum['~TM~DEF']=-o.revDef;cum['~TM~UNB']=o.unb;cum['~TM~SAL']=o.revDef-o.unb}Object.entries(S.bpOpen||{}).forEach(([c,v])=>{const b=S.bp[c];if(!b)return;const vc=bpCode(c);codes.add(vc);cum[vc]=(cum[vc]||0)+v;if(b.ctrl){codes.add(b.ctrl);cum[b.ctrl]=(cum[b.ctrl]||0)-v}});bal['__open']={...cum};
  ms.forEach(k=>{const mv=MV[k];Object.keys(mv).forEach(c=>{cum[c]+=mv[c].d-mv[c].c});bal[k]={...cum}});
 
 
@@ -1051,14 +1051,14 @@ FROM JDT1 T0 INNER JOIN OCRD T1 ON T1."CardCode" = T0."ShortName"
 WHERE T0."ShortName" IN ('V000136','V000412','V000137','V000138','V000352','V000480')
   AND T0."RefDate" >= '{FROM}' AND T0."RefDate" <= '{TO}'
 GROUP BY T0."ShortName", T1."CardName", T0."Account", YEAR(T0."RefDate"), MONTH(T0."RefDate")`,
-q5a:`SELECT 'RI' AS "Type", T0."DocEntry" AS "Key", T1."LineNum" AS "LineNum", T0."DocDate" AS "DocDate", T1."LineTotal" AS "LineTotal", T1."Quantity" AS "Quantity", M."MDate" AS "MatchDate", M."MQty" AS "MatchQty", T0."DocNum" AS "DocNum", T0."CardCode" AS "CardCode", T0."CardName" AS "CardName", T1."ItemCode" AS "ItemCode", T1."Dscription" AS "ItemName", COALESCE(T4."SlpName", '') AS "Rep"
+q5a:`SELECT 'RI' AS "Type", T0."DocEntry" AS "Key", T1."LineNum" AS "LineNum", T0."DocDate" AS "DocDate", T1."LineTotal" AS "LineTotal", T1."Quantity" AS "Quantity", M."MDate" AS "MatchDate", M."MQty" AS "MatchQty", M."MType" AS "MatchType", T0."DocNum" AS "DocNum", T0."CardCode" AS "CardCode", T0."CardName" AS "CardName", T1."ItemCode" AS "ItemCode", T1."Dscription" AS "ItemName", COALESCE(T4."SlpName", '') AS "Rep"
 FROM OINV T0 LEFT JOIN OSLP T4 ON T4."SlpCode" = T0."SlpCode"
 INNER JOIN INV1 T1 ON T1."DocEntry" = T0."DocEntry"
 LEFT JOIN (
- SELECT D."BaseEntry" AS "BE", D."BaseLine" AS "BL", D."Quantity" AS "MQty", H."DocDate" AS "MDate"
+ SELECT D."BaseEntry" AS "BE", D."BaseLine" AS "BL", D."Quantity" AS "MQty", H."DocDate" AS "MDate", 'D' AS "MType"
  FROM DLN1 D INNER JOIN ODLN H ON H."DocEntry" = D."DocEntry" AND H."CANCELED" = 'N' WHERE D."BaseType" = '13'
  UNION ALL
- SELECT R."BaseEntry", R."BaseLine", R."Quantity", H."DocDate"
+ SELECT R."BaseEntry", R."BaseLine", R."Quantity", H."DocDate", 'R'
  FROM RIN1 R INNER JOIN ORIN H ON H."DocEntry" = R."DocEntry" AND H."CANCELED" = 'N' WHERE R."BaseType" = '13'
 ) M ON M."BE" = T1."DocEntry" AND M."BL" = T1."LineNum"
 WHERE T0."isIns" = 'Y' AND T0."CANCELED" = 'N'
