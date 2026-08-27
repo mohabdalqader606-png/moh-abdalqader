@@ -1065,132 +1065,6 @@ WHERE T0."isIns" = 'Y' AND T0."CANCELED" = 'N'
  AND T0."DocDate" >= '{FROM}' AND T0."DocDate" <= '{TO}'
  AND (M."MDate" IS NULL OR YEAR(M."MDate") <> YEAR(T0."DocDate") OR MONTH(M."MDate") <> MONTH(T0."DocDate")
   OR EXISTS (SELECT 1 FROM DLN1 D2 INNER JOIN ODLN H2 ON H2."DocEntry" = D2."DocEntry" WHERE D2."BaseType" = '13' AND D2."BaseEntry" = T1."DocEntry" AND D2."BaseLine" = T1."LineNum" AND (YEAR(H2."DocDate") <> YEAR(T0."DocDate") OR MONTH(H2."DocDate") <> MONTH(T0."DocDate"))))`,
-q5c:`SELECT
-    I0."DocNum"     AS "رقم الفاتورة",
-    I0."DocDate"    AS "تاريخ الفاتورة",
-    I0."CardCode"   AS "كود العميل",
-    I0."CardName"   AS "اسم العميل",
-    I1."ItemCode"   AS "كود الصنف",
-    I1."Dscription" AS "اسم الصنف",
-
-    SUM(I1."Quantity") AS "إجمالي كمية الفاتورة",
-    SUM(I1."LineTotal") AS "إجمالي قيمة الفاتورة",
-
-    IFNULL((
-        SELECT SUM(D1."Quantity")
-        FROM DLN1 D1
-        INNER JOIN ODLN D0
-            ON D0."DocEntry" = D1."DocEntry"
-        WHERE D0."CANCELED" = 'N'
-          AND D1."BaseType" = 13
-          AND D1."BaseEntry" = I0."DocEntry"
-          AND D1."ItemCode" = I1."ItemCode"
-          AND D0."DocDate" <= '{TO}'
-    ),0) AS "إجمالي كمية الديليفري",
-
-    IFNULL((
-        SELECT SUM(R1."Quantity")
-        FROM RIN1 R1
-        INNER JOIN ORIN R0
-            ON R0."DocEntry" = R1."DocEntry"
-        WHERE R0."CANCELED" = 'N'
-          AND R1."BaseType" = 13
-          AND R1."BaseEntry" = I0."DocEntry"
-          AND R1."ItemCode" = I1."ItemCode"
-          AND R0."DocDate" <= '{TO}'
-    ),0) AS "الكمية المرتجعة",
-
-    SUM(I1."Quantity")
-    - IFNULL((
-        SELECT SUM(D1."Quantity")
-        FROM DLN1 D1
-        INNER JOIN ODLN D0
-            ON D0."DocEntry" = D1."DocEntry"
-        WHERE D0."CANCELED" = 'N'
-          AND D1."BaseType" = 13
-          AND D1."BaseEntry" = I0."DocEntry"
-          AND D1."ItemCode" = I1."ItemCode"
-          AND D0."DocDate" <= '{TO}'
-    ),0)
-    - IFNULL((
-        SELECT SUM(R1."Quantity")
-        FROM RIN1 R1
-        INNER JOIN ORIN R0
-            ON R0."DocEntry" = R1."DocEntry"
-        WHERE R0."CANCELED" = 'N'
-          AND R1."BaseType" = 13
-          AND R1."BaseEntry" = I0."DocEntry"
-          AND R1."ItemCode" = I1."ItemCode"
-          AND R0."DocDate" <= '{TO}'
-    ),0) AS "الكمية غير المسلمة الفعلية",
-
-    (SUM(I1."Quantity")
-    - IFNULL((
-        SELECT SUM(D1."Quantity")
-        FROM DLN1 D1
-        INNER JOIN ODLN D0
-            ON D0."DocEntry" = D1."DocEntry"
-        WHERE D0."CANCELED" = 'N'
-          AND D1."BaseType" = 13
-          AND D1."BaseEntry" = I0."DocEntry"
-          AND D1."ItemCode" = I1."ItemCode"
-          AND D0."DocDate" <= '{TO}'
-    ),0)
-    - IFNULL((
-        SELECT SUM(R1."Quantity")
-        FROM RIN1 R1
-        INNER JOIN ORIN R0
-            ON R0."DocEntry" = R1."DocEntry"
-        WHERE R0."CANCELED" = 'N'
-          AND R1."BaseType" = 13
-          AND R1."BaseEntry" = I0."DocEntry"
-          AND R1."ItemCode" = I1."ItemCode"
-          AND R0."DocDate" <= '{TO}'
-    ),0))
-    * (SUM(I1."LineTotal") / NULLIF(SUM(I1."Quantity"),0)) AS "قيمة الكمية غير المسلمة"
-
-FROM OINV I0
-INNER JOIN INV1 I1
-    ON I0."DocEntry" = I1."DocEntry"
-
-WHERE I0."DocDate" BETWEEN '{FROM}' AND '{TO}'
-  AND I0."isIns" = 'Y'
-  AND I0."CANCELED" = 'N'
-
-GROUP BY
-    I0."DocNum",
-    I0."DocDate",
-    I0."CardCode",
-    I0."CardName",
-    I1."ItemCode",
-    I1."Dscription",
-    I0."DocEntry"
-
-HAVING SUM(I1."Quantity")
-     - IFNULL((
-        SELECT SUM(D1."Quantity")
-        FROM DLN1 D1
-        INNER JOIN ODLN D0
-            ON D0."DocEntry" = D1."DocEntry"
-        WHERE D0."CANCELED" = 'N'
-          AND D1."BaseType" = 13
-          AND D1."BaseEntry" = I0."DocEntry"
-          AND D1."ItemCode" = I1."ItemCode"
-          AND D0."DocDate" <= '{TO}'
-    ),0)
-     - IFNULL((
-        SELECT SUM(R1."Quantity")
-        FROM RIN1 R1
-        INNER JOIN ORIN R0
-            ON R0."DocEntry" = R1."DocEntry"
-        WHERE R0."CANCELED" = 'N'
-          AND R1."BaseType" = 13
-          AND R1."BaseEntry" = I0."DocEntry"
-          AND R1."ItemCode" = I1."ItemCode"
-          AND R0."DocDate" <= '{TO}'
-    ),0) > 0
-
-ORDER BY I0."DocDate", I0."DocNum", I1."ItemCode"`,
 q5b:`SELECT 'DL' AS "Type", T0."DocEntry" AS "Key", T1."LineNum" AS "LineNum", T0."DocDate" AS "DocDate", T1."LineTotal" AS "LineTotal", T1."Quantity" AS "Quantity", M."MDate" AS "MatchDate", M."MQty" AS "MatchQty", T0."DocNum" AS "DocNum", T0."CardCode" AS "CardCode", T0."CardName" AS "CardName", T1."ItemCode" AS "ItemCode", T1."Dscription" AS "ItemName", COALESCE(T4."SlpName", '') AS "Rep"
 FROM ODLN T0 LEFT JOIN OSLP T4 ON T4."SlpCode" = T0."SlpCode"
 INNER JOIN DLN1 T1 ON T1."DocEntry" = T0."DocEntry" AND (T1."BaseType" IS NULL OR T1."BaseType" <> '13')
@@ -1639,7 +1513,7 @@ const FEEDS=[
 {n:'2',t:'الأرصدة الافتتاحية',d:'من الإكسل (رقم الحساب | مدين | دائن) أو من الكويري. اضبط تاريخ الافتتاح = نهاية الشهر السابق لأول شهر حركات.',q:'q3',ta:'txOpen',fi:'fOpen',fn:'loadOpening',b:'mOpen',req:1,extra:`<div class="row"><label>تاريخ الأرصدة الافتتاحية: نهاية شهر</label><input type="number" id="openMonth" value="12" min="1" max="12" style="width:60px"><label>سنة</label><input type="number" id="openYear" value="2018" style="width:90px"></div>`},
 {n:'3',t:'الحركات الشهرية',d:'JDT1 مجمّع بالحساب واليوم (تجميع يومي — الأداة تجمّعه شهرياً بنفسها؛ الأدق والمقاوم لإسقاط السطور) — الفترة كاملة أو سنة سنة (تراكمي؛ إعادة لصق شهر تستبدله).',q:'q2',ta:'txMov',fi:'fMov',fn:'loadMoves',b:'mMov',req:1,extra:`<div id="monthsList" class="tag-list"></div>`},
 {n:'4',t:'شركاء أعمال داخل حساب مراقبة',d:'تسهيلات بنكية مسجلة كموردين تحت 2112000001 — تُفصل كحسابات فرعية وتُربط بالبنوك كأوراق دفع. عدّل قائمة IN.',q:'q4',ta:'txBP',fi:'fBP',fn:'loadBP',b:'mBP',extra:`<div class="row"><button class="btn ghost sm" onclick="if(confirm('حذف بيانات شركاء الأعمال؟')){S.bp={};S.bpOpen={};S.bpMoves={};Object.keys(S.accounts).forEach(c=>{if(S.accounts[c].virt)delete S.accounts[c]});saveState();refreshMonths();renderBPList();toast('تم الحذف')}">حذف</button></div><div id="bpList" class="tag-list"></div><div id="bpWarn"></div>`},
-{n:'5',t:'تسوية توقيت الإيراد',d:'الفواتير الاحتياطية غير المسلَّمة (5أ) والتسليمات غير المفوترة (5ب) — الاعتراف بالإيراد عند التسليم (IFRS 15). التحميل تراكمي.',q:'q5a',q2:'q5b',ta:'txTM',fi:'fTM',fn:'loadTiming',b:'mTM',extra:`<div class="row"><label><input type="checkbox" id="tmOn" checked onchange="S.timingOn=this.checked;saveState();toast('أعد الاحتساب')"> تطبيق التسوية على القوائم</label><button class="btn ghost sm" onclick="if(confirm('حذف بيانات التوقيت؟')){S.timing=[];saveState();renderTiming()}">حذف</button></div><div id="tmSummary"></div><div class="sub-h">كويري تدقيق يدوي — فواتير احتياطية غير مسلَّمة بنهاية الفترة (للمراجعة فقط، لا يُحمَّل بالأداة)</div><div class="row"><button class="btn ghost sm" onclick="event.preventDefault();copyQ('q5c')">نسخ كويري التدقيق</button></div><details><summary style="padding:6px 0;color:var(--ink2);font-size:12.5px">عرض كويري التدقيق</summary><pre id="pre_q5c">${qText('q5c').replace(/</g,'&lt;')}</pre></details>`},
+{n:'5',t:'تسوية توقيت الإيراد',d:'الفواتير الاحتياطية غير المسلَّمة (5أ) والتسليمات غير المفوترة (5ب) — الاعتراف بالإيراد عند التسليم (IFRS 15). التحميل تراكمي.',q:'q5a',q2:'q5b',ta:'txTM',fi:'fTM',fn:'loadTiming',b:'mTM',extra:`<div class="row"><label><input type="checkbox" id="tmOn" checked onchange="S.timingOn=this.checked;saveState();toast('أعد الاحتساب')"> تطبيق التسوية على القوائم</label><button class="btn ghost sm" onclick="if(confirm('حذف بيانات التوقيت؟')){S.timing=[];saveState();renderTiming()}">حذف</button></div><div id="tmSummary"></div>`},
 {n:'6',t:'عمر ذمة العملاء (منصة الذمم)',d:'الأسهل: زر استيراد نسخة JSON من منصة الذمم (فيها عمر الذمة والشيكات وتاريخ اللقطة). أو الصق نتيجة كويري 8 وكويري 2 من المنصة كما هما.',q:null,ta:'txAg',fi:'fAg',fn:'loadAging',b:'mAg',extra:`<div class="row"><label>تاريخ اللقطة</label><input type="text" id="agSnap" placeholder="YYYY-MM-DD" style="width:120px"><label class="btn ghost sm" style="cursor:pointer">استيراد نسخة JSON من منصة الذمم<input type="file" id="fAgJson" accept=".json" style="display:none"></label></div><div class="sub-h">الشيكات المؤجلة (كويري 2 من المنصة)</div><textarea id="txAgC" style="min-height:50px" placeholder="رمز العميل&#9;رقم السند&#9;تاريخ التسجيل&#9;تاريخ الاستحقاق&#9;قيمة الشيك&#9;البنك"></textarea><div class="row"><button class="btn" onclick="loadAgingChq()">تحميل الشيكات</button><input type="file" id="fAgC" accept=".txt,.csv" style="font-size:12px"><span id="mAgC" class="badge">لم يتم التحميل</span></div>`},
 {n:'7',t:'استحقاقات الموردين (سيولة 13 أسبوعاً)',d:'فواتير الموردين + رصيد المورد (APINV) — تُحسب المفتوحة فعلياً بتخصيص الرصيد. جانب العملاء يأتي من عمر الذمة (6) تلقائياً.',q:'q6b',ta:'txDue',fi:'fDue',fn:'loadDue',b:'mDue'},
 {n:'13',t:'الموازنة التقديرية',d:'من الإكسل: Line, Yr, Mo, Amount (رمز البند أو اسمه العربي أو رقم الحساب).',q:null,ta:'txBud',fi:'fBud',fn:'loadBudget',b:'mBud'},
@@ -1681,7 +1555,7 @@ function renderDataCenter(){const el=document.getElementById('dataCenter');if(!e
  const cov=document.getElementById('dataCenterCoverage');if(cov)cov.innerHTML=coverageSummaryHTML();
  const loadedN=FEEDS.filter(feedLoaded).length;const sum=document.getElementById('dataCenterSum');if(sum)sum.textContent=loadedN+' / '+FEEDS.length+' مصدر محمّل';
  el.innerHTML=FEEDS.map(f=>`<details class="feed" ${feedLoaded(f)?'':'open'}><summary><div class="no ${f.req?'':'opt'}">${f.n}</div><div class="ft"><b>${f.t}${f.req?'':' <span class="hint">(اختياري)</span>'}</b><span>${f.d}</span></div>${f.b?`<span id="${f.b}" class="badge ${feedLoaded(f)?'ok':''}">${feedLoaded(f)?'محمّل مسبقاً':'لم يتم التحميل'}</span>`:''}${f.q?`<button class="btn ghost sm" onclick="event.preventDefault();copyQ('${f.q}')">نسخ الكويري${f.q2?' أ':''}</button>`:''}${f.q2?`<button class="btn ghost sm" onclick="event.preventDefault();copyQ('${f.q2}')">نسخ الكويري ب</button>`:''}${FEED_CLEAR[f.n]&&feedLoaded(f)?`<button class="btn ghost sm" style="color:var(--coral,#c0392b);border-color:var(--coral,#c0392b)" onclick="event.preventDefault();clearFeedItem('${f.n}')" title="يمسح بيانات هذا البند فقط قبل رفع بيانات جديدة">🗑 مسح</button>`:''}</summary><div class="body">${f.q?`<details><summary style="padding:6px 0;color:var(--ink2);font-size:12.5px">عرض الكويري</summary><div class="row"><button class="btn ghost sm" onclick="selectPre('pre_${f.q}')">تحديد النص${f.q2?' أ':''}</button><button class="btn ghost sm" onclick="showCopyBox(qText('${f.q}'))">فتح في نافذة للنسخ${f.q2?' أ':''}</button>${f.q2?`<button class="btn ghost sm" onclick="selectPre('pre_${f.q2}')">تحديد النص ب</button><button class="btn ghost sm" onclick="showCopyBox(qText('${f.q2}'))">فتح في نافذة ب</button>`:''}</div><pre id="pre_${f.q}">${qText(f.q).replace(/</g,'&lt;')}</pre>${f.q2?`<pre id="pre_${f.q2}">${qText(f.q2).replace(/</g,'&lt;')}</pre>`:''}</details>`:''}${f.ta?`<textarea id="${f.ta}" style="min-height:70px" placeholder="الصق نتيجة الكويري هنا"></textarea><div class="row"><button class="btn" onclick="${f.fn}()">تحميل</button><input type="file" id="${f.fi}" accept=".txt,.csv,.tsv" style="font-size:12px">${FEED_CLEAR[f.n]?`<button class="btn ghost sm" style="color:var(--coral,#c0392b);border-color:var(--coral,#c0392b)" onclick="clearFeedItem('${f.n}')" title="يمسح بيانات هذا البند بس، باقي البنود تضل كما هي">🗑️ مسح هذا البند</button>`:''}</div>`:''}${f.extra||''}</div></details>`).join('')}
-document.addEventListener('input',e=>{if(e.target&&(e.target.id==='qFrom'||e.target.id==='qTo')){FEEDS.forEach(f=>{[f.q,f.q2].forEach(k=>{const p=document.getElementById('pre_'+k);if(p)p.textContent=qText(k)})});const p5c=document.getElementById('pre_q5c');if(p5c)p5c.textContent=qText('q5c')}});
+document.addEventListener('input',e=>{if(e.target&&(e.target.id==='qFrom'||e.target.id==='qTo')){FEEDS.forEach(f=>{[f.q,f.q2].forEach(k=>{const p=document.getElementById('pre_'+k);if(p)p.textContent=qText(k)})})}});
 /* sales & purchases feeds */
 async function loadSales(txt){txt=txt||document.getElementById('txSales').value;if(!txt||!String(txt).trim()){toast('الخانة فارغة — الصق النتيجة أو اختر ملفاً (الملف المختار يُحمَّل تلقائياً)');return}const {h,rows}=await parseTableAsync(txt,p=>progressToast(p,'قراءة البيانات'));const g=(n,d)=>col(h,n,d);const named=h.includes('yr')&&h.includes('net');
  const hasItem=h.includes('itemcode'),hasCust=h.includes('custcode');const iy=g(['yr'],0),im=g(['mo'],1),ig=g(['groupname','group'],2),ii=g(['itemcode'],-1),inm=g(['itemname'],-1),icc=g(['custcode','cardcode'],-1),icn=g(['custname','cardname'],-1),ir=g(['rep','slpname'],-1),iq=g(['qty','invqty','quantity'],-1),inn=g(['net','linetotal'],-1),igp=g(['gp','grssprofit'],-1),ic=g(['cost','stockvalue'],-1),iret=g(['returns'],-1),idis=g(['discount'],-1);
