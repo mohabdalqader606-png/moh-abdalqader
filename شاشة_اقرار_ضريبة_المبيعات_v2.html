@@ -1139,37 +1139,56 @@ async function onFileImports(inp){
   for(const r of aoa.slice(1)){
     const base=pnum(r[iBase]), tax=iTax>=0?pnum(r[iTax]):0;
     if(!base && !tax) continue;
+    // السطر الحقيقي هو الذي تحمل خانة "نسبة الضريبة" فيه قيمة رقمية —
+    // هذا يُبقي أسطر البيان المقسوم على أكثر من نسبة، ويستبعد أسطر المجاميع والملخص
+    const rateCell=r[iRate];
+    if(rateCell===''||rateCell===null||rateCell===undefined||isNaN(parseFloat(String(rateCell).replace(/,/g,'')))) continue;
     const no=iNo>=0?String(r[iNo]||'').trim():'';
     const entry=iEntry>=0?String(r[iEntry]||'').trim():'';
     const items=iItems>=0?String(r[iItems]||'').trim():'';
-    if(!no && !entry && !items) continue; // سطر مجاميع في نهاية الكشف — يُستبعد
-    let rt=pnum(r[iRate]); if(rt>0 && rt<1) rt=r3(rt*100);
+    let rt=pnum(rateCell); if(rt>0 && rt<1) rt=r3(rt*100);
+    // بيان برقم قيد نصي (مثل "مواد دعائية") = خارج الكشف الضريبي — يُستبعد تلقائياً مع إمكانية التعديل
+    const excl = entry!=='' && !/^[\d\/\s.+-]+$/.test(entry);
+    // تصنيف أسطر النسبة صفر: أصناف معفاة (طحين/زيت/فاصولياء...) أم جهة صفرية (لحوم/أسماك...)
+    let cls0='zero';
+    if(rt===0 && /طحين|زيت|فاصوليا|بقول|سكر|أرز|ارز|حليب|عدس|شاي|قهوة/.test(items)) cls0='exm';
     rowsOut.push({no, dateFin:iDateF>=0?String(r[iDateF]||'').trim():'',
       dateDecl:iDateD>=0?String(r[iDateD]||'').trim():'', order:iOrder>=0?String(r[iOrder]||'').trim():'',
-      entry, items, rate:rt, base:r3(base), tax:r3(tax)});
+      entry, items, rate:rt, base:r3(base), tax:r3(tax), excl, cls0});
   }
   ST.imports={rows:rowsOut, fname:f.name};
   recomputeAll();
 }
+function setImp0(idx, v){ if(!canEdit||!ST.imports) return; ST.imports.rows[idx].cls0=v; recomputeAll(); }
+function toggleImpExcl(idx){ if(!canEdit||!ST.imports) return; ST.imports.rows[idx].excl=!ST.imports.rows[idx].excl; recomputeAll(); }
 
 function printImportsReport(){
   if(!ST.imports || !ST.imports.rows.length){ alert('ارفع كشف المستوردات أولاً.'); return; }
+  const C=calc();
   const pr=periodRangeText();
-  // ترتيب حسب رقم البيان (الجزء الرقمي بعد الشرطة المائلة إن وجد)
+  // المعتمد فقط (بدون المستبعد) مرتباً حسب رقم البيان
   const keyOf=no=>{ const m=String(no).match(/(\d+)\s*$/); return m?+m[1]:0; };
-  const rows=[...ST.imports.rows].sort((a,b)=>keyOf(a.no)-keyOf(b.no) || String(a.no).localeCompare(String(b.no)));
+  const rows=ST.imports.rows.filter(r=>!r.excl).sort((a,b)=>keyOf(a.no)-keyOf(b.no) || String(a.no).localeCompare(String(b.no)));
   let totB=0, totT=0; rows.forEach(r=>{ totB=r3(totB+r.base); totT=r3(totT+r.tax); });
+  const ks=Object.keys(C.imports).sort((a,b)=>b-a);
   $('printSheet').innerHTML=`<style>@page{size:A4 portrait; margin:10mm;}</style>
     <div class="phead"><h2>مركز الكيلاني للأغذية</h2>
     <div style="font-size:14px; margin-top:5px; font-weight:700;">كشف المستوردات من تاريخ ${pr.from} الى تاريخ ${pr.to}</div></div>
-    <table style="font-size:10.5px;"><thead><tr>
-      <th>رقم البيان</th><th>تاريخ البيان</th><th>تاريخ الوصل المالي</th><th>رقم الطلبية</th><th>رقم القيد</th><th>النسبة %</th><th>قيمة الاستيراد</th><th>مبلغ الضريبة</th>
+    <table style="font-size:10px;"><thead><tr>
+      <th>رقم البيان</th><th>تاريخ البيان</th><th>تاريخ الوصل المالي</th><th>رقم الطلبية</th><th>رقم القيد</th><th>الأصناف</th><th>النسبة %</th><th>قيمة الاستيراد</th><th>مبلغ الضريبة</th>
     </tr></thead><tbody>`+
     rows.map(r=>`<tr>
       <td class="num">${esc(r.no)}</td><td class="num">${esc(r.dateDecl||'')}</td><td class="num">${esc(r.dateFin)}</td>
-      <td class="num">${esc(r.order||'')}</td><td class="num">${esc(r.entry||'')}</td><td class="num">${r.rate}%</td>
+      <td class="num">${esc(r.order||'')}</td><td class="num">${esc(r.entry||'')}</td><td>${esc(r.items||'')}</td><td class="num">${r.rate}%</td>
       <td class="num">${fmt(r.base)}</td><td class="num">${fmt(r.tax)}</td></tr>`).join('')+
-    `<tr><td colspan="6" style="font-weight:700;">المجموع (${rows.length} بيان)</td><td class="num" style="font-weight:700;">${fmt(totB)}</td><td class="num" style="font-weight:700;">${fmt(totT)}</td></tr>
+    `<tr><td colspan="7" style="font-weight:700;">المجموع (${rows.length} سطر)</td><td class="num" style="font-weight:700;">${fmt(totB)}</td><td class="num" style="font-weight:700;">${fmt(totT)}</td></tr>
+    </tbody></table>
+    <table style="font-size:11.5px; max-width:560px; margin:14px 0 0; margin-inline-start:auto;">
+      <tbody>`+
+      ks.map(k=>`<tr><td style="font-weight:700;">قيمة الاستيراد ${k}%</td><td class="num">${fmt(C.imports[k].b)}</td><td style="font-weight:700;">مبلغ الضريبة ${k}%</td><td class="num">${fmt(C.imports[k].t)}</td></tr>`).join('')+
+      `<tr><td style="font-weight:700;">قيمة الاستيراد 0%</td><td class="num">${fmt(C.impZero)}</td><td></td><td></td></tr>
+       <tr><td style="font-weight:700;">قيمة الاستيراد للأصناف المعفاه</td><td class="num">${fmt(C.impExm)}</td><td></td><td></td></tr>
+       <tr><td style="font-weight:700; border-top:2px solid #333;">المجموع</td><td class="num" style="font-weight:700; border-top:2px solid #333;">${fmt(totB)}</td><td style="font-weight:700; border-top:2px solid #333;">المجموع</td><td class="num" style="font-weight:700; border-top:2px solid #333;">${fmt(totT)}</td></tr>
     </tbody></table>
     <div style="margin-top:12px; font-size:10px; color:#555;">طُبع بتاريخ ${new Date().toLocaleString('en-GB')}</div>`;
   window.print();
@@ -1282,7 +1301,14 @@ function calc(){
   // 3) المشتريات
   if(ST.purch){ for(const rt in ST.purch.rates) C.purchTax=r3(C.purchTax+ST.purch.rates[rt].t); }
   // 4) المستوردات
-  if(ST.imports){ for(const r of ST.imports.rows){ const k=r.rate;
+  C.impZero=0; C.impExm=0; C.impExcl=0;
+  if(ST.imports){ for(const r of ST.imports.rows){
+      if(r.excl){ C.impExcl=r3(C.impExcl+r.base); continue; }
+      if(r.rate===0){
+        if(r.cls0==='exm') C.impExm=r3(C.impExm+r.base); else C.impZero=r3(C.impZero+r.base);
+        continue;
+      }
+      const k=r.rate;
       if(!C.imports[k]) C.imports[k]={b:0,t:0};
       C.imports[k].b=r3(C.imports[k].b+r.base); C.imports[k].t=r3(C.imports[k].t+r.tax);
       C.importsTax=r3(C.importsTax+r.tax); } }
@@ -1407,24 +1433,35 @@ function renderAll(C){
   // تبويب 4
   if(ST.imports){
     const ks=Object.keys(C.imports).sort((a,b)=>b-a);
+    const sumB=r3(ks.reduce((s,k)=>s+C.imports[k].b,0)+C.impZero+C.impExm);
     $('importsWrap').innerHTML=`<div class="cards">
-      <div class="card"><div class="lbl">عدد البيانات</div><div class="val">${ST.imports.rows.length}</div></div>
-      <div class="card good"><div class="lbl">ضريبة المستوردات</div><div class="val">${fmt(C.importsTax)}</div></div></div>
-      <table class="t"><thead><tr><th>النسبة</th><th class="num">قيمة الاستيراد</th><th class="num">الضريبة</th></tr></thead><tbody>`+
-      ks.map(k=>`<tr><td>${k}%</td><td class="num">${fmt(C.imports[k].b)}</td><td class="num">${fmt(C.imports[k].t)}</td></tr>`).join('')+
-      `</tbody></table>
+      <div class="card"><div class="lbl">عدد الأسطر</div><div class="val">${ST.imports.rows.length}</div></div>
+      <div class="card"><div class="lbl">إجمالي قيمة الاستيراد</div><div class="val">${fmt(sumB)}</div></div>
+      <div class="card good"><div class="lbl">ضريبة المستوردات</div><div class="val">${fmt(C.importsTax)}</div></div>
+      ${C.impExcl?`<div class="card grace"><div class="lbl">مستبعد (قيد نصي)</div><div class="val">${fmt(C.impExcl)}</div></div>`:''}</div>
+      <table class="t" style="max-width:560px;"><thead><tr><th>البند</th><th class="num">قيمة الاستيراد</th><th class="num">مبلغ الضريبة</th></tr></thead><tbody>`+
+      ks.map(k=>`<tr><td>قيمة الاستيراد ${k}%</td><td class="num">${fmt(C.imports[k].b)}</td><td class="num">${fmt(C.imports[k].t)}</td></tr>`).join('')+
+      `<tr><td>قيمة الاستيراد 0% (صفرية)</td><td class="num">${fmt(C.impZero)}</td><td class="num">0.000</td></tr>
+       <tr><td>قيمة الاستيراد للأصناف المعفاة</td><td class="num">${fmt(C.impExm)}</td><td class="num">0.000</td></tr>
+      </tbody><tfoot><tr><td>المجموع</td><td class="num">${fmt(sumB)}</td><td class="num">${fmt(C.importsTax)}</td></tr></tfoot></table>
+      <div class="hint" style="margin-top:6px;">أسطر النسبة 0% تُصنّف تلقائياً (لحوم/أسماك = صفرية · طحين/زيت/فاصولياء... = معفاة) — عدّل التصنيف من عمود «تصنيف 0%» بالجدول، والمستبعد (قيد نصي مثل مواد دعائية) عليه ☑ استبعاد.</div>
       <div class="toolrow"><button class="btn-teal btn-sm" onclick="printImportsReport()">🖨️ كشف المستوردات الرسمي (مرتب حسب البيان)</button></div>
-      <div class="scrollbox" style="max-height:340px; margin-top:10px;"><div id="importsRows"></div></div>`;
+      <div class="scrollbox" style="max-height:380px; margin-top:10px;"><div id="importsRows"></div></div>`;
     gtRender('importsRows',[
+      {id:'excl',l:'استبعاد',sum:false,get:r=>r.excl?'مستبعد':'',printText:r=>r.excl?'مستبعد':'',
+       render:r=>`<input type="checkbox" ${r.excl?'checked':''} ${canEdit?'':'disabled'} onchange="toggleImpExcl(${ST.imports.rows.indexOf(r)})">`},
       {id:'no',l:'رقم البيان',get:r=>r.no},
       {id:'dateFin',l:'تاريخ الوصل المالي',get:r=>r.dateFin},
       {id:'dateDecl',l:'تاريخ البيان',get:r=>r.dateDecl||''},
       {id:'order',l:'رقم الطلبية',get:r=>r.order||''},
       {id:'entry',l:'رقم القيد',get:r=>r.entry||''},
+      {id:'items',l:'الأصناف',get:r=>r.items||''},
       {id:'rate',l:'النسبة %',n:1,sum:false,get:r=>r.rate},
+      {id:'cls0',l:'تصنيف 0%',sum:false,get:r=>r.rate===0?(r.cls0==='exm'?'معفاة':'صفرية'):'',printText:r=>r.rate===0?(r.cls0==='exm'?'معفاة':'صفرية'):'',
+       render:r=>r.rate===0?`<select onchange="setImp0(${ST.imports.rows.indexOf(r)},this.value)" ${canEdit?'':'disabled'}><option value="zero" ${r.cls0!=='exm'?'selected':''}>صفرية</option><option value="exm" ${r.cls0==='exm'?'selected':''}>معفاة</option></select>`:''},
       {id:'base',l:'قيمة الاستيراد',n:1,get:r=>r.base},
       {id:'tax',l:'الضريبة',n:1,get:r=>r.tax},
-    ], ST.imports.rows, {title:'كشف المستوردات', max:400});
+    ], ST.imports.rows, {title:'كشف المستوردات', max:400, rowAttrs:r=>r.excl?'style="background:#F1F3F6; color:#888;"':''});
   }
   // تبويب 5
   let trustOK=true;
@@ -1621,7 +1658,7 @@ function printISTD(){
   // خانة 3: مستوردات حسب النسب
   const i16=IM[16]||{b:0,t:0}, i10=IM[10]||{b:0,t:0}, i4=IM[4]||{b:0,t:0};
   const iOther=sumR(IM,Object.keys(IM).filter(k=>![16,10,4,0].includes(+k)));
-  const i0=IM[0]||{b:0,t:0};
+  const i0={b:C.impZero||0, t:0};
   // خانة 6: مبيعات حسب النسب
   const s16=C.rate[16]||{b:0,t:0}, s10=C.rate[10]||{b:0,t:0}, s4=C.rate[4]||{b:0,t:0};
   const sOther={b:RATE_KEYS.filter(k=>![16,10,4].includes(k)).reduce((s,k)=>s+(C.rate[k]?.b||0),0),
@@ -1682,7 +1719,7 @@ function printISTD(){
       ${row(null,'صفر',i0.b,0)}
       ${row(null,'الخدمات المستوردة الخاضعة للضريبة',0,0)}
       ${row(4,'المستوردات مؤجلة توريد الضريبة',0,0)}
-      ${row(5,'المشتريات والمستوردات المعفاة',0,null)}
+      ${row(5,'المشتريات والمستوردات المعفاة',C.impExm||0,null)}
       ${row(6,'المبيعات المحلية الخاضعة للضريبة بنسبة 16%',s16.b,s16.t,4)}
       ${row(null,'بنسبة 10%',s10.b,s10.t)}
       ${row(null,'بنسبة 4%',s4.b,s4.t)}
