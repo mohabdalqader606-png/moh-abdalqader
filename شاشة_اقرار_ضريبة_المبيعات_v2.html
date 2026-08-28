@@ -238,6 +238,14 @@
         <span class="hint">يُحفَظ مع الإقرار مركزياً عند الضغط على 💾 حفظ العمل.</span>
       </div>
       <div class="scrollbox" id="itemsWrap" style="max-height:460px;"><div class="empty-state">ارفع الكشف أولاً</div></div>
+
+      <div class="grp-title" style="margin-top:20px;"><span class="num">د</span> التفصيل السطري — مثل ملف الإكسل (مستند / عميل / صنف / تاريخ × الشرائح)</div>
+      <div class="toolrow">
+        <input type="text" id="rowSearch" placeholder="بحث برقم المستند أو العميل أو الصنف…" style="width:300px;" oninput="renderRowDetail()">
+        <button class="btn-ghost btn-sm" onclick="exportRowsCSV()">⬇️ تنزيل التفصيل السطري كامل (Excel/CSV)</button>
+        <span class="hint">متاح بعد رفع الملف في هذه الجلسة (سطري ضخم فلا يُحفَظ مركزياً) — نزّله CSV للأرشفة، والمجمّع حسب الصنف (ج) يُحفَظ مع الإقرار.</span>
+      </div>
+      <div class="scrollbox" id="rowsWrap" style="max-height:460px;"><div class="empty-state">ارفع الكشف أولاً</div></div>
     </div>
   </section>
 
@@ -344,7 +352,9 @@ let sb=null, curUser=null, curProfile=null, canEdit=false;
 let curDeclId=null, curDeclStatus=null, profilesMap={};
 let ccMap = {};        // تصنيفات العملاء من قاعدة البيانات: code -> {name, class}
 let ccDirty = false;
-let ITEMS = {};        // تفصيل الأصناف (بالذاكرة فقط — يُعاد بناؤه عند رفع ملف المبيعات)
+let ITEMS = {};        // تفصيل الأصناف المجمّع (يُحفَظ مع الإقرار)
+let DROWS = [];        // التفصيل السطري (بالذاكرة فقط — من ملف المبيعات المرفوع في الجلسة)
+let DCOLS = [];        // أعمدة التفصيل السطري: [key, label, hasTax]
 
 /* حالة العمل الحالية */
 function freshST(){ return {
@@ -556,6 +566,12 @@ async function onFileSales(inp){
   const docAgg={}; // docNo(في كشف غير الخاضعة) -> {code, exp, zero, exm, br:{code:base}}
   const unk={};
   ITEMS={};        // كود الصنف -> {name, qty, cols:{...b/t}}
+  const iDate=findCol(hdr,'تاريخ المستند');
+  // أعمدة التفصيل السطري بترتيب ملف الإكسل: معفي، X0، صفري، 0%، تصدير، ثم النسب تصاعدياً
+  const presentRates=RATE_KEYS.filter(rk=>rateCols[rk]).sort((a,b)=>a-b);
+  DCOLS=[['exm','معفي',false],['x0','X0',true],['zero','صفري',false],['out0','0%',false],['exp','تصدير',false],
+         ...presentRates.map(rk=>['r'+rk, rk+'%', true])];
+  DROWS=[];
   const dataRows=rows.slice(1);
   // مسح أولي لاتجاه الإشارة
   for(const r of dataRows){ if(iType>=0 && /مردود|مرتجع/.test(r[iType]||'')){ retSeen=true;
@@ -574,7 +590,8 @@ async function onFileSales(inp){
     if(iItem>=0){ const ic=String(r[iItem]||'').trim();
       if(ic){ if(!ITEMS[ic]) ITEMS[ic]={name:iItemName>=0?(r[iItemName]||''):'', qty:0, c:{}};
         IT=ITEMS[ic]; IT.qty+=iQty>=0?pnum(r[iQty])*sign:0; } }
-    const itAdd=(k,b,t)=>{ if(IT&&(b||t)){ if(!IT.c[k]) IT.c[k]={b:0,t:0}; IT.c[k].b+=b; IT.c[k].t+=t; } };
+    const DV={};
+    const itAdd=(k,b,t)=>{ if(b||t){ DV[k]=[r3(b),r3(t)]; if(IT){ if(!IT.c[k]) IT.c[k]={b:0,t:0}; IT.c[k].b+=b; IT.c[k].t+=t; } } };
     // النسب
     for(const rk in rateCols){ const [bi,ti]=rateCols[rk];
       const b=pnum(r[bi])*sign, t=ti>=0?pnum(r[ti])*sign:0;
@@ -585,6 +602,9 @@ async function onFileSales(inp){
     // أعمدة الجهات
     let bktSum=0; const bkt={};
     for(const k of ['exp','zero','exm']){ const b=col[k][0]>=0?pnum(r[col[k][0]])*sign:0; if(b){ bkt[k]=b; bktSum+=b; itAdd(k,b,0); } }
+    if(Object.keys(DV).length){
+      DROWS.push({no:docNo, cust:iName>=0?(r[iName]||''):'', item:iItemName>=0?(r[iItemName]||''):'', date:iDate>=0?(r[iDate]||''):'', v:DV});
+    }
     if(bktSum){
       if(!cust[code]) cust[code]={name:iName>=0?(r[iName]||''):'', exp:0, zero:0, exm:0};
       for(const k in bkt) cust[code][k]+=bkt[k];
@@ -602,7 +622,40 @@ async function onFileSales(inp){
     for(const k in it.c){ it.c[k].b=r3(it.c[k].b); it.c[k].t=r3(it.c[k].t); } }
   ST.sales={rate, x0b:r3(x0b), x0t:r3(x0t), out0b:r3(out0b), cust, docAgg, unk, items:ITEMS, fname:f.name, rowsN:dataRows.length, retFactor};
   setMsg('salesParseMsg',`تمت المعالجة: ${dataRows.length.toLocaleString()} سطر ✔ ${retFactor===-1?'(عُكست إشارة المرتجعات تلقائياً)':''}`,'ok');
-  recomputeAll(); renderItems();
+  recomputeAll(); renderItems(); renderRowDetail();
+}
+
+/* التفصيل السطري */
+function renderRowDetail(){
+  const wrap=$('rowsWrap'); if(!wrap) return;
+  if(!DROWS.length){ wrap.innerHTML='<div class="empty-state">التفصيل السطري متاح بعد رفع ملف تحليل المبيعات في هذه الجلسة — أو نزّله CSV المؤرشف.</div>'; return; }
+  const q=($('rowSearch')?.value||'').trim();
+  let list=DROWS;
+  if(q) list=list.filter(x=>x.no.includes(q)||String(x.cust).includes(q)||String(x.item).includes(q));
+  const shown=list.slice(0,200);
+  wrap.innerHTML=`<table class="t"><thead><tr><th>رقم المستند</th><th>اسم العميل</th><th>الصنف</th><th>التاريخ</th>`+
+    DCOLS.map(([k,l,ht])=>ht?`<th class="num">${l} المبلغ</th><th class="num">${l} الضريبة</th>`:`<th class="num">${l}</th>`).join('')+
+    `</tr></thead><tbody>`+
+    shown.map(x=>`<tr><td class="num">${esc(x.no)}</td><td style="white-space:normal; min-width:160px;">${esc(x.cust)}</td><td style="white-space:normal; min-width:200px;">${esc(x.item)}</td><td class="num">${esc(x.date)}</td>`+
+      DCOLS.map(([k,l,ht])=>{ const v=x.v[k];
+        return ht?`<td class="num">${v?fmt(v[0]):''}</td><td class="num">${v&&v[1]?fmt(v[1]):''}</td>`:`<td class="num">${v?fmt(v[0]):''}</td>`; }).join('')+
+      `</tr>`).join('')+'</tbody></table>'+
+    (list.length>200?`<div class="hint" style="padding:8px 12px;">يعرض أول 200 من ${list.length.toLocaleString()} سطر — استخدم البحث أو نزّل CSV للتفصيل الكامل.</div>`:'');
+}
+function exportRowsCSV(){
+  if(!DROWS.length){ alert('لا تفصيل سطري متاح — ارفع ملف تحليل المبيعات أولاً.'); return; }
+  const qq=s=>'"'+String(s??'').replace(/"/g,'""')+'"';
+  const head=['رقم المستند','اسم العميل','الصنف','التاريخ',
+    ...DCOLS.flatMap(([k,l,ht])=>ht?[l+' المبلغ',l+' الضريبة']:[l])];
+  const parts=[head.map(qq).join(',')];
+  for(const x of DROWS){
+    parts.push([x.no,x.cust,x.item,x.date,
+      ...DCOLS.flatMap(([k,l,ht])=>{ const v=x.v[k]; return ht?[v?v[0]:0, v?v[1]:0]:[v?v[0]:0]; })].map(qq).join(','));
+  }
+  const blob=new Blob(['﻿'+parts.join('\r\n')],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`تحليل_المبيعات_سطري_${$('fYear').value}_ف${$('fPeriod').value}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
 }
 
 /* تفصيل الأصناف */
