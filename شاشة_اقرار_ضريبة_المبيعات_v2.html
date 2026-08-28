@@ -715,7 +715,7 @@ async function onFileSales(inp){
   const iDate=findCol(hdr,'تاريخ المستند');
   // أعمدة التفصيل السطري بترتيب ملف الإكسل: معفي، X0، صفري، 0%، تصدير، ثم النسب تصاعدياً
   const presentRates=RATE_KEYS.filter(rk=>rateCols[rk]).sort((a,b)=>a-b);
-  DCOLS=[['exm','معفي',false],['x0','X0',true],['zero','صفري',false],['out0','0%',false],['exp','تصدير',false],
+  DCOLS=[['exm','معفي',false],['x0','X0',true],['zero','صفري',false],['out0','0%',true],['exp','تصدير',false],
          ...presentRates.map(rk=>['r'+rk, rk+'%', true])];
   DROWS=[];
   const dataRows=rows.slice(1);
@@ -727,7 +727,8 @@ async function onFileSales(inp){
   const retFactor = (retSeen && !retHasNeg) ? -1 : 1;
 
   for(const r of dataRows){
-    const sign = (iType>=0 && /مردود|مرتجع/.test(r[iType]||'')) ? retFactor : 1;
+    const isRetRow = iType>=0 && /مردود|مرتجع/.test(r[iType]||'');
+    const sign = isRetRow ? retFactor : 1;
     const docNo=String(r[iNo]||'').trim();
     const code=iCode>=0?String(r[iCode]||'').trim():'';
     const tcode=iTax>=0?String(r[iTax]||'').trim().toUpperCase():'';
@@ -743,13 +744,17 @@ async function onFileSales(inp){
       const b=pnum(r[bi])*sign, t=ti>=0?pnum(r[ti])*sign:0;
       if(b||t){ rate[rk].b+=b; rate[rk].t+=t; itAdd('r'+rk,b,t); } }
     // أصناف معفاة/صفر
-    if(col.x0[0]>=0){ const b=pnum(r[col.x0[0]])*sign; if(b){ x0b+=b; itAdd('x0',b,0); } if(col.x0[1]>=0) x0t+=pnum(r[col.x0[1]])*sign; }
-    if(col.out0[0]>=0){ const b=pnum(r[col.out0[0]])*sign; if(b){ out0b+=b; itAdd('out0',b,0); } }
+    if(col.x0[0]>=0){ const b=pnum(r[col.x0[0]])*sign, t=col.x0[1]>=0?pnum(r[col.x0[1]])*sign:0;
+      if(b||t){ x0b+=b; x0t+=t; itAdd('x0',b,t); } }
+    if(col.out0[0]>=0){ const b=pnum(r[col.out0[0]])*sign, t=col.out0[1]>=0?pnum(r[col.out0[1]])*sign:0;
+      if(b||t){ out0b+=b; itAdd('out0',b,t); } }
     // أعمدة الجهات
     let bktSum=0; const bkt={};
     for(const k of ['exp','zero','exm']){ const b=col[k][0]>=0?pnum(r[col[k][0]])*sign:0; if(b){ bkt[k]=b; bktSum+=b; itAdd(k,b,0); } }
     if(Object.keys(DV).length){
-      DROWS.push({no:docNo, cust:iName>=0?(r[iName]||''):'', item:iItemName>=0?(r[iItemName]||''):'', date:iDate>=0?(r[iDate]||''):'', v:DV});
+      DROWS.push({no:docNo, ret:isRetRow,
+        cust:iName>=0?(r[iName]||''):'', item:iItemName>=0?(r[iItemName]||''):'',
+        date:iDate>=0?d2iso(r[iDate]||''):'', v:DV});
     }
     if(bktSum){
       if(!cust[code]) cust[code]={name:iName>=0?(r[iName]||''):'', exp:0, zero:0, exm:0};
@@ -773,15 +778,16 @@ async function onFileSales(inp){
 
 /* التفصيل السطري — ترتيب وفلترة وطباعة */
 let DSORT={id:null,dir:-1}, DFILT={};
+function rowCode(x){ return (x.ret?'CN':'IN')+x.no; }
 function rowColDefs(){
-  const defs=[{id:'no',l:'رقم المستند',n:false},{id:'cust',l:'اسم العميل',n:false},{id:'item',l:'الصنف',n:false},{id:'date',l:'التاريخ',n:false}];
+  const defs=[{id:'no',l:'رمز السند',n:false},{id:'cust',l:'اسم العميل',n:false},{id:'item',l:'الصنف',n:false},{id:'date',l:'التاريخ',n:false}];
   for(const [k,l,ht] of DCOLS){
     defs.push({id:k+'#b', l:ht?l+' المبلغ':l, n:true, k, p:0});
     if(ht) defs.push({id:k+'#t', l:l+' الضريبة', n:true, k, p:1});
   }
   return defs;
 }
-function rowVal(x,d){ if(!d.n) return x[d.id]||''; const v=x.v[d.k]; return v?(v[d.p]||0):0; }
+function rowVal(x,d){ if(!d.n) return d.id==='no'?rowCode(x):(x[d.id]||''); const v=x.v[d.k]; return v?(v[d.p]||0):0; }
 function matchNum(v,expr){
   expr=String(expr).trim(); if(!expr) return true;
   const m=expr.match(/^(>=|<=|<>|!=|>|<|=)?\s*(-?[\d.,]+)$/); if(!m) return true;
@@ -827,34 +833,59 @@ function printRows(){
   const list=filteredRows(defs);
   const cap=3000;
   if(list.length>cap && !confirm(`عدد الأسطر المفلترة ${list.length.toLocaleString()} — ستُطبع أول ${cap} سطر (والمجاميع للكل). متابعة؟ (ضيّق الفلاتر لطباعة أقل)`)) return;
-  const sums={}; defs.forEach(d=>{ if(d.n) sums[d.id]=0; });
-  for(const x of list){ for(const d of defs){ if(d.n) sums[d.id]+=rowVal(x,d); } }
+  const f3=v=>(+v||0).toFixed(3);
+  const sums={};
+  for(const x of list){ for(const [k,l,ht] of DCOLS){ const v=x.v[k]||[0,0];
+    sums[k+'b']=(sums[k+'b']||0)+(+v[0]||0); if(ht) sums[k+'t']=(sums[k+'t']||0)+(+v[1]||0); } }
   const filtDesc=defs.filter(d=>String(DFILT[d.id]||'').trim()!=='').map(d=>`${d.l}: ${DFILT[d.id]}`).join(' · ');
   $('printSheet').innerHTML=`<style>@page{size:A4 landscape; margin:8mm;}</style>
     <div class="phead"><h2>مركز الكيلاني للأغذية</h2>
-    <div style="font-size:13px; margin-top:4px;">تفصيل تحليل المبيعات السطري — ${$('fYear').value} · ${esc(PERIODS[+$('fPeriod').value-1].label)}</div>
+    <div style="font-size:13px; margin-top:4px; font-weight:700;">${esc(salesTitle())}</div>
     ${filtDesc?`<div style="font-size:11px; margin-top:3px;">الفلاتر: ${esc(filtDesc)}</div>`:''}</div>
-    <table style="font-size:9px;"><thead><tr>${defs.map(d=>`<th style="font-size:9px; padding:3px 5px;">${d.l}</th>`).join('')}</tr></thead><tbody>`+
-    list.slice(0,cap).map(x=>`<tr>${defs.map(d=>{ const v=rowVal(x,d);
-      return d.n?`<td class="num" style="padding:2px 5px;">${v?fmt(v):''}</td>`:`<td style="padding:2px 5px;">${esc(v)}</td>`; }).join('')}</tr>`).join('')+
-    `<tr>${defs.map((d,i)=>i===0?`<td style="font-weight:700;">الإجمالي (${list.length.toLocaleString()})</td>`:(d.n?`<td class="num" style="font-weight:700;">${fmt(r3(sums[d.id]))}</td>`:'<td></td>')).join('')}</tr>`+
+    <table style="font-size:8.5px;"><thead>
+    <tr><th rowspan="2" style="font-size:8.5px; padding:2px 4px;">رمز السند</th><th rowspan="2" style="font-size:8.5px; padding:2px 4px;">اسم العميل</th><th rowspan="2" style="font-size:8.5px; padding:2px 4px;">الصنف</th><th rowspan="2" style="font-size:8.5px; padding:2px 4px;">التاريخ</th>
+    ${DCOLS.map(([k,l,ht])=>`<th colspan="${ht?2:1}" style="font-size:8.5px; padding:2px 4px;">${l}</th>`).join('')}</tr>
+    <tr>${DCOLS.map(([k,l,ht])=>ht?'<th style="font-size:8px; padding:1px 3px;">المبلغ</th><th style="font-size:8px; padding:1px 3px;">الضريبة</th>':'<th style="font-size:8px; padding:1px 3px;">المبلغ</th>').join('')}</tr>
+    </thead><tbody>`+
+    list.slice(0,cap).map(x=>`<tr><td class="num" style="padding:1px 4px;">${esc(rowCode(x))}</td><td style="padding:1px 4px;">${esc(x.cust)}</td><td style="padding:1px 4px;">${esc(x.item)}</td><td class="num" style="padding:1px 4px;">${esc(x.date)}</td>`+
+      DCOLS.map(([k,l,ht])=>{ const v=x.v[k]||[0,0];
+        return `<td class="num" style="padding:1px 4px;">${f3(v[0])}</td>`+(ht?`<td class="num" style="padding:1px 4px;">${f3(v[1])}</td>`:''); }).join('')+'</tr>').join('')+
+    `<tr><td colspan="4" style="font-weight:700;">المجموع (${list.length.toLocaleString()} سطر)</td>`+
+    DCOLS.map(([k,l,ht])=>`<td class="num" style="font-weight:700;">${f3(sums[k+'b']||0)}</td>`+(ht?`<td class="num" style="font-weight:700;">${f3(sums[k+'t']||0)}</td>`:'')).join('')+'</tr>'+
     `</tbody></table>
-    <div style="margin-top:12px; font-size:9.5px; color:#555;">طُبع بتاريخ ${new Date().toLocaleString('en-GB')}</div>`;
+    <div style="margin-top:10px; font-size:9px; color:#555;">طُبع بتاريخ ${new Date().toLocaleString('en-GB')}</div>`;
   window.print();
+}
+function salesTitle(){
+  const y=$('fYear').value, p=+$('fPeriod').value;
+  const dd=n=>String(n).padStart(2,'0');
+  return `تحليل مبيعات ${dd((p-1)*2+1)}+${dd(p*2)} ${y}`;
 }
 function exportRowsCSV(){
   if(!DROWS.length){ alert('لا تفصيل سطري متاح — ارفع ملف تحليل المبيعات أولاً.'); return; }
   const qq=s=>'"'+String(s??'').replace(/"/g,'""')+'"';
-  const head=['رقم المستند','اسم العميل','الصنف','التاريخ',
-    ...DCOLS.flatMap(([k,l,ht])=>ht?[l+' المبلغ',l+' الضريبة']:[l])];
-  const parts=[head.map(qq).join(',')];
-  for(const x of DROWS){
-    parts.push([x.no,x.cust,x.item,x.date,
-      ...DCOLS.flatMap(([k,l,ht])=>{ const v=x.v[k]; return ht?[v?v[0]:0, v?v[1]:0]:[v?v[0]:0]; })].map(qq).join(','));
+  const f3=v=>(+v||0).toFixed(3);
+  // ترويسة مزدوجة بنمط كشف الشركة: اسم المجموعة على عمود المبلغ، وعمود الضريبة بلا رأس
+  const h1=['رمز السند','اسم العميل','الصنف','التاريخ'], h2=['','','',''];
+  for(const [k,l,ht] of DCOLS){
+    h1.push(l); h2.push(ht?'المبلغ':'');
+    if(ht){ h1.push(''); h2.push('الضريبة'); }
   }
+  const parts=['مركز الكيلاني للأغذية', salesTitle(), h1.map(qq).join(','), h2.map(qq).join(',')];
+  const sums={};
+  for(const x of DROWS){
+    const cells=[rowCode(x),x.cust,x.item,x.date];
+    for(const [k,l,ht] of DCOLS){ const v=x.v[k]||[0,0];
+      cells.push(f3(v[0])); sums[k+'b']=(sums[k+'b']||0)+(+v[0]||0);
+      if(ht){ cells.push(f3(v[1])); sums[k+'t']=(sums[k+'t']||0)+(+v[1]||0); } }
+    parts.push(cells.map(qq).join(','));
+  }
+  const tot=['المجموع','','',''];
+  for(const [k,l,ht] of DCOLS){ tot.push(f3(sums[k+'b']||0)); if(ht) tot.push(f3(sums[k+'t']||0)); }
+  parts.push(tot.map(qq).join(','));
   const blob=new Blob(['﻿'+parts.join('\r\n')],{type:'text/csv;charset=utf-8;'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download=`تحليل_المبيعات_سطري_${$('fYear').value}_ف${$('fPeriod').value}.csv`;
+  a.download=`${salesTitle()}.csv`;
   a.click(); URL.revokeObjectURL(a.href);
 }
 
@@ -907,6 +938,8 @@ function exportItemsCSV(){
 }
 
 /* ================= 3) المشتريات المحلية ================= */
+let PROWS=[];        // تفصيل أسطر المشتريات (بالذاكرة — من الملف المرفوع في الجلسة)
+let PVIEW='vendor';  // العرض الحالي بتبويب المشتريات
 async function onFilePurch(inp){
   const f=inp.files[0]; if(!f) return;
   $('fnamePurch').textContent=f.name;
@@ -916,15 +949,154 @@ async function onFilePurch(inp){
   hdr.forEach((h,i)=>{ const m=h.match(/^([\d.]+)\s*%\s*(مبلغ|ضريبة)$/); if(m){ const r=parseFloat(m[1]);
     if(!trip[r]) trip[r]={}; trip[r][m[2]==='مبلغ'?'b':'t']=i; } });
   if(!Object.keys(trip).length){ alert('لم أتعرف على أعمدة نسب الضريبة في كشف المشتريات.'); return; }
-  const rates={}; let n=0;
+  const iVC=findCol(hdr,'رمز المورد'), iVN=findCol(hdr,'المورد'), iTR=findCol(hdr,'رمز الحركة'),
+        iIC=findCol(hdr,'رمز الصنف'), iIN=findCol(hdr,'الصنف');
+  const rates={}, vendors={}, items={}, invoices={};
+  PROWS=[]; let n=0;
+  const bump=(map,key,name,extra)=>{ if(!map[key]) map[key]=Object.assign({name, r:{}},extra||{}); return map[key]; };
   for(const r of rows.slice(1)){
     if(!r.some(c=>c!=='')) continue; n++;
+    const vcode=iVC>=0?String(r[iVC]||'').trim():'', vname=iVN>=0?(r[iVN]||''):'',
+          trans=iTR>=0?String(r[iTR]||'').trim():'', icode=iIC>=0?String(r[iIC]||'').trim():'', iname=iIN>=0?(r[iIN]||''):'';
+    const rowR={};
     for(const rt in trip){ const b=trip[rt].b!==undefined?pnum(r[trip[rt].b]):0, t=trip[rt].t!==undefined?pnum(r[trip[rt].t]):0;
-      if(b||t){ if(!rates[rt]) rates[rt]={b:0,t:0}; rates[rt].b+=b; rates[rt].t+=t; } }
+      if(b||t){
+        rowR[rt]=[r3(b),r3(t)];
+        if(!rates[rt]) rates[rt]={b:0,t:0}; rates[rt].b+=b; rates[rt].t+=t;
+        for(const [map,key,name,extra] of [[vendors,vcode||vname,vname],[items,icode||iname,iname],[invoices,trans,vname,{vcode}]]){
+          if(!key) continue;
+          const o=bump(map,key,name,extra);
+          if(!o.r[rt]) o.r[rt]=[0,0];
+          o.r[rt][0]=r3(o.r[rt][0]+b); o.r[rt][1]=r3(o.r[rt][1]+t);
+        }
+      } }
+    if(Object.keys(rowR).length || icode) PROWS.push({vcode,vname,trans,icode,iname,r:rowR});
   }
   for(const rt in rates){ rates[rt].b=r3(rates[rt].b); rates[rt].t=r3(rates[rt].t); }
-  ST.purch={rates, fname:f.name, rowsN:n};
+  ST.purch={rates, vendors, items, invoices, fname:f.name, rowsN:n};
   recomputeAll();
+}
+function purchRateList(){ return ST.purch?Object.keys(ST.purch.rates).map(Number).sort((a,b)=>a-b):[]; }
+function setPView(v){ PVIEW=v; renderPurchViews(); }
+function renderPurchViews(){
+  if(!ST.purch) return;
+  const host=$('purchViews'); if(!host) return;
+  const RL=purchRateList();
+  const btn=(v,l)=>`<button class="${PVIEW===v?'btn-primary':'btn-ghost'} btn-sm" onclick="setPView('${v}')">${l}</button>`;
+  host.innerHTML=`
+    <div class="toolrow" style="margin-top:12px;">
+      ${btn('vendor','حسب المورد')}${btn('item','حسب الصنف')}${btn('invoice','حسب الفاتورة')}${btn('rate','حسب النسبة')}${btn('detail','التفصيل السطري')}
+      <span style="flex:1;"></span>
+      <button class="btn-teal btn-sm" onclick="printPurchDetail()">🖨️ كشف المشتريات التفصيلي (نمط الإكسل)</button>
+      <button class="btn-teal btn-sm" onclick="printPurchSummary()">🖨️ ملخص حسب النسبة</button>
+      <button class="btn-ghost btn-sm" onclick="exportPurchCSV()">⬇️ CSV التفصيل</button>
+    </div>
+    <div id="purchViewTbl" style="margin-top:8px; overflow-x:auto;"></div>`;
+  const rateCols=o=>RL.flatMap(rt=>[
+      {id:'r'+rt+'b', l:rt+'% مبلغ', n:1, get:x=>x.r[rt]?x.r[rt][0]:0},
+      {id:'r'+rt+'t', l:rt+'% ضريبة', n:1, get:x=>x.r[rt]?x.r[rt][1]:0}]);
+  const tot=[{id:'tb',l:'المبلغ الكلي',n:1,get:x=>r3(RL.reduce((s,rt)=>s+(x.r[rt]?x.r[rt][0]:0),0))},
+             {id:'tt',l:'الضريبة الكلية',n:1,get:x=>r3(RL.reduce((s,rt)=>s+(x.r[rt]?x.r[rt][1]:0),0))}];
+  if(PVIEW==='vendor'){
+    gtRender('purchViewTbl',[
+      {id:'code',l:'رمز المورد',get:x=>x.code},{id:'name',l:'المورد',get:x=>x.name,tdStyle:'white-space:normal; min-width:200px;'},
+      ...rateCols(), ...tot],
+      Object.entries(ST.purch.vendors).map(([code,v])=>({code,...v})), {title:'المشتريات المحلية حسب المورد', max:500});
+  } else if(PVIEW==='item'){
+    gtRender('purchViewTbl',[
+      {id:'code',l:'رمز الصنف',get:x=>x.code},{id:'name',l:'الصنف',get:x=>x.name,tdStyle:'white-space:normal; min-width:220px;'},
+      ...rateCols(), ...tot],
+      Object.entries(ST.purch.items).map(([code,v])=>({code,...v})), {title:'المشتريات المحلية حسب الصنف', max:500});
+  } else if(PVIEW==='invoice'){
+    gtRender('purchViewTbl',[
+      {id:'code',l:'رمز الحركة',get:x=>x.code},{id:'name',l:'المورد',get:x=>x.name,tdStyle:'white-space:normal; min-width:200px;'},
+      ...rateCols(), ...tot],
+      Object.entries(ST.purch.invoices).map(([code,v])=>({code,...v})), {title:'المشتريات المحلية حسب الفاتورة', max:500});
+  } else if(PVIEW==='rate'){
+    gtRender('purchViewTbl',[
+      {id:'rate',l:'النسبة %',n:1,sum:false,get:x=>x.rate},
+      {id:'b',l:'المبلغ',n:1,get:x=>x.b},{id:'t',l:'ضريبة المبيعات',n:1,get:x=>x.t},
+      {id:'g',l:'الاجمالي',n:1,get:x=>r3(x.b+x.t)}],
+      RL.map(rt=>({rate:rt, b:ST.purch.rates[rt].b, t:ST.purch.rates[rt].t})), {title:'المشتريات المحلية حسب النسبة'});
+  } else {
+    if(!PROWS.length){ $('purchViewTbl').innerHTML='<div class="empty-state">التفصيل السطري متاح بعد رفع الملف في هذه الجلسة — والعروض المجمّعة محفوظة دائماً.</div>'; return; }
+    gtRender('purchViewTbl',[
+      {id:'vcode',l:'رمز المورد',get:x=>x.vcode},{id:'vname',l:'المورد',get:x=>x.vname,tdStyle:'white-space:normal; min-width:170px;'},
+      {id:'trans',l:'رمز الحركة',get:x=>x.trans},{id:'icode',l:'رمز الصنف',get:x=>x.icode},
+      {id:'iname',l:'الصنف',get:x=>x.iname,tdStyle:'white-space:normal; min-width:220px;'},
+      ...rateCols(), ...tot],
+      PROWS, {title:'كشف المشتريات المحلية التفصيلي', max:400});
+  }
+}
+function printPurchDetail(){
+  if(!PROWS.length){ alert('التفصيل السطري متاح بعد رفع ملف المشتريات في هذه الجلسة — أعد رفعه ثم اطبع.'); return; }
+  const RL=purchRateList();
+  const pr=periodRangeText();
+  const f3=v=>(+v||0).toFixed(3);
+  const groups=[['x0','X0'],...RL.map(rt=>['r'+rt, rt+'%'])];
+  const gv=(x,g)=>g==='x0'?[0,0]:(x.r[g.slice(1)]||[0,0]);
+  const sums={};
+  for(const x of PROWS) for(const [g] of groups){ const v=gv(x,g);
+    sums[g+'b']=(sums[g+'b']||0)+v[0]; sums[g+'t']=(sums[g+'t']||0)+v[1]; }
+  $('printSheet').innerHTML=`<style>@page{size:A4 landscape; margin:8mm;}</style>
+    <div class="phead"><h2>مركز الكيلاني للأغذية</h2>
+    <div style="font-size:13px; margin-top:4px; font-weight:700;">مشتريات محلية من ${pr.from} الى ${pr.to}</div></div>
+    <table style="font-size:8.5px;"><thead>
+    <tr><th rowspan="2">رمز المورد</th><th rowspan="2">المورد</th><th rowspan="2">رمز الحركة</th><th rowspan="2">رمز الصنف</th><th rowspan="2">الصنف</th>
+    ${groups.map(([g,l])=>`<th colspan="3">${l}</th>`).join('')}</tr>
+    <tr>${groups.map(()=>'<th style="font-size:8px;">مبلغ</th><th style="font-size:8px;">ضريبة</th><th style="font-size:8px;">اجمالي</th>').join('')}</tr>
+    </thead><tbody>`+
+    PROWS.map(x=>`<tr><td class="num" style="padding:1px 4px;">${esc(x.vcode)}</td><td style="padding:1px 4px;">${esc(x.vname)}</td><td class="num" style="padding:1px 4px;">${esc(x.trans)}</td><td class="num" style="padding:1px 4px;">${esc(x.icode)}</td><td style="padding:1px 4px;">${esc(x.iname)}</td>`+
+      groups.map(([g])=>{ const v=gv(x,g); return `<td class="num" style="padding:1px 3px;">${f3(v[0])}</td><td class="num" style="padding:1px 3px;">${f3(v[1])}</td><td class="num" style="padding:1px 3px;">${f3(v[0]+v[1])}</td>`; }).join('')+'</tr>').join('')+
+    `<tr><td colspan="5" style="font-weight:700;">المجموع</td>`+
+    groups.map(([g])=>`<td class="num" style="font-weight:700;">${f3(sums[g+'b']||0)}</td><td class="num" style="font-weight:700;">${f3(sums[g+'t']||0)}</td><td class="num" style="font-weight:700;">${f3((sums[g+'b']||0)+(sums[g+'t']||0))}</td>`).join('')+'</tr>'+
+    `</tbody></table>
+    <div style="margin-top:10px; font-size:9px; color:#555;">عدد الأسطر: ${PROWS.length.toLocaleString()} · طُبع بتاريخ ${new Date().toLocaleString('en-GB')}</div>`;
+  window.print();
+}
+function printPurchSummary(){
+  if(!ST.purch){ alert('ارفع كشف المشتريات أولاً.'); return; }
+  const RL=purchRateList();
+  const pr=periodRangeText();
+  let gb=0,gt=0;
+  const rows=[['X0',0,0], ...RL.map(rt=>{ const v=ST.purch.rates[rt]; gb=r3(gb+v.b); gt=r3(gt+v.t); return [rt+'%',v.b,v.t]; })];
+  $('printSheet').innerHTML=`<style>@page{size:A4 portrait; margin:14mm;}</style>
+    <div class="phead"><h2>مركز الكيلاني للأغذية</h2>
+    <div style="font-size:14px; margin-top:5px; font-weight:700;">مشتريات محلية من ${pr.from} الى ${pr.to}</div></div>
+    <table style="font-size:13px; max-width:520px; margin:14px auto 0;"><thead>
+      <tr><th>%</th><th>المبلغ</th><th>ضريبة المبيعات</th><th>الاجمالي</th></tr></thead><tbody>`+
+    rows.map(([l,b,t])=>`<tr><td>${l}</td><td class="num">${fmt(b)}</td><td class="num">${fmt(t)}</td><td class="num">${fmt(r3(b+t))}</td></tr>`).join('')+
+    `<tr><td style="font-weight:700;">المجموع</td><td class="num" style="font-weight:700;">${fmt(gb)}</td><td class="num" style="font-weight:700;">${fmt(gt)}</td><td class="num" style="font-weight:700;">${fmt(r3(gb+gt))}</td></tr>
+    </tbody></table>
+    <div style="margin-top:14px; font-size:10px; color:#555; text-align:center;">طُبع بتاريخ ${new Date().toLocaleString('en-GB')}</div>`;
+  window.print();
+}
+function exportPurchCSV(){
+  if(!PROWS.length){ alert('التفصيل السطري متاح بعد رفع ملف المشتريات في هذه الجلسة.'); return; }
+  const RL=purchRateList();
+  const pr=periodRangeText();
+  const qq=s=>'"'+String(s??'').replace(/"/g,'""')+'"';
+  const f3=v=>(+v||0).toFixed(3);
+  const groups=[['x0','X0'],...RL.map(rt=>['r'+rt, rt+'%'])];
+  const gv=(x,g)=>g==='x0'?[0,0]:(x.r[g.slice(1)]||[0,0]);
+  const h1=['رمز المورد','المورد','رمز الحركة','رمز الصنف','الصنف'], h2=['','','','',''];
+  for(const [g,l] of groups){ h1.push(l,'',''); h2.push('مبلغ','ضريبة','اجمالي'); }
+  const parts=['مركز الكيلاني للأغذية', `مشتريات محلية من ${pr.from} الى ${pr.to}`, h1.map(qq).join(','), h2.map(qq).join(',')];
+  const sums={};
+  for(const x of PROWS){
+    const cells=[x.vcode,x.vname,x.trans,x.icode,x.iname];
+    for(const [g] of groups){ const v=gv(x,g);
+      cells.push(f3(v[0]),f3(v[1]),f3(v[0]+v[1]));
+      sums[g+'b']=(sums[g+'b']||0)+v[0]; sums[g+'t']=(sums[g+'t']||0)+v[1]; }
+    parts.push(cells.map(qq).join(','));
+  }
+  const tot=['المجموع','','','',''];
+  for(const [g] of groups) tot.push(f3(sums[g+'b']||0),f3(sums[g+'t']||0),f3((sums[g+'b']||0)+(sums[g+'t']||0)));
+  parts.push(tot.map(qq).join(','));
+  const blob=new Blob(['﻿'+parts.join('\r\n')],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`مشتريات_محلية_${$('fYear').value}_ف${$('fPeriod').value}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
 }
 
 /* ================= 4) المستوردات ================= */
@@ -935,7 +1107,8 @@ async function onFileImports(inp){
   const hdr=(aoa[0]||[]).map(h=>String(h).replace(/\s+/g,' ').trim());
   const iNo=findCol(hdr,/رقم البيان/), iDateF=findCol(hdr,/تاريخ الوصل/), iRate=findCol(hdr,/نسبة الضريبة/),
         iBase=findCol(hdr,/قيمة الاستيراد/), iTax=findCol(hdr,/مبلغ الضريبة/),
-        iEntry=findCol(hdr,/رقم القيد/), iItems=findCol(hdr,/الأصناف|الاصناف/);
+        iEntry=findCol(hdr,/رقم القيد/), iItems=findCol(hdr,/الأصناف|الاصناف/),
+        iDateD=findCol(hdr,/تاريخ البيان/), iOrder=findCol(hdr,/رقم الطلبية/);
   if(iRate<0||iBase<0){ alert('لم أتعرف على أعمدة كشف المستوردات.'); return; }
   const rowsOut=[];
   for(const r of aoa.slice(1)){
@@ -946,10 +1119,35 @@ async function onFileImports(inp){
     const items=iItems>=0?String(r[iItems]||'').trim():'';
     if(!no && !entry && !items) continue; // سطر مجاميع في نهاية الكشف — يُستبعد
     let rt=pnum(r[iRate]); if(rt>0 && rt<1) rt=r3(rt*100);
-    rowsOut.push({no, dateFin:iDateF>=0?String(r[iDateF]||'').trim():'', rate:rt, base:r3(base), tax:r3(tax)});
+    rowsOut.push({no, dateFin:iDateF>=0?String(r[iDateF]||'').trim():'',
+      dateDecl:iDateD>=0?String(r[iDateD]||'').trim():'', order:iOrder>=0?String(r[iOrder]||'').trim():'',
+      entry, items, rate:rt, base:r3(base), tax:r3(tax)});
   }
   ST.imports={rows:rowsOut, fname:f.name};
   recomputeAll();
+}
+
+function printImportsReport(){
+  if(!ST.imports || !ST.imports.rows.length){ alert('ارفع كشف المستوردات أولاً.'); return; }
+  const pr=periodRangeText();
+  // ترتيب حسب رقم البيان (الجزء الرقمي بعد الشرطة المائلة إن وجد)
+  const keyOf=no=>{ const m=String(no).match(/(\d+)\s*$/); return m?+m[1]:0; };
+  const rows=[...ST.imports.rows].sort((a,b)=>keyOf(a.no)-keyOf(b.no) || String(a.no).localeCompare(String(b.no)));
+  let totB=0, totT=0; rows.forEach(r=>{ totB=r3(totB+r.base); totT=r3(totT+r.tax); });
+  $('printSheet').innerHTML=`<style>@page{size:A4 portrait; margin:10mm;}</style>
+    <div class="phead"><h2>مركز الكيلاني للأغذية</h2>
+    <div style="font-size:14px; margin-top:5px; font-weight:700;">كشف المستوردات من تاريخ ${pr.from} الى تاريخ ${pr.to}</div></div>
+    <table style="font-size:10.5px;"><thead><tr>
+      <th>رقم البيان</th><th>تاريخ البيان</th><th>تاريخ الوصل المالي</th><th>رقم الطلبية</th><th>رقم القيد</th><th>النسبة %</th><th>قيمة الاستيراد</th><th>مبلغ الضريبة</th>
+    </tr></thead><tbody>`+
+    rows.map(r=>`<tr>
+      <td class="num">${esc(r.no)}</td><td class="num">${esc(r.dateDecl||'')}</td><td class="num">${esc(r.dateFin)}</td>
+      <td class="num">${esc(r.order||'')}</td><td class="num">${esc(r.entry||'')}</td><td class="num">${r.rate}%</td>
+      <td class="num">${fmt(r.base)}</td><td class="num">${fmt(r.tax)}</td></tr>`).join('')+
+    `<tr><td colspan="6" style="font-weight:700;">المجموع (${rows.length} بيان)</td><td class="num" style="font-weight:700;">${fmt(totB)}</td><td class="num" style="font-weight:700;">${fmt(totT)}</td></tr>
+    </tbody></table>
+    <div style="margin-top:12px; font-size:10px; color:#555;">طُبع بتاريخ ${new Date().toLocaleString('en-GB')}</div>`;
+  window.print();
 }
 
 /* ================= 5) الأمانات ================= */
@@ -1170,16 +1368,16 @@ function renderAll(C){
   }
   // تبويب 3
   if(ST.purch){
-    const keys=Object.keys(ST.purch.rates).sort((a,b)=>b-a);
+    if(!ST.purch.vendors) ST.purch.vendors={};
+    if(!ST.purch.items) ST.purch.items={};
+    if(!ST.purch.invoices) ST.purch.invoices={};
     $('purchWrap').innerHTML=`<div class="cards">
-      <div class="card"><div class="lbl">أسطر الكشف</div><div class="val">${ST.purch.rowsN.toLocaleString()}</div></div>
+      <div class="card"><div class="lbl">أسطر الكشف</div><div class="val">${(ST.purch.rowsN||0).toLocaleString()}</div></div>
+      <div class="card"><div class="lbl">عدد الموردين</div><div class="val">${Object.keys(ST.purch.vendors).length}</div></div>
+      <div class="card"><div class="lbl">عدد الفواتير</div><div class="val">${Object.keys(ST.purch.invoices).length}</div></div>
       <div class="card good"><div class="lbl">ضريبة المدخلات المحلية</div><div class="val">${fmt(C.purchTax)}</div></div></div>
-      <div id="purchRates" style="margin-top:10px;"></div>`;
-    gtRender('purchRates',[
-      {id:'rate',l:'النسبة %',n:1,sum:false,get:r=>r.rate},
-      {id:'b',l:'المبلغ',n:1,get:r=>r.b},
-      {id:'t',l:'الضريبة',n:1,get:r=>r.t},
-    ], keys.map(k=>({rate:+k, b:ST.purch.rates[k].b, t:ST.purch.rates[k].t})), {title:'المشتريات المحلية حسب نسب الضريبة'});
+      <div id="purchViews"></div>`;
+    renderPurchViews();
   }
   // تبويب 4
   if(ST.imports){
@@ -1190,10 +1388,14 @@ function renderAll(C){
       <table class="t"><thead><tr><th>النسبة</th><th class="num">قيمة الاستيراد</th><th class="num">الضريبة</th></tr></thead><tbody>`+
       ks.map(k=>`<tr><td>${k}%</td><td class="num">${fmt(C.imports[k].b)}</td><td class="num">${fmt(C.imports[k].t)}</td></tr>`).join('')+
       `</tbody></table>
+      <div class="toolrow"><button class="btn-teal btn-sm" onclick="printImportsReport()">🖨️ كشف المستوردات الرسمي (مرتب حسب البيان)</button></div>
       <div class="scrollbox" style="max-height:340px; margin-top:10px;"><div id="importsRows"></div></div>`;
     gtRender('importsRows',[
       {id:'no',l:'رقم البيان',get:r=>r.no},
       {id:'dateFin',l:'تاريخ الوصل المالي',get:r=>r.dateFin},
+      {id:'dateDecl',l:'تاريخ البيان',get:r=>r.dateDecl||''},
+      {id:'order',l:'رقم الطلبية',get:r=>r.order||''},
+      {id:'entry',l:'رقم القيد',get:r=>r.entry||''},
       {id:'rate',l:'النسبة %',n:1,sum:false,get:r=>r.rate},
       {id:'base',l:'قيمة الاستيراد',n:1,get:r=>r.base},
       {id:'tax',l:'الضريبة',n:1,get:r=>r.tax},
