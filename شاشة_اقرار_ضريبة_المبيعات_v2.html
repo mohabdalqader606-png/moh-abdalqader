@@ -162,14 +162,15 @@
         <span id="declStatus" class="badge gray">جديد — غير محفوظ</span>
       </div>
       <div class="toolrow">
-        <button class="btn-primary" id="btnSave" onclick="saveDecl('draft')">💾 حفظ العمل (مسودة)</button>
+        <button class="btn-primary" id="btnSave" onclick="saveDecl('draft')">💾 حفظ فوري</button>
         <button class="btn-teal" id="btnFinal" onclick="saveDecl('final')">✅ اعتماد الإقرار النهائي</button>
-        <button class="btn-ghost" onclick="loadDeclForPeriod(true)">📂 تحميل المحفوظ لهذه الفترة</button>
+        <button class="btn-ghost" onclick="loadDeclForPeriod(true)">📂 إعادة تحميل المحفوظ لهذه الفترة</button>
         <span class="status-msg" id="saveMsg"></span>
       </div>
       <div class="hint" style="margin-top:12px;">
-        الحفظ يخزّن مركزياً: كل نتائج الكشوفات، استثناءات الفواتير، تصنيفات حساب الأمانات، والإقرار — فيكمل أي زميل من حيث توقفت.
-        ملفات الكشوفات الخام نفسها لا تُخزَّن (تبقى في النظام المحاسبي) — عند تغيير تصنيفات لاحقاً تكفي النتائج المحفوظة دون إعادة رفع.
+        <b>الحفظ تلقائي</b>: أي رفع كشف أو تعديل يُحفَظ لوحده على السيرفر (Supabase — مشروع KFC) خلال ثوانٍ، وتظهر حالة الحفظ أعلى يسار الشاشة.
+        عند فتح الشاشة من أي جهاز وبأي وقت: اختر الفترة وتعود كل بياناتك تلقائياً — لا حاجة لإعادة رفع الملفات.
+        ملفات الكشوفات الخام نفسها لا تُخزَّن (تبقى في نظامكم المحاسبي)؛ يُخزَّن كل ما ينتج عنها: النتائج، التفاصيل، الاستثناءات، التصنيفات، والإقرار.
       </div>
       <div class="cards" id="progressCards"></div>
     </div>
@@ -1015,7 +1016,15 @@ function calc(){
   return C;
 }
 let CC=null; // آخر نتيجة حساب
-function recomputeAll(){ CC=calc(); renderAll(CC); }
+let SUPPRESS_AUTOSAVE=false, autoSaveTimer=null;
+function scheduleAutoSave(){
+  if(SUPPRESS_AUTOSAVE || !canEdit) return;
+  if(!ST.nt && !ST.sales && !ST.purch && !ST.imports && !ST.trust && !curDeclId) return;
+  clearTimeout(autoSaveTimer);
+  $('syncMsg').textContent='💾 جارٍ الحفظ التلقائي…';
+  autoSaveTimer=setTimeout(()=>saveDecl(curDeclStatus==='final'?'final':'draft', true), 1500);
+}
+function recomputeAll(){ CC=calc(); renderAll(CC); scheduleAutoSave(); }
 
 /* ================= العرض ================= */
 const OKB=(ok)=>ok?'<span class="badge ok">مطابق ✔</span>':'<span class="badge warn">فرق ✘</span>';
@@ -1169,9 +1178,9 @@ function renderFinal(C){
 }
 
 /* ================= حفظ وتحميل ================= */
-async function saveDecl(status){
+async function saveDecl(status, quiet){
   if(!canEdit){ return; }
-  if(status==='final' && !confirm('اعتماد الإقرار كنهائي لهذه الفترة؟')) return;
+  if(!quiet && status==='final' && !confirm('اعتماد الإقرار كنهائي لهذه الفترة؟')) return;
   const C=calc();
   const payload={
     year:+$('fYear').value, period_no:+$('fPeriod').value, status,
@@ -1179,13 +1188,16 @@ async function saveDecl(status){
            results:{outTax:C.outTax, inputsTotal:C.inputsTotal, netBefore:C.netBefore, f1:C.f1, f2:C.f2, netFinal:C.netFinal, totalSales:C.totalSales} },
     output_tax:C.outTax, input_tax:C.inputsTotal, net_tax:C.netFinal,
   };
-  setMsg('saveMsg','جارٍ الحفظ…',''); setMsg('saveMsg2','جارٍ الحفظ…','');
+  if(!quiet){ setMsg('saveMsg','جارٍ الحفظ…',''); setMsg('saveMsg2','جارٍ الحفظ…',''); }
   const {data,error}=await sb.from('sales_tax_declarations').upsert(payload,{onConflict:'year,period_no'}).select().single();
-  if(error){ setMsg('saveMsg','فشل الحفظ: '+error.message,'err'); setMsg('saveMsg2','فشل الحفظ: '+error.message,'err'); return; }
+  if(error){
+    $('syncMsg').textContent='⚠ تعذر الحفظ التلقائي';
+    setMsg('saveMsg','فشل الحفظ: '+error.message,'err'); setMsg('saveMsg2','فشل الحفظ: '+error.message,'err'); return;
+  }
   curDeclId=data.id; curDeclStatus=data.status; setStatusBadge();
   if(ccDirty) await saveClassifications();
-  const m = status==='final'?'تم اعتماد الإقرار ✔':'تم الحفظ ✔';
-  setMsg('saveMsg',m,'ok'); setMsg('saveMsg2',m,'ok');
+  $('syncMsg').textContent='✔ محفوظ تلقائياً على السيرفر · '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  if(!quiet){ const m=status==='final'?'تم اعتماد الإقرار ✔':'تم الحفظ ✔'; setMsg('saveMsg',m,'ok'); setMsg('saveMsg2',m,'ok'); }
 }
 function setStatusBadge(){
   const el=$('declStatus');
@@ -1195,6 +1207,8 @@ function setStatusBadge(){
 }
 async function loadDeclForPeriod(manual){
   if(!curUser) return;
+  SUPPRESS_AUTOSAVE=true; clearTimeout(autoSaveTimer);
+  try{
   const y=+$('fYear').value, p=+$('fPeriod').value;
   const {data}=await sb.from('sales_tax_declarations').select('*').eq('year',y).eq('period_no',p).maybeSingle();
   if(data && data.data && data.data.v===2){
@@ -1220,6 +1234,7 @@ async function loadDeclForPeriod(manual){
     if(manual){ ST=freshST(); ITEMS={}; renderItems(); ['fnameNT','fnameSales','fnamePurch','fnameImports','fnameTrust'].forEach(id=>$(id).textContent=''); }
   }
   setStatusBadge(); recomputeAll();
+  } finally { SUPPRESS_AUTOSAVE=false; }
 }
 
 /* ================= الطباعة ================= */
