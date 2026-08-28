@@ -609,7 +609,7 @@ function renderBPList(){document.getElementById('bpList').innerHTML=Object.entri
 /* ---- تسوية توقيت الإيراد: فواتير احتياطية غير مسلّمة / تسليمات غير مفوترة ---- */
 function timingBalances(ms){ // returns balances at each month end: def (deferred revenue from undelivered reserve invoices), unb (unbilled deliveries)
  const at={};const endOf=k=>{const [y,m]=k.split('-').map(Number);return new Date(y,m,0)};const openD=(()=>{const y=S.settings.openYear,m=S.settings.openMonth;return new Date(y,m,0)})();
- const calcAt=(D)=>{let def=0,unb=0,revDef=0;(S.timing||[]).forEach(r=>{const d1=new Date(r.date);if(d1>D)return;const total=r.amt,q=r.qty||1;let matched=0,matchedD=0;(r.m||[]).forEach(x=>{if(new Date(x.d)<=D){matched+=x.q;if((x.t||'D')==='D')matchedD+=x.q}});const rem=Math.max(0,q-matched)/q*total;if(r.type==='RI'){def+=rem;revDef+=Math.max(0,q-matchedD)/q*total}else unb+=rem});return {def,unb,revDef}};
+ const calcAt=(D)=>{let def=0,unb=0;(S.timing||[]).forEach(r=>{const d1=new Date(r.date);if(d1>D)return;const total=r.amt,q=r.qty||1;let matched=0;(r.m||[]).forEach(x=>{if(new Date(x.d)<=D)matched+=x.q});const rem=Math.max(0,q-matched)/q*total;if(r.type==='RI')def+=rem;else unb+=rem});return {def,unb}};
  ms.forEach(k=>at[k]=calcAt(endOf(k)));return {at,open:calcAt(openD)}}
 function loadTiming(txt){txt=txt||document.getElementById('txTM').value;if(!txt||!String(txt).trim()){toast('الخانة فارغة — الصق النتيجة أو اختر ملفاً (الملف المختار يُحمَّل تلقائياً)');return}const {h,rows}=parseTable(txt);
  const it=col(h,['type','نوع'],0),ik=col(h,['key','docentry','مفتاح'],1),il=col(h,['linenum','line','rownumber'],2),id=col(h,['docdate','date','التاريخ','postingdate'],3),ia=col(h,['linetotal','amount','المبلغ','rowtotal'],4),iq=col(h,['quantity','qty','الكمية'],5),imd=col(h,['matchdate','dlvdate','invdate'],6),imq=col(h,['matchqty','dlvqty','invqty'],7),imt=col(h,['matchtype','نوعالمطابقة'],-1),idn=col(h,['docnum'],-1),icc=col(h,['cardcode'],-1),icn=col(h,['cardname'],-1),iic=col(h,['itemcode'],-1),iin=col(h,['itemname','dscription'],-1),irp=col(h,['rep','slpname'],-1);const v=(r,i)=>i>=0?(r[i]||''):'';
@@ -684,8 +684,8 @@ async function saveStateNow(){clearTimeout(_saveTimer);const packed=packState();
 let MV={};
 function buildMV(){MV={};Object.keys(S.moves).forEach(k=>{MV[k]={};Object.entries(S.moves[k]).forEach(([c,v])=>MV[k][c]={d:v.d,c:v.c})});
  Object.entries(S.bpMoves||{}).forEach(([k,m])=>{if(!MV[k])MV[k]={};Object.entries(m).forEach(([c,v])=>{const b=S.bp[c];if(!b)return;const vc=bpCode(c);const o=MV[k][vc]||{d:0,c:0};o.d+=v.d;o.c+=v.c;MV[k][vc]=o;if(b.ctrl){const p=MV[k][b.ctrl]||{d:0,c:0};p.d-=v.d;p.c-=v.c;MV[k][b.ctrl]=p}})});
- if(S.timingOn!==false&&(S.timing||[]).length){const ms=months();const TB=timingBalances(ms);let prd=TB.open.revDef,pu=TB.open.unb;ms.forEach(k=>{const t=TB.at[k];const rdd=t.revDef-prd,du=t.unb-pu;prd=t.revDef;pu=t.unb;if(!MV[k])MV[k]={};const add=(c,d,cr)=>{const o=MV[k][c]||{d:0,c:0};o.d+=d;o.c+=cr;MV[k][c]=o};
-   if(rdd>0){add('~TM~DEF',0,rdd);add('~TM~SAL',rdd,0)}else if(rdd<0){add('~TM~DEF',-rdd,0);add('~TM~SAL',0,-rdd)}
+ if(S.timingOn!==false&&(S.timing||[]).length){const ms=months();const TB=timingBalances(ms);let pd=TB.open.def,pu=TB.open.unb;ms.forEach(k=>{const t=TB.at[k];const dd=t.def-pd,du=t.unb-pu;pd=t.def;pu=t.unb;if(!MV[k])MV[k]={};const add=(c,d,cr)=>{const o=MV[k][c]||{d:0,c:0};o.d+=d;o.c+=cr;MV[k][c]=o};
+   if(dd>0){add('~TM~DEF',0,dd);add('~TM~SAL',dd,0)}else if(dd<0){add('~TM~DEF',-dd,0);add('~TM~SAL',0,-dd)}
    if(du>0){add('~TM~UNB',du,0);add('~TM~SAL',0,du)}else if(du<0){add('~TM~UNB',0,-du);add('~TM~SAL',-du,0)}})}
  if(S.ecl&&S.ecl.on&&S.ecl.amount){const k=S.ecl.month||months().slice(-1)[0];if(k){if(!MV[k])MV[k]={};const a=S.ecl.amount;const add=(c,d,cr)=>{const o=MV[k][c]||{d:0,c:0};o.d+=d;o.c+=cr;MV[k][c]=o};if(a>0){add('~EC~EXP',a,0);add('~EC~ALLOW',0,a)}else{add('~EC~ALLOW',-a,0);add('~EC~EXP',0,-a)}}}
  (S.adj||[]).filter(a=>a.active!==false).forEach(a=>{if(!MV[a.month])MV[a.month]={};a.lines.forEach(l=>{if(!l.code)return;const o=MV[a.month][l.code]||{d:0,c:0};o.d+=+l.d||0;o.c+=+l.c||0;MV[a.month][l.code]=o})})}
@@ -696,7 +696,7 @@ function calc(from,to,noSelf){
  const ms=months(),per=range(from,to);
  // closing balance at end of month k = opening + sum moves up to k
  const bal={},cum={};const codes=new Set([...Object.keys(S.accounts),...Object.keys(S.opening)]);ms.forEach(k=>Object.keys(MV[k]).forEach(c=>codes.add(c)));
- codes.forEach(c=>{cum[c]=S.opening[c]||0});if(S.timingOn!==false&&(S.timing||[]).length){const o=timingBalances([]).open;['~TM~DEF','~TM~UNB','~TM~SAL'].forEach(c=>codes.add(c));cum['~TM~DEF']=-o.revDef;cum['~TM~UNB']=o.unb;cum['~TM~SAL']=o.revDef-o.unb}Object.entries(S.bpOpen||{}).forEach(([c,v])=>{const b=S.bp[c];if(!b)return;const vc=bpCode(c);codes.add(vc);cum[vc]=(cum[vc]||0)+v;if(b.ctrl){codes.add(b.ctrl);cum[b.ctrl]=(cum[b.ctrl]||0)-v}});bal['__open']={...cum};
+ codes.forEach(c=>{cum[c]=S.opening[c]||0});if(S.timingOn!==false&&(S.timing||[]).length){const o=timingBalances([]).open;['~TM~DEF','~TM~UNB','~TM~SAL'].forEach(c=>codes.add(c));cum['~TM~DEF']=-o.def;cum['~TM~UNB']=o.unb;cum['~TM~SAL']=o.def-o.unb}Object.entries(S.bpOpen||{}).forEach(([c,v])=>{const b=S.bp[c];if(!b)return;const vc=bpCode(c);codes.add(vc);cum[vc]=(cum[vc]||0)+v;if(b.ctrl){codes.add(b.ctrl);cum[b.ctrl]=(cum[b.ctrl]||0)-v}});bal['__open']={...cum};
  ms.forEach(k=>{const mv=MV[k];Object.keys(mv).forEach(c=>{cum[c]+=mv[c].d-mv[c].c});bal[k]={...cum}});
 
 
@@ -1064,7 +1064,8 @@ LEFT JOIN (
 WHERE T0."isIns" = 'Y' AND T0."CANCELED" = 'N'
  AND T0."DocDate" >= '{FROM}' AND T0."DocDate" <= '{TO}'
  AND (M."MDate" IS NULL OR YEAR(M."MDate") <> YEAR(T0."DocDate") OR MONTH(M."MDate") <> MONTH(T0."DocDate")
-  OR EXISTS (SELECT 1 FROM DLN1 D2 INNER JOIN ODLN H2 ON H2."DocEntry" = D2."DocEntry" WHERE D2."BaseType" = '13' AND D2."BaseEntry" = T1."DocEntry" AND D2."BaseLine" = T1."LineNum" AND (YEAR(H2."DocDate") <> YEAR(T0."DocDate") OR MONTH(H2."DocDate") <> MONTH(T0."DocDate"))))`,
+  OR EXISTS (SELECT 1 FROM DLN1 D2 INNER JOIN ODLN H2 ON H2."DocEntry" = D2."DocEntry" AND H2."CANCELED" = 'N' WHERE D2."BaseType" = '13' AND D2."BaseEntry" = T1."DocEntry" AND D2."BaseLine" = T1."LineNum" AND (YEAR(H2."DocDate") <> YEAR(T0."DocDate") OR MONTH(H2."DocDate") <> MONTH(T0."DocDate")))
+  OR EXISTS (SELECT 1 FROM RIN1 R2 INNER JOIN ORIN H3 ON H3."DocEntry" = R2."DocEntry" AND H3."CANCELED" = 'N' WHERE R2."BaseType" = '13' AND R2."BaseEntry" = T1."DocEntry" AND R2."BaseLine" = T1."LineNum" AND (YEAR(H3."DocDate") <> YEAR(T0."DocDate") OR MONTH(H3."DocDate") <> MONTH(T0."DocDate"))))`,
 q5b:`SELECT 'DL' AS "Type", T0."DocEntry" AS "Key", T1."LineNum" AS "LineNum", T0."DocDate" AS "DocDate", T1."LineTotal" AS "LineTotal", T1."Quantity" AS "Quantity", M."MDate" AS "MatchDate", M."MQty" AS "MatchQty", T0."DocNum" AS "DocNum", T0."CardCode" AS "CardCode", T0."CardName" AS "CardName", T1."ItemCode" AS "ItemCode", T1."Dscription" AS "ItemName", COALESCE(T4."SlpName", '') AS "Rep"
 FROM ODLN T0 LEFT JOIN OSLP T4 ON T4."SlpCode" = T0."SlpCode"
 INNER JOIN DLN1 T1 ON T1."DocEntry" = T0."DocEntry" AND (T1."BaseType" IS NULL OR T1."BaseType" <> '13')
@@ -1078,7 +1079,8 @@ LEFT JOIN (
 WHERE T0."CANCELED" = 'N'
  AND T0."DocDate" >= '{FROM}' AND T0."DocDate" <= '{TO}'
  AND (M."MDate" IS NULL OR YEAR(M."MDate") <> YEAR(T0."DocDate") OR MONTH(M."MDate") <> MONTH(T0."DocDate")
-  OR EXISTS (SELECT 1 FROM INV1 I2 INNER JOIN OINV H2 ON H2."DocEntry" = I2."DocEntry" WHERE I2."BaseType" = '15' AND I2."BaseEntry" = T1."DocEntry" AND I2."BaseLine" = T1."LineNum" AND (YEAR(H2."DocDate") <> YEAR(T0."DocDate") OR MONTH(H2."DocDate") <> MONTH(T0."DocDate"))))`,
+  OR EXISTS (SELECT 1 FROM INV1 I2 INNER JOIN OINV H2 ON H2."DocEntry" = I2."DocEntry" AND H2."CANCELED" = 'N' WHERE I2."BaseType" = '15' AND I2."BaseEntry" = T1."DocEntry" AND I2."BaseLine" = T1."LineNum" AND (YEAR(H2."DocDate") <> YEAR(T0."DocDate") OR MONTH(H2."DocDate") <> MONTH(T0."DocDate")))
+  OR EXISTS (SELECT 1 FROM RDN1 R2 INNER JOIN ORDN H3 ON H3."DocEntry" = R2."DocEntry" AND H3."CANCELED" = 'N' WHERE R2."BaseType" = '15' AND R2."BaseEntry" = T1."DocEntry" AND R2."BaseLine" = T1."LineNum" AND (YEAR(H3."DocDate") <> YEAR(T0."DocDate") OR MONTH(H3."DocDate") <> MONTH(T0."DocDate"))))`,
 q6b:`SELECT 'APINV' AS "Kind", T0."CardName" AS "Party", T0."DocDueDate" AS "DueDate", T0."DocTotal" AS "Amount", T0."CardCode" AS "Code", T1."Balance" AS "BPBalance", T0."DocDate" AS "DocDate"
 FROM OPCH T0 INNER JOIN OCRD T1 ON T1."CardCode" = T0."CardCode"
 WHERE T0."CANCELED" = 'N' AND T1."Balance" < 0 AND T0."DocDate" >= ADD_DAYS(CURRENT_DATE, -365)`,
