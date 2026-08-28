@@ -195,7 +195,16 @@
       </div>
       <div class="scrollbox" id="ccWrap"><div class="empty-state">ارفع الكشف أولاً</div></div>
 
-      <div class="grp-title" style="margin-top:20px;"><span class="num">ب</span> فواتير الكشف والاستثناءات</div>
+      <div class="grp-title" style="margin-top:20px;"><span class="num">ب</span> تقارير الجهات للطباعة (المعتمد فقط — بنمط كشف الإكسل)</div>
+      <div class="toolrow">
+        <button class="btn-primary btn-sm" onclick="printNTClass('export')">🖨️ مبيعات جهات تصدير</button>
+        <button class="btn-primary btn-sm" onclick="printNTClass('zero')">🖨️ مبيعات جهات صفرية</button>
+        <button class="btn-primary btn-sm" onclick="printNTClass('exempt')">🖨️ مبيعات جهات معفاة</button>
+        <button class="btn-teal btn-sm" onclick="printNTSummary()">🖨️ ملخص الجهات الثلاث</button>
+        <span class="hint">كل فئة تُطبع لوحدها: رمز الفاتورة (IN/CN) · العميل · الجهة · التاريخ · المبلغ + المجموع — الفواتير المستثناة لا تظهر إطلاقاً.</span>
+      </div>
+
+      <div class="grp-title" style="margin-top:20px;"><span class="num">ج</span> فواتير الكشف والاستثناءات</div>
       <div class="hint">
         الفواتير الطالعة <b>بضريبة</b> تُستثنى تلقائياً وتُعتبر مبيعات خاضعة (🔒). ولحالات القيود (عميل غير مسجل / لم تُختم من الجمرك):
         علّم ☑ يدوياً على الفاتورة لتُستثنى وتتوزع في تحليل المبيعات حسب شريحة كل صنف.
@@ -600,6 +609,73 @@ function renderNTDocs(){
     {id:'total',l:'الإجمالي',n:1,get:d=>d.total},
     {id:'tax',l:'الضريبة',n:1,get:d=>d.tax,render:d=>`<span class="num" style="${Math.abs(d.tax)>0.0005?'color:var(--crimson);font-weight:700;':''}">${d.tax?fmt(d.tax):''}</span>`},
   ], list, {title:'كشف الجهات غير الخاضعة', max:500, rowAttrs:d=>(d.auto||d.man)?'style="background:var(--gold-bg);"':''});
+}
+
+/* تقارير الجهات الرسمية للطباعة — بنمط كشف الإكسل */
+function periodRangeText(){
+  const y=+$('fYear').value, p=+$('fPeriod').value;
+  const mStart=(p-1)*2+1, end=new Date(y,p*2,0);
+  const dd=n=>String(n).padStart(2,'0');
+  return {from:`01-${dd(mStart)}-${y}`, to:`${dd(end.getDate())}-${dd(p*2)}-${y}`};
+}
+function d2iso(s){ const m=String(s).trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  return m?`${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`:String(s); }
+function plainNum(n){ const s=(+n).toFixed(3); return s.replace(/\.?0+$/,''); }
+const NT_CLS_TITLE={export:'تصدير', zero:'صفرية', exempt:'معفاة'};
+function ntApproved(cls){
+  if(!ST.nt) return [];
+  return ST.nt.docs.filter(d=>!d.auto && !d.man && effClass(d.code,d.prop)===cls);
+}
+function printNTClass(cls){
+  if(!ST.nt){ alert('ارفع كشف الجهات غير الخاضعة أولاً.'); return; }
+  const list=ntApproved(cls);
+  if(!list.length){ alert('لا فواتير معتمدة لهذه الجهة.'); return; }
+  const isRet=d=>/return/i.test(d.type);
+  const rows=[...list].sort((a,b)=>{
+    if(isRet(a)!==isRet(b)) return isRet(a)?1:-1;
+    return String(a.no).localeCompare(String(b.no));
+  });
+  const total=r3(rows.reduce((s,d)=>s+d.total,0));
+  const pr=periodRangeText();
+  $('printSheet').innerHTML=`<style>@page{size:A4 portrait; margin:10mm;}</style>
+    <div class="phead">
+      <h2>مركز الكيلاني للأغذية</h2>
+      <div style="font-size:14px; margin-top:5px; font-weight:700;">مبيعات جهات ${NT_CLS_TITLE[cls]} من ${pr.from} الى ${pr.to}</div>
+    </div>
+    <table style="font-size:11px;"><thead><tr>
+      <th style="width:110px;">رمز الفاتورة</th><th>العميل</th><th style="width:60px;">الجهة</th><th style="width:85px;">التاريخ</th><th style="width:90px;">المبلغ</th>
+    </tr></thead><tbody>`+
+    rows.map(d=>`<tr>
+      <td class="num">${isRet(d)?'CN':'IN'}${esc(d.no)}</td>
+      <td>${esc(d.name)}</td>
+      <td>${CLS_AR[effClass(d.code,d.prop)]}</td>
+      <td class="num">${esc(d2iso(d.date))}</td>
+      <td class="num">${plainNum(d.total)}</td>
+    </tr>`).join('')+
+    `<tr><td colspan="4" style="font-weight:700;">المجموع</td><td class="num" style="font-weight:700;">${fmt(total)}</td></tr>
+    </tbody></table>
+    <div style="margin-top:12px; font-size:10px; color:#555;">عدد الحركات: ${rows.length.toLocaleString()} · طُبع بتاريخ ${new Date().toLocaleString('en-GB')}</div>`;
+  window.print();
+}
+function printNTSummary(){
+  if(!ST.nt){ alert('ارفع كشف الجهات غير الخاضعة أولاً.'); return; }
+  const t={}; let g=0;
+  for(const cls of ['export','zero','exempt']){ t[cls]=r3(ntApproved(cls).reduce((s,d)=>s+d.total,0)); g=r3(g+t[cls]); }
+  const pr=periodRangeText();
+  $('printSheet').innerHTML=`<style>@page{size:A4 portrait; margin:14mm;}</style>
+    <div class="phead">
+      <h2>مركز الكيلاني للأغذية</h2>
+      <div style="font-size:14px; margin-top:5px; font-weight:700;">مبيعات جهات غير خاضعة من ${pr.from} الى ${pr.to}</div>
+    </div>
+    <table style="font-size:13px; max-width:420px; margin:14px auto 0;"><thead>
+      <tr><th>الجهة</th><th style="width:150px;">المبلغ</th></tr></thead><tbody>
+      <tr><td>تصدير</td><td class="num">${fmt(t.export)}</td></tr>
+      <tr><td>صفرية</td><td class="num">${fmt(t.zero)}</td></tr>
+      <tr><td>معفية</td><td class="num">${fmt(t.exempt)}</td></tr>
+      <tr><td style="font-weight:700;">المجموع</td><td class="num" style="font-weight:700;">${fmt(g)}</td></tr>
+    </tbody></table>
+    <div style="margin-top:14px; font-size:10px; color:#555; text-align:center;">طُبع بتاريخ ${new Date().toLocaleString('en-GB')}</div>`;
+  window.print();
 }
 
 /* ================= 2) تحليل المبيعات ================= */
