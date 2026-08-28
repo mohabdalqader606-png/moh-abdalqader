@@ -259,7 +259,7 @@ body.glass .kpi{background:rgba(255,255,255,.96)}
   </div>
   <div class="card">
    <h2>سجل القيود اليدوية</h2>
-   <div class="row"><span class="badge" id="adjCount"></span><button class="btn ghost sm" onclick="exportAdj()">تصدير القيود CSV</button></div>
+   <div class="row"><span class="badge" id="adjCount"></span><button class="btn ghost sm" onclick="exportAdj()">تصدير القيود CSV</button><button class="btn ghost sm" onclick="exportAdjJson()" title="يحفظ قيود التعديلات اليدوية فقط بملف JSON صغير — مناسب للنقل بين النسخ">📎 نسخة قيود (JSON صغير)</button><label class="btn ghost sm" style="cursor:pointer" title="يستورد قيود التعديلات من ملف JSON صغير أو من ملف القيود_اليدوية.csv المصدَّر من أي نسخة — يضيف فوق الموجود بدون تكرار">📎 استيراد قيود من ملف<input type="file" id="fAdjJson" accept=".json,.csv,.txt" style="display:none"></label></div>
    <div class="tblwrap" id="adjList"></div>
   </div>
  </div>
@@ -837,6 +837,28 @@ function renderAdj(){const list=(S.adj||[]).slice().sort((a,b)=>a.month.localeCo
  document.getElementById('adjList').innerHTML=list.length?`<table><tr><th>الشهر</th><th>البيان</th><th class="num">المبلغ</th><th>الأسطر</th><th>مفعّل</th><th></th></tr>`+list.map(e=>`<tr><td>${e.month}</td><td style="white-space:normal">${e.desc||''}</td><td class="num">${fmt(e.total)}</td><td style="white-space:normal;font-size:11px">${e.lines.map(l=>`${l.code} ${(S.accounts[l.code]||{}).name||''}: ${l.d?'مدين '+fmt(l.d):'دائن '+fmt(l.c)}`).join('<br>')}</td><td><input type="checkbox" ${e.active!==false?'checked':''} onchange="S.adj.find(x=>x.id==='${e.id}').active=this.checked;saveState();toast('أعد الاحتساب لتطبيق التغيير')"></td><td><button class="btn sm ghost" onclick="adjEdit('${e.id}')">تعديل</button> <button class="btn sm danger" onclick="if(confirm('حذف القيد؟')){S.adj=S.adj.filter(x=>x.id!=='${e.id}');saveState();renderAdj();refreshMonths()}">حذف</button></td></tr>`).join('')+'</table>':'<p class="hint">لا توجد قيود يدوية.</p>';
  document.getElementById('acctList').innerHTML=Object.values(S.accounts).filter(a=>a.post).map(a=>`<option value="${a.code}">${a.name}</option>`).join('')}
 function exportAdj(){let t='Month\tDesc\tAcctCode\tAcctName\tDebit\tCredit\n';(S.adj||[]).forEach(e=>e.lines.forEach(l=>t+=`${e.month}\t${e.desc}\t${l.code}\t${(S.accounts[l.code]||{}).name||''}\t${l.d||0}\t${l.c||0}\n`));const b=new Blob(['\ufeff'+t],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='القيود_اليدوية.csv';a.click()}
+function exportAdjJson(){const pick={adj:S.adj||[],_kind:'adjOnly',_savedAt:new Date().toISOString()};const b=new Blob([JSON.stringify(pick)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='قيود_التعديلات_'+new Date().toISOString().slice(0,10)+'.json';a.click();toast('تم تنزيل نسخة القيود اليدوية ('+(S.adj||[]).length+' قيد)')}
+function importAdjData(txt){txt=(txt||'').replace(/^﻿/,'');let list=null;
+ try{const o=JSON.parse(txt);list=Array.isArray(o)?o:(Array.isArray(o.adj)?o.adj:null)}catch(e){}
+ if(!list){
+  const rows=txt.split(/\r?\n/).map(r=>r.split('\t'));
+  if(rows.length&&/month/i.test((rows[0][0]||'')))rows.shift();
+  const by={},order=[];
+  rows.forEach(r=>{if(r.length<5||!/^\d{4}-\d{2}$/.test((r[0]||'').trim()))return;const m=r[0].trim(),desc=(r[1]||'').trim(),code=(r[2]||'').trim();const d=num(r.length>=6?r[4]:r[3]),c=num(r.length>=6?r[5]:r[4]);const key=m+''+desc;if(!by[key]){by[key]={month:m,desc,lines:[]};order.push(key)}by[key].lines.push({code,d,c})});
+  if(order.length)list=order.map(k=>{const e=by[k];return{month:e.month,desc:e.desc,lines:e.lines,active:true,total:Math.round(e.lines.reduce((a,l)=>a+(l.d||0),0)*1000)/1000}})}
+ if(!list||!list.length){alert('ملف غير صالح — المقبول: نسخة قيود JSON من هذه الأداة، أو ملف القيود_اليدوية.csv المصدَّر منها (أعمدة Month/Desc/AcctCode/AcctName/Debit/Credit)');return}
+ S.adj=S.adj||[];let n=0,skip=0,unbal=0;
+ list.forEach((e,i)=>{if(!e||!/^\d{4}-\d{2}$/.test(e.month||'')||!Array.isArray(e.lines)||!e.lines.length)return;
+  const lines=e.lines.map(l=>({code:String(l.code||'').trim(),d:num(l.d),c:num(l.c)})).filter(l=>l.code);
+  if(!lines.length)return;
+  const D=lines.reduce((a,l)=>a+l.d,0),C=lines.reduce((a,l)=>a+l.c,0);if(Math.abs(D-C)>0.005)unbal++;
+  const total=Math.round(D*1000)/1000;
+  if(S.adj.some(x=>x.month===e.month&&(x.desc||'')===(e.desc||'')&&Math.abs((x.total||0)-total)<0.005)){skip++;return}
+  S.adj.push({id:'A'+Date.now()+'_'+i,month:e.month,desc:e.desc||'',lines,active:e.active!==false,total});n++});
+ saveState();renderAdj();if(typeof renderAdjRepeatMonths==='function')renderAdjRepeatMonths();refreshMonths();
+ if(typeof R!=='undefined'&&R)recalcAll();
+ toast('تم استيراد '+n+' قيد'+(skip?' — تجاهلت '+skip+' قيد موجود مسبقاً':'')+(unbal?' — تنبيه: '+unbal+' قيد غير متوازن (مدين≠دائن) راجعه':'')+(n&&(typeof R==='undefined'||!R)?' — أعد الاحتساب لتطبيقها':''))}
+document.getElementById('fAdjJson')?.addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;readFileSmart(f,txt=>importAdjData(txt));e.target.value=''});
 /* ================= BANKS ================= */
 const BANK_KW=[['بنك ABC (المؤسسة العربية المصرفية)',/مؤسسة عربية|المؤسسة العربية|مصرفية|\babc\b/i],['بنك الاستثمار العربي الأردني (AJIB)',/الاستثمار العربي|استثمار عربي|ajib/i],['البنك الأردني الكويتي',/كويتي|kuwait|jkb/i],['بنك الأردن دبي الإسلامي / صفوة',/دبي|dubai|صفوة|safwa/i],['البنك الإسلامي الأردني',/اسلامي الاردني|إسلامي الأردني|islamic/i],['بنك الإسكان',/اسكان|إسكان|housing|hbtf/i],['بنك الاتحاد',/اتحاد|union/i],['البنك الأهلي',/اهلي|أهلي|ahli/i],['بنك القاهرة عمان',/قاهرة|cairo/i],['بنك الأردن',/بنك الاردن|بنك الأردن|bank of jordan|\bboj\b/i],['البنك الاستثماري',/استثماري|invest/i],['بنك عودة',/عوده|عودة|audi/i],['سوسيته جنرال',/سوسيت|societe/i],['البنك التجاري الأردني',/تجاري|commercial/i],['بنك الراجحي',/راجحي|rajhi/i],['كابيتال بنك',/كابيتال|capital/i],['ستاندرد تشارترد',/ستاندرد|standard/i],['بلوم بنك',/بلوم|blom/i],['البنك المركزي',/مركزي|central/i],['البنك العربي',/البنك العربي|بنك العربي|العربي|arab bank|\barab\b/i]];
 function detectBank(name){for(const [b,rx] of BANK_KW)if(rx.test(name))return b;return ''}
