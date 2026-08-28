@@ -235,7 +235,7 @@
       <div class="toolrow">
         <input type="text" id="itemSearch" placeholder="بحث بكود الصنف أو اسمه…" style="width:280px;" oninput="renderItems()">
         <button class="btn-ghost btn-sm" onclick="exportItemsCSV()">⬇️ تنزيل التفصيل كامل (Excel/CSV)</button>
-        <span class="hint">التفصيل متاح بعد رفع الملف في هذه الجلسة (لا يُخزَّن مركزياً لضخامته) — نزّله CSV للأرشفة.</span>
+        <span class="hint">يُحفَظ مع الإقرار مركزياً عند الضغط على 💾 حفظ العمل.</span>
       </div>
       <div class="scrollbox" id="itemsWrap" style="max-height:460px;"><div class="empty-state">ارفع الكشف أولاً</div></div>
     </div>
@@ -597,7 +597,10 @@ async function onFileSales(inp){
       }
     }
   }
-  ST.sales={rate, x0b:r3(x0b), x0t:r3(x0t), out0b:r3(out0b), cust, docAgg, unk, fname:f.name, rowsN:dataRows.length, retFactor};
+  // ضغط تفصيل الأصناف للحفظ المركزي (تقريب 3 منازل)
+  for(const ic in ITEMS){ const it=ITEMS[ic]; it.qty=r3(it.qty);
+    for(const k in it.c){ it.c[k].b=r3(it.c[k].b); it.c[k].t=r3(it.c[k].t); } }
+  ST.sales={rate, x0b:r3(x0b), x0t:r3(x0t), out0b:r3(out0b), cust, docAgg, unk, items:ITEMS, fname:f.name, rowsN:dataRows.length, retFactor};
   setMsg('salesParseMsg',`تمت المعالجة: ${dataRows.length.toLocaleString()} سطر ✔ ${retFactor===-1?'(عُكست إشارة المرتجعات تلقائياً)':''}`,'ok');
   recomputeAll(); renderItems();
 }
@@ -994,6 +997,7 @@ async function loadDeclForPeriod(manual){
   if(data && data.data && data.data.v===2){
     curDeclId=data.id; curDeclStatus=data.status;
     ST=Object.assign(freshST(), data.data.ST||{});
+    ITEMS=(ST.sales&&ST.sales.items)||{};
     const inp=data.data.inputs||{};
     $('prevCredit').value=inp.prevCredit||''; $('otherAdj').value=inp.otherAdj||'';
     $('pPayDate').value=inp.payDate||''; $('pWeekRate').value=inp.weekRate??0.4; $('pFixed').value=inp.fixed??0;
@@ -1004,13 +1008,13 @@ async function loadDeclForPeriod(manual){
     if(ST.imports) $('fnameImports').textContent='(محفوظ) '+(ST.imports.fname||'');
     if(ST.trust) $('fnameTrust').textContent='(محفوظ) '+(ST.trust.fname||'');
     $('syncMsg').textContent='آخر تعديل: '+(profilesMap[data.updated_by||data.created_by]||'—')+' · '+new Date(data.updated_at).toLocaleString('en-GB');
-    renderCC(); renderNTDocs();
+    renderCC(); renderNTDocs(); renderItems();
   } else if(data){
     curDeclId=data.id; curDeclStatus=data.status;
     if(manual) alert('المحفوظ لهذه الفترة من النسخة القديمة (v1) — الشاشة ستعرض إقراراً جديداً فارغاً وسيستبدل عند الحفظ.');
   } else {
     curDeclId=null; curDeclStatus=null; $('syncMsg').textContent='';
-    if(manual){ ST=freshST(); ['fnameNT','fnameSales','fnamePurch','fnameImports','fnameTrust'].forEach(id=>$(id).textContent=''); }
+    if(manual){ ST=freshST(); ITEMS={}; renderItems(); ['fnameNT','fnameSales','fnamePurch','fnameImports','fnameTrust'].forEach(id=>$(id).textContent=''); }
   }
   setStatusBadge(); recomputeAll();
 }
