@@ -332,10 +332,25 @@
       </div>
       <div class="duebox" id="penaltyBox" style="background:var(--crimson-bg); border-color:#EBC7C4; color:var(--crimson); display:none; margin-top:10px;">—</div>
 
+      <div class="grp-title" style="margin-top:18px;"><span class="num">ب</span> بيانات المسجل + خانات الاسترداد (لنموذج الدائرة)</div>
+      <div class="toolrow">
+        <div class="field"><label>اسم المسجل</label><input type="text" id="regName" value="مركز الكيلاني للأغذية" style="width:220px;" onchange="recomputeAll()"></div>
+        <div class="field"><label>الرقم الضريبي</label><input type="text" class="num" id="regTaxNo" style="width:140px;" onchange="recomputeAll()"></div>
+        <div class="field"><label>الهاتف</label><input type="text" class="num" id="regPhone" style="width:120px;" onchange="recomputeAll()"></div>
+        <div class="field"><label>الخلوي</label><input type="text" class="num" id="regCell" style="width:120px;" onchange="recomputeAll()"></div>
+        <div class="field"><label>العنوان</label><input type="text" id="regAddress" style="width:190px;" onchange="recomputeAll()"></div>
+        <div class="field"><label>المحافظة</label><input type="text" id="regGov" style="width:110px;" onchange="recomputeAll()"></div>
+        <div class="field"><label>IBAN</label><input type="text" class="num" id="regIBAN" style="width:220px;" onchange="recomputeAll()"></div>
+        <div class="field"><label>البريد الإلكتروني</label><input type="text" class="num" id="regEmail" style="width:180px;" onchange="recomputeAll()"></div>
+        <div class="field"><label>خانة 16: استرداد ضريبة المصدّرة</label><input type="number" class="num" id="ref16" value="0" step="0.001" style="width:130px;" onchange="recomputeAll()"></div>
+        <div class="field"><label>خانة 17: استرداد مضى شهران</label><input type="number" class="num" id="ref17" value="0" step="0.001" style="width:130px;" onchange="recomputeAll()"></div>
+      </div>
+
       <div class="toolrow" style="margin-top:16px;">
         <button class="btn-primary" onclick="saveDecl('draft')">💾 حفظ (مسودة)</button>
         <button class="btn-teal" onclick="saveDecl('final')">✅ اعتماد نهائي</button>
-        <button class="btn-ghost" onclick="printDecl()">🖨️ طباعة كشف الإقرار</button>
+        <button class="btn-ghost" onclick="printDecl()">🖨️ نموذج 1: كشف داخلي للمراجعة</button>
+        <button class="btn-ghost" style="border-color:var(--navy); font-weight:700;" onclick="printISTD()">🖨️ نموذج 2: نموذج دائرة ضريبة الدخل والمبيعات</button>
         <span class="status-msg" id="saveMsg2"></span>
       </div>
     </div>
@@ -460,6 +475,16 @@ async function onSignedIn(user){
   const {data:profs}=await sb.from('profiles').select('id, full_name, email');
   (profs||[]).forEach(p=>profilesMap[p.id]=p.full_name||p.email);
   await loadCC();
+  // فتح آخر إقرار جرى العمل عليه تلقائياً (بدل الفترة الحالية الفارغة)
+  try{
+    const {data:last}=await sb.from('sales_tax_declarations')
+      .select('year, period_no').order('updated_at',{ascending:false}).limit(1).maybeSingle();
+    if(last){
+      if(![...$('fYear').options].some(o=>+o.value===last.year))
+        $('fYear').innerHTML+=`<option value="${last.year}">${last.year}</option>`;
+      $('fYear').value=last.year; $('fPeriod').value=last.period_no;
+    }
+  }catch(e){}
   onPeriodChange();
 }
 async function loadCC(){
@@ -1462,7 +1487,9 @@ async function saveDecl(status, quiet){
   const C=calc();
   const payload={
     year:+$('fYear').value, period_no:+$('fPeriod').value, status,
-    data:{ v:2, ST, inputs:{prevCredit:num('prevCredit'), otherAdj:num('otherAdj'), payDate:$('pPayDate').value||null, weekRate:num('pWeekRate'), fixed:num('pFixed')},
+    data:{ v:2, ST, inputs:{prevCredit:num('prevCredit'), otherAdj:num('otherAdj'), payDate:$('pPayDate').value||null, weekRate:num('pWeekRate'), fixed:num('pFixed'),
+             ref16:num('ref16'), ref17:num('ref17'),
+             reg:Object.fromEntries(['regName','regTaxNo','regPhone','regCell','regAddress','regGov','regIBAN','regEmail'].map(id=>[id,$(id)?$(id).value:'']))},
            results:{outTax:C.outTax, inputsTotal:C.inputsTotal, netBefore:C.netBefore, f1:C.f1, f2:C.f2, netFinal:C.netFinal, totalSales:C.totalSales} },
     output_tax:C.outTax, input_tax:C.inputsTotal, net_tax:C.netFinal,
   };
@@ -1496,6 +1523,8 @@ async function loadDeclForPeriod(manual){
     const inp=data.data.inputs||{};
     $('prevCredit').value=inp.prevCredit||''; $('otherAdj').value=inp.otherAdj||'';
     $('pPayDate').value=inp.payDate||''; $('pWeekRate').value=inp.weekRate??0.4; $('pFixed').value=inp.fixed??0;
+    $('ref16').value=inp.ref16??0; $('ref17').value=inp.ref17??0;
+    if(inp.reg) for(const id in inp.reg){ if($(id)) $(id).value=inp.reg[id]; }
     ['fnameNT','fnameSales','fnamePurch','fnameImports','fnameTrust'].forEach(id=>$(id).textContent='');
     if(ST.nt) $('fnameNT').textContent='(محفوظ) '+(ST.nt.fname||'');
     if(ST.sales) $('fnameSales').textContent='(محفوظ) '+(ST.sales.fname||'');
@@ -1567,6 +1596,130 @@ function printDecl(){
     <div>اعتمده: ______________________<br><br>التوقيع: ____________</div>
   </div>
   <div style="margin-top:18px; font-size:10.5px; color:#555;">كشف داخلي للمراجعة قبل التقديم الرسمي — طُبع بتاريخ ${new Date().toLocaleString('en-GB')}</div>`;
+  window.print();
+}
+
+/* ================= نموذج دائرة ضريبة الدخل والمبيعات (CED:PR15.F12) ================= */
+function fd(v){ // فصل المبلغ إلى فلس (3 منازل) ودينار
+  v=+v||0; const neg=v<0; const a=Math.abs(v);
+  const d=Math.floor(a+1e-9), f=Math.round((a-d)*1000);
+  return {d:(neg&&(d||f)?'-':'')+d.toLocaleString('en-US'), f:String(f).padStart(3,'0')};
+}
+function printISTD(){
+  const C=calc();
+  const pr=periodRangeText();
+  const pi=periodInfo(+$('fYear').value,+$('fPeriod').value);
+  const gv=id=>$(id)?$(id).value:'';
+  const PR=ST.purch?ST.purch.rates:{};
+  const IM=C.imports||{};
+  const sumR=(o,keys)=>keys.reduce((s,k)=>{ const v=o[k]; return {b:s.b+(v?(+v.b||0):0), t:s.t+(v?(+v.t||0):0)}; },{b:0,t:0});
+  // خانة 2: مشتريات محلية حسب النسب
+  const p16=PR[16]||{b:0,t:0}, p10=PR[10]||{b:0,t:0}, p4=PR[4]||{b:0,t:0};
+  const pOther=sumR(PR,Object.keys(PR).filter(k=>![16,10,4,0].includes(+k)));
+  const p0=PR[0]||{b:0,t:0};
+  const expBase=C.expTax? r3(C.expTax/0.16) : 0; // تقدير قيمة الأصول والمصاريف بنسبة 16%
+  // خانة 3: مستوردات حسب النسب
+  const i16=IM[16]||{b:0,t:0}, i10=IM[10]||{b:0,t:0}, i4=IM[4]||{b:0,t:0};
+  const iOther=sumR(IM,Object.keys(IM).filter(k=>![16,10,4,0].includes(+k)));
+  const i0=IM[0]||{b:0,t:0};
+  // خانة 6: مبيعات حسب النسب
+  const s16=C.rate[16]||{b:0,t:0}, s10=C.rate[10]||{b:0,t:0}, s4=C.rate[4]||{b:0,t:0};
+  const sOther={b:RATE_KEYS.filter(k=>![16,10,4].includes(k)).reduce((s,k)=>s+(C.rate[k]?.b||0),0),
+                t:RATE_KEYS.filter(k=>![16,10,4].includes(k)).reduce((s,k)=>s+(C.rate[k]?.t||0),0)};
+  const adjPos=Math.max(0,C.otherAdj), adjNeg=Math.max(0,-C.otherAdj);
+  const k14=C.netFinal>0?C.netFinal:0, k15=C.netFinal<0?Math.abs(C.netFinal):0;
+  const r16v=num('ref16'), r17v=num('ref17');
+  const k18=r3(k15-(r16v+r17v));
+  // تسلسل فواتير المبيعات من التفصيل السطري إن وُجد
+  let serFrom='', serTo='';
+  if(DROWS.length){ const nos=DROWS.filter(x=>!x.ret).map(x=>+String(x.no).replace(/\D/g,'')).filter(n=>n>0);
+    if(nos.length){ serFrom=Math.min(...nos); serTo=Math.max(...nos); } }
+  // أعلى 10 فواتير شراء (حسب الضريبة) من ملخص الفواتير المحفوظ
+  let topInv=[];
+  if(ST.purch&&ST.purch.invoices){
+    topInv=Object.entries(ST.purch.invoices).map(([code,v])=>{
+      const t=Object.values(v.r||{}).reduce((s,x)=>s+(+x[1]||0),0);
+      const b=Object.values(v.r||{}).reduce((s,x)=>s+(+x[0]||0),0);
+      return {code, name:v.name, b:r3(b), t:r3(t)};
+    }).filter(x=>x.t>0).sort((a,b)=>b.t-a.t).slice(0,10);
+  }
+  const cell=v=>{ const s=fd(v); return `<td class="num" style="width:52px;">${s.f}</td><td class="num" style="width:76px;">${s.d}</td>`; };
+  const blank='<td style="width:52px;"></td><td style="width:76px;"></td>';
+  const row=(no,label,val,tax,rowspanLabel)=>`<tr>${no!==null?`<td class="istd-no" rowspan="${rowspanLabel||1}">${no}</td>`:''}<td style="text-align:right;">${label}</td>${val===null?blank:cell(val)}${tax===null?blank:cell(tax)}</tr>`;
+  $('printSheet').innerHTML=`<style>@page{size:A4 portrait; margin:7mm;}
+    #printSheet .istd table{width:100%; border-collapse:collapse;}
+    #printSheet .istd th, #printSheet .istd td{border:1px solid #333; padding:2.5px 6px; font-size:10.5px; text-align:right;}
+    #printSheet .istd td.num{font-family:var(--mono); direction:ltr; text-align:left;}
+    #printSheet .istd .istd-no{width:26px; text-align:center; font-weight:700; font-family:var(--mono);}
+    #printSheet .istd .sec{background:#eee; font-weight:700;}
+  </style>
+  <div class="istd">
+    <table style="margin-bottom:4px;"><tr>
+      <td style="width:30%; text-align:center; border:none;">Ministry of Finance<br>Income &amp; Sales Tax Department</td>
+      <td style="text-align:center; border:none; font-weight:700; font-size:14px;">إقرار بالضريبة العامة على المبيعات<br><span style="font-weight:400; font-size:11px;">نوع الإقرار: ☑ عادي &nbsp;&nbsp; ☐ معدل</span></td>
+      <td style="width:30%; text-align:center; border:none;">وزارة المالية<br>دائرة ضريبة الدخل والمبيعات<br><span style="font-size:9px;">CED:PR15.F12</span></td>
+    </tr></table>
+    <table style="margin-bottom:5px;">
+      <tr><td style="width:14%;">اسم المسجل</td><td style="width:36%;">${esc(gv('regName'))}</td><td style="width:16%;">الرقم الضريبي</td><td class="num">${esc(gv('regTaxNo'))}</td></tr>
+      <tr><td>رقم الهاتف</td><td class="num">${esc(gv('regPhone'))}</td><td>رقم الخلوي</td><td class="num">${esc(gv('regCell'))}</td></tr>
+      <tr><td>العنوان</td><td>${esc(gv('regAddress'))} ${gv('regGov')?'— '+esc(gv('regGov')):''}</td><td>الفترة الضريبية</td><td class="num">من ${pr.from} إلى ${pr.to}</td></tr>
+      <tr><td>البريد الإلكتروني</td><td class="num">${esc(gv('regEmail'))}</td><td>المهلة القانونية للتقديم</td><td class="num">حتى ${pi.dueISO}</td></tr>
+      <tr><td>رقم IBAN الخاص بالمكلف</td><td class="num" colspan="3">${esc(gv('regIBAN'))}</td></tr>
+    </table>
+    <table>
+      <tr class="sec"><th style="width:26px;">الرقم</th><th>البيان</th><th colspan="2" style="text-align:center;">القيمة<br><span style="font-weight:400; font-size:9px;">فلس · دينار</span></th><th colspan="2" style="text-align:center;">الضريبة العامة<br><span style="font-weight:400; font-size:9px;">فلس · دينار</span></th></tr>
+      ${row(1,'الرصيد المدوّر من الفترة السابقة',null,C.prevCredit)}
+      ${row(2,'المشتريات المحلية الخاضعة للضريبة بنسبة 16%',p16.b,p16.t,6)}
+      ${row(null,'بنسبة 10%',p10.b,p10.t)}
+      ${row(null,'بنسبة 4%',p4.b,p4.t)}
+      ${row(null,'أخرى',pOther.b,pOther.t)}
+      ${row(null,'صفر',p0.b,0)}
+      ${row(null,'مشتريات الأصول والمصاريف الخاضعة للضريبة',expBase,C.expTax)}
+      ${row(3,'المستوردات الخاضعة للضريبة بنسبة 16%',i16.b,i16.t,6)}
+      ${row(null,'بنسبة 10%',i10.b,i10.t)}
+      ${row(null,'بنسبة 4%',i4.b,i4.t)}
+      ${row(null,'أخرى',iOther.b,iOther.t)}
+      ${row(null,'صفر',i0.b,0)}
+      ${row(null,'الخدمات المستوردة الخاضعة للضريبة',0,0)}
+      ${row(4,'المستوردات مؤجلة توريد الضريبة',0,0)}
+      ${row(5,'المشتريات والمستوردات المعفاة',0,null)}
+      ${row(6,'المبيعات المحلية الخاضعة للضريبة بنسبة 16%',s16.b,s16.t,4)}
+      ${row(null,'بنسبة 10%',s10.b,s10.t)}
+      ${row(null,'بنسبة 4%',s4.b,s4.t)}
+      ${row(null,'أخرى',r3(sOther.b),r3(sOther.t))}
+      ${row(7,'المبيعات المحلية للجهات الخاضعة لنسبة الصفر',C.bkt.zero,0,2)}
+      ${row(null,'المبيعات المحلية من السلع والخدمات الخاضعة لنسبة الصفر',C.out0b,0)}
+      ${row(8,'المبيعات المصدَّرة',C.bkt.export,0)}
+      ${row(9,'المبيعات غير الخاضعة للضريبة',0,null)}
+      ${row(10,'المبيعات المحلية المعفاة',r3(C.bkt.exempt+C.x0b),null)}
+      ${row(11,'ضريبة غير قابلة للخصم (تخص مبيعات معفاة)',null,C.nonDeduct)}
+      ${row(12,'حركة تعديل لصالح المسجل',null,adjNeg)}
+      ${row(13,'حركة تعديل لصالح الدائرة',null,adjPos)}
+    </table>
+    <table style="margin-top:5px;">
+      <tr class="sec"><th style="width:26px;"></th><th>كيفية احتساب الضريبة المستحقة والرد والرصيد المدوّر للفترة القادمة</th><th colspan="2" style="text-align:center;">فلس · دينار</th></tr>
+      <tr><td class="istd-no">14</td><td>ضريبة الخانات (6+11+13) − (1+2+3+12) موجباً: مبلغ مطلوب دفعه</td>${cell(k14)}</tr>
+      <tr><td class="istd-no">15</td><td>ضريبة الخانات (6+11+13) − (1+2+3+12) سالباً: عبّئ الخانات (16–18)</td>${cell(k15)}</tr>
+      <tr><td class="istd-no">16</td><td>استرداد الضريبة العامة عن السلع والخدمات المصدّرة</td>${cell(r16v)}</tr>
+      <tr><td class="istd-no">17</td><td>استرداد الضريبة العامة التي مضى على دفعها أكثر من شهرين</td>${cell(r17v)}</tr>
+      <tr><td class="istd-no">18</td><td>الرصيد المدوّر لصالحك للفترة القادمة: 15 − (16+17)</td>${cell(k18)}</tr>
+      <tr><td class="istd-no">19</td><td>استرداد الضريبة الخاصة حسب معادلة التصنيع</td>${cell(0)}</tr>
+    </table>
+    <table style="margin-top:5px;">
+      <tr class="sec"><th colspan="4">تسلسل أرقام فواتير المبيعات</th></tr>
+      <tr><td style="width:12%;">من</td><td class="num">${serFrom!==''?serFrom:''}</td><td style="width:12%;">إلى</td><td class="num">${serTo!==''?serTo:''}</td></tr>
+    </table>
+    <table style="margin-top:5px;">
+      <tr class="sec"><th colspan="5">البيانات المتعلقة بفواتير الشراء المحلية التي تحمل أعلى قيمة ضريبة تم دفعها خلال الفترة الضريبية</th></tr>
+      <tr><th>الرقم الضريبي للبائع</th><th>رقم الفاتورة</th><th>اسم المورد</th><th>القيمة</th><th>الضريبة</th></tr>
+      ${(topInv.length?topInv:Array.from({length:5},()=>null)).map(x=>x?`<tr><td></td><td class="num">${esc(x.code)}</td><td>${esc(x.name)}</td><td class="num">${fmt(x.b)}</td><td class="num">${fmt(x.t)}</td></tr>`:'<tr><td></td><td></td><td></td><td></td><td></td></tr>').join('')}
+    </table>
+    <table style="margin-top:5px;">
+      <tr><td style="width:50%;">أقرّ أنا الموقع أدناه وتحت طائلة المسؤولية بأن المعلومات الواردة في هذا الإقرار صحيحة<br><br>الاســم: ______________________ &nbsp;&nbsp; الصفة: ____________</td>
+          <td>التوقيع: ______________________<br><br>التاريخ: ____ / ____ / ________ &nbsp;&nbsp;&nbsp; ختم المسجل</td></tr>
+    </table>
+    <div style="font-size:9px; color:#555; margin-top:4px;">أُعدّ آلياً من شاشة إقرار ضريبة المبيعات — للمراجعة قبل التقديم الرسمي · طُبع بتاريخ ${new Date().toLocaleString('en-GB')}</div>
+  </div>`;
   window.print();
 }
 
