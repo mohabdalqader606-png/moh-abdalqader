@@ -247,6 +247,7 @@ body.glass .kpi{background:rgba(255,255,255,.96)}
    <h2>قيد تعديل خارج النظام</h2>
    <p class="hint">القيود هنا تُضاف إلى حركات الشهر المحدد قبل الاحتساب (لا تُرحّل إلى SAP). يجب أن يتوازن القيد. يمكنك تعطيل أي قيد مؤقتاً دون حذفه لمقارنة الأثر.</p>
    <div class="row"><label>الشهر</label><input type="text" id="adjMonth" placeholder="2026-07" style="width:90px"><label>البيان</label><input type="text" id="adjDesc" placeholder="مثال: تسوية مخصص ديون مشكوك فيها" style="width:320px"></div>
+   <div class="row"><label>نوع القيد</label><select id="adjType" style="width:180px"><option value="">— اختر —</option><option>استحقاق مصروف</option><option>توزيع/تقسيط سنوي</option><option>تقدير</option><option>مخصص</option><option>تصحيح خطأ</option><option>عكس قيد سابق</option><option>إعادة تبويب</option><option>أخرى</option></select><label>السبب / المبرر</label><input type="text" id="adjReason" placeholder="ليش سُجّل هذا القيد — يظهر بتقرير الملخص الاحترافي" style="flex:1;min-width:280px"></div>
    <div class="tblwrap" style="max-height:340px"><table id="adjLines"><thead><tr><th>الحساب</th><th>الاسم</th><th class="num">مدين</th><th class="num">دائن</th><th></th></tr></thead><tbody></tbody></table></div>
    <datalist id="acctList"></datalist>
    <div class="row"><button class="btn ghost sm" onclick="adjAddLine()">+ سطر</button><span id="adjBal" class="badge"></span><button class="btn gold" onclick="adjSave()">حفظ القيد</button><button class="btn ghost" onclick="adjClear()">تفريغ</button></div>
@@ -259,7 +260,7 @@ body.glass .kpi{background:rgba(255,255,255,.96)}
   </div>
   <div class="card">
    <h2>سجل القيود اليدوية</h2>
-   <div class="row"><span class="badge" id="adjCount"></span><button class="btn ghost sm" onclick="exportAdj()">تصدير القيود CSV</button><button class="btn ghost sm" onclick="exportAdjJson()" title="يحفظ قيود التعديلات اليدوية فقط بملف JSON صغير — مناسب للنقل بين النسخ">📎 نسخة قيود (JSON صغير)</button><label class="btn ghost sm" style="cursor:pointer" title="يستورد قيود التعديلات من ملف JSON صغير أو من ملف القيود_اليدوية.csv المصدَّر من أي نسخة — يضيف فوق الموجود بدون تكرار">📎 استيراد قيود من ملف<input type="file" id="fAdjJson" accept=".json,.csv,.txt" style="display:none"></label></div>
+   <div class="row"><span class="badge" id="adjCount"></span><button class="btn gold sm" onclick="adjReport()" title="تقرير احترافي جاهز للطباعة: القيود المتكررة تتجمّع بسطر واحد، مع أثر كل قيد على صافي الربح وملخص شهري وخانات توقيع">📄 تقرير ملخص القيود</button><button class="btn ghost sm" onclick="exportAdj()">تصدير القيود CSV</button><button class="btn ghost sm" onclick="exportAdjJson()" title="يحفظ قيود التعديلات اليدوية فقط بملف JSON صغير — مناسب للنقل بين النسخ">📎 نسخة قيود (JSON صغير)</button><label class="btn ghost sm" style="cursor:pointer" title="يستورد قيود التعديلات من ملف JSON صغير أو من ملف القيود_اليدوية.csv المصدَّر من أي نسخة — يضيف فوق الموجود بدون تكرار">📎 استيراد قيود من ملف<input type="file" id="fAdjJson" accept=".json,.csv,.txt" style="display:none"></label></div>
    <div class="tblwrap" id="adjList"></div>
   </div>
  </div>
@@ -813,13 +814,13 @@ function saveNewAccount(){
 }
 function adjLinesRead(){return [...document.querySelectorAll('#adjLines tbody tr')].map(tr=>{const i=tr.querySelectorAll('input');return {code:i[0].value.trim(),d:+i[1].value||0,c:+i[2].value||0}}).filter(l=>l.code&&(l.d||l.c))}
 function adjBalance(){const ls=adjLinesRead();const d=ls.reduce((a,l)=>a+l.d,0),c=ls.reduce((a,l)=>a+l.c,0);const el=document.getElementById('adjBal');el.textContent=`مدين ${fmt(d)} | دائن ${fmt(c)} | فرق ${fmt(d-c)}`;el.className='badge '+(Math.abs(d-c)<0.005&&ls.length?'ok':'bad')}
-function adjClear(){document.querySelector('#adjLines tbody').innerHTML='';document.getElementById('adjDesc').value='';document.getElementById('adjPaste').value='';delete document.getElementById('adjMonth').dataset.edit;adjAddLine();adjAddLine()}
+function adjClear(){document.querySelector('#adjLines tbody').innerHTML='';document.getElementById('adjDesc').value='';document.getElementById('adjPaste').value='';const t=document.getElementById('adjType');if(t)t.value='';const rs=document.getElementById('adjReason');if(rs)rs.value='';delete document.getElementById('adjMonth').dataset.edit;adjAddLine();adjAddLine()}
 function adjFromPaste(){const {rows}=parseTable(document.getElementById('adjPaste').value);document.querySelector('#adjLines tbody').innerHTML='';rows.forEach(r=>adjAddLine(r[0],num(r[1])||'',num(r[2])||''))}
 function adjSave(){const m=document.getElementById('adjMonth').value.trim();if(!/^\d{4}-\d{2}$/.test(m)){alert('الشهر بصيغة YYYY-MM');return}const ls=adjLinesRead();const d=ls.reduce((a,l)=>a+l.d,0),c=ls.reduce((a,l)=>a+l.c,0);if(!ls.length||Math.abs(d-c)>0.005){alert('القيد غير متوازن أو فارغ');return}
  const bad=ls.filter(l=>!S.accounts[l.code]);if(bad.length&&!confirm('حسابات غير موجودة بالدليل: '+bad.map(x=>x.code).join(', ')+' — متابعة؟'))return;
- const ed=document.getElementById('adjMonth').dataset.edit;const e={id:ed||('A'+Date.now()),month:m,desc:document.getElementById('adjDesc').value,lines:ls,active:true,total:d};
+ const ed=document.getElementById('adjMonth').dataset.edit;const e={id:ed||('A'+Date.now()),month:m,desc:document.getElementById('adjDesc').value,type:(document.getElementById('adjType')||{}).value||'',reason:((document.getElementById('adjReason')||{}).value||'').trim(),lines:ls,active:true,total:d};
  S.adj=S.adj||[];const ix=S.adj.findIndex(x=>x.id===e.id);if(ix>=0)S.adj[ix]=e;else S.adj.push(e);saveState();adjClear();renderAdj();refreshMonths();toast('تم حفظ القيد — أعد الاحتساب لتطبيقه')}
-function adjEdit(id){const e=S.adj.find(x=>x.id===id);document.getElementById('adjMonth').value=e.month;document.getElementById('adjMonth').dataset.edit=id;document.getElementById('adjDesc').value=e.desc;document.querySelector('#adjLines tbody').innerHTML='';e.lines.forEach(l=>adjAddLine(l.code,l.d||'',l.c||''))}
+function adjEdit(id){const e=S.adj.find(x=>x.id===id);document.getElementById('adjMonth').value=e.month;document.getElementById('adjMonth').dataset.edit=id;document.getElementById('adjDesc').value=e.desc;const t=document.getElementById('adjType');if(t)t.value=e.type||'';const rs=document.getElementById('adjReason');if(rs)rs.value=e.reason||'';document.querySelector('#adjLines tbody').innerHTML='';e.lines.forEach(l=>adjAddLine(l.code,l.d||'',l.c||''))}
 function renderAdjRepeatMonths(){const el=document.getElementById('adjRepeatMonths');if(!el)return;const ms=months();el.innerHTML=ms.length?ms.map(k=>`<label style="display:inline-flex;align-items:center;gap:3px;border:1px solid var(--line);border-radius:6px;padding:2px 8px;cursor:pointer"><input type="checkbox" value="${k}" style="margin:0">${k}</label>`).join(''):'<span class="hint">حمّل الحركات الشهرية أولاً (بند 3) حتى تظهر الأشهر هنا.</span>'}
 function adjRepeatSave(){
  const sel=[...document.querySelectorAll('#adjRepeatMonths input[type=checkbox]:checked')].map(x=>x.value);
@@ -827,25 +828,87 @@ function adjRepeatSave(){
  const ls=adjLinesRead();const d=ls.reduce((a,l)=>a+l.d,0),c=ls.reduce((a,l)=>a+l.c,0);
  if(!ls.length||Math.abs(d-c)>0.005){alert('القيد غير متوازن أو فارغ — جهّز السطور فوق أولاً');return}
  const bad=ls.filter(l=>!S.accounts[l.code]);if(bad.length&&!confirm('حسابات غير موجودة بالدليل: '+bad.map(x=>x.code).join(', ')+' — متابعة؟'))return;
- const desc=document.getElementById('adjDesc').value;
+ const desc=document.getElementById('adjDesc').value,rTy=(document.getElementById('adjType')||{}).value||'',rRe=((document.getElementById('adjReason')||{}).value||'').trim();
  S.adj=S.adj||[];
- sel.forEach((m,i)=>{S.adj.push({id:'A'+Date.now()+'_'+i,month:m,desc,lines:ls.map(l=>({...l})),active:true,total:d})});
+ sel.forEach((m,i)=>{S.adj.push({id:'A'+Date.now()+'_'+i,month:m,desc,type:rTy,reason:rRe,lines:ls.map(l=>({...l})),active:true,total:d})});
  saveState();adjClear();renderAdj();renderAdjRepeatMonths();refreshMonths();
  toast('تم تكرار القيد على '+sel.length+' شهر — أعد الاحتساب لتطبيقه')
 }
 function renderAdj(){const list=(S.adj||[]).slice().sort((a,b)=>a.month.localeCompare(b.month));document.getElementById('adjCount').textContent=list.length+' قيد | '+list.filter(a=>a.active!==false).length+' مفعّل';
- document.getElementById('adjList').innerHTML=list.length?`<table><tr><th>الشهر</th><th>البيان</th><th class="num">المبلغ</th><th>الأسطر</th><th>مفعّل</th><th></th></tr>`+list.map(e=>`<tr><td>${e.month}</td><td style="white-space:normal">${e.desc||''}</td><td class="num">${fmt(e.total)}</td><td style="white-space:normal;font-size:11px">${e.lines.map(l=>`${l.code} ${(S.accounts[l.code]||{}).name||''}: ${l.d?'مدين '+fmt(l.d):'دائن '+fmt(l.c)}`).join('<br>')}</td><td><input type="checkbox" ${e.active!==false?'checked':''} onchange="S.adj.find(x=>x.id==='${e.id}').active=this.checked;saveState();toast('أعد الاحتساب لتطبيق التغيير')"></td><td><button class="btn sm ghost" onclick="adjEdit('${e.id}')">تعديل</button> <button class="btn sm danger" onclick="if(confirm('حذف القيد؟')){S.adj=S.adj.filter(x=>x.id!=='${e.id}');saveState();renderAdj();refreshMonths()}">حذف</button></td></tr>`).join('')+'</table>':'<p class="hint">لا توجد قيود يدوية.</p>';
+ document.getElementById('adjList').innerHTML=list.length?`<table><tr><th>الشهر</th><th>البيان</th><th class="num">المبلغ</th><th>الأسطر</th><th>مفعّل</th><th></th></tr>`+list.map(e=>`<tr><td>${e.month}</td><td style="white-space:normal">${e.desc||''}${e.type?`<br><span class="badge" style="font-size:10px">${e.type}</span>`:''}${e.reason?`<br><span style="font-size:11px;color:var(--ink2,#666)">💬 ${e.reason}</span>`:''}</td><td class="num">${fmt(e.total)}</td><td style="white-space:normal;font-size:11px">${e.lines.map(l=>`${l.code} ${(S.accounts[l.code]||{}).name||''}: ${l.d?'مدين '+fmt(l.d):'دائن '+fmt(l.c)}`).join('<br>')}</td><td><input type="checkbox" ${e.active!==false?'checked':''} onchange="S.adj.find(x=>x.id==='${e.id}').active=this.checked;saveState();toast('أعد الاحتساب لتطبيق التغيير')"></td><td><button class="btn sm ghost" onclick="adjEdit('${e.id}')">تعديل</button> <button class="btn sm danger" onclick="if(confirm('حذف القيد؟')){S.adj=S.adj.filter(x=>x.id!=='${e.id}');saveState();renderAdj();refreshMonths()}">حذف</button></td></tr>`).join('')+'</table>':'<p class="hint">لا توجد قيود يدوية.</p>';
  document.getElementById('acctList').innerHTML=Object.values(S.accounts).filter(a=>a.post).map(a=>`<option value="${a.code}">${a.name}</option>`).join('')}
-function exportAdj(){let t='Month\tDesc\tAcctCode\tAcctName\tDebit\tCredit\n';(S.adj||[]).forEach(e=>e.lines.forEach(l=>t+=`${e.month}\t${e.desc}\t${l.code}\t${(S.accounts[l.code]||{}).name||''}\t${l.d||0}\t${l.c||0}\n`));const b=new Blob(['\ufeff'+t],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='القيود_اليدوية.csv';a.click()}
+function exportAdj(){const cl=s=>String(s||'').replace(/[\t\r\n]+/g,' ');let t='Month\tDesc\tAcctCode\tAcctName\tDebit\tCredit\tType\tReason\n';(S.adj||[]).forEach(e=>e.lines.forEach(l=>t+=`${e.month}\t${cl(e.desc)}\t${l.code}\t${(S.accounts[l.code]||{}).name||''}\t${l.d||0}\t${l.c||0}\t${cl(e.type)}\t${cl(e.reason)}\n`));const b=new Blob(['\ufeff'+t],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='القيود_اليدوية.csv';a.click()}
 function exportAdjJson(){const pick={adj:S.adj||[],_kind:'adjOnly',_savedAt:new Date().toISOString()};const b=new Blob([JSON.stringify(pick)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='قيود_التعديلات_'+new Date().toISOString().slice(0,10)+'.json';a.click();toast('تم تنزيل نسخة القيود اليدوية ('+(S.adj||[]).length+' قيد)')}
+function adjPL(e){let p=0;const un=[];(e.lines||[]).forEach(l=>{let ln;try{ln=effLine(l.code)}catch(x){ln='UNMAP'}const L=LINES[ln];if(L&&L.st==='IS')p+=(l.c||0)-(l.d||0);else if(!L||L.st==='?')un.push(l.code)});return{p,un}}
+function adjReport(){
+ const list=(S.adj||[]).filter(e=>e.active!==false).slice().sort((a,b)=>a.month.localeCompare(b.month)||(a.desc||'').localeCompare(b.desc||''));
+ if(!list.length){alert('لا توجد قيود مفعّلة لعرضها بالتقرير');return}
+ const F=v=>{if(v==null||isNaN(v))return '—';const a=Math.abs(v).toLocaleString('en-US',{maximumFractionDigits:3});return v<0?'('+a+')':a};
+ const ms=[...new Set(list.map(e=>e.month))].sort();
+ // — ملخص شهري —
+ const byM={};list.forEach(e=>{(byM[e.month]=byM[e.month]||[]).push(e)});
+ let sumTot=0,sumPL=0;const unmapped=new Set();
+ const mRows=ms.map(m=>{const es=byM[m];const t=es.reduce((a,e)=>a+(e.total||0),0);const p=es.reduce((a,e)=>{const r=adjPL(e);r.un.forEach(c=>unmapped.add(c));return a+r.p},0);sumTot+=t;sumPL+=p;
+  return `<tr><td>${m}</td><td class="c">${es.length}</td><td class="n">${F(t)}</td><td class="n ${p<0?'neg':p>0?'pos':''}">${F(p)}</td></tr>`}).join('');
+ // — تجميع القيود المتكررة —
+ const norm=s=>String(s||'').replace(/[0-9]/g,'').replace(/[-–+/\\.]/g,' ').replace(/\s+/g,' ').trim();
+ const sig=e=>norm(e.desc)+'|'+(e.lines||[]).map(l=>l.code).sort().join(',')+'|'+Math.round((e.total||0)*1000);
+ const G={},go=[];
+ list.forEach(e=>{const k=sig(e);if(!G[k]){G[k]={es:[],desc:e.desc,type:e.type||'',reason:e.reason||''};go.push(k)}G[k].es.push(e);if(!G[k].type&&e.type)G[k].type=e.type;if(!G[k].reason&&e.reason)G[k].reason=e.reason});
+ const acctLbl=e=>{const dr=e.lines.filter(l=>(l.d||0)>0).map(l=>l.code+' '+((S.accounts[l.code]||{}).name||'')).join('، ');const cr=e.lines.filter(l=>(l.c||0)>0).map(l=>l.code+' '+((S.accounts[l.code]||{}).name||'')).join('، ');return `من ح/ ${dr}<br>إلى ح/ ${cr}`};
+ const gRows=go.map((k,i)=>{const g=G[k];const n=g.es.length;const per=g.es[0].total||0;const tot=g.es.reduce((a,e)=>a+(e.total||0),0);const p=g.es.reduce((a,e)=>a+adjPL(e).p,0);
+  const bd=n>1?g.desc.replace(/\d+\s*[-–+/]\s*\d+/g,'').replace(/\b\d{4}\b/g,'').replace(/\s+/g,' ').trim():g.desc;
+  const mm=n===1?g.es[0].month:g.es[0].month+' ← '+g.es[n-1].month+' <b>('+n+' أشهر)</b>';
+  return `<tr><td class="c">${i+1}</td><td><b>${bd||g.desc}</b><div class="acc">${acctLbl(g.es[0])}</div></td><td class="c">${g.type||'—'}</td><td class="rs">${g.reason||'—'}</td><td class="c">${mm}</td><td class="n">${n>1?F(per):'—'}</td><td class="n">${F(tot)}</td><td class="n ${p<0?'neg':p>0?'pos':''}">${F(p)} ${p<0?'▼':p>0?'▲':''}</td></tr>`}).join('');
+ const today=new Date().toISOString().slice(0,10);
+ const unNote=unmapped.size?`<p class="warn">⚠ حسابات غير مصنفة ضمن بنود القوائم (أثرها على الربح احتُسب صفراً — راجع شاشة التصنيف): ${[...unmapped].join('، ')}</p>`:'';
+ const doc=`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>ملخص قيود التسويات والتعديلات</title><style>
+ body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;color:#1c2733;margin:28px;background:#fff}
+ h1{font-size:20px;color:#1f3a5f;margin:0 0 2px;border-bottom:3px solid #c9a227;padding-bottom:8px}
+ .sub{color:#5a6b7d;font-size:12px;margin:6px 0 18px}
+ h2{font-size:15px;color:#1f3a5f;margin:22px 0 8px}
+ table{border-collapse:collapse;width:100%;font-size:12px}
+ th{background:#1f3a5f;color:#fff;padding:7px 9px;font-weight:600;text-align:right}
+ td{border:1px solid #d7dee6;padding:6px 9px;vertical-align:top}
+ tr:nth-child(even) td{background:#f6f8fa}
+ .n{text-align:left;direction:ltr;font-variant-numeric:tabular-nums;white-space:nowrap}.c{text-align:center}
+ .neg{color:#b3261e}.pos{color:#1a7f37}
+ .acc{font-size:10.5px;color:#5a6b7d;margin-top:3px}
+ .rs{font-size:11.5px;max-width:230px}
+ tfoot td{background:#eef2f7!important;font-weight:700;border-top:2px solid #1f3a5f}
+ .warn{background:#fff7e0;border:1px solid #e0c860;border-radius:6px;padding:8px 12px;font-size:12px}
+ .note{color:#5a6b7d;font-size:11px;margin-top:10px;line-height:1.7}
+ .sig{display:flex;gap:40px;margin-top:38px;font-size:12px}
+ .sig div{flex:1;text-align:center}.sig .line{border-top:1px solid #1c2733;margin-top:34px;padding-top:5px}
+ .noprint{position:fixed;top:12px;left:12px}
+ .noprint button{background:#1f3a5f;color:#fff;border:0;border-radius:8px;padding:9px 18px;font-size:14px;cursor:pointer;font-family:inherit}
+ @media print{.noprint{display:none}body{margin:8mm}}
+ @page{size:A4;margin:12mm}
+ </style></head><body>
+ <div class="noprint"><button onclick="window.print()">🖨 طباعة / حفظ PDF</button></div>
+ <h1>ملخص قيود التسويات والتعديلات اليدوية (خارج النظام)</h1>
+ <div class="sub">الفترة: ${ms[0]} — ${ms[ms.length-1]} &nbsp;•&nbsp; عدد القيود المفعّلة: ${list.length} قيداً &nbsp;•&nbsp; تاريخ الإصدار: ${today} &nbsp;•&nbsp; أُعدّ آلياً من محرك القوائم الختامية</div>
+ <h2>أولاً — الأثر الشهري على صافي الربح</h2>
+ <table><thead><tr><th>الشهر</th><th class="c">عدد القيود</th><th>قيمة القيود</th><th>الأثر على صافي الربح</th></tr></thead>
+ <tbody>${mRows}</tbody>
+ <tfoot><tr><td>الإجمالي</td><td class="c">${list.length}</td><td class="n">${F(sumTot)}</td><td class="n ${sumPL<0?'neg':sumPL>0?'pos':''}">${F(sumPL)}</td></tr></tfoot></table>
+ <h2>ثانياً — تفاصيل القيود (المتكرر منها مجمَّع بسطر واحد)</h2>
+ <table><thead><tr><th class="c">#</th><th>البيان والحسابات</th><th class="c">النوع</th><th>السبب / المبرر</th><th class="c">الأشهر</th><th>شهرياً</th><th>الإجمالي</th><th>الأثر على الربح</th></tr></thead>
+ <tbody>${gRows}</tbody>
+ <tfoot><tr><td colspan="6">الإجمالي العام</td><td class="n">${F(sumTot)}</td><td class="n ${sumPL<0?'neg':sumPL>0?'pos':''}">${F(sumPL)}</td></tr></tfoot></table>
+ ${unNote}
+ <p class="note">المنهجية: هذه قيود تسوية يدوية تُضاف إلى بيانات النظام قبل احتساب القوائم ولا تُرحَّل إلى SAP. «الأثر على صافي الربح» محتسب آلياً من تصنيف الحسابات: لكل سطر على حساب من حسابات قائمة الدخل يُحتسب (دائن − مدين)؛ فالمبلغ السالب ▼ يعني تخفيض الربح (مصروف مستحق/مخصص/خصم مقدَّر) والموجب ▲ يعني زيادته (عكس مصروف/إيراد مستحق). القيود التي تمس المركز المالي فقط أثرها صفر. القيود المعطَّلة غير مشمولة بهذا التقرير.</p>
+ <div class="sig"><div><b>أعدّه</b><div class="line">التدقيق الداخلي</div></div><div><b>راجعه</b><div class="line">&nbsp;</div></div><div><b>اعتمده</b><div class="line">&nbsp;</div></div></div>
+ </body></html>`;
+ const b=new Blob([doc],{type:'text/html'});window.open(URL.createObjectURL(b),'_blank')}
 function importAdjData(txt){txt=(txt||'').replace(/^﻿/,'');let list=null;
  try{const o=JSON.parse(txt);list=Array.isArray(o)?o:(Array.isArray(o.adj)?o.adj:null)}catch(e){}
  if(!list){
   const rows=txt.split(/\r?\n/).map(r=>r.split('\t'));
   if(rows.length&&/month/i.test((rows[0][0]||'')))rows.shift();
   const by={},order=[];
-  rows.forEach(r=>{if(r.length<5||!/^\d{4}-\d{2}$/.test((r[0]||'').trim()))return;const m=r[0].trim(),desc=(r[1]||'').trim(),code=(r[2]||'').trim();const d=num(r.length>=6?r[4]:r[3]),c=num(r.length>=6?r[5]:r[4]);const key=m+''+desc;if(!by[key]){by[key]={month:m,desc,lines:[]};order.push(key)}by[key].lines.push({code,d,c})});
-  if(order.length)list=order.map(k=>{const e=by[k];return{month:e.month,desc:e.desc,lines:e.lines,active:true,total:Math.round(e.lines.reduce((a,l)=>a+(l.d||0),0)*1000)/1000}})}
+  rows.forEach(r=>{if(r.length<5||!/^\d{4}-\d{2}$/.test((r[0]||'').trim()))return;const m=r[0].trim(),desc=(r[1]||'').trim(),code=(r[2]||'').trim();const d=num(r.length>=6?r[4]:r[3]),c=num(r.length>=6?r[5]:r[4]);const key=m+''+desc;if(!by[key]){by[key]={month:m,desc,type:((r[6]||'')+'').trim(),reason:((r[7]||'')+'').trim(),lines:[]};order.push(key)}by[key].lines.push({code,d,c})});
+  if(order.length)list=order.map(k=>{const e=by[k];return{month:e.month,desc:e.desc,type:e.type,reason:e.reason,lines:e.lines,active:true,total:Math.round(e.lines.reduce((a,l)=>a+(l.d||0),0)*1000)/1000}})}
  if(!list||!list.length){alert('ملف غير صالح — المقبول: نسخة قيود JSON من هذه الأداة، أو ملف القيود_اليدوية.csv المصدَّر منها (أعمدة Month/Desc/AcctCode/AcctName/Debit/Credit)');return}
  S.adj=S.adj||[];let n=0,skip=0,unbal=0;
  list.forEach((e,i)=>{if(!e||!/^\d{4}-\d{2}$/.test(e.month||'')||!Array.isArray(e.lines)||!e.lines.length)return;
@@ -854,7 +917,7 @@ function importAdjData(txt){txt=(txt||'').replace(/^﻿/,'');let list=null;
   const D=lines.reduce((a,l)=>a+l.d,0),C=lines.reduce((a,l)=>a+l.c,0);if(Math.abs(D-C)>0.005)unbal++;
   const total=Math.round(D*1000)/1000;
   if(S.adj.some(x=>x.month===e.month&&(x.desc||'')===(e.desc||'')&&Math.abs((x.total||0)-total)<0.005)){skip++;return}
-  S.adj.push({id:'A'+Date.now()+'_'+i,month:e.month,desc:e.desc||'',lines,active:e.active!==false,total});n++});
+  S.adj.push({id:'A'+Date.now()+'_'+i,month:e.month,desc:e.desc||'',type:e.type||'',reason:e.reason||'',lines,active:e.active!==false,total});n++});
  saveState();renderAdj();if(typeof renderAdjRepeatMonths==='function')renderAdjRepeatMonths();refreshMonths();
  if(typeof R!=='undefined'&&R)recalcAll();
  toast('تم استيراد '+n+' قيد'+(skip?' — تجاهلت '+skip+' قيد موجود مسبقاً':'')+(unbal?' — تنبيه: '+unbal+' قيد غير متوازن (مدين≠دائن) راجعه':'')+(n&&(typeof R==='undefined'||!R)?' — أعد الاحتساب لتطبيقها':''))}
