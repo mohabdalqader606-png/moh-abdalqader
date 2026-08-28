@@ -268,14 +268,16 @@ body.glass .kpi{background:rgba(255,255,255,.96)}
 <!-- ============ BANKS ============ -->
 <section class="tab" id="tab-bank">
  <div class="card">
-  <h2>تجميع الحسابات البنكية حسب البنك</h2>
+  <details>
+  <summary style="cursor:pointer"><h2 style="display:inline-block;margin:0">تجميع الحسابات البنكية حسب البنك <span class="hint">(اضغط للإظهار/الإخفاء)</span></h2></summary>
   <p class="hint">تم اكتشاف البنك من اسم الحساب تلقائياً. حدد لكل حساب: البنك، ودوره: <b>مدين</b> (جاري/وديعة)، <b>دائن</b> (جاري مدين/تسهيلات/قرض)، <b>تأمينات</b> (تأمينات نقدية للاعتمادات والكفالات لدى البنك)، <b>شيكات برسم التحصيل</b>. الحسابات غير البنكية اتركها فارغة.</p>
   <div class="row"><input type="text" id="bkSearch" placeholder="بحث عن حساب لإضافته" oninput="renderBankMap()"><label><input type="checkbox" id="bkOnly" checked onchange="renderBankMap()"> إظهار الحسابات البنكية المكتشفة فقط</label><input type="text" id="bkNew" placeholder="اسم بنك جديد" style="width:160px"><button class="btn ghost sm" onclick="addBank()">إضافة بنك</button><button class="btn ghost sm" onclick="if(confirm('إعادة الاكتشاف التلقائي ستستبدل التجميع الحالي — متابعة؟')){autoBank(true);saveState();renderBankMap()}">إعادة الاكتشاف التلقائي</button><button class="btn gold sm" onclick="saveState();recalcAll();toast('تم الحفظ')">حفظ وإعادة الاحتساب</button></div>
   <div class="tblwrap" id="bankMap" style="max-height:45vh"></div>
   <details style="margin-top:10px"><summary style="cursor:pointer;color:var(--ink2);font-weight:600">بيانات اختيارية لكل بنك: سقوف التسهيلات، كمبيالات يدوية، حذف بنوك غير مستخدمة (اضغط للفتح)</summary>
   <div id="bankManual" style="margin-top:8px"></div></details>
+  </details>
  </div>
- <div class="card"><h2>مركز البنوك في نهاية الفترة — لي / عليّ / الصافي</h2><p class="hint">صافي المركز = أرصدة مدينة + أرصدة دائنة + التأمينات النقدية + شيكات برسم التحصيل − الكمبيالات/أوراق الدفع</p><div class="tblwrap" id="bankPos"></div></div>
+ <div class="card"><h2>مركز البنوك — بداية الفترة، الحركات، النهاية، والصافي</h2><p class="hint">رصيد الحسابات = صافي الجواري/التسهيلات/القروض للبنك. صافي حركات الفترة = رصيد النهاية − رصيد البداية (<span class="pos">موجب = سداد/تحسّن لصالحك</span>، <span class="neg">سالب = زاد المسحوب عليك</span>). صافي المركز = رصيد النهاية + التأمينات + شيكات التحصيل − الكمبيالات/أوراق الدفع.</p><div class="tblwrap" id="bankPos"></div></div>
  <div class="grid g2">
   <div class="card"><h2>صافي المركز البنكي شهرياً</h2><div class="chart" id="chBankTrend"></div></div>
   <div class="card"><h2>خريطة حرارية: صافي كل بنك شهرياً</h2><div class="chart" id="chBankHeat"></div></div>
@@ -875,22 +877,25 @@ function renderBankPos(){if(!R)return;S.bankManual=S.bankManual||{};const rows={
  Object.entries(S.bank||{}).forEach(([c,b])=>{if(!b.role)return;if(!b.bank){if(b.role==='CHQ')CHU.push(c);return}rows[b.bank]=rows[b.bank]||{DR:[],CR:[],MARGIN:[],CHQ:[],NOTES:[]};(rows[b.bank][b.role]=rows[b.bank][b.role]||[]).push(c)});
  (S.banks||[]).forEach(b=>{if(S.bankManual[b]&&(S.bankManual[b].notes||S.bankManual[b].limit))rows[b]=rows[b]||{DR:[],CR:[],MARGIN:[],CHQ:[],NOTES:[]}});
  const balAt=(c,k)=>k?(R.bal[k]?R.bal[k][c]||0:0):(R.endBal[c]||0);const sum=(cs,k)=>cs.reduce((a,c)=>a+balAt(c,k),0);
- const T={DR:0,CR:0,MARGIN:0,CHQ:0,NOTES:0,NET:0,LIM:0};let h=`<table><tr><th>البنك</th><th class="num">أرصدة مدينة (لي)</th><th class="num">أرصدة دائنة (عليّ)</th><th class="num">صافي الحسابات</th><th class="num">(+) التأمينات النقدية</th><th class="num">(+) شيكات برسم التحصيل</th><th class="num">(−) كمبيالات/أوراق دفع</th><th class="num">صافي المركز مع البنك</th><th>الحالة</th><th class="num">سقف التسهيلات</th><th class="num">نسبة الاستغلال</th><th class="num">حسابات</th></tr>`;
+ const sumO=cs=>cs.reduce((a,c)=>a+((R.openBal&&R.openBal[c])||0),0);
+ const T={O:0,MOV:0,E:0,MARGIN:0,CHQ:0,NOTES:0,NET:0};let h=`<table><tr><th>البنك</th><th class="num">رصيد الحسابات بداية الفترة</th><th class="num">صافي حركات الفترة</th><th class="num">رصيد الحسابات نهاية الفترة</th><th class="num">(+) التأمينات النقدية</th><th class="num">(+) شيكات برسم التحصيل</th><th class="num">(−) كمبيالات/أوراق دفع</th><th class="num">صافي المركز مع البنك</th><th>الحالة</th></tr>`;
  const bk=Object.keys(rows).sort((a,b)=>b.length-a.length);const netAt=(b,k)=>{const r=rows[b];const m=S.bankManual[b]||{};return sum(r.DR,k)+sum(r.CR,k)+sum(r.MARGIN,k)+sum(r.CHQ,k)-(sum(r.NOTES,k)*-1)-(m.notes||0)};
- bk.forEach(b=>{const r=rows[b],m=S.bankManual[b]||{};const dr=sum(r.DR),cr=sum(r.CR),mg=sum(r.MARGIN),ch=sum(r.CHQ),nt=-sum(r.NOTES)+(m.notes||0);const n1=dr+cr,n2=n1+mg+ch-nt;const lim=m.limit||0;const used=-(cr)+nt;T.DR+=dr;T.CR+=cr;T.MARGIN+=mg;T.CHQ+=ch;T.NOTES+=nt;T.NET+=n2;T.LIM+=lim;
-  h+=`<tr style="cursor:pointer" onclick="bankDetail('${b}')"><td><b>${b}</b></td><td class="num pos">${fmt(dr)}</td><td class="num neg">${fmt(cr)}</td><td class="${cls(n1)}">${fmt(n1)}</td><td class="num">${fmt(mg)}</td><td class="num">${fmt(ch)}</td><td class="num">${fmt(nt)}</td><td class="${cls(n2)}"><b>${fmt(n2)}</b></td><td><span class="badge ${n2>=0?'ok':'bad'}">${n2>=0?'لي عند البنك':'عليّ للبنك'}</span></td><td class="num">${lim?fmt(lim):'—'}</td><td class="num ${lim&&used/lim>0.9?'neg':''}">${lim?pct(used/lim):'—'}</td><td class="num">${r.DR.length+r.CR.length+r.MARGIN.length+r.CHQ.length+r.NOTES.length}</td></tr>`});
+ bk.forEach(b=>{const r=rows[b],m=S.bankManual[b]||{};const o=sumO(r.DR)+sumO(r.CR);const dr=sum(r.DR),cr=sum(r.CR),e=dr+cr;const mov=e-o;const mg=sum(r.MARGIN),ch=sum(r.CHQ),nt=-sum(r.NOTES)+(m.notes||0);const n2=e+mg+ch-nt;T.O+=o;T.MOV+=mov;T.E+=e;T.MARGIN+=mg;T.CHQ+=ch;T.NOTES+=nt;T.NET+=n2;
+  h+=`<tr style="cursor:pointer" onclick="bankDetail('${b}')"><td><b>${b}</b></td><td class="${cls(o)}">${fmt(o)}</td><td class="${cls(mov)}"><b>${fmt(mov)}</b></td><td class="${cls(e)}">${fmt(e)}</td><td class="num">${fmt(mg)}</td><td class="num">${fmt(ch)}</td><td class="num">${fmt(nt)}</td><td class="${cls(n2)}"><b>${fmt(n2)}</b></td><td><span class="badge ${n2>=0?'ok':'bad'}">${n2>=0?'لي عند البنك':'عليّ للبنك'}</span></td></tr>`});
  const chu=sum(CHU);
- h+=`<tr class="tot"><td>إجمالي البنوك</td><td class="num">${fmt(T.DR)}</td><td class="num">${fmt(T.CR)}</td><td class="num">${fmt(T.DR+T.CR)}</td><td class="num">${fmt(T.MARGIN)}</td><td class="num">${fmt(T.CHQ)}</td><td class="num">${fmt(T.NOTES)}</td><td class="${cls(T.NET)}"><b>${fmt(T.NET)}</b></td><td><span class="badge ${T.NET>=0?'ok':'bad'}">${T.NET>=0?'صافي لي':'صافي عليّ'}</span></td><td class="num">${T.LIM?fmt(T.LIM):'—'}</td><td class="num">${T.LIM?pct((-T.CR+T.NOTES)/T.LIM):'—'}</td><td></td></tr>`;
- if(CHU.length)h+=`<tr><td>شيكات برسم التحصيل غير موزعة على بنك (${CHU.length} حساب)</td><td colspan="4"></td><td class="num">${fmt(chu)}</td><td></td><td class="num">${fmt(T.NET+chu)}</td><td colspan="4" class="hint">الصافي بعد إضافتها — وزّعها على بنوكها من جدول التجميع</td></tr>`;
+ h+=`<tr class="tot"><td>إجمالي البنوك</td><td class="num">${fmt(T.O)}</td><td class="${cls(T.MOV)}"><b>${fmt(T.MOV)}</b></td><td class="num">${fmt(T.E)}</td><td class="num">${fmt(T.MARGIN)}</td><td class="num">${fmt(T.CHQ)}</td><td class="num">${fmt(T.NOTES)}</td><td class="${cls(T.NET)}"><b>${fmt(T.NET)}</b></td><td><span class="badge ${T.NET>=0?'ok':'bad'}">${T.NET>=0?'صافي لي':'صافي عليّ'}</span></td></tr>`;
+ if(CHU.length)h+=`<tr><td>شيكات برسم التحصيل غير موزعة على بنك (${CHU.length} حساب)</td><td colspan="4"></td><td class="num">${fmt(chu)}</td><td></td><td class="num">${fmt(T.NET+chu)}</td><td class="hint">وزّعها من جدول التجميع</td></tr>`;
  h+='</table>';
  if(bk.length&&R.per.length){
-  const sumO=cs=>cs.reduce((a,c)=>a+((R.openBal&&R.openBal[c])||0),0);
-  const HDR=`<tr><th>الشهر</th><th class="num">أرصدة مدينة (لي)</th><th class="num">أرصدة دائنة (عليّ)</th><th class="num">صافي الحسابات</th><th class="num">(+) التأمينات النقدية</th><th class="num">(+) شيكات برسم التحصيل</th><th class="num">(−) كمبيالات/أوراق دفع</th><th class="num">صافي المركز</th><th class="num">التغير خلال الشهر</th><th>الحالة</th></tr>`;
-  const rowHtml=(lbl,p,chg,sub)=>`<tr${sub?' class="sub"':''}><td>${lbl}</td><td class="num pos">${fmt(p.dr)}</td><td class="num neg">${fmt(p.cr)}</td><td class="${cls(p.dr+p.cr)}">${fmt(p.dr+p.cr)}</td><td class="num">${fmt(p.mg)}</td><td class="num">${fmt(p.ch)}</td><td class="num">${fmt(p.nt)}</td><td class="${cls(p.net)}"><b>${fmt(p.net)}</b></td><td class="${chg==null?'num':cls(chg)}">${chg==null?'—':fmt(chg)}</td><td><span class="badge ${p.net>=0?'ok':'bad'}">${p.net>=0?'لي':'عليّ'}</span></td></tr>`;
+  const HDR=`<tr><th>الشهر</th><th class="num">رصيد الحسابات بداية الشهر</th><th class="num">صافي حركات الشهر</th><th class="num">رصيد الحسابات نهاية الشهر</th><th class="num">(+) التأمينات النقدية</th><th class="num">(+) شيكات برسم التحصيل</th><th class="num">(−) كمبيالات/أوراق دفع</th><th class="num">صافي المركز</th><th>الحالة</th></tr>`;
   const monthlyTable=(title,note,partsAtO,partsAtK)=>{
    let t=`<p class="hint" style="margin:14px 0 6px"><b>${title}</b>${note?' '+note:''}</p><table>`+HDR;
-   let prevN=null;const p0=partsAtO();t+=rowHtml('افتتاحي الفترة',p0,null,true);prevN=p0.net;
-   R.per.forEach(k=>{const p=partsAtK(k);t+=rowHtml(k,p,p.net-prevN,false);prevN=p.net});
+   const p0=partsAtO();const acc0=p0.dr+p0.cr;
+   t+=`<tr class="sub"><td>افتتاحي الفترة</td><td class="num">—</td><td class="num">—</td><td class="${cls(acc0)}">${fmt(acc0)}</td><td class="num">${fmt(p0.mg)}</td><td class="num">${fmt(p0.ch)}</td><td class="num">${fmt(p0.nt)}</td><td class="${cls(p0.net)}"><b>${fmt(p0.net)}</b></td><td><span class="badge ${p0.net>=0?'ok':'bad'}">${p0.net>=0?'لي':'عليّ'}</span></td></tr>`;
+   let prevAcc=acc0;
+   R.per.forEach(k=>{const p=partsAtK(k);const accE=p.dr+p.cr;const mov=accE-prevAcc;
+    t+=`<tr><td>${k}</td><td class="${cls(prevAcc)}">${fmt(prevAcc)}</td><td class="${cls(mov)}"><b>${fmt(mov)}</b></td><td class="${cls(accE)}">${fmt(accE)}</td><td class="num">${fmt(p.mg)}</td><td class="num">${fmt(p.ch)}</td><td class="num">${fmt(p.nt)}</td><td class="${cls(p.net)}"><b>${fmt(p.net)}</b></td><td><span class="badge ${p.net>=0?'ok':'bad'}">${p.net>=0?'لي':'عليّ'}</span></td></tr>`;
+    prevAcc=accE});
    return t+'</table>'};
   // 1) الإجمالي — كل البنوك (يشمل الشيكات غير الموزعة)
   const aggAt=f=>{let dr=0,cr=0,mg=0,ch=0,nt=0;bk.forEach(b=>{const r=rows[b],m=S.bankManual[b]||{};dr+=f(r.DR);cr+=f(r.CR);mg+=f(r.MARGIN);ch+=f(r.CHQ);nt+=-f(r.NOTES)+(m.notes||0)});ch+=f(CHU);return {dr,cr,mg,ch,nt,net:dr+cr+mg+ch-nt}};
