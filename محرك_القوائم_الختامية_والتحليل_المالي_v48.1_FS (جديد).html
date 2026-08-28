@@ -1088,7 +1088,7 @@ WHERE T0."CANCELED" = 'N'
   OR EXISTS (SELECT 1 FROM RDN1 R2 INNER JOIN ORDN H3 ON H3."DocEntry" = R2."DocEntry" AND H3."CANCELED" = 'N' WHERE R2."BaseType" = '15' AND R2."BaseEntry" = T1."DocEntry" AND R2."BaseLine" = T1."LineNum" AND (YEAR(H3."DocDate") <> YEAR(T0."DocDate") OR MONTH(H3."DocDate") <> MONTH(T0."DocDate"))))`,
 q6b:`SELECT 'APINV' AS "Kind", T0."CardName" AS "Party", T0."DocDueDate" AS "DueDate", T0."DocTotal" AS "Amount", T0."CardCode" AS "Code", T1."Balance" AS "BPBalance", T0."DocDate" AS "DocDate"
 FROM OPCH T0 INNER JOIN OCRD T1 ON T1."CardCode" = T0."CardCode"
-WHERE T0."CANCELED" = 'N' AND T1."Balance" < 0 AND T0."DocDate" >= ADD_DAYS(CURRENT_DATE, -365)`,
+WHERE T0."CANCELED" = 'N' AND T1."Balance" < 0 AND T0."DocDate" >= '{FROM}'`,
 q7:`SELECT T0."Account" AS "AcctCode", COALESCE(T0."ProfitCode", '') AS "PC", YEAR(T0."RefDate") AS "Yr", MONTH(T0."RefDate") AS "Mo", SUM(T0."Debit") AS "Debit", SUM(T0."Credit") AS "Credit"
 FROM JDT1 T0
 WHERE T0."RefDate" >= '{FROM}' AND T0."RefDate" <= '{TO}'
@@ -1513,7 +1513,7 @@ WHERE W."المبلغ المخصص لهذا الشهر" <> 0
 ORDER BY W."كود العميل", W."تاريخ الحركة", W."شهر الفواتير المخصص له"`,
 q12:`SELECT T1."TransId", T1."RefDate", T1."TransType", T1."BaseRef", T1."ShortName", T1."LineMemo", T1."Debit", T1."Credit", T0."Memo"
 FROM OJDT T0 INNER JOIN JDT1 T1 ON T1."TransId" = T0."TransId"
-WHERE T1."Account" = '2112000001' AND T1."RefDate" >= '2026-07-01' AND T1."RefDate" <= '2026-07-31'
+WHERE T1."Account" = '2112000001' AND T1."RefDate" >= '{FROM}' AND T1."RefDate" <= '{TO}'
 ORDER BY T1."RefDate", T1."TransId"`};
 const FEEDS=[
 {n:'1',t:'دليل الحسابات',d:'OACT — يُشغَّل مرة واحدة أو عند تغيّر الدليل. إعادة تحميله لا تمسح التصنيف.',q:'q1',ta:'txAcct',fi:'fAcct',fn:'loadAccounts',b:'mAcct',req:1},
@@ -1526,7 +1526,7 @@ const FEEDS=[
 {n:'13',t:'الموازنة التقديرية',d:'من الإكسل: Line, Yr, Mo, Amount (رمز البند أو اسمه العربي أو رقم الحساب).',q:null,ta:'txBud',fi:'fBud',fn:'loadBudget',b:'mBud'},
 {n:'14',t:'القيود التفصيلية لحساب وشهر',d:'قالب للفحص اليدوي — تولّده الشاشة تلقائياً بزر "كويري القيود".',q:'q12',ta:null}];
 function qYearSet(y){if(!y)return;const f=document.getElementById('qFrom'),t=document.getElementById('qTo');const today=new Date().toISOString().slice(0,10);if(y==='ALL'){f.value='2019-01-01';t.value=today}else{f.value=y+'-01-01';t.value=(y===today.slice(0,4))?today:y+'-12-31'}f.dispatchEvent(new Event('input',{bubbles:true}));toast('تواريخ الكويريات: '+f.value+' → '+t.value)}
-function qText(k){const f=(document.getElementById('qFrom')||{}).value||'2019-01-01',t=(document.getElementById('qTo')||{}).value||'2026-08-17';return (QUERIES[k]||'').replace(/\{FROM\}/g,f).replace(/\{TO\}/g,t)}
+function qText(k){const f=(document.getElementById('qFrom')||{}).value||'2019-01-01',t=(document.getElementById('qTo')||{}).value||new Date().toISOString().slice(0,10);return (QUERIES[k]||'').replace(/\{FROM\}/g,f).replace(/\{TO\}/g,t)}
 function copyText(q){let ok=false;try{const ta=document.createElement('textarea');ta.value=q;ta.style.position='fixed';ta.style.top='-1000px';document.body.appendChild(ta);ta.focus();ta.select();ok=document.execCommand('copy');document.body.removeChild(ta)}catch(e){ok=false}
  if(ok){toast('تم نسخ الكويري — الصقه في Query Manager');return}
  if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(q).then(()=>toast('تم نسخ الكويري'),()=>showCopyBox(q))}else showCopyBox(q)}
