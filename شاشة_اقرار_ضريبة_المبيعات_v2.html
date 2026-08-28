@@ -165,6 +165,7 @@
         <button class="btn-primary" id="btnSave" onclick="saveDecl('draft')">💾 حفظ فوري</button>
         <button class="btn-teal" id="btnFinal" onclick="saveDecl('final')">✅ اعتماد الإقرار النهائي</button>
         <button class="btn-ghost" onclick="loadDeclForPeriod(true)">📂 إعادة تحميل المحفوظ لهذه الفترة</button>
+        <button class="btn-ghost" style="border-color:var(--teal); color:var(--teal);" onclick="downloadBackup()">💾 نسخة احتياطية كاملة (كل الفترات)</button>
         <span class="status-msg" id="saveMsg"></span>
       </div>
       <div class="hint" style="margin-top:12px;">
@@ -1761,6 +1762,23 @@ function printISTD(){
     <div style="font-size:9px; color:#555; margin-top:4px;">أُعدّ آلياً من شاشة إقرار ضريبة المبيعات — للمراجعة قبل التقديم الرسمي · طُبع بتاريخ ${new Date().toLocaleString('en-GB')}</div>
   </div>`;
   window.print();
+}
+
+/* ================= نسخة احتياطية كاملة من السيرفر ================= */
+async function downloadBackup(){
+  setMsg('saveMsg','جارٍ تجهيز النسخة الاحتياطية…','');
+  const out={type:'kfc_sales_tax_backup', version:2, exported_at:new Date().toISOString(), by:curUser?.email||''};
+  const {data:decls, error:e1}=await sb.from('sales_tax_declarations').select('*');
+  if(e1){ setMsg('saveMsg','فشل: '+e1.message,'err'); return; }
+  const {data:cc, error:e2}=await sb.from('customer_classifications').select('*');
+  if(e2){ setMsg('saveMsg','فشل: '+e2.message,'err'); return; }
+  const {data:profs}=await sb.from('profiles').select('id, email, full_name, role');
+  out.declarations=decls||[]; out.customer_classifications=cc||[]; out.profiles=profs||[];
+  const blob=new Blob([JSON.stringify(out)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`نسخة_احتياطية_ضريبة_المبيعات_${new Date().toISOString().slice(0,10)}.json`;
+  a.click(); URL.revokeObjectURL(a.href);
+  setMsg('saveMsg',`تم تنزيل النسخة: ${out.declarations.length} إقرار + ${out.customer_classifications.length} تصنيف عميل ✔`,'ok');
 }
 
 /* ================= تنقّل وإقلاع ================= */
