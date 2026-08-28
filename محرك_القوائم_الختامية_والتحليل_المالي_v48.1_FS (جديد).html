@@ -842,16 +842,25 @@ function exportAdjJson(){const pick={adj:S.adj||[],_kind:'adjOnly',_savedAt:new 
 function adjPL(e){let p=0;const un=[];(e.lines||[]).forEach(l=>{let ln;try{ln=effLine(l.code)}catch(x){ln='UNMAP'}const L=LINES[ln];if(L&&L.st==='IS')p+=(l.c||0)-(l.d||0);else if(!L||L.st==='?')un.push(l.code)});return{p,un}}
 function adjReport(){
  const list=(S.adj||[]).filter(e=>e.active!==false).slice().sort((a,b)=>a.month.localeCompare(b.month)||(a.desc||'').localeCompare(b.desc||''));
- if(!list.length){alert('لا توجد قيود مفعّلة لعرضها بالتقرير');return}
+ const tmOn=S.timingOn!==false&&(S.timing||[]).length>0;
+ if(!list.length&&!tmOn){alert('لا توجد قيود مفعّلة ولا بيانات تسوية توقيت الإيراد لعرضها بالتقرير');return}
  const F=v=>{if(v==null||isNaN(v))return '—';const a=Math.abs(v).toLocaleString('en-US',{maximumFractionDigits:3});return v<0?'('+a+')':a};
- const ms=[...new Set(list.map(e=>e.month))].sort();
- // — ملخص شهري —
+ const cls=v=>v<-0.004?'neg':v>0.004?'pos':'';
+ // — تسوية توقيت الإيراد شهرياً —
+ const TM={};let tmTot=0,tmOpen=null,tmMs=[];
+ if(tmOn){const am=months();if(am.length){const TB=timingBalances(am);tmOpen={def:TB.open.def,unb:TB.open.unb};let pd=TB.open.def,pu=TB.open.unb;
+  am.forEach(k=>{const t=TB.at[k];const eff=-(t.def-pd)+(t.unb-pu);TM[k]={def:t.def,unb:t.unb,eff};pd=t.def;pu=t.unb;tmTot+=eff});
+  tmMs=am.filter(k=>Math.abs(TM[k].eff)>0.004||Math.abs(TM[k].def)>0.004||Math.abs(TM[k].unb)>0.004)}}
+ // — القيود اليدوية شهرياً —
  const byM={};list.forEach(e=>{(byM[e.month]=byM[e.month]||[]).push(e)});
+ const ms=[...new Set([...list.map(e=>e.month),...tmMs])].sort();
  let sumTot=0,sumPL=0;const unmapped=new Set();
- const mRows=ms.map(m=>{const es=byM[m];const t=es.reduce((a,e)=>a+(e.total||0),0);const p=es.reduce((a,e)=>{const r=adjPL(e);r.un.forEach(c=>unmapped.add(c));return a+r.p},0);sumTot+=t;sumPL+=p;
-  return `<tr><td>${m}</td><td class="c">${es.length}</td><td class="n">${F(t)}</td><td class="n ${p<0?'neg':p>0?'pos':''}">${F(p)}</td></tr>`}).join('');
+ const mRows=ms.map(m=>{const es=byM[m]||[];const t=es.reduce((a,e)=>a+(e.total||0),0);const pj=es.reduce((a,e)=>{const r=adjPL(e);r.un.forEach(c=>unmapped.add(c));return a+r.p},0);sumTot+=t;sumPL+=pj;
+  const te=TM[m]?TM[m].eff:0;const all=pj+te;
+  return `<tr><td>${m}</td><td class="c">${es.length||'—'}</td><td class="n">${es.length?F(t):'—'}</td><td class="n ${cls(pj)}">${es.length?F(pj):'—'}</td><td class="n ${cls(te)}">${TM[m]?F(te):'—'}</td><td class="n ${cls(all)}"><b>${F(all)}</b></td></tr>`}).join('');
+ const allTot=sumPL+tmTot;
  // — تجميع القيود المتكررة —
- const norm=s=>String(s||'').replace(/[0-9]/g,'').replace(/[-–+/\\.]/g,' ').replace(/\s+/g,' ').trim();
+ const norm=x=>String(x||'').replace(/[0-9]/g,'').replace(/[-–+/\\.]/g,' ').replace(/\s+/g,' ').trim();
  const sig=e=>norm(e.desc)+'|'+(e.lines||[]).map(l=>l.code).sort().join(',')+'|'+Math.round((e.total||0)*1000);
  const G={},go=[];
  list.forEach(e=>{const k=sig(e);if(!G[k]){G[k]={es:[],desc:e.desc,type:e.type||'',reason:e.reason||''};go.push(k)}G[k].es.push(e);if(!G[k].type&&e.type)G[k].type=e.type;if(!G[k].reason&&e.reason)G[k].reason=e.reason});
@@ -859,16 +868,25 @@ function adjReport(){
  const gRows=go.map((k,i)=>{const g=G[k];const n=g.es.length;const per=g.es[0].total||0;const tot=g.es.reduce((a,e)=>a+(e.total||0),0);const p=g.es.reduce((a,e)=>a+adjPL(e).p,0);
   const bd=n>1?g.desc.replace(/\d+\s*[-–+/]\s*\d+/g,'').replace(/\b\d{4}\b/g,'').replace(/\s+/g,' ').trim():g.desc;
   const mm=n===1?g.es[0].month:g.es[0].month+' ← '+g.es[n-1].month+' <b>('+n+' أشهر)</b>';
-  return `<tr><td class="c">${i+1}</td><td><b>${bd||g.desc}</b><div class="acc">${acctLbl(g.es[0])}</div></td><td class="c">${g.type||'—'}</td><td class="rs">${g.reason||'—'}</td><td class="c">${mm}</td><td class="n">${n>1?F(per):'—'}</td><td class="n">${F(tot)}</td><td class="n ${p<0?'neg':p>0?'pos':''}">${F(p)} ${p<0?'▼':p>0?'▲':''}</td></tr>`}).join('');
+  return `<tr><td class="c">${i+1}</td><td><b>${bd||g.desc}</b><div class="acc">${acctLbl(g.es[0])}</div></td><td class="c">${g.type||'—'}</td><td class="rs">${g.reason||'—'}</td><td class="c">${mm}</td><td class="n">${n>1?F(per):'—'}</td><td class="n">${F(tot)}</td><td class="n ${cls(p)}">${F(p)} ${p<-0.004?'▼':p>0.004?'▲':''}</td></tr>`}).join('');
+ // — جدول تفاصيل توقيت الإيراد —
+ let tmSection='';
+ if(tmOn&&tmMs.length){
+  const tmRows=tmMs.map(m=>{const t=TM[m];return `<tr><td>${m}</td><td class="n">${F(t.def)}</td><td class="n">${F(t.unb)}</td><td class="n ${cls(t.eff)}">${F(t.eff)} ${t.eff<-0.004?'▼':t.eff>0.004?'▲':''}</td></tr>`}).join('');
+  tmSection=`<h2>ثالثاً — تسوية توقيت الإيراد (IFRS 15) — آلية من بيانات الفواتير الاحتياطية والتسليمات</h2>
+ <table><thead><tr><th>الشهر</th><th>إيراد مؤجل نهاية الشهر<br><small>فواتير احتياطية غير مسلّمة</small></th><th>إيراد مستحق نهاية الشهر<br><small>تسليمات غير مفوترة</small></th><th>التسوية الشهرية على المبيعات<br><small>الأثر على الربح</small></th></tr></thead>
+ <tbody><tr><td><b>الرصيد الافتتاحي</b></td><td class="n">${F(tmOpen.def)}</td><td class="n">${F(tmOpen.unb)}</td><td class="n">—</td></tr>${tmRows}</tbody>
+ <tfoot><tr><td colspan="3">صافي أثر الفترة على الربح (التغير في المؤجل وغير المفوتر)</td><td class="n ${cls(tmTot)}">${F(tmTot)}</td></tr></tfoot></table>
+ <p class="note">المؤجل: فواتير احتياطية أُثبت إيرادها في SAP ولم تُسلَّم بضاعتها بعد — يُرحَّل إيرادها للشهر الذي يتم فيه التسليم (أو يُلغى بمرتجع). غير المفوتر: تسليمات خرجت بضاعتها ولم تصدر فاتورتها بعد — يُثبت إيرادها مقدَّماً. الأرقام مطابقة لشاشة «تسوية توقيت الإيراد» وللبنود ~TM~ في القوائم.</p>`}
  const today=new Date().toISOString().slice(0,10);
  const unNote=unmapped.size?`<p class="warn">⚠ حسابات غير مصنفة ضمن بنود القوائم (أثرها على الربح احتُسب صفراً — راجع شاشة التصنيف): ${[...unmapped].join('، ')}</p>`:'';
- const doc=`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>ملخص قيود التسويات والتعديلات</title><style>
+ const doc=`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>ملخص التسويات والتعديلات</title><style>
  body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;color:#1c2733;margin:28px;background:#fff}
  h1{font-size:20px;color:#1f3a5f;margin:0 0 2px;border-bottom:3px solid #c9a227;padding-bottom:8px}
  .sub{color:#5a6b7d;font-size:12px;margin:6px 0 18px}
  h2{font-size:15px;color:#1f3a5f;margin:22px 0 8px}
  table{border-collapse:collapse;width:100%;font-size:12px}
- th{background:#1f3a5f;color:#fff;padding:7px 9px;font-weight:600;text-align:right}
+ th{background:#1f3a5f;color:#fff;padding:7px 9px;font-weight:600;text-align:right}th small{font-weight:400;opacity:.8}
  td{border:1px solid #d7dee6;padding:6px 9px;vertical-align:top}
  tr:nth-child(even) td{background:#f6f8fa}
  .n{text-align:left;direction:ltr;font-variant-numeric:tabular-nums;white-space:nowrap}.c{text-align:center}
@@ -876,6 +894,7 @@ function adjReport(){
  .acc{font-size:10.5px;color:#5a6b7d;margin-top:3px}
  .rs{font-size:11.5px;max-width:230px}
  tfoot td{background:#eef2f7!important;font-weight:700;border-top:2px solid #1f3a5f}
+ .grand td{background:#fdf6e3!important;font-weight:700}
  .warn{background:#fff7e0;border:1px solid #e0c860;border-radius:6px;padding:8px 12px;font-size:12px}
  .note{color:#5a6b7d;font-size:11px;margin-top:10px;line-height:1.7}
  .sig{display:flex;gap:40px;margin-top:38px;font-size:12px}
@@ -886,18 +905,20 @@ function adjReport(){
  @page{size:A4;margin:12mm}
  </style></head><body>
  <div class="noprint"><button onclick="window.print()">🖨 طباعة / حفظ PDF</button></div>
- <h1>ملخص قيود التسويات والتعديلات اليدوية (خارج النظام)</h1>
- <div class="sub">الفترة: ${ms[0]} — ${ms[ms.length-1]} &nbsp;•&nbsp; عدد القيود المفعّلة: ${list.length} قيداً &nbsp;•&nbsp; تاريخ الإصدار: ${today} &nbsp;•&nbsp; أُعدّ آلياً من محرك القوائم الختامية</div>
+ <h1>ملخص التسويات والتعديلات على نتائج النظام</h1>
+ <div class="sub">الفترة: ${ms[0]} — ${ms[ms.length-1]} &nbsp;•&nbsp; قيود يدوية مفعّلة: ${list.length} &nbsp;•&nbsp; ${tmOn?'تسوية توقيت الإيراد: مفعّلة':'تسوية توقيت الإيراد: غير مفعّلة'} &nbsp;•&nbsp; تاريخ الإصدار: ${today} &nbsp;•&nbsp; أُعدّ آلياً من محرك القوائم الختامية</div>
  <h2>أولاً — الأثر الشهري على صافي الربح</h2>
- <table><thead><tr><th>الشهر</th><th class="c">عدد القيود</th><th>قيمة القيود</th><th>الأثر على صافي الربح</th></tr></thead>
+ <table><thead><tr><th>الشهر</th><th class="c">عدد القيود</th><th>قيمة القيود اليدوية</th><th>أثر القيود اليدوية</th><th>تسوية توقيت الإيراد</th><th>الأثر الكلي على الربح</th></tr></thead>
  <tbody>${mRows}</tbody>
- <tfoot><tr><td>الإجمالي</td><td class="c">${list.length}</td><td class="n">${F(sumTot)}</td><td class="n ${sumPL<0?'neg':sumPL>0?'pos':''}">${F(sumPL)}</td></tr></tfoot></table>
- <h2>ثانياً — تفاصيل القيود (المتكرر منها مجمَّع بسطر واحد)</h2>
+ <tfoot><tr><td>الإجمالي</td><td class="c">${list.length}</td><td class="n">${F(sumTot)}</td><td class="n ${cls(sumPL)}">${F(sumPL)}</td><td class="n ${cls(tmTot)}">${tmOn?F(tmTot):'—'}</td><td class="n ${cls(allTot)}">${F(allTot)}</td></tr>
+ <tr class="grand"><td colspan="5">الأثر الكلي لجميع التسويات على ربح الفترة (قيود يدوية + توقيت الإيراد)</td><td class="n ${cls(allTot)}">${F(allTot)} ${allTot<-0.004?'▼ تخفيض':allTot>0.004?'▲ زيادة':''}</td></tr></tfoot></table>
+ ${list.length?`<h2>ثانياً — تفاصيل القيود اليدوية (المتكرر منها مجمَّع بسطر واحد)</h2>
  <table><thead><tr><th class="c">#</th><th>البيان والحسابات</th><th class="c">النوع</th><th>السبب / المبرر</th><th class="c">الأشهر</th><th>شهرياً</th><th>الإجمالي</th><th>الأثر على الربح</th></tr></thead>
  <tbody>${gRows}</tbody>
- <tfoot><tr><td colspan="6">الإجمالي العام</td><td class="n">${F(sumTot)}</td><td class="n ${sumPL<0?'neg':sumPL>0?'pos':''}">${F(sumPL)}</td></tr></tfoot></table>
+ <tfoot><tr><td colspan="6">إجمالي القيود اليدوية</td><td class="n">${F(sumTot)}</td><td class="n ${cls(sumPL)}">${F(sumPL)}</td></tr></tfoot></table>`:''}
+ ${tmSection}
  ${unNote}
- <p class="note">المنهجية: هذه قيود تسوية يدوية تُضاف إلى بيانات النظام قبل احتساب القوائم ولا تُرحَّل إلى SAP. «الأثر على صافي الربح» محتسب آلياً من تصنيف الحسابات: لكل سطر على حساب من حسابات قائمة الدخل يُحتسب (دائن − مدين)؛ فالمبلغ السالب ▼ يعني تخفيض الربح (مصروف مستحق/مخصص/خصم مقدَّر) والموجب ▲ يعني زيادته (عكس مصروف/إيراد مستحق). القيود التي تمس المركز المالي فقط أثرها صفر. القيود المعطَّلة غير مشمولة بهذا التقرير.</p>
+ <p class="note">المنهجية: القيود اليدوية تُضاف إلى بيانات النظام قبل احتساب القوائم ولا تُرحَّل إلى SAP؛ «أثر القيود اليدوية» محتسب آلياً من تصنيف الحسابات — لكل سطر على حساب من حسابات قائمة الدخل يُحتسب (دائن − مدين)، فالسالب ▼ تخفيض للربح والموجب ▲ زيادة، والقيود التي تمس المركز المالي فقط أثرها صفر. «تسوية توقيت الإيراد» (IFRS 15) محتسبة آلياً من ملف الفواتير الاحتياطية والتسليمات (البند 5) وتعدّل المبيعات بفرق ما تأجّل وما استُحق خلال الشهر. القيود المعطَّلة غير مشمولة.</p>
  <div class="sig"><div><b>أعدّه</b><div class="line">التدقيق الداخلي</div></div><div><b>راجعه</b><div class="line">&nbsp;</div></div><div><b>اعتمده</b><div class="line">&nbsp;</div></div></div>
  </body></html>`;
  const b=new Blob([doc],{type:'text/html'});window.open(URL.createObjectURL(b),'_blank')}
