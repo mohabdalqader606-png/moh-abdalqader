@@ -67,7 +67,9 @@ declare
   m_to   date := case when d_to   is null then null else date_trunc('month', d_to)::date end;
   n_item bigint; n_cust bigint;
 begin
-  if public.app_role() not in ('admin','editor') then
+  -- الفحص يسري على المستخدمين المسجَّلين فقط. التنفيذ من SQL Editor (بلا JWT)
+  -- يتم بصلاحية مالك المشروع أصلاً، فلا حاجة لحارس إضافي.
+  if auth.uid() is not null and coalesce(public.app_role(),'') not in ('admin','editor') then
     raise exception 'غير مصرح — يلزم دور admin أو editor';
   end if;
 
@@ -182,4 +184,5 @@ drop index if exists public.cal_lines_customer_idx;
 -- إن كانت البيانات ضخمة وتوقّف التنفيذ، نفّذها سنة بسنة:
 --   select public.cal_refresh('2024-01-01','2024-12-31');
 --   select public.cal_refresh('2025-01-01','2025-12-31');
-select public.cal_refresh();
+-- تُنفَّذ في خطوة منفصلة (حتى لا يُلغى السكربت كله إن طالت):
+--   select public.cal_refresh();
