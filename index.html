@@ -1364,6 +1364,17 @@ async function onFileImports(inp){
       dateDecl:iDateD>=0?String(r[iDateD]||'').trim():'', order:iOrder>=0?String(r[iOrder]||'').trim():'',
       entry, items, rate:rt, base:r3(base), tax:r3(tax), excl, cls0});
   }
+  // الأسطر المضافة سابقاً من قراءة PDF تبقى — إلا إذا صار نفس البيان بنفس النسبة موجوداً في الإكسل (الإكسل أدق فيغلب)
+  const pdfKept=(ST.imports&&ST.imports.rows||[]).filter(r=>r.src==='pdf');
+  if(pdfKept.length){
+    const keys=new Set(rowsOut.map(r=>String(r.no).split('/').pop().trim()+'@'+r.rate));
+    let kept=0, dropped=0;
+    for(const r of pdfKept){
+      const k=String(r.no).split('/').pop().trim()+'@'+r.rate;
+      if(keys.has(k)) dropped++; else { rowsOut.push(r); kept++; }
+    }
+    if(kept||dropped) alert(`تم دمج الإكسل مع أسطر قراءة PDF: أُبقي ${kept} سطر PDF غير موجود بالإكسل${dropped?`، وحُذف ${dropped} سطر PDF لأن بيانه صار موجوداً بالإكسل بنفس النسبة`:''}.`);
+  }
   ST.imports={rows:rowsOut, fname:f.name};
   recomputeAll();
 }
