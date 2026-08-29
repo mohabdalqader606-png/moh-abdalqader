@@ -437,12 +437,13 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
 T1."FromWhsCod" AS "من مستودع", T1."WhsCode" AS "الى مستودع",
 T1."ItemCode" AS "رمزنا", T1."Dscription" AS "اسمنا",
 T1."Quantity" AS "الكمية", T1."UomCode" AS "الوحدة",
-T0."U_Branch" AS "اسم الفرع"
+T0."U_Branch" AS "اسم الفرع",
+T0."U_BOL" AS "رقم فاتورة الصرف"
 FROM OWTR T0 INNER JOIN WTR1 T1 ON T0."DocEntry" = T1."DocEntry"
 WHERE (T1."FromWhsCod" = '011' OR T1."WhsCode" = '011')
 AND T0."DocDate" BETWEEN [%0] AND [%1]
 ORDER BY T0."DocNum"</code>
-          لو رجّع خطأ عمود (مثلاً "UomCode" مو موجود عندكم)، احذف السطر المسبب للخطأ من الـ SELECT وابعتلي رسالة الخطأ بالضبط لأصلّحها فوراً. بديل: الصق مباشرة من كشف "Stock Transfer" الورقي بنفس ترتيب الأعمدة (Item No. / Description / From / To / UoM / Quantity) بدون كويري أصلاً — بس وقتها ما رح يظهر اسم الفرع.
+          عمود "رقم فاتورة الصرف" بيقرأ من حقل <b>Bill of Lading</b> (UDF) بسند التحويل — اسمه التقني مفترضينه <code style="direction:ltr; display:inline-block;">U_BOL</code>؛ لو رجّع خطأ إنه العمود مش موجود، شغّل: <code class="block">SELECT "AliasID" FROM CUFD WHERE "TableID"='OWTR' AND "Descr" LIKE '%Lading%'</code> وبدّل <code style="direction:ltr; display:inline-block;">U_BOL</code> بـ <code style="direction:ltr; display:inline-block;">U_</code> + الاسم يلي بيطلعلك. لو رجّع خطأ عمود ثاني (مثلاً "UomCode" مو موجود عندكم)، احذف السطر المسبب للخطأ من الـ SELECT وابعتلي رسالة الخطأ بالضبط لأصلّحها فوراً. بديل: الصق مباشرة من كشف "Stock Transfer" الورقي بنفس ترتيب الأعمدة (Item No. / Description / From / To / UoM / Quantity) بدون كويري أصلاً — بس وقتها ما رح يظهر اسم الفرع.
           <details style="margin-top:8px;">
             <summary style="cursor:pointer; font-size:11.5px; color:var(--navy);">لو احتجت مستقبلاً تلاقي اسم عمود حقل مستخدم إضافي (UDF) ثاني</summary>
             <div style="margin-top:6px;">شغّل: <code class="block">SELECT "TableID", "AliasID", "Descr" FROM CUFD WHERE "Descr" LIKE N'%كلمة من اسم الحقل%'</code>عمود AliasID هو الاسم التقني — اسم عمود الحقل الفعلي بالجدول = <code style="direction:ltr; display:inline-block;">U_</code> + AliasID.</div>
@@ -474,6 +475,16 @@ ORDER BY T0."DocNum"</code>
       <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;"><span class="num">2</span><b style="font-size:13px;">سجل السندات المستوردة (من → إلى)</b></div>
       <div class="hint">كل سند استوردته بسطر: من وين لوين، تاريخه، فرعه وعدد أسطره. أول ما تطبع فواتير عقبة لسند من قسم المطابقة تحت بينعلّم <b style="color:var(--teal);">✓ تم</b> تلقائياً — فالسندات يلي ضلت بدون ✓ هي يلي لسا ما وصلتك/ما طبعت عنها فواتير. وكمان تقدر تكتب <b>رقم فاتورة الصرف الوهمي</b> جنب السند: لو الرقم موجود بسجل الفواتير (القسم 4 تحت) بينعلّم ✓ مرتبط تلقائياً.</div>
       <div id="trRegSummary" class="row-actions" style="margin:4px 0;"></div>
+      <div style="margin:8px 0; padding:8px 12px; border:1px dashed var(--navy); border-radius:10px; background:#F7FAFE;">
+        <b style="font-size:12.5px;">📷 مسح فواتير الصرف الوهمي (سكانر)</b>
+        <div class="hint" style="margin:4px 0 6px;">حط المؤشر بالخانة وامسح باركود رقم الفاتورة (أو اكتبه واضغط Enter) — فاتورة ورا فاتورة. كل رقم بيندوّر على السندات يلي "رقم فاتورة الصرف" تبعها (حقل Bill of Lading) بيساويه، وبيعلّمهم <b style="color:var(--teal);">✓ تم</b> فوراً مع جدول نتائج تحت.</div>
+        <div class="row-actions" style="margin:0;">
+          <input type="text" id="scanInvInput" placeholder="امسح / اكتب رقم الفاتورة و Enter" style="width:240px; direction:ltr; text-align:left;" onkeydown="if(event.key==='Enter'){event.preventDefault(); processScanInvoice(this.value); this.value='';}">
+          <button class="btn-ghost btn-sm" onclick="clearScanResults()">تفريغ نتائج المسح</button>
+          <span class="status-msg" id="scanMsg"></span>
+        </div>
+        <div id="scanResultsBox" style="margin-top:6px;"></div>
+      </div>
       <div class="tbl-wrap" style="max-height:340px; padding:0; margin-top:6px;">
         <table class="grid">
           <thead><tr><th>السند</th><th>التاريخ</th><th>من</th><th>إلى</th><th>الفرع</th><th>أسطر</th><th>رقم فاتورة الصرف</th><th>الحالة</th><th></th></tr></thead>
@@ -2005,7 +2016,8 @@ const TR_HEADER_ALIASES = {
   'من مستودع':'fromWhs', 'الى مستودع':'toWhs', 'إلى مستودع':'toWhs',
   'رمزنا':'ourCode', 'اسمنا':'ourName',
   'الكمية':'qty', 'الوحدة':'uom',
-  'اسم الفرع':'branch'
+  'اسم الفرع':'branch',
+  'رقم فاتورة الصرف':'invNo', 'Bill of Lading':'invNo'
 };
 
 function importTransfers(){
@@ -2038,10 +2050,19 @@ function importTransfers(){
   TRANSFERS = TRANSFERS.filter(t=> !touchedDocNums.has(normDocNum(t.docNum)));
   const replaced = before - TRANSFERS.length;
   TRANSFERS.push(...newRecords);
+  // لو الكويري جايب "رقم فاتورة الصرف" (حقل Bill of Lading بسند التحويل) — منعبيه تلقائياً بسجل السندات
+  const invNosFilled = new Set();
+  newRecords.forEach(r=>{
+    const inv = String(r.invNo||'').trim();
+    if(!inv) return;
+    const n = normDocNum(r.docNum);
+    getVoucherMeta(n).invNo = inv;
+    invNosFilled.add(n);
+  });
   saveState();
   document.getElementById('trPasteArea').value = '';
   document.getElementById('trImportDetails').open = false;
-  flash('trStatusMsg', `تم استيراد ${newRecords.length} سطر (${touchedDocNums.size} سند)${replaced?` — استبدلت ${replaced} سطر قديم لنفس السندات`:''}. إجمالي الأسطر المخزّنة: ${TRANSFERS.length}.`, true);
+  flash('trStatusMsg', `تم استيراد ${newRecords.length} سطر (${touchedDocNums.size} سند)${replaced?` — استبدلت ${replaced} سطر قديم لنفس السندات`:''}${invNosFilled.size?` — واتعبى رقم فاتورة الصرف تلقائياً لـ${invNosFilled.size} سند`:''}. إجمالي الأسطر المخزّنة: ${TRANSFERS.length}.`, true);
   renderVoucherRegistry();
 }
 function clearTransfers(){
@@ -2358,7 +2379,6 @@ function renderVoucherRegistry(){
     if(m.done && linked) status = '<b style="color:var(--teal);">✓ تم + مرتبط</b>';
     else if(m.done) status = '<b style="color:var(--teal);">✓ تم (انطبعت فواتيره)</b>';
     else if(linked) status = '<b style="color:var(--teal);">✓ مرتبط بفاتورة</b>';
-    else if(m.invNo) status = '<b style="color:var(--crimson);">⚠ الفاتورة مش بسجل الفواتير</b>';
     else status = '<span class="muted">— بعده</span>';
     return `<tr${isDone?'':' style="background:#FDF7EE;"'}>
       <td class="mono">${esc(v.docNum)}</td>
@@ -2383,6 +2403,48 @@ function setVoucherInvNo(n, v){
   getVoucherMeta(n).invNo = String(v||'').trim();
   saveState();
   renderVoucherRegistry();
+}
+/* مسح (سكان) فواتير الصرف: كل رقم ممسوح بيعلّم "تم" على كل السندات المستوردة يلي رقم فاتورة الصرف تبعها بيساويه */
+let SCAN_RESULTS = []; // نتائج جلسة المسح الحالية بس (الأحدث أول)
+function processScanInvoice(raw){
+  const no = String(raw||'').trim();
+  if(!no) return;
+  const noNorm = normDocNum(no);
+  const present = new Map(); // normDocNum -> raw docNum للعرض
+  TRANSFERS.forEach(t=>{ const n = normDocNum(t.docNum); if(!present.has(n)) present.set(n, t.docNum); });
+  const found = [];
+  Object.entries(VOUCHER_META).forEach(([n, m])=>{
+    if(!present.has(n)) return;
+    const inv = String(m.invNo||'').trim();
+    if(!inv) return;
+    if(inv === no || (noNorm && normDocNum(inv) === noNorm)) found.push(n);
+  });
+  found.forEach(n=>{ getVoucherMeta(n).done = true; });
+  if(found.length) saveState();
+  SCAN_RESULTS.unshift({no, vouchers: found.map(n=>present.get(n))});
+  renderScanResults();
+  renderVoucherRegistry();
+  const inp = document.getElementById('scanInvInput');
+  if(inp) inp.focus();
+}
+function clearScanResults(){
+  SCAN_RESULTS = [];
+  renderScanResults();
+}
+function renderScanResults(){
+  const box = document.getElementById('scanResultsBox');
+  if(!box) return;
+  if(!SCAN_RESULTS.length){ box.innerHTML = ''; return; }
+  const okCount = SCAN_RESULTS.filter(r=>r.vouchers.length).length;
+  box.innerHTML = `<div class="hint" style="margin:0 0 4px;">انمسح ${SCAN_RESULTS.length} فاتورة — ${okCount} إلها سندات، ${SCAN_RESULTS.length-okCount} بدون سند مطابق.</div>
+  <table class="grid" style="max-width:680px;">
+    <thead><tr><th>#</th><th>رقم الفاتورة الممسوحة</th><th>السندات يلي انعلّمت ✓</th><th>الحالة</th></tr></thead>
+    <tbody>` + SCAN_RESULTS.map((r,i)=>`<tr${r.vouchers.length?'':' style="background:#FDF2F2;"'}>
+      <td class="mono">${SCAN_RESULTS.length - i}</td>
+      <td class="mono">${esc(r.no)}</td>
+      <td class="mono">${r.vouchers.map(v=>esc(v)).join('، ')||'—'}</td>
+      <td>${r.vouchers.length?`<b style="color:var(--teal);">✓ تم تعليم ${r.vouchers.length} سند</b>`:'<b style="color:var(--crimson);">✗ ما في سند رقم فاتورته هاد — تأكد إنه الرقم متعبّي بحقل Bill of Lading وإنك مستورد سنداته</b>'}</td>
+    </tr>`).join('') + `</tbody></table>`;
 }
 function toggleVoucherDone(n){
   const m = getVoucherMeta(n);
