@@ -1496,6 +1496,8 @@ const PDF_PROMPT=`هذه صورة صفحة من ملف بيانات جمركية
   لا تأخذ أبداً الرسوم الجمركية ولا الطوابع ولا أي رمز آخر غير 020 مهما كان.
 - tax_lines: سطر لكل سطر 020: tax = مبلغ الـ 020، base = القيمة الخاضعة له، rate = نسبته إن كانت مطبوعة،
   وإن لم تكن مطبوعة اجعل rate=null (سيُحسب تلقائياً). بالدينار بثلاث خانات عشرية.
+- النسب الوحيدة الممكنة لضريبة المبيعات: 16 أو 10 أو 5 أو 4 أو 2 أو 0 — لا تُعد أي نسبة أخرى؛ إن لم تتأكد اجعل rate=null.
+- البيان الواحد له وصل مالي واحد بتاريخ واحد يخص كل أسطره وبضائعه.
 - إن لم يوجد رمز 020 على البيان أو كان مبلغه صفراً: البضاعة بلا ضريبة مبيعات — أعد سطراً واحداً rate=0 و tax=0 و base=القيمة الجمركية للبضاعة.
 - حقول مكتوبة غالباً بخط اليد أو بختم على البيان — اقرأها بعناية فائقة رقماً رقماً:
   fin_no = رقم الوصل المالي، fin_date = التاريخ المقابل لرقم الوصل المالي (يوم/شهر/سنة)،
@@ -1563,8 +1565,10 @@ async function startPdfRead(){
         let rate=+L.rate||0;
         const base=r3(+L.base||0), tax=r3(+L.tax||0);
         if(!base && !tax) return;
+        // لا ضريبة (لا يوجد 020 أو مبلغه صفر) ← النسبة صفر حتماً مهما قرأ القارئ
+        if(Math.abs(tax)<0.0005) rate=0;
         // النسبة غير مطبوعة على البيان؟ تُشتق من الضريبة ÷ القيمة وتُقرَّب لأقرب نسبة أردنية
-        if(!rate && tax>0 && base>0){
+        else if(!rate && base>0){
           const d=tax/base*100;
           const near=[16,13.5,10,8,5,4,2].find(c=>Math.abs(d-c)<=0.35);
           rate = near!==undefined ? near : r3(d);
@@ -1612,6 +1616,16 @@ async function startPdfRead(){
     if(!r.dateFin && PDFR.fin[r.no]) r.dateFin=PDFR.fin[r.no];
     if(!r.finNo && PDFR.finNo && PDFR.finNo[r.no]) r.finNo=PDFR.finNo[r.no];
   });
+  // البيان الواحد له وصل مالي واحد: أسطر نفس البيان تكمل بعضها (الوصل والتواريخ والقيد والطلبية)
+  const byNo={};
+  PDFR.rows.forEach(r=>{ if(r.no){ (byNo[r.no]=byNo[r.no]||[]).push(r); } });
+  for(const no in byNo){
+    const g=byNo[no];
+    ['finNo','dateFin','dateDecl','entry','order','items'].forEach(k=>{
+      const v=g.map(r=>r[k]).find(x=>x);
+      if(v) g.forEach(r=>{ if(!r[k]) r[k]=v; });
+    });
+  }
   PDFR.busy=false;
   renderPdfReview();
 }
@@ -1628,6 +1642,7 @@ function pdfRowIssue(r){
   if(!r.no) iss.push('رقم البيان فارغ');
   const fe=finDateIssue(r.dateFin);
   if(fe) iss.push(fe+' — مرفوض');
+  if(r.rate>0 && ![16,13.5,10,8,5,4,2].includes(+r.rate)) iss.push('نسبة غير معتمدة — دقق سطر 020 على البيان');
   if(r.rate>0){ const dev=r3(r.tax-r.base*r.rate/100); if(Math.abs(dev)>0.02) iss.push(`الضريبة ≠ القيمة×النسبة (فرق ${fmt(dev)})`); }
   return iss.join(' · ');
 }
