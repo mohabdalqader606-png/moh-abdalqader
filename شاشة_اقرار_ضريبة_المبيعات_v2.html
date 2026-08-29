@@ -790,7 +790,8 @@ async function onFileSales(inp){
     let bktSum=0; const bkt={};
     for(const k of ['exp','zero','exm']){ const b=col[k][0]>=0?pnum(r[col[k][0]])*sign:0; if(b){ bkt[k]=b; bktSum+=b; itAdd(k,b,0); } }
     if(Object.keys(DV).length){
-      DROWS.push({no:docNo, ret:isRetRow,
+      DROWS.push({no:docNo, ret:isRetRow, tc:tcode,
+        ic:iItem>=0?String(r[iItem]||'').trim():'', q:iQty>=0?pnum(r[iQty])*sign:0,
         cust:iName>=0?(r[iName]||''):'', item:iItemName>=0?(r[iItemName]||''):'',
         date:iDate>=0?d2iso(r[iDate]||''):'', v:DV});
     }
@@ -816,6 +817,41 @@ async function onFileSales(inp){
 
 /* التفصيل السطري — ترتيب وفلترة وطباعة */
 let DSORT={id:null,dir:-1}, DFILT={};
+/* أسطر الفواتير المستثناة تُعرض موزعة حسب شريحة الصنف (كما في الآلية) */
+function ntExcludedSet(){ return new Set(ST.nt?ST.nt.docs.filter(d=>d.auto||d.man).map(d=>d.no):[]); }
+function effV(x){
+  const out={};
+  for(const k in x.v){ const b=x.v[k][0], t=x.v[k][1];
+    let key=k, tax=t;
+    if(k==='exp'||k==='zero'||k==='exm'){
+      const map=TAXCODE_MAP[(x.tc||'').toUpperCase()];
+      if(map==='x0'){ key='x0'; tax=0; }
+      else if(map==='out0'){ key='out0'; tax=0; }
+      else { const rt=(typeof map==='number')?map:16; key='r'+rt; tax=r3(b*rt/100); }
+    }
+    if(!out[key]) out[key]=[0,0];
+    out[key][0]=r3(out[key][0]+b); out[key][1]=r3(out[key][1]+tax);
+  }
+  return out;
+}
+function effRows(){
+  const exSet=ntExcludedSet();
+  return DROWS.map(x=>exSet.has(x.no)?{...x, v:effV(x)}:x);
+}
+function rebuildItemsFromRows(){
+  if(!DROWS.length) return;
+  const exSet=ntExcludedSet();
+  ITEMS={};
+  for(const x of DROWS){
+    const code=x.ic||''; if(!code) continue;
+    if(!ITEMS[code]) ITEMS[code]={name:x.item, qty:0, c:{}};
+    ITEMS[code].qty=r3(ITEMS[code].qty+(x.q||0));
+    const v=exSet.has(x.no)?effV(x):x.v;
+    for(const k in v){ if(!ITEMS[code].c[k]) ITEMS[code].c[k]={b:0,t:0};
+      ITEMS[code].c[k].b=r3(ITEMS[code].c[k].b+v[k][0]); ITEMS[code].c[k].t=r3(ITEMS[code].c[k].t+v[k][1]); }
+  }
+  if(ST.sales) ST.sales.items=ITEMS;
+}
 function rowCode(x){ return (x.ret?'CN':'IN')+x.no; }
 function rowColDefs(){
   const defs=[{id:'no',l:'رمز السند',n:false},{id:'cust',l:'اسم العميل',n:false},{id:'item',l:'الصنف',n:false},{id:'date',l:'التاريخ',n:false}];
@@ -835,7 +871,7 @@ function matchNum(v,expr){
 }
 function filteredRows(defs){
   const q=($('rowSearch')?.value||'').trim();
-  let list=DROWS;
+  let list=effRows();
   if(q) list=list.filter(x=>x.no.includes(q)||String(x.cust).includes(q)||String(x.item).includes(q));
   const act=defs.filter(d=>String(DFILT[d.id]||'').trim()!=='');
   if(act.length) list=list.filter(x=>act.every(d=> d.n ? matchNum(rowVal(x,d),DFILT[d.id]) : String(rowVal(x,d)).includes(String(DFILT[d.id]).trim()) ));
@@ -911,7 +947,7 @@ function exportRowsCSV(){
   }
   const parts=['مركز الكيلاني للأغذية', salesTitle(), h1.map(qq).join(','), h2.map(qq).join(',')];
   const sums={};
-  for(const x of DROWS){
+  for(const x of effRows()){
     const cells=[rowCode(x),x.cust,x.item,x.date];
     for(const [k,l,ht] of DCOLS){ const v=x.v[k]||[0,0];
       cells.push(f3(v[0])); sums[k+'b']=(sums[k+'b']||0)+(+v[0]||0);
@@ -1365,7 +1401,9 @@ function scheduleAutoSave(){
   $('syncMsg').textContent='💾 جارٍ الحفظ التلقائي…';
   autoSaveTimer=setTimeout(()=>saveDecl(curDeclStatus==='final'?'final':'draft', true), 1500);
 }
-function recomputeAll(){ CC=calc(); renderAll(CC); scheduleAutoSave(); }
+function recomputeAll(){ CC=calc(); renderAll(CC);
+  if(DROWS.length){ rebuildItemsFromRows(); renderItems(); renderRowDetail(); }
+  scheduleAutoSave(); }
 
 /* ================= العرض ================= */
 const OKB=(ok)=>ok?'<span class="badge ok">مطابق ✔</span>':'<span class="badge warn">فرق ✘</span>';
