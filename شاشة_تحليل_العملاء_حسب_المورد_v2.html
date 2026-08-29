@@ -204,13 +204,31 @@
           <code class="inline">كلفة تقديرية (غير مدلفرة)</code> <code class="inline">حالة التسليم</code>.
           الأعمدة الزائدة تُتجاهل تلقائياً. الأفضل الرفع على دفعات (شهر أو ربع) بدل سنة كاملة بلصقة واحدة.
         </div>
-        <textarea id="pasteArea" placeholder="الصق هنا نتيجة الكويري (السطر الأول = العناوين)..."></textarea>
+        <div style="background:var(--blue-bg); border:1px solid #C6D9EE; border-radius:10px; padding:10px 14px; margin-bottom:10px; font-size:11.5px; line-height:1.8; color:var(--ink);">
+          <b>📁 للبيانات الكبيرة (سنة أو أكثر): استخدم الرفع من ملف.</b>
+          صدّر نتيجة الكويري من SAP كملف <code class="inline">CSV</code> أو <code class="inline">TXT</code> (مفصول Tab أو فاصلة) واخترْه هنا —
+          الملف يُقرأ ويُرفع على دفعات دون تجميد المتصفح. اللصق اليدوي مناسب فقط لبضعة آلاف سطر.
+        </div>
+        <div class="row-actions" style="margin:0 0 10px;">
+          <label class="btn-primary" style="display:inline-flex; align-items:center; gap:6px; cursor:pointer; padding:9px 16px; border-radius:9px;">
+            📁 اختيار ملف (CSV / TXT)
+            <input type="file" id="fileInput" accept=".csv,.txt,.tsv" style="display:none;" onchange="pickFile(event)">
+          </label>
+          <span id="fileName" style="font-size:11.5px; color:var(--ink-soft);"></span>
+        </div>
+        <details class="opt"><summary style="font-size:11.5px;">أو الصق يدوياً (لدفعات صغيرة)</summary>
+          <textarea id="pasteArea" style="margin-top:8px;" placeholder="الصق هنا نتيجة الكويري (السطر الأول = العناوين)..."></textarea>
+        </details>
         <div class="row-actions">
           <label style="font-size:12px; color:var(--ink-soft);">تسمية الدفعة:</label>
           <input type="text" class="inp" id="upLabel" placeholder="مثلاً: آب 2026" style="width:160px;">
           <button class="btn-ghost" onclick="previewPaste()">معاينة</button>
           <button class="btn-primary" id="saveBtn" onclick="saveUpload()" disabled>💾 رفع الدفعة على السيرفر</button>
           <span class="status-msg" id="inputStatus"></span>
+        </div>
+        <div id="progWrap" style="display:none; margin-top:10px;">
+          <div style="height:8px; background:#EEF1F6; border-radius:5px; overflow:hidden;"><i id="progBar" style="display:block; height:100%; width:0%; background:var(--teal); border-radius:5px; transition:width .2s;"></i></div>
+          <div id="progText" style="font-size:11px; color:var(--ink-soft); margin-top:5px; font-family:var(--mono);"></div>
         </div>
       </details>
     </div>
@@ -317,6 +335,7 @@ const db=supabase.createClient(SB_URL,SB_KEY);
 let ME=null;                 // {id,email,role,name}
 let SUPMAP=new Map();        // item_code -> supplier
 let REPMAP=new Map();        // customer_code -> salesperson
+let ITEMNAMES=new Map();     // item_code -> item_name (جدول الأبعاد)
 let CUSTS=[];                // من cal_v_customers + إثراء
 let MAXMIDX=0;               // آخر شهر في البيانات (y*12+m)
 let PENDING=null;            // دفعة جاهزة للرفع
@@ -406,6 +425,11 @@ async function loadMaps(){
   const rep=await fetchAll(()=>db.from('cal_customer_reps').select('customer_code,salesperson').order('customer_code'));
   REPMAP=new Map(rep.map(r=>[r.customer_code,r.salesperson]));
   document.getElementById('repMapCount').textContent=fmtNum(REPMAP.size);
+  // أسماء الأصناف من جدول الأبعاد (v2.2) — تُحمَّل مرة واحدة وتُستخدم في تحليل العميل
+  try{
+    const it=await fetchAll(()=>db.from('cal_items').select('item_code,item_name').order('item_code'));
+    ITEMNAMES=new Map(it.map(r=>[r.item_code,r.item_name]));
+  }catch(e){ ITEMNAMES=new Map(); }
 }
 function parseTwoCols(raw){
   const rows=[]; const seen=new Set();
@@ -472,24 +496,48 @@ function resolveSupplier(supplierField,item_code){
   return p?('مجموعة '+p):'غير محدد';
 }
 
+/* قراءة ملف كبير: نقرأه نصاً ثم نعالجه على دفعات حتى لا يتجمد المتصفح */
+let FILE_TEXT=null;
+function setProg(pct,txt){
+  document.getElementById('progWrap').style.display=(pct==null)?'none':'block';
+  if(pct!=null){ document.getElementById('progBar').style.width=Math.min(100,pct).toFixed(1)+'%';
+    document.getElementById('progText').textContent=txt||''; }
+}
+function pickFile(ev){
+  const f=ev.target.files&&ev.target.files[0]; if(!f) return;
+  document.getElementById('fileName').textContent=`${f.name} · ${(f.size/1024/1024).toFixed(1)} MB — جارٍ القراءة...`;
+  setStatus('inputStatus',''); document.getElementById('saveBtn').disabled=true;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    FILE_TEXT=rd.result;
+    document.getElementById('fileName').textContent=`${f.name} · ${(f.size/1024/1024).toFixed(1)} MB ✓ جاهز — اضغط "معاينة"`;
+    if(!document.getElementById('upLabel').value.trim())
+      document.getElementById('upLabel').value=f.name.replace(/\.[^.]+$/,'');
+  };
+  rd.onerror=()=>{ FILE_TEXT=null; setStatus('inputStatus','✗ تعذّرت قراءة الملف','err'); };
+  rd.readAsText(f,'UTF-8');
+}
+
 function parsePaste(){
-  const raw=document.getElementById('pasteArea').value;
-  if(!raw.trim()) throw 'الصق نتيجة الكويري أولاً';
+  const raw=FILE_TEXT||document.getElementById('pasteArea').value;
+  if(!raw||!raw.trim()) throw 'اختر ملفاً أو الصق نتيجة الكويري أولاً';
   const lines=raw.split(/\r?\n/).filter(l=>l.trim()!=='');
   if(lines.length<2) throw 'يلزم سطر عناوين + سطر بيانات واحد على الأقل';
-  if(!lines[0].includes('\t')) throw 'البيانات لازم تكون مفصولة بـ Tab (انسخها من الجدول مباشرة)';
-  const heads=lines[0].split('\t').map(matchHeader);
+  const DELIM=lines[0].includes('\t')?'\t':(lines[0].split(',').length>5?',':(lines[0].includes(';')?';':null));
+  if(!DELIM) throw 'ما قدرت أحدد الفاصل — لازم الملف مفصول Tab أو فاصلة';
+  const splitLine=DELIM==='\t'?(l=>l.split('\t')):(l=>splitCsv(l,DELIM));
+  const heads=splitLine(lines[0]).map(matchHeader);
   const ci={}; heads.forEach((k,i)=>{ if(k&&ci[k]===undefined) ci[k]=i; });
   for(const req of ['date','ccode','icode','netsales'])
     if(ci[req]===undefined) throw 'ناقص عمود إلزامي: '+({date:'التاريخ',ccode:'رمز العميل',icode:'كود الصنف',netsales:'صافي المبيعات'})[req];
 
   const rows=[]; let skipped=0, unknownSup=0, estCount=0;
-  const custSet=new Set(), itemSet=new Set();
+  const custNames=new Map(), itemNames=new Map();
   let dMin=null,dMax=null, tSales=0,tCost=0,tProfit=0;
   const cell=(c,k)=>ci[k]===undefined?'':(c[ci[k]]||'').trim();
 
   for(let i=1;i<lines.length;i++){
-    const c=lines[i].split('\t');
+    const c=splitLine(lines[i]);
     const ccode=cell(c,'ccode'), icode=cell(c,'icode');
     const iso=parseDate(cell(c,'date'));
     if(!ccode||!icode||!iso){ skipped++; continue; }
@@ -507,55 +555,104 @@ function parsePaste(){
     const supplier=cell(c,'supplier');
     if(!supplier&&!SUPMAP.has(icode)) unknownSup++;
     rows.push({doc_type, doc_no:cell(c,'docno')||null, doc_date:iso,
-      customer_code:ccode, customer_name:cell(c,'cname')||null,
+      customer_code:ccode,
       salesperson:cell(c,'rep')||null, supplier:supplier||null,
-      item_code:icode, item_name:cell(c,'iname')||null,
+      item_code:icode,
       qty, net_sales, total_cost, gross_profit, cost_estimated, delivered});
-    custSet.add(ccode); itemSet.add(icode);
+    const cn=cell(c,'cname'); if(cn&&!custNames.has(ccode)) custNames.set(ccode,cn);
+    else if(!custNames.has(ccode)) custNames.set(ccode,null);
+    const inm=cell(c,'iname'); if(inm&&!itemNames.has(icode)) itemNames.set(icode,inm);
+    else if(!itemNames.has(icode)) itemNames.set(icode,null);
     if(!dMin||iso<dMin)dMin=iso; if(!dMax||iso>dMax)dMax=iso;
     tSales+=net_sales; tCost+=total_cost; tProfit+=gross_profit;
   }
   if(!rows.length) throw 'ما قدرت أقرأ أي سطر بيانات صالح';
-  return {rows, stats:{skipped,unknownSup,estCount,custs:custSet.size,items:itemSet.size,dMin,dMax,tSales,tCost,tProfit}};
+  return {rows, custNames, itemNames,
+    stats:{skipped,unknownSup,estCount,custs:custNames.size,items:itemNames.size,dMin,dMax,tSales,tCost,tProfit}};
+}
+
+/* قارئ CSV يحترم علامات التنصيص (أسماء الأصناف فيها فواصل أحياناً) */
+function splitCsv(line,delim){
+  const out=[]; let cur='', q=false;
+  for(let i=0;i<line.length;i++){
+    const ch=line[i];
+    if(q){
+      if(ch==='"'){ if(line[i+1]==='"'){ cur+='"'; i++; } else q=false; }
+      else cur+=ch;
+    } else if(ch==='"') q=true;
+    else if(ch===delim){ out.push(cur); cur=''; }
+    else cur+=ch;
+  }
+  out.push(cur); return out;
 }
 
 function previewPaste(){
   try{
+    setStatus('inputStatus','جارٍ تحليل البيانات...');
     PENDING=parsePaste();
     const s=PENDING.stats;
     let msg=`✓ ${fmtNum(PENDING.rows.length)} سطر · ${fmtNum(s.custs)} عميل · ${fmtNum(s.items)} صنف · ${s.dMin} ← ${s.dMax} · مبيعات ${fmtNum(s.tSales)} · ربح ${fmtNum(s.tProfit)}`;
     if(s.estCount) msg+=` · ${fmtNum(s.estCount)} سطر بكلفة تقديرية`;
     if(s.unknownSup) msg+=` · ⚠ ${fmtNum(s.unknownSup)} سطر بلا مورد معرّف (بينحسب على بادئة الكود)`;
     if(s.skipped) msg+=` · ${fmtNum(s.skipped)} سطر متجاهل`;
-    setStatus('inputStatus',msg+' — جاهزة للرفع','ok');
+    // تحذير تداخل الفترات مع دفعات سابقة (يمنع ازدواج الأرقام)
+    const clash=UPLOADS.filter(u=>u.date_from&&u.date_to&&!(s.dMax<u.date_from||s.dMin>u.date_to));
+    if(clash.length) msg+=` · ⛔ تنبيه: فترة هذه الدفعة تتداخل مع ${clash.length} دفعة مرفوعة (${esc(clash[0].label||'')}) — الرفع رح يضاعف الأرقام، احذف القديمة أولاً`;
+    setStatus('inputStatus',msg+' — جاهزة للرفع', clash.length?'err':'ok');
     document.getElementById('saveBtn').disabled=false;
   }catch(e){ PENDING=null; document.getElementById('saveBtn').disabled=true; setStatus('inputStatus','✗ '+e,'err'); }
+}
+
+/* رفع خرائط الأسماء (أبعاد) على دفعات — مع تجاهل الخطأ لو الجداول غير منشأة (قبل ترقية v2.2) */
+async function upsertDim(table,keyCol,nameCol,map){
+  const rows=[...map.entries()].filter(([,v])=>v).map(([k,v])=>({[keyCol]:k,[nameCol]:v}));
+  for(let i=0;i<rows.length;i+=500){
+    const {error}=await db.from(table).upsert(rows.slice(i,i+500),{onConflict:keyCol});
+    if(error){ if(String(error.message).includes('does not exist')) return false; throw error.message; }
+  }
+  return true;
 }
 
 async function saveUpload(){
   if(!PENDING){ setStatus('inputStatus','اضغط "معاينة" أولاً','err'); return; }
   const btn=document.getElementById('saveBtn'); btn.disabled=true;
-  const {rows,stats:s}=PENDING;
+  const {rows,stats:s,custNames,itemNames}=PENDING;
+
+  try{
+    setStatus('inputStatus','جارٍ حفظ أسماء العملاء والأصناف...');
+    setProg(2,'الأبعاد...');
+    await upsertDim('cal_customers','customer_code','customer_name',custNames);
+    await upsertDim('cal_items','item_code','item_name',itemNames);
+  }catch(e){ setStatus('inputStatus','✗ فشل حفظ الأسماء: '+e,'err'); setProg(null); btn.disabled=false; return; }
+
   setStatus('inputStatus','جارٍ إنشاء الدفعة...');
   const {data:ins,error:e1}=await db.from('cal_uploads').insert({
     label:document.getElementById('upLabel').value.trim()||`${s.dMin} → ${s.dMax}`,
     date_from:s.dMin, date_to:s.dMax, rows_count:rows.length,
     total_sales:s.tSales, total_cost:s.tCost, total_profit:s.tProfit,
   }).select('id').single();
-  if(e1){ setStatus('inputStatus','✗ فشل إنشاء الدفعة: '+e1.message+(e1.message.includes('does not exist')?' — نفّذ سكربت SQL أولاً':''),'err'); btn.disabled=false; return; }
-  const CHUNK=1000;
+  if(e1){ setStatus('inputStatus','✗ فشل إنشاء الدفعة: '+e1.message+(e1.message.includes('does not exist')?' — نفّذ سكربت SQL أولاً':''),'err'); setProg(null); btn.disabled=false; return; }
+
+  const CHUNK=1000, t0=Date.now();
   for(let i=0;i<rows.length;i+=CHUNK){
     const batch=rows.slice(i,i+CHUNK).map(r=>({...r, upload_id:ins.id}));
     const {error:e2}=await db.from('cal_lines').insert(batch);
     if(e2){
       await db.from('cal_uploads').delete().eq('id',ins.id);
-      setStatus('inputStatus','✗ فشل رفع السطور: '+e2.message,'err'); btn.disabled=false; return;
+      setStatus('inputStatus','✗ فشل رفع السطور: '+e2.message+' — تم التراجع عن الدفعة كاملة','err');
+      setProg(null); btn.disabled=false; return;
     }
-    setStatus('inputStatus',`جارٍ الرفع... ${fmtNum(Math.min(i+CHUNK,rows.length))} / ${fmtNum(rows.length)}`);
+    const done=Math.min(i+CHUNK,rows.length), pct=done/rows.length*100;
+    const el=(Date.now()-t0)/1000, rem=el/done*(rows.length-done);
+    setProg(pct,`${fmtNum(done)} / ${fmtNum(rows.length)} سطر · ${pct.toFixed(0)}% · متبقٍ ~${rem>90?Math.round(rem/60)+' دقيقة':Math.round(rem)+' ثانية'}`);
+    setStatus('inputStatus','جارٍ الرفع — لا تغلق الصفحة...');
   }
-  PENDING=null;
+  setProg(100,'اكتمل ✓');
+  PENDING=null; FILE_TEXT=null;
   document.getElementById('pasteArea').value=''; document.getElementById('upLabel').value='';
-  setStatus('inputStatus',`✓ انرفعت الدفعة (${fmtNum(rows.length)} سطر)`,'ok');
+  document.getElementById('fileInput').value=''; document.getElementById('fileName').textContent='';
+  setStatus('inputStatus',`✓ انرفعت الدفعة (${fmtNum(rows.length)} سطر) خلال ${Math.round((Date.now()-t0)/1000)} ثانية`,'ok');
+  setTimeout(()=>setProg(null),3000);
   await loadUploads();
   await loadCustomers();
 }
@@ -763,7 +860,7 @@ async function openCustomer(code){
   try{
     lines=await fetchAll(()=>{
       let q=db.from('cal_lines')
-        .select('doc_type,doc_no,doc_date,supplier,item_code,item_name,qty,net_sales,total_cost,gross_profit,cost_estimated')
+        .select('doc_type,doc_no,doc_date,supplier,item_code,qty,net_sales,total_cost,gross_profit,cost_estimated')
         .eq('customer_code',code);
       if(F_FROM) q=q.gte('doc_date',F_FROM);
       if(F_TO) q=q.lte('doc_date',F_TO);
@@ -793,7 +890,7 @@ function analyzeCustomer(code,lines){
     if(!S.last||l.doc_date>S.last)S.last=l.doc_date;
     S.mon.set(midx,(S.mon.get(midx)||0)+sales);
     let it=S.items.get(l.item_code);
-    if(!it){ it={code:l.item_code, name:l.item_name||l.item_code, qty:0,sales:0,cost:0,profit:0, dates:new Set(), last:null, est:false, mon:new Map()}; S.items.set(l.item_code,it); }
+    if(!it){ it={code:l.item_code, name:ITEMNAMES.get(l.item_code)||l.item_code, qty:0,sales:0,cost:0,profit:0, dates:new Set(), last:null, est:false, mon:new Map()}; S.items.set(l.item_code,it); }
     it.qty+=qty; it.sales+=sales; it.cost+=cost; it.profit+=profit;
     if(l.cost_estimated) it.est=true;
     if(l.doc_type==='فاتورة') it.dates.add(l.doc_date);
