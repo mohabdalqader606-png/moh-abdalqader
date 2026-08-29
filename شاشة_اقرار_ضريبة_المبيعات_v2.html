@@ -1276,6 +1276,47 @@ async function onFileImports(inp){
 function setImp0(idx, v){ if(!canEdit||!ST.imports) return; ST.imports.rows[idx].cls0=v; recomputeAll(); }
 function toggleImpExcl(idx){ if(!canEdit||!ST.imports) return; ST.imports.rows[idx].excl=!ST.imports.rows[idx].excl; recomputeAll(); }
 
+/* فحوصات المستوردات: المعادلة سطرياً + المطابقة بيان-بيان مع قيود الأمانات */
+function renderImportsChecks(){
+  const el=$('importsChecks'); if(!el||!ST.imports) return;
+  const rows=ST.imports.rows.filter(r=>!r.excl);
+  // 1) أخطاء المعادلة والتكرار
+  const dup={}; rows.forEach(r=>{ const k=r.no+'@'+r.rate; dup[k]=(dup[k]||0)+1; });
+  let eqIssues=0;
+  rows.forEach(r=>{ if(r.rate>0 && Math.abs(r3(r.tax-r.base*r.rate/100))>0.02) eqIssues++;
+    if(r.no && dup[r.no+'@'+r.rate]>1) eqIssues++; });
+  let html='';
+  html += eqIssues
+    ? `<div class="duebox" style="background:var(--crimson-bg); border-color:#EBC7C4; color:var(--crimson);">⚠ <b>${eqIssues}</b> ملاحظة إدخال بالجدول أدناه (ضريبة لا تساوي القيمة×النسبة، أو بيان مكرر) — انظر عمود «فحص» وتتبّع الأسطر الحمراء.</div>`
+    : `<div class="duebox" style="background:var(--teal-bg); border-color:#BFE3DA; color:var(--teal);">✔ فحص المعادلة (الضريبة = القيمة × النسبة) سليم على كل الأسطر، ولا بيانات مكررة.</div>`;
+  // 2) مطابقة بيان-بيان مع قيود الأمانات
+  if(ST.trust){
+    const imps=ST.trust.rows.filter(t=>t.cls==='imp');
+    const taxByNo={};
+    rows.forEach(r=>{ if(!r.tax) return; const n=String(r.no).split('/').pop().trim();
+      if(n.length>=3) taxByNo[n]=r3((taxByNo[n]||0)+r.tax); });
+    const probs=[]; const usedEntries=new Set();
+    for(const n in taxByNo){
+      const e=imps.find(t=>t.details.includes(n));
+      if(!e) probs.push(`بيان ${n}: ضريبته ${fmt(taxByNo[n])} ولا يوجد له قيد أمانات`);
+      else { usedEntries.add(e.i);
+        const d=r3(e.debit-taxByNo[n]);
+        if(Math.abs(d)>0.02) probs.push(`بيان ${n}: الكشف ${fmt(taxByNo[n])} ≠ القيد ${fmt(e.debit)} (فرق ${fmt(d)})`); }
+    }
+    for(const t of imps){ if(usedEntries.has(t.i)||!t.debit) continue;
+      const m=t.details.match(/(\d{3,})/g);
+      const hasMatch=m&&m.some(n=>taxByNo[n]!==undefined);
+      if(!hasMatch) probs.push(`قيد أمانات ${fmt(t.debit)} (${esc(t.details.slice(0,45))}…) بلا بيان مقابل في الكشف`);
+    }
+    html += probs.length
+      ? `<div class="duebox" style="background:var(--crimson-bg); border-color:#EBC7C4; color:var(--crimson); margin-top:8px;">
+          <b>المطابقة بيان-بيان مع قيود الأمانات — ${probs.length} ملاحظة:</b><br>${probs.slice(0,25).map(p=>'• '+p).join('<br>')}${probs.length>25?`<br>… و${probs.length-25} أخرى`:''}</div>`
+      : `<div class="duebox" style="background:var(--teal-bg); border-color:#BFE3DA; color:var(--teal); margin-top:8px;">✔ كل بيانات الكشف مطابقة لقيود الأمانات بيان-بيان، ولا قيود بلا بيانات.</div>`;
+  } else {
+    html += `<div class="hint" style="margin-top:6px;">ارفع كشف الأمانات (تبويب ٥) لتفعيل المطابقة بيان-بيان مع القيود.</div>`;
+  }
+  el.innerHTML=html;
+}
 function printImportsReport(){
   if(!ST.imports || !ST.imports.rows.length){ alert('ارفع كشف المستوردات أولاً.'); return; }
   const C=calc();
@@ -1583,8 +1624,22 @@ function renderAll(C){
       </tbody><tfoot><tr><td>المجموع</td><td class="num">${fmt(sumB)}</td><td class="num">${fmt(C.importsTax)}</td></tr></tfoot></table>
       <div class="hint" style="margin-top:6px;">أسطر النسبة 0% تُصنّف تلقائياً (لحوم/أسماك = صفرية · طحين/زيت/فاصولياء... = معفاة) — عدّل التصنيف من عمود «تصنيف 0%» بالجدول، والمستبعد (قيد نصي مثل مواد دعائية) عليه ☑ استبعاد.</div>
       <div class="toolrow"><button class="btn-teal btn-sm" onclick="printImportsReport()">🖨️ كشف المستوردات الرسمي (مرتب حسب البيان)</button></div>
+      <div id="importsChecks" style="margin-top:10px;"></div>
       <div class="scrollbox" style="max-height:380px; margin-top:10px;"><div id="importsRows"></div></div>`;
+    renderImportsChecks();
+    const dupMap={};
+    ST.imports.rows.forEach(r=>{ if(!r.excl){ const k=r.no+'@'+r.rate; dupMap[k]=(dupMap[k]||0)+1; } });
+    const rowIssue=r=>{
+      if(r.excl) return '';
+      const iss=[];
+      if(r.rate>0){ const exp=r3(r.base*r.rate/100), dev=r3(r.tax-exp);
+        if(Math.abs(dev)>0.02) iss.push(`متوقع ${fmt(exp)} (فرق ${fmt(dev)})`); }
+      if(r.no && dupMap[r.no+'@'+r.rate]>1) iss.push('بيان مكرر بنفس النسبة');
+      return iss.join(' · ');
+    };
     gtRender('importsRows',[
+      {id:'chk',l:'فحص',sum:false,get:r=>rowIssue(r),printText:r=>rowIssue(r),
+       render:r=>{ const i=rowIssue(r); return i?`<span class="badge warn" title="${esc(i)}">⚠ ${esc(i)}</span>`:(r.excl?'':'<span class="badge ok">✔</span>'); }},
       {id:'excl',l:'استبعاد',sum:false,get:r=>r.excl?'مستبعد':'',printText:r=>r.excl?'مستبعد':'',
        render:r=>`<input type="checkbox" ${r.excl?'checked':''} ${canEdit?'':'disabled'} onchange="toggleImpExcl(${ST.imports.rows.indexOf(r)})">`},
       {id:'no',l:'رقم البيان',get:r=>r.no},
