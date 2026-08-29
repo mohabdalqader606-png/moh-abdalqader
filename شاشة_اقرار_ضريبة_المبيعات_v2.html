@@ -1386,6 +1386,8 @@ function calc(){
     }
   }
   // 2) المبيعات
+  C.exclTax=0; C.manExclTax=0;
+  C.manSet=new Set(ST.nt?ST.nt.docs.filter(d=>d.man).map(d=>d.no):[]);
   if(ST.sales){
     for(const r of RATE_KEYS){ C.rate[r].b+=ST.sales.rate[r]?.b||0; C.rate[r].t+=ST.sales.rate[r]?.t||0; }
     C.x0b=ST.sales.x0b; C.out0b=ST.sales.out0b;
@@ -1407,17 +1409,20 @@ function calc(){
       const k=d.code+'|'+cls;
       if(C.bktPerCust[k]) C.bktPerCust[k].total-=sum;
       const route=(br,base)=>{
-        if(br==='x0') C.x0b+=base;
-        else if(br==='out0') C.out0b+=base;
-        else { const rt=+String(br).replace(/^r/,'')||16;
-          if(!C.rate[rt]) C.rate[rt]={b:0,t:0};
-          C.rate[rt].b+=base; C.rate[rt].t+=base*rt/100; }
+        if(br==='x0'){ C.x0b+=base; return 0; }
+        if(br==='out0'){ C.out0b+=base; return 0; }
+        const rt=+String(br).replace(/^r/,'')||16;
+        if(!C.rate[rt]) C.rate[rt]={b:0,t:0};
+        C.rate[rt].b+=base; const tx=base*rt/100; C.rate[rt].t+=tx; return tx;
       };
+      let dTax=0;
       if(d.it){ // التنسيق الجديد: حسب الصنف، بأولوية الشريحة المعتمدة يدوياً
-        for(const ic in d.it) route(effBrOf(ic)||'r16', d.it[ic]);
+        for(const ic in d.it) dTax+=route(effBrOf(ic)||'r16', d.it[ic]);
       } else if(d.br){ // توافق مع حفظ قديم
-        for(const br in d.br) route(br==='x0'||br==='out0'?br:('r'+(+String(br).replace(/^r/,'')||16)), d.br[br]);
+        for(const br in d.br) dTax+=route(br==='x0'||br==='out0'?br:('r'+(+String(br).replace(/^r/,'')||16)), d.br[br]);
       }
+      C.exclTax=r3((C.exclTax||0)+dTax);
+      if(C.manSet && C.manSet.has(no)) C.manExclTax=r3((C.manExclTax||0)+dTax);
     }
     for(const r of RATE_KEYS){ C.rate[r].b=r3(C.rate[r].b); C.rate[r].t=r3(C.rate[r].t); C.outTax=r3(C.outTax+C.rate[r].t); }
     C.x0b=r3(C.x0b); C.out0b=r3(C.out0b);
@@ -1621,7 +1626,9 @@ function renderAll(C){
       <td class="num" style="font-weight:700;">${fmt(rem)}</td>
       <td>${ok?(j.amt?'<span class="badge ok">مطابق مع تبرير 📝</span>':OKB(true)):OKB(false)}</td></tr>`; });
     $('trustReconWrap').innerHTML=`<table class="t"><thead><tr><th>المطابقة</th><th class="num">حساب الأمانات</th><th class="num">الكشف</th><th class="num">الفرق</th><th class="num">فرق مبرَّر</th><th>الملاحظة / السبب</th><th class="num">المتبقي</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>
-      <div class="hint" style="margin-top:6px;">فرق معروف السبب (مثل ضريبة مواد دعائية غير قابلة للخصم — حركة لصالح الدائرة): اكتب مبلغه وسببه — تصبح المطابقة «مطابق مع تبرير 📝» وتُطبع الملاحظة مع الإقرار. تذكّر إدخال المبلغ في خانة 13 بالإقرار النهائي إن كان لصالح الدائرة.</div>`+
+      <div class="hint" style="margin-top:6px;">فرق معروف السبب (مثل ضريبة مواد دعائية غير قابلة للخصم — حركة لصالح الدائرة): اكتب مبلغه وسببه — تصبح المطابقة «مطابق مع تبرير 📝» وتُطبع الملاحظة مع الإقرار. تذكّر إدخال المبلغ في خانة 13 بالإقرار النهائي إن كان لصالح الدائرة.</div>
+      ${C.manExclTax?`<div class="duebox" style="margin-top:8px;">💡 <b>مؤشر ذكي:</b> ضريبة الفواتير المستثناة يدوياً (قيود غير المختومة) المحسوبة في تحليل المبيعات = <b>${fmt(C.manExclTax)}</b>.
+        إن كان هذا يفسّر فرق المبيعات: صنّف قيود هذه الفواتير في حركات الحساب أدناه كـ«مبيعات» (ابحث عنها بنص البيان)، أو اكتب المبلغ كفرق مبرَّر مع الملاحظة.</div>`:''}`+
       (C.trust.unN?`<div class="hint" style="color:var(--crimson); margin-top:6px;">⚠ يوجد ${C.trust.unN} حركة غير مصنفة — صنّفها قبل اعتماد المطابقة.</div>`:'');
     renderTrustRows();
     setSt('st5',true,!trustOK||C.trust.unN>0);
