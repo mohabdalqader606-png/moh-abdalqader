@@ -259,6 +259,17 @@
         <span class="hint">اضغط رأس أي عمود للترتيب (تصاعدي/تنازلي) · سطر الفلاتر تحت الرؤوس: نص عادي، وللأرقام اكتب مثل <b dir="ltr">&gt;100</b> أو <b dir="ltr">=0</b> ثم Enter · المجاميع بالأسفل للأسطر المفلترة.</span>
       </div>
       <div class="scrollbox" id="rowsWrap" style="max-height:460px;"><div class="empty-state">ارفع الكشف أولاً</div></div>
+
+      <div class="grp-title" style="margin-top:20px;"><span class="num">هـ</span> شرائح ضريبة الأصناف (تعديل يدوي — محفوظ لكل الفترات)</div>
+      <div class="hint">
+        الشريحة التلقائية مستنتجة من مواضع بيع الصنف الطبيعية في الكشف. إن تغيّرت ضريبة صنفٍ ما أو أردت اعتماد شريحة مختلفة:
+        اختر الشريحة من عمود «المعتمد يدوياً» — تُحفَظ فوراً في قاعدة البيانات وتُطبَّق على توزيع الفواتير المستثناة في كل الفترات، ولها الأولوية على التلقائي.
+      </div>
+      <div class="toolrow">
+        <input type="text" id="ibSearch" placeholder="بحث بكود الصنف أو اسمه…" style="width:280px;" oninput="renderItemBrackets()">
+        <label style="font-size:12px;"><input type="checkbox" id="ibOnlyMan" onchange="renderItemBrackets()"> المعدَّلة يدوياً فقط</label>
+      </div>
+      <div class="scrollbox" id="ibWrap" style="max-height:420px;"><div class="empty-state">ارفع كشف تحليل المبيعات أولاً</div></div>
     </div>
   </section>
 
@@ -381,6 +392,9 @@ let sb=null, curUser=null, curProfile=null, canEdit=false;
 let curDeclId=null, curDeclStatus=null, profilesMap={};
 let ccMap = {};        // تصنيفات العملاء من قاعدة البيانات: code -> {name, class}
 let ccDirty = false;
+let IB_DB = {};        // شرائح الأصناف المعتمدة يدوياً (من قاعدة البيانات): item_code -> bracket
+const BR_OPTS=[['','تلقائي (حسب الكشف)'],['r16','16%'],['r10','10%'],['r8','8%'],['r5','5%'],['r4','4%'],['r2','2%'],['r13.5','13.5%'],['x0','معفى X0'],['out0','صفر Out0']];
+const BR_LABEL=k=>{ const o=BR_OPTS.find(x=>x[0]===k); return o?o[1]:k; };
 let ITEMS = {};        // تفصيل الأصناف المجمّع (يُحفَظ مع الإقرار)
 let DROWS = [];        // التفصيل السطري (بالذاكرة فقط — من ملف المبيعات المرفوع في الجلسة)
 let DCOLS = [];        // أعمدة التفصيل السطري: [key, label, hasTax]
@@ -500,6 +514,28 @@ async function onSignedIn(user){
 async function loadCC(){
   const {data}=await sb.from('customer_classifications').select('*');
   ccMap={}; (data||[]).forEach(r=>ccMap[r.customer_code]={name:r.customer_name, class:r.class});
+  try{
+    const {data:ib}=await sb.from('item_brackets').select('*');
+    IB_DB={}; (ib||[]).forEach(r=>IB_DB[r.item_code]=r.bracket);
+  }catch(e){}
+}
+async function setItemBr(ic, br){
+  if(!canEdit) return;
+  const name=(ITEMS[ic]&&ITEMS[ic].name)||'';
+  if(br===''){
+    delete IB_DB[ic];
+    await sb.from('item_brackets').delete().eq('item_code',ic);
+  } else {
+    IB_DB[ic]=br;
+    const {error}=await sb.from('item_brackets').upsert({item_code:ic, item_name:name, bracket:br});
+    if(error){ alert('تعذر حفظ شريحة الصنف: '+error.message+'\nهل نفّذت سكربت v3 (جدول item_brackets)؟'); return; }
+  }
+  recomputeAll();
+}
+function effBrOf(ic){
+  if(ic && IB_DB[ic]) return IB_DB[ic];
+  const learned=ST.sales&&ST.sales.itemBracket?ST.sales.itemBracket[ic]:null;
+  return learned||null;
 }
 async function saveClassifications(){
   const rows=Object.entries(ccMap).map(([code,v])=>({customer_code:code, customer_name:v.name||'', class:v.class}));
@@ -815,22 +851,21 @@ async function onFileSales(inp){
   for(const ic2 in ibTally){ let best=null,bv=-1;
     for(const k in ibTally[ic2]) if(ibTally[ic2][k]>bv){ bv=ibTally[ic2][k]; best=k; }
     if(best) itemBracket[ic2]=best; }
-  // توزيع فواتير كشف غير الخاضعة على الشرائح وفق شريحة الصنف
-  const brOf=x=>{
-    if(x.ic && itemBracket[x.ic]) return itemBracket[x.ic];
+  // صنف لم يُبَع طبيعياً في الكشف: خذ شريحته من رمز السطر إن كان معروفاً
+  for(const x of DROWS){ if(!x.ic || itemBracket[x.ic]) continue;
     const m=TAXCODE_MAP[(x.tc||'').toUpperCase()];
-    if(m==='x0') return 'x0';
-    if(m==='out0') return 'out0';
-    if(typeof m==='number') return 'r'+m;
-    return null;
-  };
-  for(const no2 in docAgg) docAgg[no2].br={};
+    if(m==='x0') itemBracket[x.ic]='x0';
+    else if(m==='out0') itemBracket[x.ic]='out0';
+    else if(typeof m==='number') itemBracket[x.ic]='r'+m; }
+  // تجميع فواتير كشف غير الخاضعة حسب الصنف (التوزيع للشرائح يتم لحظياً في الحساب
+  // بأولوية: الشريحة المعتمدة يدوياً ← المتعلمة من الكشف ← 16%)
+  for(const no2 in docAgg){ docAgg[no2].it={}; docAgg[no2].br=undefined; }
   for(const x of DROWS){ if(!docAgg[x.no]) continue;
     let bsum=0; for(const k of ['exp','zero','exm']) if(x.v[k]) bsum+=x.v[k][0];
     if(!bsum) continue;
-    let br=brOf(x);
-    if(!br){ unk[x.tc||'؟']=r3((unk[x.tc||'؟']||0)+bsum); br='r16'; }
-    docAgg[x.no].br[br]=r3((docAgg[x.no].br[br]||0)+bsum);
+    const ic=x.ic||'؟';
+    docAgg[x.no].it[ic]=r3((docAgg[x.no].it[ic]||0)+bsum);
+    if(!x.ic || !itemBracket[x.ic]) unk[x.ic||x.tc||'؟']=r3((unk[x.ic||x.tc||'؟']||0)+bsum);
   }
   // ضغط تفصيل الأصناف للحفظ المركزي (تقريب 3 منازل)
   for(const ic in ITEMS){ const it=ITEMS[ic]; it.qty=r3(it.qty);
@@ -850,8 +885,8 @@ function effV(x){
   for(const k in x.v){ const b=x.v[k][0], t=x.v[k][1];
     let key=k, tax=t;
     if(k==='exp'||k==='zero'||k==='exm'){
-      // شريحة الصنف نفسه أولاً (من مواضع بيعه الطبيعية)، ثم رمز السطر، ثم 16%
-      let br=x.ic&&IB[x.ic]?IB[x.ic]:null;
+      // المعتمد يدوياً ← شريحة الصنف من الكشف ← رمز السطر ← 16%
+      let br=(x.ic&&IB_DB[x.ic])||(x.ic&&IB[x.ic])||null;
       if(!br){ const map=TAXCODE_MAP[(x.tc||'').toUpperCase()];
         br = map==='x0'?'x0' : map==='out0'?'out0' : (typeof map==='number'?'r'+map:'r16'); }
       if(br==='x0'||br==='out0'){ key=br; tax=0; }
@@ -1365,12 +1400,17 @@ function calc(){
       C.bkt[cls]-=sum;
       const k=d.code+'|'+cls;
       if(C.bktPerCust[k]) C.bktPerCust[k].total-=sum;
-      for(const br in d.br){ const base=d.br[br];
+      const route=(br,base)=>{
         if(br==='x0') C.x0b+=base;
         else if(br==='out0') C.out0b+=base;
         else { const rt=+String(br).replace(/^r/,'')||16;
           if(!C.rate[rt]) C.rate[rt]={b:0,t:0};
           C.rate[rt].b+=base; C.rate[rt].t+=base*rt/100; }
+      };
+      if(d.it){ // التنسيق الجديد: حسب الصنف، بأولوية الشريحة المعتمدة يدوياً
+        for(const ic in d.it) route(effBrOf(ic)||'r16', d.it[ic]);
+      } else if(d.br){ // توافق مع حفظ قديم
+        for(const br in d.br) route(br==='x0'||br==='out0'?br:('r'+(+String(br).replace(/^r/,'')||16)), d.br[br]);
       }
     }
     for(const r of RATE_KEYS){ C.rate[r].b=r3(C.rate[r].b); C.rate[r].t=r3(C.rate[r].t); C.outTax=r3(C.outTax+C.rate[r].t); }
@@ -1431,6 +1471,7 @@ function scheduleAutoSave(){
 }
 function recomputeAll(){ CC=calc(); renderAll(CC);
   if(DROWS.length){ rebuildItemsFromRows(); renderItems(); renderRowDetail(); }
+  renderItemBrackets();
   scheduleAutoSave(); }
 
 /* ================= العرض ================= */
@@ -1868,6 +1909,29 @@ async function downloadBackup(){
   a.download=`نسخة_احتياطية_ضريبة_المبيعات_${new Date().toISOString().slice(0,10)}.json`;
   a.click(); URL.revokeObjectURL(a.href);
   setMsg('saveMsg',`تم تنزيل النسخة: ${out.declarations.length} إقرار + ${out.customer_classifications.length} تصنيف عميل ✔`,'ok');
+}
+
+/* ================= محرر شرائح الأصناف ================= */
+function renderItemBrackets(){
+  const wrap=$('ibWrap'); if(!wrap) return;
+  const codes=new Set([...Object.keys(ITEMS), ...Object.keys(IB_DB),
+    ...(ST.sales&&ST.sales.itemBracket?Object.keys(ST.sales.itemBracket):[])]);
+  if(!codes.size){ wrap.innerHTML='<div class="empty-state">ارفع كشف تحليل المبيعات أولاً.</div>'; return; }
+  const learned=(ST.sales&&ST.sales.itemBracket)||{};
+  const q=($('ibSearch')?.value||'').trim(), onlyMan=$('ibOnlyMan')?.checked;
+  let list=[...codes].map(ic=>({ic, name:(ITEMS[ic]&&ITEMS[ic].name)||'', auto:learned[ic]||'', man:IB_DB[ic]||''}));
+  if(q) list=list.filter(x=>x.ic.includes(q)||String(x.name).includes(q));
+  if(onlyMan) list=list.filter(x=>x.man);
+  list.sort((a,b)=>(b.man?1:0)-(a.man?1:0) || String(a.ic).localeCompare(String(b.ic)));
+  const shown=list.slice(0,300);
+  wrap.innerHTML=`<table class="t"><thead><tr><th>كود الصنف</th><th>الصنف</th><th>الشريحة التلقائية</th><th>المعتمد يدوياً (له الأولوية)</th></tr></thead><tbody>`+
+    shown.map(x=>`<tr style="${x.man?'background:var(--gold-bg);':''}">
+      <td class="num">${esc(x.ic)}</td><td style="white-space:normal; min-width:240px;">${esc(x.name)}</td>
+      <td>${x.auto?`<span class="badge gray">${BR_LABEL(x.auto)}</span>`:'<span class="badge warn">غير معروفة</span>'}</td>
+      <td><select onchange="setItemBr('${esc(x.ic)}',this.value)" ${canEdit?'':'disabled'}>
+        ${BR_OPTS.map(([k,l])=>`<option value="${k}" ${x.man===k?'selected':''}>${l}</option>`).join('')}
+      </select></td></tr>`).join('')+'</tbody></table>'+
+    (list.length>300?`<div class="hint" style="padding:8px 12px;">يعرض 300 من ${list.length.toLocaleString()} صنف — استخدم البحث.</div>`:'');
 }
 
 /* ================= تنقّل وإقلاع ================= */
