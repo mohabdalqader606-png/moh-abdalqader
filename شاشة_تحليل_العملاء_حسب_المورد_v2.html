@@ -636,10 +636,23 @@ async function saveUpload(){
   const CHUNK=1000, t0=Date.now();
   for(let i=0;i<rows.length;i+=CHUNK){
     const batch=rows.slice(i,i+CHUNK).map(r=>({...r, upload_id:ins.id}));
-    const {error:e2}=await db.from('cal_lines').insert(batch);
+    // إعادة محاولة تلقائية: انقطاع شبكة عابر ما يضيّع دفعة من مئات الآلاف من السطور
+    let e2=null;
+    for(let attempt=1;attempt<=5;attempt++){
+      const res=await db.from('cal_lines').insert(batch);
+      e2=res.error;
+      if(!e2) break;
+      const msg=String(e2.message||'').toLowerCase();
+      const transient=msg.includes('fetch')||msg.includes('network')||msg.includes('timeout')
+                    ||msg.includes('502')||msg.includes('503')||msg.includes('504')||msg.includes('gateway');
+      if(!transient||attempt===5) break;
+      const wait=Math.pow(2,attempt)*1000;   // 2, 4, 8, 16 ثانية
+      setStatus('inputStatus',`⚠ انقطاع مؤقت — إعادة المحاولة ${attempt}/4 بعد ${wait/1000} ثانية...`,'err');
+      await new Promise(r=>setTimeout(r,wait));
+    }
     if(e2){
       await db.from('cal_uploads').delete().eq('id',ins.id);
-      setStatus('inputStatus','✗ فشل رفع السطور: '+e2.message+' — تم التراجع عن الدفعة كاملة','err');
+      setStatus('inputStatus','✗ فشل رفع السطور: '+e2.message+' — تم التراجع عن الدفعة كاملة، أعد المحاولة','err');
       setProg(null); btn.disabled=false; return;
     }
     const done=Math.min(i+CHUNK,rows.length), pct=done/rows.length*100;
