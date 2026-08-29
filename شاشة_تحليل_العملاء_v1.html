@@ -1,0 +1,756 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تحليل العملاء — النشاط والاتجاه والتركز | الكيلاني للأغذية</title>
+<style>
+  :root{
+    --navy:#152A4A; --navy-deep:#0E1E36; --paper:#F4F6F9; --card:#FFFFFF; --line:#E1E6EE;
+    --ink:#1B2536; --ink-soft:#5B667A;
+    --gold:#8A6416; --gold-bg:#FCEFD6;
+    --teal:#1F7A6C; --teal-bg:#E7F5F1;
+    --crimson:#B23A34; --crimson-bg:#FCEBEA;
+    --blue:#3A6EA5; --blue-bg:#E8F0F9;
+    --mono:'IBM Plex Mono','Consolas',monospace; --disp:'Segoe UI',Tahoma,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--disp);}
+  body{padding-bottom:60px;}
+  header.topbar{background:linear-gradient(135deg,var(--navy-deep),var(--navy) 70%); color:#fff; padding:22px 28px 26px; position:relative; overflow:hidden;}
+  header.topbar::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(90deg, rgba(255,255,255,.035) 0 1px, transparent 1px 46px); pointer-events:none;}
+  .topbar-inner{position:relative; display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:14px;}
+  .eyebrow{font-size:12px; letter-spacing:.06em; color:#9FB0CC; margin-bottom:6px; font-weight:600;}
+  h1{margin:0; font-size:22px; font-weight:700;}
+  .sub{color:#B8C4DA; font-size:12.5px; margin-top:6px; max-width:640px; line-height:1.7;}
+  .rule-chip{background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.16); border-radius:10px; padding:12px 16px; font-size:11.5px; color:#DCE4F2; line-height:1.85; max-width:320px;}
+  .rule-chip b{color:#fff;}
+  .user-chip{display:flex; align-items:center; gap:10px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.16); border-radius:10px; padding:8px 14px; font-size:12px; color:#DCE4F2;}
+  .user-chip b{color:#fff;}
+  .user-chip .role-tag{background:rgba(255,255,255,.14); border-radius:14px; padding:2px 10px; font-size:10.5px; font-weight:700;}
+  .user-chip button{background:transparent; color:#B8C4DA; border:1px solid rgba(255,255,255,.25); border-radius:7px; padding:4px 10px; font-size:11px; cursor:pointer;}
+  .user-chip button:hover{color:#fff; border-color:#fff;}
+
+  main{max-width:1440px; margin:0 auto; padding:0 24px;}
+  section.panel{background:var(--card); border:1px solid var(--line); border-radius:14px; margin-top:18px; box-shadow:0 10px 30px -18px rgba(21,42,74,.25); position:relative; z-index:2;}
+  section.panel:first-of-type{margin-top:-18px;}
+
+  .input-panel{padding:20px 24px 18px; border-bottom:1px solid var(--line);}
+  .hint{font-size:11.5px; color:var(--ink-soft); margin:2px 0 10px; line-height:1.7;}
+  textarea{width:100%; min-height:110px; resize:vertical; border:1.5px dashed #C4CEDD; border-radius:10px; background:#FAFBFD; padding:12px; font-family:var(--mono); font-size:11.5px; color:var(--ink); direction:ltr; text-align:left;}
+  textarea:focus{outline:none; border-color:var(--navy); background:#fff;}
+  .row-actions{display:flex; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap;}
+  button{font-family:var(--disp); font-size:13px; font-weight:600; cursor:pointer; border-radius:9px; padding:9px 16px; border:none; transition:.15s;}
+  button:disabled{opacity:.5; cursor:not-allowed;}
+  .btn-primary{background:var(--navy); color:#fff;}
+  .btn-primary:hover:not(:disabled){background:var(--navy-deep);}
+  .btn-ghost{background:#fff; color:var(--navy); border:1.5px solid var(--line);}
+  .btn-ghost:hover:not(:disabled){border-color:var(--navy);}
+  .btn-sm{padding:5px 11px; font-size:11.5px; border-radius:7px;}
+  .status-msg{font-size:12px; margin-inline-start:auto; color:var(--ink-soft);}
+  .status-msg.err{color:var(--crimson);} .status-msg.ok{color:var(--teal);}
+  details.opt summary{cursor:pointer; font-size:12.5px; color:var(--navy); font-weight:600; padding:4px 0; display:flex; align-items:center;}
+  code.block{direction:ltr;display:block;background:#F4F6F9;padding:8px 10px;border-radius:6px;margin-top:6px;font-size:10.5px; white-space:pre-wrap; font-family:var(--mono);}
+  .num-badge{display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:6px;background:var(--navy);color:#fff;font-size:11.5px;font-family:var(--mono);margin-inline-end:6px;}
+  input[type=date], input[type=text].inp{border:1.5px solid var(--line); border-radius:8px; padding:7px 10px; font-size:12.5px; font-family:var(--disp);}
+
+  .snapbar{display:flex; align-items:center; gap:10px; padding:14px 24px; border-bottom:1px solid var(--line); flex-wrap:wrap;}
+  .snapbar label{font-size:12px; color:var(--ink-soft); font-weight:600;}
+  .snapbar select{border:1.5px solid var(--line); border-radius:9px; padding:7px 12px; font-size:12.5px; font-family:var(--disp); min-width:280px; background:#fff;}
+
+  .summary{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; padding:18px 24px; border-bottom:1px solid var(--line);}
+  .card{background:#FAFBFD; border:1px solid var(--line); border-radius:12px; padding:13px 16px;}
+  .card .lbl{font-size:11px; color:var(--ink-soft); margin-bottom:6px;}
+  .card .val{font-family:var(--mono); font-size:20px; font-weight:700; color:var(--navy);}
+  .card .val small{font-size:11px; color:var(--ink-soft); font-weight:400;}
+  .card.warn .val{color:var(--crimson);} .card.good .val{color:var(--teal);}
+  .card.grace .val{color:var(--gold);}
+
+  .pct-row{display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px; padding:16px 24px 4px;}
+  .pct-card{background:#fff; border:1.5px solid var(--line); border-radius:10px; padding:10px 12px;}
+  .pct-card .pct-lbl{font-size:10.5px; color:var(--ink-soft); margin-bottom:4px;}
+  .pct-card .pct-val{font-family:var(--mono); font-size:19px; font-weight:800;}
+  .pct-card .pct-val small{font-size:11px; font-weight:400; color:var(--ink-soft);}
+  .pct-card .pct-bar{height:4px; border-radius:3px; background:#EEF1F6; margin-top:6px; overflow:hidden;}
+  .pct-card .pct-bar i{display:block; height:100%; border-radius:3px;}
+  .pct-card.c-crimson .pct-val{color:var(--crimson);} .pct-card.c-crimson .pct-bar i{background:var(--crimson);}
+  .pct-card.c-gold .pct-val{color:var(--gold);} .pct-card.c-gold .pct-bar i{background:var(--gold);}
+  .pct-card.c-teal .pct-val{color:var(--teal);} .pct-card.c-teal .pct-bar i{background:var(--teal);}
+  .pct-card.c-navy .pct-val{color:var(--navy);} .pct-card.c-navy .pct-bar i{background:var(--navy);}
+  .pct-card.c-blue .pct-val{color:var(--blue);} .pct-card.c-blue .pct-bar i{background:var(--blue);}
+  .pct-card.c-gray .pct-val{color:#7A8599;} .pct-card.c-gray .pct-bar i{background:#7A8599;}
+
+  .toolbar{display:flex; align-items:center; gap:10px; padding:12px 24px; border-bottom:1px solid var(--line); flex-wrap:wrap;}
+  .seg{display:flex; border:1.5px solid var(--line); border-radius:9px; overflow:hidden; flex-wrap:wrap;}
+  .seg button{background:#fff; color:var(--ink-soft); border-radius:0; padding:7px 13px; font-size:12px; border-inline-end:1px solid var(--line);}
+  .seg button:last-child{border-inline-end:none;}
+  .seg button.active{background:var(--navy); color:#fff;}
+  .search{border:1.5px solid var(--line); border-radius:9px; padding:7px 13px; font-size:12px; width:220px; font-family:var(--disp);}
+  .sortsel{border:1.5px solid var(--line); border-radius:9px; padding:7px 12px; font-size:12px; font-family:var(--disp); background:#fff;}
+  .toolbar .spacer{flex:1;}
+  .print-btn{background:#fff; color:var(--navy); border:1.5px solid var(--navy); border-radius:8px; padding:6px 14px; font-size:12px; font-weight:600; cursor:pointer;}
+  .print-btn:hover{background:var(--navy); color:#fff;}
+
+  .table-wrap{overflow-x:auto; padding:14px 24px 24px;}
+  table.cust-tbl{width:100%; border-collapse:collapse; font-size:10.5px;}
+  table.cust-tbl thead th{background:var(--navy); color:#fff; text-align:right; padding:6px 7px; font-weight:600; font-size:9.5px; white-space:nowrap; position:sticky; top:0;}
+  table.cust-tbl tbody td{padding:5px 7px; border-bottom:1px solid var(--line); white-space:nowrap; font-size:10.5px;}
+  table.cust-tbl tbody tr:hover td{background:#FAFBFD;}
+  table.cust-tbl tbody tr.dormant{background:var(--crimson-bg);}
+  table.cust-tbl tbody tr.declining{background:var(--gold-bg);}
+  table.cust-tbl td.num, table.cust-tbl th.num{font-family:var(--mono); text-align:left; direction:ltr;}
+  .badge{display:inline-flex; align-items:center; gap:5px; padding:3px 9px; border-radius:20px; font-size:10.5px; font-weight:700; white-space:nowrap;}
+  .badge.ok{background:var(--teal-bg); color:var(--teal);}
+  .badge.warn{background:var(--crimson-bg); color:var(--crimson);}
+  .badge.grace{background:var(--gold-bg); color:var(--gold);}
+  .badge.new{background:var(--blue-bg); color:var(--blue);}
+  .badge.gray{background:#E6E9EE; color:#5B667A;}
+  .flag{display:inline-block; padding:2px 7px; border-radius:12px; font-size:9.5px; font-weight:700; margin-inline-end:3px;}
+  .flag.credit{background:var(--crimson-bg); color:var(--crimson);}
+  .flag.slow{background:var(--gold-bg); color:var(--gold);}
+  .spark{vertical-align:middle;}
+
+  .empty-state{text-align:center; padding:60px 20px; color:var(--ink-soft);}
+  .empty-state .ic{font-size:34px; margin-bottom:10px;}
+  footer{max-width:1440px; margin:14px auto 0; padding:0 24px; font-size:11.5px; color:var(--ink-soft); text-align:center;}
+
+  .cmp-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px; padding:4px 0 8px;}
+  .cmp-box{border:1px solid var(--line); border-radius:10px; background:#fff; overflow:hidden;}
+  .cmp-box h4{margin:0; padding:8px 12px; font-size:12px; background:#EEF2F8; color:var(--navy); border-bottom:1px solid var(--line);}
+  .cmp-box table{width:100%; border-collapse:collapse; font-size:10.5px;}
+  .cmp-box td{padding:4px 10px; border-bottom:1px solid var(--line); white-space:nowrap;}
+  .cmp-box td.num{font-family:var(--mono); text-align:left; direction:ltr;}
+  .cmp-box .none{padding:10px 12px; color:var(--ink-soft); font-size:11px;}
+
+  /* شاشة تسجيل الدخول */
+  #loginOverlay{position:fixed; inset:0; background:linear-gradient(135deg,var(--navy-deep),var(--navy) 70%); z-index:100; display:flex; align-items:center; justify-content:center; padding:20px;}
+  .login-card{background:#fff; border-radius:16px; padding:34px 34px 28px; width:100%; max-width:380px; box-shadow:0 24px 60px -20px rgba(0,0,0,.5);}
+  .login-card .lg-eyebrow{font-size:11.5px; letter-spacing:.06em; color:var(--ink-soft); font-weight:600; margin-bottom:4px;}
+  .login-card h2{margin:0 0 4px; font-size:19px; color:var(--navy);}
+  .login-card .lg-sub{font-size:12px; color:var(--ink-soft); margin-bottom:20px; line-height:1.7;}
+  .login-card label{display:block; font-size:12px; font-weight:600; color:var(--ink); margin:12px 0 5px;}
+  .login-card input{width:100%; border:1.5px solid var(--line); border-radius:9px; padding:10px 12px; font-size:13px; font-family:var(--disp);}
+  .login-card input:focus{outline:none; border-color:var(--navy);}
+  .login-card input[type=email]{direction:ltr; text-align:left;}
+  .login-card .lg-btn{width:100%; margin-top:18px; background:var(--navy); color:#fff; padding:11px; font-size:14px;}
+  .login-card .lg-btn:hover:not(:disabled){background:var(--navy-deep);}
+  .login-card .lg-err{margin-top:12px; font-size:12px; color:var(--crimson); background:var(--crimson-bg); border-radius:8px; padding:8px 12px; display:none; line-height:1.7;}
+  #appWrap{display:none;}
+
+  @media print{
+    body{padding-bottom:0; background:#fff;}
+    header.topbar, .input-panel, .toolbar, .snapbar, .print-btn, #cmpDetails{display:none !important;}
+    main{max-width:100% !important; margin:0 !important; padding:0 !important;}
+    section.panel{box-shadow:none !important; border:none !important; margin-top:0 !important;}
+    .table-wrap{overflow:visible !important; padding:0 !important;}
+    table.cust-tbl{font-size:8.5px !important;}
+    table.cust-tbl thead th{padding:3px 4px !important; font-size:8px !important; position:static;}
+    table.cust-tbl tbody td{padding:2px 4px !important; font-size:8.5px !important;}
+    .summary, .pct-row{padding:0 0 8px !important;}
+    footer{display:none !important;}
+    #printHeader{display:block !important; margin-bottom:10px; font-size:13px; font-weight:700;}
+  }
+  #printHeader{display:none;}
+</style>
+</head>
+<body>
+
+<!-- ======== تسجيل الدخول ======== -->
+<div id="loginOverlay">
+  <div class="login-card">
+    <div class="lg-eyebrow">مركز الكيلاني للأغذية · إدارة المبيعات</div>
+    <h2>تحليل العملاء</h2>
+    <div class="lg-sub">تسجيل الدخول بحساب الشركة — لا يوجد تسجيل ذاتي؛ الحسابات تُنشأ من مدير النظام.</div>
+    <form id="loginForm" onsubmit="doLogin(event)">
+      <label>البريد الإلكتروني</label>
+      <input type="email" id="loginEmail" autocomplete="username" required placeholder="name@company.com">
+      <label>كلمة السر</label>
+      <input type="password" id="loginPass" autocomplete="current-password" required placeholder="••••••••">
+      <button class="lg-btn" id="loginBtn" type="submit">دخول</button>
+      <div class="lg-err" id="loginErr"></div>
+    </form>
+  </div>
+</div>
+
+<div id="appWrap">
+<header class="topbar">
+  <div class="topbar-inner">
+    <div>
+      <div class="eyebrow">مركز الكيلاني للأغذية · إدارة المبيعات</div>
+      <h1>تحليل العملاء — النشاط والاتجاه والتركز</h1>
+      <div class="sub">تُحفظ لقطة شهرية من كويري SAP (مبيعات آخر ١٢ شهر + الرصيد لكل عميل) على السيرفر المشترك، وتُصنَّف العملاء تلقائياً: <b>نشط</b>، <b>متراجع</b>، <b>جديد</b>، <b>خامل</b>، مع مؤشرات التركز وشهور الذمة واستغلال السقف، ومقارنة تلقائية مع اللقطة السابقة.</div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:10px; align-items:flex-end;">
+      <div class="user-chip" id="userChip">
+        <span>👤 <b id="userName">—</b></span>
+        <span class="role-tag" id="userRole">—</span>
+        <button onclick="doLogout()">خروج</button>
+      </div>
+      <div class="rule-chip">
+        <b>التصنيف:</b> نشط = مبيعات بآخر ٣ أشهر · متراجع = آخر ٣ أشهر أقل من نصف الـ٣ قبلها · جديد = بدأ الشراء بآخر ٣ أشهر · خامل = لا مبيعات بآخر ٣ أشهر<br>
+        <b>تنبيهات:</b> رصيد فوق السقف · شهور ذمة &gt; ٣
+      </div>
+    </div>
+  </div>
+</header>
+
+<main>
+  <!-- ======== ١) إدخال لقطة جديدة (editor/admin) ======== -->
+  <section class="panel" id="inputSection">
+    <div class="input-panel">
+      <details class="opt" open id="inputDetails">
+        <summary><span class="num-badge">1</span> إدخال لقطة جديدة — كويري تحليل العملاء</summary>
+        <div class="hint" style="margin-top:8px;">
+          شغّل الكويري التالي في SAP والصق نتيجته تحت (مع سطر العناوين). الأعمدة M0..M11: <b>M0 = الشهر الحالي</b> (شهر تاريخ اللقطة) رجوعاً حتى M11. عدّل مصدر المبيعات حسب نظامك إذا لزم:
+          <details class="opt"><summary style="font-size:11.5px;">📄 عرض الكويري المقترح (SAP B1 HANA)</summary>
+          <code class="block">SELECT C."CardCode" AS "رمز العميل", C."CardName" AS "اسم العميل",
+       IFNULL(S."SlpName",'') AS "المندوب",
+       C."Balance" AS "الرصيد", C."CreditLine" AS "السقف الائتماني",
+       SUM(CASE WHEN D."MDiff"=0  THEN D."Amt" ELSE 0 END) AS "M0",
+       SUM(CASE WHEN D."MDiff"=1  THEN D."Amt" ELSE 0 END) AS "M1",
+       SUM(CASE WHEN D."MDiff"=2  THEN D."Amt" ELSE 0 END) AS "M2",
+       SUM(CASE WHEN D."MDiff"=3  THEN D."Amt" ELSE 0 END) AS "M3",
+       SUM(CASE WHEN D."MDiff"=4  THEN D."Amt" ELSE 0 END) AS "M4",
+       SUM(CASE WHEN D."MDiff"=5  THEN D."Amt" ELSE 0 END) AS "M5",
+       SUM(CASE WHEN D."MDiff"=6  THEN D."Amt" ELSE 0 END) AS "M6",
+       SUM(CASE WHEN D."MDiff"=7  THEN D."Amt" ELSE 0 END) AS "M7",
+       SUM(CASE WHEN D."MDiff"=8  THEN D."Amt" ELSE 0 END) AS "M8",
+       SUM(CASE WHEN D."MDiff"=9  THEN D."Amt" ELSE 0 END) AS "M9",
+       SUM(CASE WHEN D."MDiff"=10 THEN D."Amt" ELSE 0 END) AS "M10",
+       SUM(CASE WHEN D."MDiff"=11 THEN D."Amt" ELSE 0 END) AS "M11"
+FROM OCRD C
+LEFT JOIN OSLP S ON S."SlpCode"=C."SlpCode"
+LEFT JOIN (
+   SELECT "CardCode",
+          (YEAR(CURRENT_DATE)*12+MONTH(CURRENT_DATE))-(YEAR("DocDate")*12+MONTH("DocDate")) AS "MDiff",
+          "DocTotal" AS "Amt"
+   FROM OINV WHERE "CANCELED"='N'
+   UNION ALL
+   SELECT "CardCode",
+          (YEAR(CURRENT_DATE)*12+MONTH(CURRENT_DATE))-(YEAR("DocDate")*12+MONTH("DocDate")),
+          -"DocTotal"
+   FROM ORIN WHERE "CANCELED"='N'
+) D ON D."CardCode"=C."CardCode" AND D."MDiff" BETWEEN 0 AND 11
+WHERE C."CardType"='C'
+GROUP BY C."CardCode", C."CardName", S."SlpName", C."Balance", C."CreditLine"
+ORDER BY C."CardCode";</code>
+          </details>
+        </div>
+        <textarea id="pasteArea" placeholder="الصق هنا نتيجة الكويري (السطر الأول = العناوين: رمز العميل، اسم العميل، المندوب، الرصيد، السقف الائتماني، M0..M11)..."></textarea>
+        <div class="row-actions">
+          <label style="font-size:12px; color:var(--ink-soft);">تاريخ اللقطة:</label>
+          <input type="date" id="snapDate">
+          <label style="font-size:12px; color:var(--ink-soft);">تسمية (اختياري):</label>
+          <input type="text" class="inp" id="snapLabel" placeholder="مثلاً: نهاية آب" style="width:160px;">
+          <button class="btn-ghost" onclick="previewPaste()">معاينة</button>
+          <button class="btn-primary" id="saveBtn" onclick="saveSnapshot()" disabled>💾 حفظ اللقطة على السيرفر</button>
+          <span class="status-msg" id="inputStatus"></span>
+        </div>
+      </details>
+    </div>
+  </section>
+
+  <!-- ======== ٢) اختيار اللقطة والتحليل ======== -->
+  <section class="panel">
+    <div class="snapbar">
+      <label>📅 اللقطة المعروضة:</label>
+      <select id="snapSel" onchange="onSnapChange()"><option value="">— لا توجد لقطات بعد —</option></select>
+      <button class="btn-ghost btn-sm" onclick="loadSnapshots(true)">🔄 تحديث</button>
+      <button class="btn-ghost btn-sm" id="delSnapBtn" style="border-color:var(--crimson); color:var(--crimson); display:none;" onclick="deleteSnapshot()">🗑 حذف اللقطة</button>
+      <span class="status-msg" id="snapStatus"></span>
+    </div>
+
+    <div class="summary" id="summaryRow" style="display:none;"></div>
+    <div class="pct-row" id="pctRow" style="display:none;"></div>
+
+    <div class="toolbar" id="toolbar" style="display:none;">
+      <div class="seg" id="filterSeg">
+        <button data-f="all" class="active" onclick="setFilter('all')">الكل</button>
+        <button data-f="active" onclick="setFilter('active')">🟢 نشط</button>
+        <button data-f="declining" onclick="setFilter('declining')">🟡 متراجع</button>
+        <button data-f="new" onclick="setFilter('new')">🔵 جديد</button>
+        <button data-f="dormant" onclick="setFilter('dormant')">🔴 خامل</button>
+        <button data-f="risk" onclick="setFilter('risk')">⚠ تنبيهات</button>
+      </div>
+      <select class="sortsel" id="sortSel" onchange="renderTable()">
+        <option value="sales12">ترتيب: أعلى مبيعات ١٢ شهر</option>
+        <option value="balance">ترتيب: أعلى رصيد</option>
+        <option value="declinePct">ترتيب: الأكثر تراجعاً</option>
+        <option value="monthsBal">ترتيب: أعلى شهور ذمة</option>
+        <option value="name">ترتيب: اسم العميل</option>
+      </select>
+      <input type="text" class="search" id="searchBox" placeholder="بحث برمز/اسم العميل أو المندوب..." oninput="renderTable()">
+      <div class="spacer"></div>
+      <button class="print-btn" onclick="window.print()">🖨️ طباعة</button>
+      <button class="btn-ghost btn-sm" onclick="exportCsv()">تصدير CSV</button>
+    </div>
+
+    <div id="printHeader"></div>
+    <div class="table-wrap" id="tableWrap">
+      <div class="empty-state"><div class="ic">📊</div>اختر لقطة من القائمة فوق — أو الصق كويري جديد واحفظه إذا كنت محرراً</div>
+    </div>
+
+    <div style="padding:0 24px 20px;" id="cmpWrap">
+      <details class="opt" id="cmpDetails" style="display:none;">
+        <summary>⇄ مقارنة مع اللقطة السابقة (<span id="cmpPrevName">—</span>)</summary>
+        <div id="cmpBody" class="cmp-grid"></div>
+      </details>
+    </div>
+  </section>
+
+  <footer>البيانات تُحفظ وتُقرأ من سيرفر Supabase المشترك حسب صلاحيات الأدوار (admin / editor / viewer) — الحسابات تُدار من مدير النظام.</footer>
+</main>
+</div><!-- /appWrap -->
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+/* ======================= الإعداد ======================= */
+const SB_URL='https://fxjdmqqmcgccocfbgopm.supabase.co';
+const SB_KEY='sb_publishable_NGtGX9SN8hXSoq-JRidGcQ_NfAyYCP5';
+const db=supabase.createClient(SB_URL,SB_KEY);
+
+let ME=null;            // {id, email, role, name}
+let SNAPS=[];           // قائمة اللقطات
+let CUR=null;           // اللقطة الحالية {snap, rows:[تحليل لكل عميل], agg}
+let FILTER='all';
+
+/* ======================= أدوات عامة ======================= */
+function parseNum(v){ if(v==null) return 0; v=String(v).trim().replace(/,/g,''); if(v===''||v==='-') return 0;
+  let neg=false; const m=v.match(/^\((.*)\)$/); if(m){neg=true; v=m[1];}
+  const n=parseFloat(v); if(isNaN(n)) return 0; return neg?-n:n; }
+function fmtNum(n){ return (n||0).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:0}); }
+function fmtNum2(n){ return (n||0).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function fmtPct(n){ return n==null?'—':(n>=0?'+':'')+(n*100).toFixed(0)+'%'; }
+function esc(s){ return String(s??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function setStatus(id,msg,cls){ const el=document.getElementById(id); el.textContent=msg||''; el.className='status-msg'+(cls?' '+cls:''); }
+function todayStr(){ const d=new Date(),p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; }
+function monthLabel(y,m){ return `${y}-${String(m).padStart(2,'0')}`; } // m: 1-12
+function fmtSnapOption(s){ const lbl=s.label?` — ${s.label}`:''; return `${s.snapshot_date}${lbl} (${fmtNum(s.rows_count)} عميل)`; }
+
+/* ======================= الدخول والصلاحيات ======================= */
+async function initAuth(){
+  const {data:{session}}=await db.auth.getSession();
+  if(session) await afterLogin(session.user);
+  else showLogin();
+  db.auth.onAuthStateChange((ev,sess)=>{ if(ev==='SIGNED_OUT'){ ME=null; showLogin(); } });
+}
+function showLogin(){ document.getElementById('loginOverlay').style.display='flex'; document.getElementById('appWrap').style.display='none'; }
+function showApp(){ document.getElementById('loginOverlay').style.display='none'; document.getElementById('appWrap').style.display='block'; }
+function loginErr(msg){ const e=document.getElementById('loginErr'); e.textContent=msg; e.style.display='block'; }
+
+async function doLogin(ev){
+  ev.preventDefault();
+  const btn=document.getElementById('loginBtn'); btn.disabled=true; btn.textContent='جارٍ الدخول...';
+  document.getElementById('loginErr').style.display='none';
+  const email=document.getElementById('loginEmail').value.trim();
+  const pass=document.getElementById('loginPass').value;
+  const {data,error}=await db.auth.signInWithPassword({email,password:pass});
+  btn.disabled=false; btn.textContent='دخول';
+  if(error){ loginErr(error.message==='Invalid login credentials'?'بيانات الدخول غير صحيحة':'تعذّر الدخول: '+error.message); return; }
+  await afterLogin(data.user);
+}
+
+async function afterLogin(user){
+  const {data:prof,error}=await db.from('profiles').select('*').eq('id',user.id).maybeSingle();
+  if(error){ showLogin(); loginErr('تعذّر قراءة الملف الشخصي: '+error.message); return; }
+  const role=prof&&prof.role;
+  if(!role||!['admin','editor','viewer'].includes(role)){
+    await db.auth.signOut();
+    showLogin(); loginErr('حسابك غير مفعّل بعد — راجع مدير النظام لإسناد دور لك في جدول profiles.');
+    return;
+  }
+  ME={id:user.id, email:user.email, role, name:(prof.full_name||prof.name||user.email)};
+  document.getElementById('userName').textContent=ME.name;
+  document.getElementById('userRole').textContent=({admin:'مدير',editor:'محرر',viewer:'مشاهد'})[role]||role;
+  gateUI();
+  showApp();
+  document.getElementById('snapDate').value=todayStr();
+  await loadSnapshots();
+}
+async function doLogout(){ await db.auth.signOut(); location.reload(); }
+
+function gateUI(){
+  const canEdit=ME&&(ME.role==='admin'||ME.role==='editor');
+  document.getElementById('inputSection').style.display=canEdit?'block':'none';
+}
+function canDeleteSnap(s){ return ME&&(ME.role==='admin'||(ME.role==='editor'&&s.created_by===ME.id)); }
+
+/* ======================= لصق ومعاينة اللقطة ======================= */
+const HDR_ALIASES={
+  code:['رمز العميل','الرمز','كود العميل','cardcode','code'],
+  name:['اسم العميل','الاسم','cardname','name'],
+  salesperson:['المندوب','مندوب','slpname','salesperson'],
+  balance:['الرصيد','balance'],
+  credit:['السقف الائتماني','السقف','creditline','credit'],
+};
+function matchHeader(h){
+  const low=String(h).trim().toLowerCase();
+  for(const k in HDR_ALIASES) if(HDR_ALIASES[k].includes(low)) return {kind:k};
+  let m=low.match(/^m(\d{1,2})$/); if(m) return {kind:'monthRel', idx:parseInt(m[1],10)};      // M0=الأحدث
+  m=String(h).trim().match(/^(\d{4})[-\/](\d{1,2})$/); if(m) return {kind:'monthAbs', y:+m[1], mo:+m[2]};
+  return {kind:'ignore'};
+}
+
+let PENDING=null; // {rows, months} جاهزة للحفظ
+
+function parsePaste(){
+  const raw=document.getElementById('pasteArea').value.trim();
+  if(!raw) throw 'الصق نتيجة الكويري أولاً';
+  const lines=raw.split(/\r?\n/).filter(l=>l.trim()!=='');
+  if(lines.length<2) throw 'يلزم سطر عناوين + سطر بيانات واحد على الأقل';
+  const delim=lines[0].includes('\t')?'\t':(lines[0].includes(';')?';':',');
+  const split=l=>l.split(delim).map(c=>c.trim());
+  const headers=split(lines[0]).map(matchHeader);
+  if(!headers.some(h=>h.kind==='code')) throw 'ما لقيت عمود "رمز العميل" بسطر العناوين';
+  if(!headers.some(h=>h.kind==='monthRel'||h.kind==='monthAbs')) throw 'ما لقيت أعمدة أشهر (M0..M11 أو 2025-08)';
+
+  // تحديد محاور الأشهر وتسمياتها من الأقدم للأحدث
+  const snapDate=document.getElementById('snapDate').value||todayStr();
+  const [sy,sm]=snapDate.split('-').map(Number);
+  const monthCols=[]; // {colIdx, label, order}
+  headers.forEach((h,i)=>{
+    if(h.kind==='monthRel'){ let mIdx=(sy*12+(sm-1))-h.idx; monthCols.push({colIdx:i,label:monthLabel(Math.floor(mIdx/12),(mIdx%12)+1),order:mIdx}); }
+    else if(h.kind==='monthAbs'){ monthCols.push({colIdx:i,label:monthLabel(h.y,h.mo),order:h.y*12+(h.mo-1)}); }
+  });
+  monthCols.sort((a,b)=>a.order-b.order); // من الأقدم للأحدث
+  const months=monthCols.map(c=>c.label);
+
+  const col=k=>headers.findIndex(h=>h.kind===k);
+  const ci={code:col('code'),name:col('name'),sales:col('salesperson'),bal:col('balance'),cred:col('credit')};
+  const rows=[]; const seen=new Set();
+  for(let i=1;i<lines.length;i++){
+    const c=split(lines[i]);
+    const code=c[ci.code]; if(!code||seen.has(code)) continue; seen.add(code);
+    rows.push({
+      code,
+      name: ci.name>=0?(c[ci.name]||code):code,
+      salesperson: ci.sales>=0?(c[ci.sales]||''):'',
+      balance: ci.bal>=0?parseNum(c[ci.bal]):0,
+      credit_limit: ci.cred>=0?parseNum(c[ci.cred]):null,
+      monthly_sales: monthCols.map(mc=>parseNum(c[mc.colIdx])),
+    });
+  }
+  if(!rows.length) throw 'ما قدرت أقرأ أي صف بيانات';
+  return {rows,months};
+}
+
+function previewPaste(){
+  try{
+    PENDING=parsePaste();
+    const tot=PENDING.rows.reduce((s,r)=>s+r.monthly_sales.reduce((a,b)=>a+b,0),0);
+    const bal=PENDING.rows.reduce((s,r)=>s+r.balance,0);
+    setStatus('inputStatus',`✓ ${fmtNum(PENDING.rows.length)} عميل · ${PENDING.months.length} شهر (${PENDING.months[0]} ← ${PENDING.months[PENDING.months.length-1]}) · مبيعات ${fmtNum(tot)} · أرصدة ${fmtNum(bal)} — جاهزة للحفظ`,'ok');
+    document.getElementById('saveBtn').disabled=false;
+  }catch(e){ PENDING=null; document.getElementById('saveBtn').disabled=true; setStatus('inputStatus','✗ '+e,'err'); }
+}
+
+/* ======================= الحفظ على السيرفر ======================= */
+async function saveSnapshot(){
+  if(!PENDING){ setStatus('inputStatus','اضغط "معاينة" أولاً','err'); return; }
+  const btn=document.getElementById('saveBtn'); btn.disabled=true;
+  setStatus('inputStatus','جارٍ الحفظ على السيرفر...');
+  const {rows,months}=PENDING;
+  const snap={
+    snapshot_date: document.getElementById('snapDate').value||todayStr(),
+    label: document.getElementById('snapLabel').value.trim()||null,
+    months,
+    rows_count: rows.length,
+    total_sales12: rows.reduce((s,r)=>s+r.monthly_sales.reduce((a,b)=>a+b,0),0),
+    total_balance: rows.reduce((s,r)=>s+r.balance,0),
+  };
+  const {data:ins,error:e1}=await db.from('ca_snapshots').insert(snap).select('id').single();
+  if(e1){ setStatus('inputStatus','✗ فشل إنشاء اللقطة: '+e1.message+(e1.message.includes('does not exist')?' — نفّذ سكربت SQL أولاً':''),'err'); btn.disabled=false; return; }
+  const snapId=ins.id;
+  const CHUNK=500;
+  for(let i=0;i<rows.length;i+=CHUNK){
+    const batch=rows.slice(i,i+CHUNK).map(r=>({...r, snapshot_id:snapId}));
+    const {error:e2}=await db.from('ca_customer_rows').insert(batch);
+    if(e2){
+      await db.from('ca_snapshots').delete().eq('id',snapId); // تنظيف — الصفوف تنحذف cascade
+      setStatus('inputStatus','✗ فشل حفظ الصفوف: '+e2.message,'err'); btn.disabled=false; return;
+    }
+    setStatus('inputStatus',`جارٍ الحفظ... ${Math.min(i+CHUNK,rows.length)} / ${rows.length}`);
+  }
+  setStatus('inputStatus',`✓ انحفظت اللقطة (${fmtNum(rows.length)} عميل)`,'ok');
+  PENDING=null; document.getElementById('pasteArea').value=''; document.getElementById('snapLabel').value='';
+  document.getElementById('inputDetails').open=false;
+  await loadSnapshots();
+  document.getElementById('snapSel').value=snapId;
+  await onSnapChange();
+}
+
+/* ======================= جلب اللقطات والصفوف ======================= */
+async function loadSnapshots(keepSel){
+  setStatus('snapStatus','جارٍ التحميل...');
+  const prevSel=document.getElementById('snapSel').value;
+  const {data,error}=await db.from('ca_snapshots').select('*')
+    .order('snapshot_date',{ascending:false}).order('created_at',{ascending:false});
+  if(error){ setStatus('snapStatus','✗ '+error.message+(error.message.includes('does not exist')?' — نفّذ سكربت SQL أولاً':''),'err'); return; }
+  SNAPS=data||[];
+  const sel=document.getElementById('snapSel');
+  sel.innerHTML=SNAPS.length
+    ? SNAPS.map(s=>`<option value="${s.id}">${esc(fmtSnapOption(s))}</option>`).join('')
+    : '<option value="">— لا توجد لقطات بعد —</option>';
+  setStatus('snapStatus',SNAPS.length?`${SNAPS.length} لقطة`:'' );
+  if(SNAPS.length){
+    sel.value=(keepSel&&prevSel&&SNAPS.some(s=>s.id===prevSel))?prevSel:SNAPS[0].id;
+    await onSnapChange();
+  }
+}
+
+async function fetchRows(snapId){
+  const all=[]; const PAGE=1000;
+  for(let from=0;;from+=PAGE){
+    const {data,error}=await db.from('ca_customer_rows')
+      .select('code,name,salesperson,balance,credit_limit,monthly_sales')
+      .eq('snapshot_id',snapId).order('code').range(from,from+PAGE-1);
+    if(error) throw error.message;
+    all.push(...(data||[]));
+    if(!data||data.length<PAGE) break;
+  }
+  return all;
+}
+
+async function onSnapChange(){
+  const id=document.getElementById('snapSel').value;
+  const snap=SNAPS.find(s=>s.id===id);
+  if(!snap){ CUR=null; renderAll(); return; }
+  document.getElementById('delSnapBtn').style.display=canDeleteSnap(snap)?'inline-block':'none';
+  setStatus('snapStatus','جارٍ تحميل الصفوف...');
+  try{
+    const raw=await fetchRows(id);
+    CUR=analyze(snap,raw);
+    setStatus('snapStatus',`✓ ${fmtNum(raw.length)} عميل`,'ok');
+    renderAll();
+    loadComparison(snap); // بالخلفية
+  }catch(e){ setStatus('snapStatus','✗ '+e,'err'); }
+}
+
+async function deleteSnapshot(){
+  const id=document.getElementById('snapSel').value;
+  const snap=SNAPS.find(s=>s.id===id); if(!snap) return;
+  if(!confirm(`حذف لقطة ${snap.snapshot_date}${snap.label?' — '+snap.label:''} نهائياً من السيرفر؟`)) return;
+  const {error}=await db.from('ca_snapshots').delete().eq('id',id);
+  if(error){ setStatus('snapStatus','✗ '+error.message,'err'); return; }
+  CUR=null; await loadSnapshots();
+  if(!SNAPS.length) renderAll();
+}
+
+/* ======================= التحليل ======================= */
+function analyze(snap,raw){
+  const months=snap.months||[];
+  const n=months.length;
+  const rows=raw.map(r=>{
+    const ms=(r.monthly_sales||[]).map(Number);            // من الأقدم للأحدث
+    const total=ms.reduce((a,b)=>a+b,0);
+    const last3=ms.slice(-3).reduce((a,b)=>a+b,0);
+    const prev3=ms.slice(-6,-3).reduce((a,b)=>a+b,0);
+    const changePct=prev3>0?(last3-prev3)/prev3:null;
+    let lastSaleIdx=-1; for(let i=ms.length-1;i>=0;i--) if(ms[i]>0.005){ lastSaleIdx=i; break; }
+    const firstSaleIdx=ms.findIndex(v=>v>0.005);
+    const avgMonthly=n>0?total/n:0;
+    const monthsBal=(r.balance>0&&avgMonthly>0)?r.balance/avgMonthly:null;
+    const creditUse=(r.credit_limit&&r.credit_limit>0)?r.balance/r.credit_limit:null;
+
+    let cls;
+    if(total<=0.005&&Math.abs(r.balance)<=0.005) cls='none';                    // لا حركة ولا رصيد
+    else if(last3>0.005&&firstSaleIdx>=n-3) cls='new';                          // بدأ الشراء بآخر ٣ أشهر
+    else if(last3<=0.005) cls='dormant';                                        // لا مبيعات بآخر ٣ أشهر
+    else if(prev3>0.005&&last3<prev3*0.5) cls='declining';
+    else cls='active';
+
+    const flags=[];
+    if(creditUse!=null&&creditUse>1) flags.push('credit');
+    if(monthsBal!=null&&monthsBal>3) flags.push('slow');
+
+    return {...r, ms, total, last3, prev3, changePct, lastSaleIdx, avgMonthly, monthsBal, creditUse, cls, flags};
+  });
+
+  const sum=k=>rows.reduce((s,r)=>s+(r[k]||0),0);
+  const cnt=c=>rows.filter(r=>r.cls===c).length;
+  const totalSales=sum('total');
+  const top10=rows.slice().sort((a,b)=>b.total-a.total).slice(0,10).reduce((s,r)=>s+r.total,0);
+  const totalPosBalance=rows.reduce((s,r)=>s+Math.max(0,r.balance),0);
+  const avgMonthlyAll=n>0?totalSales/n:0;
+  const agg={
+    n:rows.length, months, totalSales,
+    last3:sum('last3'), prev3:sum('prev3'),
+    totalBalance:sum('balance'), totalPosBalance,
+    top10Pct: totalSales>0?top10/totalSales:0,
+    monthsBalAll: avgMonthlyAll>0?totalPosBalance/avgMonthlyAll:null,
+    cActive:cnt('active'), cDeclining:cnt('declining'), cNew:cnt('new'), cDormant:cnt('dormant'), cNone:cnt('none'),
+    cRisk: rows.filter(r=>r.flags.length).length,
+  };
+  return {snap, rows, agg};
+}
+
+/* ======================= العرض ======================= */
+const CLS_META={
+  active:   {lbl:'نشط',    badge:'ok'},
+  declining:{lbl:'متراجع', badge:'grace'},
+  new:      {lbl:'جديد',   badge:'new'},
+  dormant:  {lbl:'خامل',   badge:'warn'},
+  none:     {lbl:'بلا حركة',badge:'gray'},
+};
+
+function renderAll(){
+  const show=!!CUR;
+  document.getElementById('summaryRow').style.display=show?'grid':'none';
+  document.getElementById('pctRow').style.display=show?'grid':'none';
+  document.getElementById('toolbar').style.display=show?'flex':'none';
+  document.getElementById('cmpDetails').style.display='none';
+  if(!show){
+    document.getElementById('tableWrap').innerHTML='<div class="empty-state"><div class="ic">📊</div>اختر لقطة من القائمة فوق — أو الصق كويري جديد واحفظه إذا كنت محرراً</div>';
+    return;
+  }
+  renderSummary(); renderPct(); renderTable();
+  const s=CUR.snap;
+  document.getElementById('printHeader').textContent=`تحليل العملاء — لقطة ${s.snapshot_date}${s.label?' ('+s.label+')':''}`;
+}
+
+function renderSummary(){
+  const a=CUR.agg;
+  const chg=a.prev3>0?(a.last3-a.prev3)/a.prev3:null;
+  document.getElementById('summaryRow').innerHTML=`
+    <div class="card"><div class="lbl">عدد العملاء</div><div class="val">${fmtNum(a.n)}</div></div>
+    <div class="card"><div class="lbl">مبيعات ${a.months.length} شهر</div><div class="val">${fmtNum(a.totalSales)}</div></div>
+    <div class="card ${chg!=null&&chg<0?'warn':'good'}"><div class="lbl">آخر ٣ أشهر مقابل الـ٣ قبلها</div><div class="val">${fmtNum(a.last3)} <small>${fmtPct(chg)}</small></div></div>
+    <div class="card"><div class="lbl">إجمالي الأرصدة</div><div class="val">${fmtNum(a.totalBalance)}</div></div>
+    <div class="card ${a.top10Pct>0.5?'grace':''}"><div class="lbl">تركز أعلى ١٠ عملاء</div><div class="val">${(a.top10Pct*100).toFixed(0)}%</div></div>
+    <div class="card ${a.monthsBalAll!=null&&a.monthsBalAll>3?'warn':''}"><div class="lbl">شهور الذمة (إجمالي)</div><div class="val">${a.monthsBalAll==null?'—':a.monthsBalAll.toFixed(1)}</div></div>`;
+}
+
+function renderPct(){
+  const a=CUR.agg;
+  const seg=(lbl,cnt,color)=>{
+    const pct=a.n>0?cnt/a.n:0;
+    return `<div class="pct-card c-${color}"><div class="pct-lbl">${lbl}</div><div class="pct-val">${fmtNum(cnt)} <small>(${(pct*100).toFixed(0)}%)</small></div><div class="pct-bar"><i style="width:${(pct*100).toFixed(1)}%"></i></div></div>`;
+  };
+  document.getElementById('pctRow').innerHTML=
+    seg('🟢 نشط',a.cActive,'teal')+seg('🟡 متراجع',a.cDeclining,'gold')+seg('🔵 جديد',a.cNew,'blue')
+    +seg('🔴 خامل',a.cDormant,'crimson')+seg('◌ بلا حركة',a.cNone,'gray')+seg('⚠ عليهم تنبيهات',a.cRisk,'navy');
+}
+
+function setFilter(f){
+  FILTER=f;
+  document.querySelectorAll('#filterSeg button').forEach(b=>b.classList.toggle('active',b.dataset.f===f));
+  renderTable();
+}
+
+function filteredRows(){
+  const q=document.getElementById('searchBox').value.trim().toLowerCase();
+  let rows=CUR.rows;
+  if(FILTER==='risk') rows=rows.filter(r=>r.flags.length);
+  else if(FILTER!=='all') rows=rows.filter(r=>r.cls===FILTER);
+  if(q) rows=rows.filter(r=>(r.code+' '+r.name+' '+(r.salesperson||'')).toLowerCase().includes(q));
+  const s=document.getElementById('sortSel').value;
+  rows=rows.slice();
+  if(s==='sales12') rows.sort((a,b)=>b.total-a.total);
+  else if(s==='balance') rows.sort((a,b)=>b.balance-a.balance);
+  else if(s==='declinePct') rows.sort((a,b)=>((a.changePct??1))-((b.changePct??1)));
+  else if(s==='monthsBal') rows.sort((a,b)=>((b.monthsBal??-1))-((a.monthsBal??-1)));
+  else rows.sort((a,b)=>String(a.name).localeCompare(b.name,'ar'));
+  return rows;
+}
+
+function sparkline(ms){
+  const w=90,h=20,max=Math.max(...ms,0.01),bw=w/ms.length;
+  const bars=ms.map((v,i)=>{
+    const bh=Math.max(v>0?1.5:0,(v/max)*h);
+    return `<rect x="${(i*bw).toFixed(1)}" y="${(h-bh).toFixed(1)}" width="${(bw-1).toFixed(1)}" height="${bh.toFixed(1)}" fill="${i>=ms.length-3?'#1F7A6C':'#9FB0CC'}"/>`;
+  }).join('');
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${bars}</svg>`;
+}
+
+function renderTable(){
+  if(!CUR) return;
+  const rows=filteredRows();
+  const months=CUR.agg.months;
+  if(!rows.length){ document.getElementById('tableWrap').innerHTML='<div class="empty-state"><div class="ic">🔍</div>لا نتائج ضمن هذا الفلتر/البحث</div>'; return; }
+  const lastLbl=r=>r.lastSaleIdx<0?'—':months[r.lastSaleIdx];
+  const html=`<table class="cust-tbl"><thead><tr>
+      <th>الرمز</th><th>العميل</th><th>المندوب</th><th>التصنيف</th>
+      <th class="num">مبيعات ${months.length} شهر</th><th class="num">آخر ٣ أشهر</th><th class="num">الـ٣ قبلها</th><th class="num">التغير</th>
+      <th>الاتجاه الشهري</th><th>آخر شهر بيع</th>
+      <th class="num">الرصيد</th><th class="num">شهور الذمة</th><th class="num">استغلال السقف</th><th>تنبيهات</th>
+    </tr></thead><tbody>${rows.map(r=>{
+      const m=CLS_META[r.cls];
+      const rowCls=r.cls==='dormant'?'dormant':(r.cls==='declining'?'declining':'');
+      return `<tr class="${rowCls}">
+        <td style="font-family:var(--mono);">${esc(r.code)}</td>
+        <td style="font-weight:600;">${esc(r.name)}</td>
+        <td>${esc(r.salesperson||'—')}</td>
+        <td><span class="badge ${m.badge}">${m.lbl}</span></td>
+        <td class="num">${fmtNum(r.total)}</td>
+        <td class="num">${fmtNum(r.last3)}</td>
+        <td class="num">${fmtNum(r.prev3)}</td>
+        <td class="num" style="color:${r.changePct!=null&&r.changePct<0?'var(--crimson)':'var(--teal)'};">${fmtPct(r.changePct)}</td>
+        <td>${sparkline(r.ms)}</td>
+        <td style="font-family:var(--mono);">${lastLbl(r)}</td>
+        <td class="num" style="font-weight:700;">${fmtNum2(r.balance)}</td>
+        <td class="num">${r.monthsBal==null?'—':r.monthsBal.toFixed(1)}</td>
+        <td class="num">${r.creditUse==null?'—':(r.creditUse*100).toFixed(0)+'%'}</td>
+        <td>${r.flags.map(f=>f==='credit'?'<span class="flag credit">فوق السقف</span>':'<span class="flag slow">ذمة بطيئة</span>').join('')}</td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+  document.getElementById('tableWrap').innerHTML=html;
+}
+
+/* ======================= المقارنة مع اللقطة السابقة ======================= */
+async function loadComparison(snap){
+  const det=document.getElementById('cmpDetails');
+  det.style.display='none';
+  const prev=SNAPS.filter(s=>s.id!==snap.id&&(s.snapshot_date<snap.snapshot_date||(s.snapshot_date===snap.snapshot_date&&s.created_at<snap.created_at)))
+    .sort((a,b)=>(b.snapshot_date+b.created_at).localeCompare(a.snapshot_date+a.created_at))[0];
+  if(!prev||!CUR||CUR.snap.id!==snap.id) return;
+  try{
+    const prevRows=await fetchRows(prev.id);
+    if(!CUR||CUR.snap.id!==snap.id) return; // تغيّرت اللقطة أثناء التحميل
+    const prevMap=new Map(prevRows.map(r=>[r.code,r]));
+    const curMap=new Map(CUR.rows.map(r=>[r.code,r]));
+    const added=CUR.rows.filter(r=>!prevMap.has(r.code));
+    const lost=prevRows.filter(r=>!curMap.has(r.code));
+    const deltas=CUR.rows.filter(r=>prevMap.has(r.code))
+      .map(r=>({code:r.code,name:r.name,delta:r.balance-Number(prevMap.get(r.code).balance||0)}))
+      .filter(d=>Math.abs(d.delta)>0.005).sort((a,b)=>b.delta-a.delta).slice(0,10);
+    const box=(title,list,fmt)=>`<div class="cmp-box"><h4>${title} (${list.length})</h4>${
+      list.length?`<table>${list.slice(0,15).map(fmt).join('')}</table>`:'<div class="none">لا يوجد</div>'}</div>`;
+    document.getElementById('cmpBody').innerHTML=
+      box('🆕 عملاء ظهروا بهاللقطة',added,r=>`<tr><td style="font-family:var(--mono);">${esc(r.code)}</td><td>${esc(r.name)}</td><td class="num">${fmtNum(r.total)}</td></tr>`)+
+      box('❌ عملاء اختفوا من اللقطة',lost,r=>`<tr><td style="font-family:var(--mono);">${esc(r.code)}</td><td>${esc(r.name)}</td><td class="num">${fmtNum2(Number(r.balance||0))}</td></tr>`)+
+      box('📈 أكبر ١٠ تغيرات بالرصيد',deltas,d=>`<tr><td style="font-family:var(--mono);">${esc(d.code)}</td><td>${esc(d.name)}</td><td class="num" style="color:${d.delta>0?'var(--crimson)':'var(--teal)'};">${(d.delta>0?'+':'')+fmtNum(d.delta)}</td></tr>`);
+    document.getElementById('cmpPrevName').textContent=`${prev.snapshot_date}${prev.label?' — '+prev.label:''}`;
+    det.style.display='block';
+  }catch(e){ /* المقارنة اختيارية — نتجاهل فشلها */ }
+}
+
+/* ======================= تصدير CSV ======================= */
+function exportCsv(){
+  if(!CUR) return;
+  const months=CUR.agg.months;
+  const head=['الرمز','العميل','المندوب','التصنيف','مبيعات الفترة','آخر ٣ أشهر','الـ٣ قبلها','التغير %','آخر شهر بيع','الرصيد','شهور الذمة','استغلال السقف %','تنبيهات',...months];
+  const lines=[head.join(',')];
+  filteredRows().forEach(r=>{
+    lines.push([
+      r.code, `"${String(r.name).replace(/"/g,'""')}"`, `"${String(r.salesperson||'').replace(/"/g,'""')}"`,
+      CLS_META[r.cls].lbl, r.total.toFixed(2), r.last3.toFixed(2), r.prev3.toFixed(2),
+      r.changePct==null?'':(r.changePct*100).toFixed(1),
+      r.lastSaleIdx<0?'':months[r.lastSaleIdx],
+      r.balance.toFixed(2),
+      r.monthsBal==null?'':r.monthsBal.toFixed(1),
+      r.creditUse==null?'':(r.creditUse*100).toFixed(0),
+      r.flags.map(f=>f==='credit'?'فوق السقف':'ذمة بطيئة').join(' | '),
+      ...r.ms.map(v=>v.toFixed(2)),
+    ].join(','));
+  });
+  const blob=new Blob(['\ufeff'+lines.join('\n')],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download=`تحليل_العملاء_${CUR.snap.snapshot_date}.csv`;
+  a.click(); URL.revokeObjectURL(a.href);
+}
+
+initAuth();
+</script>
+</body>
+</html>
