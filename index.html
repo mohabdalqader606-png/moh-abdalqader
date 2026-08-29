@@ -801,16 +801,41 @@ async function onFileSales(inp){
       if(ntSet.has(docNo)){
         if(!docAgg[docNo]) docAgg[docNo]={code, exp:0, zero:0, exm:0, br:{}};
         for(const k in bkt) docAgg[docNo][k]+=bkt[k];
-        const brKey = TAXCODE_MAP.hasOwnProperty(tcode) ? tcode : '?'+tcode;
-        docAgg[docNo].br[brKey]=(docAgg[docNo].br[brKey]||0)+bktSum;
-        if(brKey.startsWith('?')) unk[tcode]=(unk[tcode]||0)+bktSum;
       }
     }
+  }
+  // شريحة كل صنف تُستنتج من مواضع بيعه الطبيعية في الكشف (أعمدة النسب/X0/Out0)،
+  // لا من رمز سطر جهات التصدير الذي قد يكون X0 دائماً
+  const ibTally={};
+  for(const x of DROWS){ if(!x.ic) continue;
+    for(const k in x.v){ if(k==='exp'||k==='zero'||k==='exm') continue;
+      if(!ibTally[x.ic]) ibTally[x.ic]={};
+      ibTally[x.ic][k]=(ibTally[x.ic][k]||0)+Math.abs(x.v[k][0]); } }
+  const itemBracket={};
+  for(const ic2 in ibTally){ let best=null,bv=-1;
+    for(const k in ibTally[ic2]) if(ibTally[ic2][k]>bv){ bv=ibTally[ic2][k]; best=k; }
+    if(best) itemBracket[ic2]=best; }
+  // توزيع فواتير كشف غير الخاضعة على الشرائح وفق شريحة الصنف
+  const brOf=x=>{
+    if(x.ic && itemBracket[x.ic]) return itemBracket[x.ic];
+    const m=TAXCODE_MAP[(x.tc||'').toUpperCase()];
+    if(m==='x0') return 'x0';
+    if(m==='out0') return 'out0';
+    if(typeof m==='number') return 'r'+m;
+    return null;
+  };
+  for(const no2 in docAgg) docAgg[no2].br={};
+  for(const x of DROWS){ if(!docAgg[x.no]) continue;
+    let bsum=0; for(const k of ['exp','zero','exm']) if(x.v[k]) bsum+=x.v[k][0];
+    if(!bsum) continue;
+    let br=brOf(x);
+    if(!br){ unk[x.tc||'؟']=r3((unk[x.tc||'؟']||0)+bsum); br='r16'; }
+    docAgg[x.no].br[br]=r3((docAgg[x.no].br[br]||0)+bsum);
   }
   // ضغط تفصيل الأصناف للحفظ المركزي (تقريب 3 منازل)
   for(const ic in ITEMS){ const it=ITEMS[ic]; it.qty=r3(it.qty);
     for(const k in it.c){ it.c[k].b=r3(it.c[k].b); it.c[k].t=r3(it.c[k].t); } }
-  ST.sales={rate, x0b:r3(x0b), x0t:r3(x0t), out0b:r3(out0b), cust, docAgg, unk, items:ITEMS, fname:f.name, rowsN:dataRows.length, retFactor};
+  ST.sales={rate, x0b:r3(x0b), x0t:r3(x0t), out0b:r3(out0b), cust, docAgg, unk, itemBracket, items:ITEMS, fname:f.name, rowsN:dataRows.length, retFactor};
   setMsg('salesParseMsg',`تمت المعالجة: ${dataRows.length.toLocaleString()} سطر ✔ ${retFactor===-1?'(عُكست إشارة المرتجعات تلقائياً)':''}`,'ok');
   recomputeAll(); renderItems(); renderRowDetail();
 }
@@ -821,13 +846,16 @@ let DSORT={id:null,dir:-1}, DFILT={};
 function ntExcludedSet(){ return new Set(ST.nt?ST.nt.docs.filter(d=>d.auto||d.man).map(d=>d.no):[]); }
 function effV(x){
   const out={};
+  const IB=(ST.sales&&ST.sales.itemBracket)||{};
   for(const k in x.v){ const b=x.v[k][0], t=x.v[k][1];
     let key=k, tax=t;
     if(k==='exp'||k==='zero'||k==='exm'){
-      const map=TAXCODE_MAP[(x.tc||'').toUpperCase()];
-      if(map==='x0'){ key='x0'; tax=0; }
-      else if(map==='out0'){ key='out0'; tax=0; }
-      else { const rt=(typeof map==='number')?map:16; key='r'+rt; tax=r3(b*rt/100); }
+      // شريحة الصنف نفسه أولاً (من مواضع بيعه الطبيعية)، ثم رمز السطر، ثم 16%
+      let br=x.ic&&IB[x.ic]?IB[x.ic]:null;
+      if(!br){ const map=TAXCODE_MAP[(x.tc||'').toUpperCase()];
+        br = map==='x0'?'x0' : map==='out0'?'out0' : (typeof map==='number'?'r'+map:'r16'); }
+      if(br==='x0'||br==='out0'){ key=br; tax=0; }
+      else { const rt=+br.replace(/^r/,'')||16; key='r'+rt; tax=r3(b*rt/100); }
     }
     if(!out[key]) out[key]=[0,0];
     out[key][0]=r3(out[key][0]+b); out[key][1]=r3(out[key][1]+tax);
@@ -1338,10 +1366,10 @@ function calc(){
       const k=d.code+'|'+cls;
       if(C.bktPerCust[k]) C.bktPerCust[k].total-=sum;
       for(const br in d.br){ const base=d.br[br];
-        const map=TAXCODE_MAP[br];
-        if(map==='x0') C.x0b+=base;
-        else if(map==='out0') C.out0b+=base;
-        else { const rt = (typeof map==='number') ? map : 16;
+        if(br==='x0') C.x0b+=base;
+        else if(br==='out0') C.out0b+=base;
+        else { const rt=+String(br).replace(/^r/,'')||16;
+          if(!C.rate[rt]) C.rate[rt]={b:0,t:0};
           C.rate[rt].b+=base; C.rate[rt].t+=base*rt/100; }
       }
     }
