@@ -2368,12 +2368,13 @@ function renderVoucherRegistry(){
     if(t.branch) v.branches.add(t.branch);
   });
   const vs = Array.from(byDoc.values()).sort((a,b)=> String(a.docDate).localeCompare(String(b.docDate)) || ((parseFloat(a.n)||0)-(parseFloat(b.n)||0)));
-  const dummyNos = new Set(DUMMY_INVOICES.map(d=>String(d.docNum||'').trim()).filter(Boolean));
+  // منقارن بالأرقام بس (أي حروف بالفاتورة الوهمية أو بحقل الملاحظة ما بتمنع المطابقة)
+  const dummyNoNorms = new Set(DUMMY_INVOICES.map(d=>normDocNum(d.docNum)).filter(Boolean));
   let doneCount = 0;
   tbody.innerHTML = vs.map(v=>{
     const m = VOUCHER_META[v.n] || {invNo:'', done:false};
     const tokens = invNoTokens(m.invNo);
-    const linked = tokens.some(tk=> dummyNos.has(tk));
+    const linked = tokens.some(tk=> dummyNoNorms.has(normDocNum(tk)));
     const scannedCount = Array.isArray(m.scannedInvs) ? tokens.filter(tk=> m.scannedInvs.includes(tk)).length : 0;
     const isDone = m.done || linked;
     if(isDone) doneCount++;
