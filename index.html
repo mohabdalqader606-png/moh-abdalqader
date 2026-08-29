@@ -470,6 +470,30 @@ function normProp(p){ p=String(p||'').trim();
   if(/معف/.test(p)) return 'exempt';
   return 'export'; }
 function effClass(code, fallback){ return (ccMap[code] && ccMap[code].class) || fallback || 'export'; }
+/* تاريخ من أي صيغة: نص يوم/شهر/سنة أو سنة-شهر-يوم أو رقم إكسل التسلسلي */
+function parseAnyDate(v){
+  if(v===''||v===null||v===undefined) return null;
+  if(typeof v==='number' && v>20000 && v<80000){
+    const d=new Date(Math.round((v-25569)*86400000));
+    return new Date(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  }
+  const s=String(v).trim(); if(!s) return null;
+  let m=s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+  if(m) return new Date(+m[1], +m[2]-1, +m[3]);
+  m=s.match(/^(\d{1,2})[-\/.](\d{1,2})[-\/.](\d{2,4})/);
+  if(m){ let y=+m[3]; if(y<100) y+=2000; return new Date(y, +m[2]-1, +m[1]); }
+  return null;
+}
+function fmtDMY(d){ return String(d.getDate()).padStart(2,'0')+'/'+String(d.getMonth()+1).padStart(2,'0')+'/'+d.getFullYear(); }
+/* فحص تاريخ الوصل المالي: مفقود / غير مقروء / خارج حدود الفترة المختارة ← مرفوض */
+function finDateIssue(v){
+  const y=+$('fYear').value, p=+$('fPeriod').value;
+  const d=parseAnyDate(v);
+  if(!d) return (v!==''&&v!==null&&v!==undefined&&String(v).trim()!=='')?'تاريخ الوصل المالي غير مقروء':'تاريخ الوصل المالي مفقود';
+  const s=new Date(y,(p-1)*2,1), e=new Date(y,p*2,0,23,59,59);
+  if(d<s||d>e) return 'تاريخ الوصل '+fmtDMY(d)+' خارج حدود الفترة ('+fmtDMY(s)+' — '+fmtDMY(e)+')';
+  return '';
+}
 function periodInfo(year,pno){ const mEnd=pno*2;
   const end=new Date(year,mEnd,0), due=new Date(year,mEnd+1,0);
   const iso=d=>d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
@@ -1356,14 +1380,22 @@ async function onFileImports(inp){
     const items=iItems>=0?String(r[iItems]||'').trim():'';
     let rt=pnum(rateCell); if(rt>0 && rt<1) rt=r3(rt*100);
     // بيان برقم قيد نصي (مثل "مواد دعائية") = خارج الكشف الضريبي — يُستبعد تلقائياً مع إمكانية التعديل
-    const excl = entry!=='' && !/^[\d\/\s.+-]+$/.test(entry);
+    let excl = entry!=='' && !/^[\d\/\s.+-]+$/.test(entry);
     // تصنيف أسطر النسبة صفر: أصناف معفاة (طحين/زيت/فاصولياء...) أم جهة صفرية (لحوم/أسماك...)
     let cls0='zero';
     if(rt===0 && /طحين|زيت|فاصوليا|بقول|سكر|أرز|ارز|حليب|عدس|شاي|قهوة/.test(items)) cls0='exm';
-    rowsOut.push({no, dateFin:iDateF>=0?String(r[iDateF]||'').trim():'',
+    // تاريخ الوصل المالي هو المعتمد: مفقود أو غير مقروء أو خارج حدود الفترة ← مرفوض (يُستبعد تلقائياً)
+    const dfRaw=iDateF>=0?r[iDateF]:'';
+    const dfD=parseAnyDate(dfRaw);
+    const dateFin=dfD?fmtDMY(dfD):String(dfRaw||'').trim();
+    const finErr=finDateIssue(dfRaw);
+    if(finErr) excl=true;
+    rowsOut.push({no, dateFin,
       dateDecl:iDateD>=0?String(r[iDateD]||'').trim():'', order:iOrder>=0?String(r[iOrder]||'').trim():'',
-      entry, items, rate:rt, base:r3(base), tax:r3(tax), excl, cls0});
+      entry, items, rate:rt, base:r3(base), tax:r3(tax), excl, cls0, finErr:finErr||undefined});
   }
+  const nRej=rowsOut.filter(r=>r.finErr).length;
+  if(nRej) alert(`⛔ رُفض ${nRej} سطر من الكشف: تاريخ الوصل المالي مفقود أو غير مقروء أو خارج حدود الفترة المختارة.\nالأسطر المرفوضة ظاهرة بالجدول رمادية (مستبعدة) مع سبب الرفض بعمود «فحص» — صحّح الملف وأعد رفعه، أو أزل ☑ الاستبعاد يدوياً إن كان التاريخ صحيحاً فعلاً.`);
   // الأسطر المضافة سابقاً من قراءة PDF تبقى — إلا إذا صار نفس البيان بنفس النسبة موجوداً في الإكسل (الإكسل أدق فيغلب)
   const pdfKept=(ST.imports&&ST.imports.rows||[]).filter(r=>r.src==='pdf');
   if(pdfKept.length){
@@ -1519,6 +1551,8 @@ function pdfClear(){ if(PDFR.busy){ alert('ألغِ القراءة أولاً.')
 function pdfRowIssue(r){
   const iss=[];
   if(!r.no) iss.push('رقم البيان فارغ');
+  const fe=finDateIssue(r.dateFin);
+  if(fe) iss.push(fe+' — مرفوض');
   if(r.rate>0){ const dev=r3(r.tax-r.base*r.rate/100); if(Math.abs(dev)>0.02) iss.push(`الضريبة ≠ القيمة×النسبة (فرق ${fmt(dev)})`); }
   return iss.join(' · ');
 }
@@ -1576,23 +1610,32 @@ function pdfApprove(){
   if(!canEdit){ alert('صلاحيتك مطالعة فقط.'); return; }
   const picked=PDFR.rows.filter(r=>r.use);
   if(!picked.length){ alert('لا أسطر محددة.'); return; }
-  const bad=picked.filter(r=>pdfRowIssue(r));
+  // تاريخ الوصل المالي هو المعتمد: مفقود أو غير مقروء أو خارج الفترة ← السطر مرفوض ولا يدخل الكشف
+  const dateBad=picked.filter(r=>finDateIssue(r.dateFin));
+  const good=picked.filter(r=>!finDateIssue(r.dateFin));
+  if(!good.length){
+    alert('⛔ كل الأسطر المحددة مرفوضة: تاريخ الوصل المالي مفقود أو غير مقروء أو خارج حدود الفترة.\nاكتب التاريخ الصحيح في عمود «تاريخ الوصل» بجدول المراجعة (يوم/شهر/سنة) ثم أعد الاعتماد.');
+    return;
+  }
+  const bad=good.filter(r=>pdfRowIssue(r));
   if(bad.length && !confirm(`${bad.length} سطر عليه ملاحظة فحص (⚠) — اعتماد رغم ذلك؟`)) return;
   if(!ST.imports) ST.imports={rows:[], fname:'قراءة PDF'};
   let added=0, skipped=0;
-  for(const r of picked){
+  for(const r of good){
     if(pdfExisting(r)){ skipped++; continue; }
     let cls0='zero';
     if(r.rate===0 && /طحين|زيت|فاصوليا|بقول|سكر|أرز|ارز|حليب|عدس|شاي|قهوة/.test(r.items||'')) cls0='exm';
-    ST.imports.rows.push({no:r.no, dateFin:r.dateFin||'', dateDecl:r.dateDecl||'', order:'',
+    const dd=parseAnyDate(r.dateFin);
+    ST.imports.rows.push({no:r.no, dateFin:dd?fmtDMY(dd):String(r.dateFin||''), dateDecl:r.dateDecl||'', order:'',
       entry:'', items:r.items||'', rate:+r.rate||0, base:r3(r.base), tax:r3(r.tax),
       excl:false, cls0, src:'pdf'});
     added++;
   }
-  PDFR.rows=[]; PDFR.errs=[]; PDFR.pages=0; PDFR.done=0;
-  $('fnamePdfImports').textContent='';
-  recomputeAll();
-  alert(`تمت الإضافة: ${added} سطر${skipped?` — وتخطّي ${skipped} موجود مسبقاً`:''}. الأسطر الجديدة دخلت الكشف وفحوصاته وستُحفظ تلقائياً.`);
+  // الأسطر المرفوضة بسبب التاريخ تبقى في جدول المراجعة لتصحيحها ثم إعادة الاعتماد
+  PDFR.rows=PDFR.rows.filter(r=>!good.includes(r));
+  if(!PDFR.rows.length){ PDFR.errs=[]; PDFR.pages=0; PDFR.done=0; $('fnamePdfImports').textContent=''; }
+  recomputeAll(); renderPdfReview();
+  alert(`تمت الإضافة: ${added} سطر${skipped?` — وتخطّي ${skipped} موجود مسبقاً`:''}${dateBad.length?`\n⛔ ورُفض ${dateBad.length} سطر (تاريخ الوصل المالي) — بقيت بجدول المراجعة لتصحيح تاريخها ثم إعادة الاعتماد`:''}.`);
 }
 
 /* فحوصات المستوردات: المعادلة سطرياً + المطابقة بيان-بيان مع قيود الأمانات */
@@ -1949,8 +1992,9 @@ function renderAll(C){
     const dupMap={};
     ST.imports.rows.forEach(r=>{ if(!r.excl){ const k=r.no+'@'+r.rate; dupMap[k]=(dupMap[k]||0)+1; } });
     const rowIssue=r=>{
-      if(r.excl) return '';
+      if(r.excl) return r.finErr||'';
       const iss=[];
+      if(r.finErr) iss.push(r.finErr);
       if(r.rate>0){ const exp=r3(r.base*r.rate/100), dev=r3(r.tax-exp);
         if(Math.abs(dev)>0.02) iss.push(`متوقع ${fmt(exp)} (فرق ${fmt(dev)})`); }
       if(r.no && dupMap[r.no+'@'+r.rate]>1) iss.push('بيان مكرر بنفس النسبة');
