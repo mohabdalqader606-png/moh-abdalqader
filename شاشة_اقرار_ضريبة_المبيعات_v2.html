@@ -1420,6 +1420,25 @@ let PDF_PENDING=null;
 function anthKey(){ try{ return localStorage.getItem('kfc_anth_key')||''; }catch(e){ return ''; } }
 function setAnthKey(v){ try{ if(v) localStorage.setItem('kfc_anth_key', v.trim()); else localStorage.removeItem('kfc_anth_key'); }catch(e){} }
 function changeAnthKey(){ setAnthKey(''); renderPdfKeyAsk(); }
+function anthWsid(){ try{ return localStorage.getItem('kfc_anth_wsid')||''; }catch(e){ return ''; } }
+function setAnthWsid(v){ try{ if(v) localStorage.setItem('kfc_anth_wsid', v.trim()); else localStorage.removeItem('kfc_anth_wsid'); }catch(e){} }
+function renderPdfWsAsk(){
+  $('pdfReadWrap').innerHTML=`<div class="duebox" style="background:var(--gold-bg); border-color:#E8D9B0; margin-top:10px;">
+    <b>🏢 مطلوب رقم مساحة العمل (Workspace ID) — مرة واحدة فقط</b><br>
+    <span class="hint">مفتاحك من النوع المربوط بالحساب، والـ API بيطلب رقم مساحة العمل معه. طريقة جلبه:
+    افتح <b>platform.claude.com</b> ← من القائمة اليسار <b>Organization settings ← Workspaces</b> ← اضغط على <b>Default</b> ←
+    انسخ الـ <b>Workspace ID</b> (يبدأ بـ wsid_) والصقه هنا.</span>
+    <div class="toolrow" style="margin-top:8px;">
+      <input type="text" id="anthWsidInp" placeholder="wsid_..." style="width:320px; direction:ltr;">
+      <button class="btn-teal btn-sm" onclick="savePdfWsid()">حفظ والمتابعة</button>
+    </div></div>`;
+}
+function savePdfWsid(){
+  const v=($('anthWsidInp').value||'').trim();
+  if(!v){ alert('الصق رقم مساحة العمل أولاً.'); return; }
+  setAnthWsid(v);
+  if(PDF_PENDING) startPdfRead(); else $('pdfReadWrap').innerHTML='<div class="hint" style="margin-top:6px;">تم الحفظ — ارفع ملف PDF الآن.</div>';
+}
 async function loadPdfJs(){
   if(window.pdfjsLib) return window.pdfjsLib;
   await new Promise((res,rej)=>{ const s=document.createElement('script');
@@ -1476,10 +1495,11 @@ async function aiReadPage(b64, prevNo){
       {type:'image', source:{type:'base64', media_type:'image/jpeg', data:b64}},
       {type:'text', text: PDF_PROMPT + (prevNo?`\n- رقم البيان في آخر صفحة رئيسية سابقة: ${prevNo} (استخدمه لصفحات continuation/receipt).`:'')}
     ]}]};
+  const hdrs={'content-type':'application/json','x-api-key':anthKey(),
+      'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'};
+  if(anthWsid()) hdrs['anthropic-workspace-id']=anthWsid();
   const rs=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
-    headers:{'content-type':'application/json','x-api-key':anthKey(),
-      'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-    body:JSON.stringify(body)});
+    headers:hdrs, body:JSON.stringify(body)});
   if(!rs.ok){
     let msg='خطأ '+rs.status; try{ const ej=await rs.json(); msg+=': '+(ej.error&&ej.error.message||''); }catch(e){}
     const err=new Error(msg); err.status=rs.status; throw err;
@@ -1503,7 +1523,7 @@ async function startPdfRead(){
   }catch(e){ PDFR.busy=false; renderPdfKeyAsk('تعذر فتح الملف: '+e.message); return; }
   PDFR.pages=pdf.numPages;
   renderPdfReview();
-  let prevNo='';
+  let prevNo=''; const retried=new Set();
   for(let pg=1; pg<=pdf.numPages; pg++){
     if(PDFR.cancel) break;
     try{
@@ -1530,6 +1550,15 @@ async function startPdfRead(){
         PDFR.errs.push(`صفحة ${pg}: بيان ${no||'؟'} بلا أسطر ضريبة مقروءة — راجعها يدوياً`);
     }catch(e){
       if(e.status===401){ PDFR.busy=false; renderPdfKeyAsk('المفتاح مرفوض (401) — الصق مفتاحاً صحيحاً.'); PDF_PENDING=f; return; }
+      if(e.status===400 && /workspace.?id/i.test(e.message||'')){
+        PDFR.busy=false; PDF_PENDING=f; renderPdfWsAsk(); return; }
+      if(e.status===403){ PDFR.busy=false; renderPdfKeyAsk('الوصول مرفوض (403) — تأكد من المفتاح ومن وجود رصيد بالحساب.'); PDF_PENDING=f; return; }
+      if((e.status===429 || e.status===529 || e.status===500) && !retried.has(pg)){
+        // ضغط مؤقت على الخدمة: انتظار ثم محاولة ثانية واحدة لنفس الصفحة
+        retried.add(pg);
+        await new Promise(r=>setTimeout(r,20000));
+        pg--; continue;
+      }
       PDFR.errs.push(`صفحة ${pg}: ${e.message}`);
     }
     PDFR.done=pg;
