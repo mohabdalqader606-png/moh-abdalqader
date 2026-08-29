@@ -1340,6 +1340,12 @@ async function onFileTrust(inp){
   recomputeAll();
 }
 function setTrustCls(i, cls){ if(!canEdit) return; const row=ST.trust.rows.find(r=>r.i===i); if(row){ row.cls=cls; row.auto=false; recomputeAll(); } }
+function setTrustJust(k, field, v){ if(!canEdit||!ST.trust) return;
+  if(!ST.trust.just) ST.trust.just={};
+  if(!ST.trust.just[k]) ST.trust.just[k]={};
+  ST.trust.just[k][field] = field==='amt' ? (parseFloat(v)||0) : v;
+  recomputeAll();
+}
 function trustBulk(){
   if(!canEdit||!ST.trust) return;
   const q=($('trustBulkText').value||'').trim(); if(!q){ setMsg('trustMsg','اكتب نص البحث أولاً','err'); return; }
@@ -1600,13 +1606,22 @@ function renderAll(C){
       <div class="card"><div class="lbl">مصاريف وأصول ضريبية</div><div class="val">${fmt(C.trust.exp)}</div></div>
       <div class="card"><div class="lbl">تسديد ضريبة سابقة</div><div class="val">${fmt(C.trust.pay)}</div></div>
       <div class="card ${C.trust.unN?'warn':''}"><div class="lbl">حركات غير مصنفة</div><div class="val">${C.trust.unN}</div></div>`;
+    const J=(ST.trust.just=ST.trust.just||{});
+    const tol=Math.max(0,num('reconTol'));
     const rows=[
-      ['مبيعات الأمانات مقابل ضريبة تحليل المبيعات', C.trust.sal, C.outTax],
-      ['مشتريات الأمانات مقابل ضريبة المشتريات المحلية', C.trust.loc, C.purchTax],
-      ['مستوردات الأمانات مقابل ضريبة المستوردات', C.trust.imp, C.importsTax],
-    ].map(([l,a,b])=>{ const tol=Math.max(0,num('reconTol')); const d=r3(a-b), ok=Math.abs(d)<=tol+1e-9; if(!ok) trustOK=false;
-      return `<tr class="${ok?'recon-ok':'recon-bad'}"><td>${l}</td><td class="num">${fmt(a)}</td><td class="num">${fmt(b)}</td><td class="num" style="font-weight:700;">${fmt(d)}</td><td>${OKB(ok)}</td></tr>`; });
-    $('trustReconWrap').innerHTML=`<table class="t"><thead><tr><th>المطابقة</th><th class="num">حساب الأمانات</th><th class="num">الكشف</th><th class="num">الفرق</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>`+
+      ['sal','مبيعات الأمانات مقابل ضريبة تحليل المبيعات', C.trust.sal, C.outTax],
+      ['loc','مشتريات الأمانات مقابل ضريبة المشتريات المحلية', C.trust.loc, C.purchTax],
+      ['imp','مستوردات الأمانات مقابل ضريبة المستوردات', C.trust.imp, C.importsTax],
+    ].map(([k,l,a,b])=>{
+      const j=J[k]||{}; const d=r3(a-b), rem=r3(d-(+j.amt||0)), ok=Math.abs(rem)<=tol+1e-9;
+      if(!ok) trustOK=false;
+      return `<tr class="${ok?'recon-ok':'recon-bad'}"><td>${l}</td><td class="num">${fmt(a)}</td><td class="num">${fmt(b)}</td><td class="num" style="font-weight:700;">${fmt(d)}</td>
+      <td><input type="number" class="num" step="0.001" value="${j.amt||''}" placeholder="0.000" style="width:95px;" ${canEdit?'':'disabled'} onchange="setTrustJust('${k}','amt',this.value)"></td>
+      <td><input type="text" value="${esc(j.note||'')}" placeholder="سبب الفرق…" style="width:230px;" ${canEdit?'':'disabled'} onchange="setTrustJust('${k}','note',this.value)"></td>
+      <td class="num" style="font-weight:700;">${fmt(rem)}</td>
+      <td>${ok?(j.amt?'<span class="badge ok">مطابق مع تبرير 📝</span>':OKB(true)):OKB(false)}</td></tr>`; });
+    $('trustReconWrap').innerHTML=`<table class="t"><thead><tr><th>المطابقة</th><th class="num">حساب الأمانات</th><th class="num">الكشف</th><th class="num">الفرق</th><th class="num">فرق مبرَّر</th><th>الملاحظة / السبب</th><th class="num">المتبقي</th><th></th></tr></thead><tbody>${rows.join('')}</tbody></table>
+      <div class="hint" style="margin-top:6px;">فرق معروف السبب (مثل ضريبة مواد دعائية غير قابلة للخصم — حركة لصالح الدائرة): اكتب مبلغه وسببه — تصبح المطابقة «مطابق مع تبرير 📝» وتُطبع الملاحظة مع الإقرار. تذكّر إدخال المبلغ في خانة 13 بالإقرار النهائي إن كان لصالح الدائرة.</div>`+
       (C.trust.unN?`<div class="hint" style="color:var(--crimson); margin-top:6px;">⚠ يوجد ${C.trust.unN} حركة غير مصنفة — صنّفها قبل اعتماد المطابقة.</div>`:'');
     renderTrustRows();
     setSt('st5',true,!trustOK||C.trust.unN>0);
@@ -1756,10 +1771,16 @@ function printDecl(){
     <tr><td>جهات تصدير (غير الخاضعة ↔ تحليل المبيعات)</td><td class="num">${fmt(C.ntTot.export)} ↔ ${fmt(C.bkt.export)}</td><td>${recon(C.ntTot.export,C.bkt.export)}</td></tr>
     <tr><td>جهات صفرية</td><td class="num">${fmt(C.ntTot.zero)} ↔ ${fmt(C.bkt.zero)}</td><td>${recon(C.ntTot.zero,C.bkt.zero)}</td></tr>
     <tr><td>جهات معفاة</td><td class="num">${fmt(C.ntTot.exempt)} ↔ ${fmt(C.bkt.exempt)}</td><td>${recon(C.ntTot.exempt,C.bkt.exempt)}</td></tr>
-    ${C.trust?`
-    <tr><td>مبيعات الأمانات ↔ ضريبة المخرجات</td><td class="num">${fmt(C.trust.sal)} ↔ ${fmt(C.outTax)}</td><td>${recon(C.trust.sal,C.outTax)}</td></tr>
-    <tr><td>مشتريات الأمانات ↔ ضريبة المشتريات</td><td class="num">${fmt(C.trust.loc)} ↔ ${fmt(C.purchTax)}</td><td>${recon(C.trust.loc,C.purchTax)}</td></tr>
-    <tr><td>مستوردات الأمانات ↔ ضريبة المستوردات</td><td class="num">${fmt(C.trust.imp)} ↔ ${fmt(C.importsTax)}</td><td>${recon(C.trust.imp,C.importsTax)}</td></tr>`:''}
+    ${C.trust?(()=>{ const J=(ST.trust&&ST.trust.just)||{};
+      const line=(k,l,a,b)=>{ const j=J[k]||{}; const d=r3(a-b), rem=r3(d-(+j.amt||0));
+        const st = Math.abs(rem)<=Math.max(0,num('reconTol'))+1e-9
+          ? (j.amt?`مطابق ✔ — فرق مبرَّر ${fmt(+j.amt)}: ${esc(j.note||'')}`:'مطابق ✔')
+          : 'فرق: '+fmt(d)+(j.note?` (${esc(j.note)})`:'');
+        return `<tr><td>${l}</td><td class="num">${fmt(a)} ↔ ${fmt(b)}</td><td>${st}</td></tr>`; };
+      return line('sal','مبيعات الأمانات ↔ ضريبة المخرجات',C.trust.sal,C.outTax)
+           + line('loc','مشتريات الأمانات ↔ ضريبة المشتريات',C.trust.loc,C.purchTax)
+           + line('imp','مستوردات الأمانات ↔ ضريبة المستوردات',C.trust.imp,C.importsTax);
+    })():''}
   </table>
   <div style="display:flex; justify-content:space-between; margin-top:32px; font-size:12px;">
     <div>أعدّه: ______________________<br><br>التوقيع: ____________</div>
