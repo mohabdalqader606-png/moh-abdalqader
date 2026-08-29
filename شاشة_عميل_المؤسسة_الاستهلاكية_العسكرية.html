@@ -460,7 +460,7 @@ ORDER BY T0."DocNum"</code>
 
     <div class="input-panel" style="border-bottom:1px solid var(--line);">
       <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;"><span class="num">2</span><b style="font-size:13px;">مطابقة السندات مع فاتورة الصرف الوهمي</b></div>
-      <div class="hint">دخّل رقم/أرقام السندات (مفصولة بمسافة) اللي وصلت فاتورة الصرف الوهمي عنها، وبترتّب لك الأصناف تصاعدياً حسب رمزها لدى المؤسسة عشان تطابقها.</div>
+      <div class="hint">دخّل رقم/أرقام السندات (مفصولة بمسافة) اللي وصلت فاتورة الصرف الوهمي عنها، وبترتّب لك الأصناف تصاعدياً حسب رمزها لدى المؤسسة عشان تطابقها. السطر اللي "إلى مستودع" 011 كميته بتنضاف، والسطر اللي "من مستودع" 011 (مرتجع) كميته <b>بتنطرح</b> تلقائياً.</div>
       <div class="row-actions">
         <input type="text" id="trVoucherNos" placeholder="مثال: 2610323 2610404" style="width:260px; direction:ltr; text-align:left;">
         <button class="btn-primary btn-sm" onclick="matchTransferVouchers()">مطابقة</button>
@@ -2031,6 +2031,16 @@ function clearTransfers(){
 
 function normDocNum(v){ return String(v||'').replace(/[^0-9]/g,''); }
 
+// هل هاد الحقل (من مستودع / الى مستودع) هو مستودع 011؟ — منطابق "011" ككود قائم بحاله مو كجزء من رقم أطول (مثل 0113 أو 2011)
+function isWhs011(v){ return /(^|\D)011(\D|$)/.test(String(v||'').trim()); }
+// إشارة السطر: التحويل إلى 011 بيضيف الكمية، والتحويل من 011 (مرتجع) بيطرحها
+function trLineSign(t){
+  const from011 = isWhs011(t.fromWhs), to011 = isWhs011(t.toWhs);
+  if(from011 && to011) return 0;
+  if(from011) return -1;
+  return 1;
+}
+
 function matchTransferVouchers(){
   const raw = document.getElementById('trVoucherNos').value;
   // نفصل على المسافات بس (مو الفاصلة) لأن رقم السند نفسه ممكن يجي بفواصل آلاف مثل 2,610,323
@@ -2048,7 +2058,7 @@ function matchTransferVouchers(){
     voucherMap.get(k).lines++;
   });
   document.getElementById('trVoucherHeaders').innerHTML = Array.from(voucherMap.values()).map(v=>
-    `<div class="hint" style="margin:2px 0;">📄 سند <b class="mono">${esc(v.docNum)}</b> — ${esc(v.docDate)||'—'} · من <b>${esc(v.fromWhs)||'—'}</b> إلى <b>${esc(v.toWhs)||'—'}</b> · ${v.lines} سطر${v.branch?` · الفرع: <b>${esc(v.branch)}</b>`:''}</div>`
+    `<div class="hint" style="margin:2px 0;">📄 سند <b class="mono">${esc(v.docNum)}</b> — ${esc(v.docDate)||'—'} · من <b>${esc(v.fromWhs)||'—'}</b> إلى <b>${esc(v.toWhs)||'—'}</b> · ${v.lines} سطر${v.branch?` · الفرع: <b>${esc(v.branch)}</b>`:''}${isWhs011(v.fromWhs)&&!isWhs011(v.toWhs)?' · <b style="color:var(--crimson);">↩ مرتجع من 011 — كمياته بتنطرح</b>':''}</div>`
   ).join('');
 
   // أسماء الفروع الفريدة بكل السندات المطابقة — تُعرض كملخص، وتُضاف تلقائياً لقائمة الفروع المعرّفة
@@ -2056,11 +2066,11 @@ function matchTransferVouchers(){
   matchedBranches.forEach(b=>{ if(!BRANCHES.includes(b)) BRANCHES.push(b); });
   if(matchedBranches.length){ saveState(); }
 
-  // تجميع حسب رمزنا
+  // تجميع حسب رمزنا — سطر التحويل إلى 011 بيضيف كميته، وسطر التحويل من 011 (مرتجع) بتنطرح كميته
   const grouped = {};
   matchedLines.forEach(t=>{
     if(!grouped[t.ourCode]) grouped[t.ourCode] = {ourCode:t.ourCode, ourName:t.ourName, qty:0};
-    grouped[t.ourCode].qty += t.qty;
+    grouped[t.ourCode].qty += trLineSign(t) * t.qty;
   });
 
   const mappedRows = [], unmapped = [];
