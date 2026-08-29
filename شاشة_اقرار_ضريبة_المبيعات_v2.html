@@ -157,6 +157,7 @@
       <div class="toolrow">
         <div class="field"><label>السنة</label><select id="fYear" onchange="onPeriodChange()"></select></div>
         <div class="field"><label>الفترة (شهران)</label><select id="fPeriod" onchange="onPeriodChange()"></select></div>
+        <div class="field" id="ownerField" style="display:none;"><label>نسخة الإقرار (المُعِدّ)</label><select id="fOwner" onchange="onOwnerChange()"></select></div>
         <div class="duebox" id="dueBox">—</div>
         <span style="flex:1;"></span>
         <span id="declStatus" class="badge gray">جديد — غير محفوظ</span>
@@ -171,9 +172,11 @@
       <div class="hint" style="margin-top:12px;">
         <b>الحفظ تلقائي</b>: أي رفع كشف أو تعديل يُحفَظ لوحده على السيرفر (Supabase — مشروع KFC) خلال ثوانٍ، وتظهر حالة الحفظ أعلى يسار الشاشة.
         عند فتح الشاشة من أي جهاز وبأي وقت: اختر الفترة وتعود كل بياناتك تلقائياً — لا حاجة لإعادة رفع الملفات.
+        <b>نسخ متعددة</b>: لكل موظف نسخته المستقلة عن نفس الفترة (اختر من قائمة «نسخة الإقرار») — يعمل عليها وحده دون أن يؤثر على الآخرين، والمدير يقارن النسخ أسفل الصفحة ويعتمد واحدة رسمية.
         ملفات الكشوفات الخام نفسها لا تُخزَّن (تبقى في نظامكم المحاسبي)؛ يُخزَّن كل ما ينتج عنها: النتائج، التفاصيل، الاستثناءات، التصنيفات، والإقرار.
       </div>
       <div class="cards" id="progressCards"></div>
+      <div id="copiesWrap"></div>
     </div>
   </section>
 
@@ -395,6 +398,7 @@ const MONTHS = ['كانون الثاني','شباط','آذار','نيسان','أ
 const PERIODS = [1,2,3,4,5,6].map(p=>({no:p, label:`(${p}) ${MONTHS[(p-1)*2]} – ${MONTHS[(p-1)*2+1]}`}));
 
 let sb=null, curUser=null, curProfile=null, canEdit=false;
+let roleEdit=false, isAdmin=false, curDeclOwner=null, MULTI=false, COPIES=[];
 let curDeclId=null, curDeclStatus=null, profilesMap={};
 let ccMap = {};        // تصنيفات العملاء من قاعدة البيانات: code -> {name, class}
 let ccDirty = false;
@@ -486,22 +490,22 @@ async function onSignedIn(user){
   curUser=user;
   const {data:prof}=await sb.from('profiles').select('*').eq('id',user.id).single();
   curProfile=prof||{full_name:user.email, role:'viewer'};
-  canEdit=['admin','editor'].includes(curProfile.role);
+  roleEdit=['admin','editor'].includes(curProfile.role);
+  isAdmin=curProfile.role==='admin';
+  canEdit=roleEdit;
   const roleAr={admin:'مدير',editor:'مدخل بيانات',viewer:'مطالع'}[curProfile.role]||curProfile.role;
   $('uName').textContent=curProfile.full_name||user.email;
-  $('uRole').textContent=user.email+' · '+roleAr+(canEdit?'':' · 👁 مطالعة فقط');
+  $('uRole').textContent=user.email+' · '+roleAr+(roleEdit?'':' · 👁 مطالعة فقط');
   $('userbox').style.display='flex';
   $('loginView').style.display='none';
   $('appView').style.display='block';
-  ['btnSave','btnFinal','btnSaveCC'].forEach(id=>{ if($(id)) $(id).disabled=!canEdit; });
-  // وضع المطالعة: تعطيل رفع الملفات وكل حقول الإدخال
-  if(!canEdit){
-    ['fileNT','fileSales','filePurch','fileImports','fileTrust'].forEach(id=>{ if($(id)) $(id).disabled=true; });
-    document.querySelectorAll('.filebox label.up').forEach(l=>{ l.style.opacity='.45'; l.style.cursor='not-allowed'; });
-    ['prevCredit','adjReg','adjDept','pPayDate','pWeekRate','pFixed','ref16','ref17',
-     'regName','regTaxNo','regPhone','regCell','regAddress','regGov','regIBAN','regEmail',
-     'trustBulkText','trustBulkClass','invPaste'].forEach(id=>{ if($(id)) $(id).disabled=true; });
-  }
+  applyEditLock();
+  // هل نُفِّذ سكربت v4 (نسخ متعددة)؟ نتحقق من وجود عمود owner_id
+  try{
+    const {error:probeErr}=await sb.from('sales_tax_declarations').select('owner_id').limit(1);
+    MULTI=!probeErr;
+  }catch(e){ MULTI=false; }
+  if(MULTI) $('ownerField').style.display='';
   const {data:profs}=await sb.from('profiles').select('id, full_name, email');
   (profs||[]).forEach(p=>profilesMap[p.id]=p.full_name||p.email);
   await loadCC();
@@ -561,10 +565,82 @@ function buildPeriodSelectors(){
   $('fPeriod').innerHTML=PERIODS.map(p=>`<option value="${p.no}">${p.label}</option>`).join('');
   $('fPeriod').value=Math.min(6, Math.floor(new Date().getMonth()/2)+1);
 }
-function onPeriodChange(){
+async function onPeriodChange(){
   const pi=periodInfo(+$('fYear').value,+$('fPeriod').value);
   $('dueBox').innerHTML=`نهاية الفترة: <b>${pi.endISO}</b> · الموعد القانوني للتقديم والدفع: <b>${pi.dueISO}</b>`;
+  await refreshCopies(true);
   loadDeclForPeriod();
+}
+function onOwnerChange(){ loadDeclForPeriod(); }
+
+/* ===== نسخ الفترة الواحدة (نسخة لكل موظف) — تتطلب سكربت v4 ===== */
+async function refreshCopies(pickDefault){
+  if(!MULTI){ COPIES=[]; if($('copiesWrap')) $('copiesWrap').innerHTML=''; return; }
+  const y=+$('fYear').value, p=+$('fPeriod').value;
+  const {data}=await sb.from('sales_tax_declarations')
+    .select('id, owner_id, status, updated_at, output_tax, input_tax, net_tax')
+    .eq('year',y).eq('period_no',p).order('updated_at',{ascending:false});
+  COPIES=data||[];
+  const sel=$('fOwner'); const prev=sel.value;
+  const opts=COPIES.map(c=>`<option value="${c.owner_id}">${esc(profilesMap[c.owner_id]||'مستخدم')}${c.status==='final'?' — معتمدة ✔':' — مسودة'}</option>`);
+  if(roleEdit && !COPIES.some(c=>c.owner_id===curUser.id))
+    opts.unshift(`<option value="${curUser.id}">نسختي — جديدة فارغة</option>`);
+  sel.innerHTML=opts.join('');
+  if(pickDefault){
+    const fin=COPIES.find(c=>c.status==='final');
+    sel.value = roleEdit ? curUser.id : (fin?fin.owner_id:(COPIES[0]?COPIES[0].owner_id:''));
+    if(!sel.value && sel.options.length) sel.selectedIndex=0;
+  } else if([...sel.options].some(o=>o.value===prev)) sel.value=prev;
+  renderCopiesTable();
+}
+function renderCopiesTable(){
+  const el=$('copiesWrap'); if(!el) return;
+  if(!MULTI || !COPIES.length){ el.innerHTML=''; return; }
+  el.innerHTML=`<div class="grp-title" style="margin-top:16px;"><span class="num">☰</span> نسخ هذه الفترة (${COPIES.length}) — للمقارنة والاعتماد</div>
+  <table class="t" style="max-width:980px;"><thead><tr><th>المُعِدّ</th><th>الحالة</th><th class="num">ضريبة المخرجات</th><th class="num">ضريبة المدخلات</th><th class="num">الصافي</th><th>آخر تعديل</th><th></th></tr></thead><tbody>`+
+  COPIES.map(c=>`<tr ${c.status==='final'?'style="background:var(--teal-bg);"':''}>
+    <td>${esc(profilesMap[c.owner_id]||'مستخدم')}${c.owner_id===curUser.id?' <b>(أنا)</b>':''}</td>
+    <td>${c.status==='final'?'<span class="badge ok">معتمدة ✔</span>':'<span class="badge grace">مسودة</span>'}</td>
+    <td class="num">${fmt(c.output_tax)}</td><td class="num">${fmt(c.input_tax)}</td><td class="num">${fmt(c.net_tax)}</td>
+    <td style="font-size:11px;">${new Date(c.updated_at).toLocaleString('en-GB')}</td>
+    <td><button class="btn-ghost btn-sm" onclick="openCopy('${c.owner_id}')">فتح</button>
+      ${isAdmin&&c.status!=='final'?` <button class="btn-teal btn-sm" onclick="adoptCopy('${c.id}')">✅ اعتماد</button>`:''}
+      ${isAdmin&&c.status==='final'?` <button class="btn-ghost btn-sm" onclick="unadoptCopy('${c.id}')">إلغاء الاعتماد</button>`:''}
+      ${isAdmin?` <button class="btn-danger btn-sm" onclick="deleteCopy('${c.id}')">حذف</button>`:''}
+    </td></tr>`).join('')+`</tbody></table>
+  <div class="hint" style="margin-top:6px;">كل موظف يعمل على نسخته باستقلال تام عن الآخرين لنفس الفترة (يرفع الكشوفات بنفسه ويكمل الإقرار)،
+  والمدير يقارن النتائج هنا ويضغط «اعتماد» على الأفضل — النسخة المعتمدة هي التي تُفتح تلقائياً لأصحاب المطالعة.
+  تصنيفات العملاء وشرائح الأصناف مشتركة بين الجميع لأنها ثابتة للمنشأة.</div>`;
+}
+function openCopy(owner){
+  const sel=$('fOwner');
+  if(![...sel.options].some(o=>o.value===owner))
+    sel.innerHTML+=`<option value="${owner}">${esc(profilesMap[owner]||'مستخدم')}</option>`;
+  sel.value=owner; loadDeclForPeriod();
+}
+async function adoptCopy(id){
+  if(!isAdmin) return;
+  if(!confirm('اعتماد هذه النسخة كالإقرار الرسمي للفترة؟\n(أي نسخة معتمدة أخرى لنفس الفترة تعود مسودة)')) return;
+  const y=+$('fYear').value, p=+$('fPeriod').value;
+  await sb.from('sales_tax_declarations').update({status:'draft'}).eq('year',y).eq('period_no',p).eq('status','final');
+  const {error}=await sb.from('sales_tax_declarations').update({status:'final'}).eq('id',id);
+  if(error){ alert('تعذر الاعتماد: '+error.message); return; }
+  await refreshCopies(false); loadDeclForPeriod();
+}
+async function unadoptCopy(id){
+  if(!isAdmin) return;
+  if(!confirm('إلغاء اعتماد هذه النسخة (تعود مسودة)؟')) return;
+  const {error}=await sb.from('sales_tax_declarations').update({status:'draft'}).eq('id',id);
+  if(error){ alert('تعذر الإلغاء: '+error.message); return; }
+  await refreshCopies(false); loadDeclForPeriod();
+}
+async function deleteCopy(id){
+  if(!isAdmin) return;
+  const c=COPIES.find(x=>x.id===id);
+  if(!confirm(`حذف نسخة ${profilesMap[c&&c.owner_id]||''} نهائياً من السيرفر؟ لا يمكن التراجع.`)) return;
+  const {error}=await sb.from('sales_tax_declarations').delete().eq('id',id);
+  if(error){ alert('تعذر الحذف: '+error.message); return; }
+  await refreshCopies(true); loadDeclForPeriod();
 }
 
 /* ================= مكوّن الجداول الموحّد: ترتيب + فلترة + مجاميع + طباعة ================= */
@@ -632,7 +708,19 @@ function gtPrint(tid,defs,rows,opts={}){
 }
 
 /* ================= 1) الجهات غير الخاضعة ================= */
-function guardEdit(inp){ if(!canEdit){ alert('حسابك «مطالعة فقط» — لا يمكنك رفع كشوفات أو التعديل. راجع مدير النظام.'); if(inp) inp.value=''; return false; } return true; }
+function guardEdit(inp){ if(!canEdit){
+  alert(roleEdit?'هذه نسخة زميل آخر — للعمل افتح نسختك أنت من قائمة «نسخة الإقرار» في تبويب الفترة.'
+               :'حسابك «مطالعة فقط» — لا يمكنك رفع كشوفات أو التعديل. راجع مدير النظام.');
+  if(inp) inp.value=''; return false; } return true; }
+function applyEditLock(){
+  ['btnSave','btnSaveCC'].forEach(id=>{ if($(id)) $(id).disabled=!canEdit; });
+  if($('btnFinal')) $('btnFinal').disabled=!isAdmin;
+  ['fileNT','fileSales','filePurch','fileImports','fileTrust','filePdfImports'].forEach(id=>{ if($(id)) $(id).disabled=!canEdit; });
+  document.querySelectorAll('.filebox label.up').forEach(l=>{ l.style.opacity=canEdit?'':'.45'; l.style.cursor=canEdit?'':'not-allowed'; });
+  ['prevCredit','adjReg','adjDept','pPayDate','pWeekRate','pFixed','ref16','ref17',
+   'regName','regTaxNo','regPhone','regCell','regAddress','regGov','regIBAN','regEmail',
+   'trustBulkText','trustBulkClass','invPaste'].forEach(id=>{ if($(id)) $(id).disabled=!canEdit; });
+}
 async function onFileNT(inp){
   if(!guardEdit(inp)) return;
   const f=inp.files[0]; if(!f) return;
@@ -1944,6 +2032,11 @@ function renderFinal(C){
 /* ================= حفظ وتحميل ================= */
 async function saveDecl(status, quiet){
   if(!canEdit){ return; }
+  if(status==='final' && !isAdmin){
+    if(curDeclStatus==='final'){ status='final'; } // نسخة معتمدة يكملها صاحبها — تبقى معتمدة
+    else { if(!quiet) alert('اعتماد الإقرار النهائي صلاحية المدير فقط — احفظ كمسودة وسيقارن المدير النسخ ويعتمد.'); return; }
+  }
+  if(curDeclStatus==='final' && status==='draft' && !isAdmin) status='final';
   if(!quiet && status==='final' && !confirm('اعتماد الإقرار كنهائي لهذه الفترة؟')) return;
   const C=calc();
   const payload={
@@ -1954,13 +2047,24 @@ async function saveDecl(status, quiet){
            results:{outTax:C.outTax, inputsTotal:C.inputsTotal, netBefore:C.netBefore, f1:C.f1, f2:C.f2, netFinal:C.netFinal, totalSales:C.totalSales} },
     output_tax:C.outTax, input_tax:C.inputsTotal, net_tax:C.netFinal,
   };
+  if(MULTI) payload.owner_id=curDeclOwner||curUser.id;
   if(!quiet){ setMsg('saveMsg','جارٍ الحفظ…',''); setMsg('saveMsg2','جارٍ الحفظ…',''); }
-  const {data,error}=await sb.from('sales_tax_declarations').upsert(payload,{onConflict:'year,period_no'}).select().single();
+  const {data,error}=await sb.from('sales_tax_declarations')
+    .upsert(payload,{onConflict: MULTI?'year,period_no,owner_id':'year,period_no'}).select().single();
   if(error){
     $('syncMsg').textContent='⚠ تعذر الحفظ التلقائي';
     setMsg('saveMsg','فشل الحفظ: '+error.message,'err'); setMsg('saveMsg2','فشل الحفظ: '+error.message,'err'); return;
   }
-  curDeclId=data.id; curDeclStatus=data.status; setStatusBadge();
+  curDeclId=data.id; curDeclStatus=data.status;
+  if(MULTI){
+    curDeclOwner=data.owner_id;
+    const snap={id:data.id, owner_id:data.owner_id, status:data.status, updated_at:data.updated_at,
+                output_tax:data.output_tax, input_tax:data.input_tax, net_tax:data.net_tax};
+    const ci=COPIES.findIndex(c=>c.id===data.id);
+    if(ci>=0) COPIES[ci]=snap; else COPIES.unshift(snap);
+    renderCopiesTable();
+  }
+  setStatusBadge();
   if(ccDirty) await saveClassifications();
   $('syncMsg').textContent='✔ محفوظ تلقائياً على السيرفر · '+new Date().toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
   if(!quiet){ const m=status==='final'?'تم اعتماد الإقرار ✔':'تم الحفظ ✔'; setMsg('saveMsg',m,'ok'); setMsg('saveMsg2',m,'ok'); }
@@ -1971,14 +2075,27 @@ function setStatusBadge(){
   else if(curDeclStatus==='final'){ el.className='badge ok'; el.textContent='معتمد نهائي ✔'; }
   else { el.className='badge grace'; el.textContent='مسودة محفوظة'; }
 }
+function resetWorkspaceUI(){
+  DROWS=[]; PROWS=[];
+  const es='<div class="empty-state">ارفع الكشف أولاً</div>';
+  ['ccWrap','ntDocsWrap','salesRatesWrap','itemsWrap','rowsWrap','ibWrap','purchWrap','importsWrap','trustReconWrap','trustRowsWrap']
+    .forEach(id=>{ if($(id)) $(id).innerHTML=es; });
+  if($('reconWrap')) $('reconWrap').innerHTML='<div class="empty-state">يلزم رفع الكشفين (١) و(٢)</div>';
+  if($('trustCards')) $('trustCards').innerHTML='';
+  if($('pdfReadWrap')) $('pdfReadWrap').innerHTML='';
+}
 async function loadDeclForPeriod(manual){
   if(!curUser) return;
   SUPPRESS_AUTOSAVE=true; clearTimeout(autoSaveTimer);
   try{
+  resetWorkspaceUI(); // كل نسخة مستقلة: تفريغ الجداول والتفصيل السطري قبل تحميل النسخة المطلوبة
   const y=+$('fYear').value, p=+$('fPeriod').value;
-  const {data}=await sb.from('sales_tax_declarations').select('*').eq('year',y).eq('period_no',p).maybeSingle();
+  const owner = MULTI ? ($('fOwner').value || curUser.id) : null;
+  let q=sb.from('sales_tax_declarations').select('*').eq('year',y).eq('period_no',p);
+  if(MULTI) q=q.eq('owner_id',owner);
+  const {data}=await q.maybeSingle();
   if(data && data.data && data.data.v===2){
-    curDeclId=data.id; curDeclStatus=data.status;
+    curDeclId=data.id; curDeclStatus=data.status; curDeclOwner=MULTI?data.owner_id:null;
     ST=Object.assign(freshST(), data.data.ST||{});
     ITEMS=(ST.sales&&ST.sales.items)||{};
     const inp=data.data.inputs||{};
@@ -2001,12 +2118,22 @@ async function loadDeclForPeriod(manual){
     $('syncMsg').textContent='آخر تعديل: '+(profilesMap[data.updated_by||data.created_by]||'—')+' · '+new Date(data.updated_at).toLocaleString('en-GB');
     renderCC(); renderNTDocs(); renderItems();
   } else if(data){
-    curDeclId=data.id; curDeclStatus=data.status;
+    curDeclId=data.id; curDeclStatus=data.status; curDeclOwner=MULTI?data.owner_id:null;
     if(manual) alert('المحفوظ لهذه الفترة من النسخة القديمة (v1) — الشاشة ستعرض إقراراً جديداً فارغاً وسيستبدل عند الحفظ.');
   } else {
-    curDeclId=null; curDeclStatus=null; $('syncMsg').textContent='';
-    if(manual){ ST=freshST(); ITEMS={}; renderItems(); ['fnameNT','fnameSales','fnamePurch','fnameImports','fnameTrust'].forEach(id=>$(id).textContent=''); }
+    curDeclId=null; curDeclStatus=null; curDeclOwner=owner; $('syncMsg').textContent='';
+    if(manual||MULTI){
+      ST=freshST(); ITEMS={};
+      ['fnameNT','fnameSales','fnamePurch','fnameImports','fnameTrust'].forEach(id=>$(id).textContent='');
+      ['prevCredit','adjReg','adjDept'].forEach(id=>$(id).value='');
+      $('pPayDate').value=''; $('pWeekRate').value=0.4; $('pFixed').value=0; $('ref16').value=0; $('ref17').value=0;
+    }
   }
+  // صلاحية التعديل على هذه النسخة تحديداً: المدير يعدّل الجميع، والموظف نسخته فقط
+  canEdit = roleEdit && (!MULTI || isAdmin || curDeclOwner===curUser.id);
+  applyEditLock();
+  if(MULTI && roleEdit && !canEdit)
+    $('syncMsg').textContent='👁 نسخة '+(profilesMap[curDeclOwner]||'زميل')+' — مطالعة فقط';
   setStatusBadge(); recomputeAll();
   } finally { SUPPRESS_AUTOSAVE=false; }
 }
