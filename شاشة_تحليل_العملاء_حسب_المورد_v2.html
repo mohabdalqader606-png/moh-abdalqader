@@ -295,6 +295,7 @@
       <input type="text" class="search" id="searchBox" placeholder="بحث برمز/اسم العميل أو المندوب أو المورد..." oninput="renderCustomers()">
       <div class="spacer"></div>
       <button class="btn-ghost btn-sm" onclick="loadCustomers()">🔄 تحديث</button>
+      <button class="btn-ghost btn-sm" id="refreshSumBtn" style="border-color:var(--gold); color:var(--gold);" onclick="refreshSummaries()">🔄 تحديث الملخصات</button>
       <button class="btn-ghost btn-sm" onclick="exportCustomersCsv()">تصدير CSV</button>
     </div>
 
@@ -660,6 +661,12 @@ async function saveUpload(){
     setProg(pct,`${fmtNum(done)} / ${fmtNum(rows.length)} سطر · ${pct.toFixed(0)}% · متبقٍ ~${rem>90?Math.round(rem/60)+' دقيقة':Math.round(rem)+' ثانية'}`);
     setStatus('inputStatus','جارٍ الرفع — لا تغلق الصفحة...');
   }
+  // إعادة بناء الملخصات للشهور المتأثرة فقط — بدونها الشاشة تجمّع ملايين السطور وتتجاوز المهلة
+  setProg(100,'جارٍ تحديث الملخصات على السيرفر (قد يستغرق دقيقة)...');
+  setStatus('inputStatus','جارٍ تحديث الملخصات — لا تغلق الصفحة...');
+  const {error:eR}=await db.rpc('cal_refresh',{d_from:s.dMin,d_to:s.dMax});
+  if(eR) setStatus('inputStatus','⚠ انرفعت السطور لكن فشل تحديث الملخصات: '+eR.message+' — اضغط "🔄 تحديث الملخصات"','err');
+
   setProg(100,'اكتمل ✓');
   PENDING=null; FILE_TEXT=null;
   document.getElementById('pasteArea').value=''; document.getElementById('upLabel').value='';
@@ -668,6 +675,24 @@ async function saveUpload(){
   setTimeout(()=>setProg(null),3000);
   await loadUploads();
   await loadCustomers();
+}
+
+/* إعادة بناء الملخصات يدوياً — للاستخدام بعد تعديل خريطة الموردين أو حذف دفعة */
+async function refreshSummaries(range){
+  const btn=document.getElementById('refreshSumBtn');
+  if(btn){ btn.disabled=true; btn.textContent='جارٍ التحديث...'; }
+  setStatus('snapStatus','');
+  const args=range?{d_from:range[0],d_to:range[1]}:{d_from:null,d_to:null};
+  const {data,error}=await db.rpc('cal_refresh',args);
+  if(btn){ btn.disabled=false; btn.textContent='🔄 تحديث الملخصات'; }
+  if(error){
+    alert('فشل تحديث الملخصات: '+error.message
+      +(String(error.message).includes('does not exist')?'\n\nنفّذ سكربت v3 في SQL Editor أولاً.':'')
+      +(String(error.message).includes('timeout')?'\n\nالبيانات كبيرة — نفّذ في SQL Editor سنة بسنة:\nselect public.cal_refresh(\'2024-01-01\',\'2024-12-31\');':''));
+    return;
+  }
+  await loadCustomers();
+  alert('✓ '+(data||'تم تحديث الملخصات'));
 }
 
 /* ======================= الدفعات المرفوعة ======================= */
@@ -866,56 +891,70 @@ async function openCustomer(code){
   document.getElementById('drillRep').textContent=cust&&cust.rep?('المندوب: '+cust.rep):'';
   document.getElementById('drillPeriod').textContent=(FN_OK&&(F_FROM||F_TO))?('📅 '+filterLabel()):'';
   document.getElementById('drillKpis').innerHTML='';
-  document.getElementById('drillTrend').innerHTML='<div class="hint">جارٍ تحميل سطور العميل...</div>';
+  document.getElementById('drillTrend').innerHTML='<div class="hint">جارٍ تحميل تفاصيل العميل...</div>';
   document.getElementById('drillGrowth').innerHTML='';
   document.getElementById('drillSuppliers').innerHTML='';
-  let lines;
+  let rows,invRows;
   try{
-    lines=await fetchAll(()=>{
-      let q=db.from('cal_lines')
-        .select('doc_type,doc_no,doc_date,supplier,item_code,qty,net_sales,total_cost,gross_profit,cost_estimated')
+    // نقرأ من جدول الملخص (عميل × صنف × شهر) بدل ملايين السطور الخام
+    rows=await fetchAll(()=>{
+      let q=db.from('cal_sum_item')
+        .select('item_code,ym,supplier,qty,sales,cost,profit,buys,first_date,last_date,est')
         .eq('customer_code',code);
-      if(F_FROM) q=q.gte('doc_date',F_FROM);
-      if(F_TO) q=q.lte('doc_date',F_TO);
-      return q.order('doc_date').order('id');
+      if(F_FROM) q=q.gte('ym',monthStart(F_FROM));
+      if(F_TO) q=q.lte('ym',monthStart(F_TO));
+      return q.order('ym');
     });
-  }catch(e){ document.getElementById('drillTrend').innerHTML=`<div class="hint" style="color:var(--crimson);">✗ ${esc(e)}</div>`; return; }
-  DRILL=analyzeCustomer(code,lines);
+    invRows=await fetchAll(()=>{
+      let q=db.from('cal_sum_cust').select('ym,invoices').eq('customer_code',code);
+      if(F_FROM) q=q.gte('ym',monthStart(F_FROM));
+      if(F_TO) q=q.lte('ym',monthStart(F_TO));
+      return q.order('ym');
+    });
+  }catch(e){
+    document.getElementById('drillTrend').innerHTML=`<div class="hint" style="color:var(--crimson);">✗ ${esc(e)}${String(e).includes('does not exist')?' — نفّذ سكربت v3 في SQL Editor':''}</div>`;
+    return;
+  }
+  DRILL=analyzeCustomer(code,rows,invRows);
   renderDrill();
 }
 function closeDrill(){ DRILL=null; document.getElementById('drillSection').style.display='none'; }
+function monthStart(iso){ return iso.slice(0,7)+'-01'; }
 
-function analyzeCustomer(code,lines){
+function analyzeCustomer(code,rows,invRows){
   const sups=new Map();     // supplier -> agg
   const monthly=new Map();  // midx -> sales
-  let tS=0,tC=0,tP=0; const docs=new Set(); let first=null,last=null;
-  lines.forEach(l=>{
-    const sales=Number(l.net_sales), cost=Number(l.total_cost), profit=Number(l.gross_profit), qty=Number(l.qty);
-    const sup=resolveSupplier(l.supplier,l.item_code);
-    const midx=monthIdx(l.doc_date);
+  let tS=0,tC=0,tP=0, first=null,last=null;
+  rows.forEach(l=>{
+    const sales=Number(l.sales), cost=Number(l.cost), profit=Number(l.profit), qty=Number(l.qty);
+    const sup=l.supplier||resolveSupplier(null,l.item_code);
+    const midx=monthIdx(l.ym);
     tS+=sales; tC+=cost; tP+=profit;
-    if(l.doc_no) docs.add(l.doc_type+'|'+l.doc_no);
-    if(!first||l.doc_date<first)first=l.doc_date; if(!last||l.doc_date>last)last=l.doc_date;
+    if(l.first_date&&(!first||l.first_date<first))first=l.first_date;
+    if(l.last_date&&(!last||l.last_date>last))last=l.last_date;
     monthly.set(midx,(monthly.get(midx)||0)+sales);
     let S=sups.get(sup);
     if(!S){ S={name:sup, sales:0,cost:0,profit:0,last:null, mon:new Map(), items:new Map()}; sups.set(sup,S); }
     S.sales+=sales; S.cost+=cost; S.profit+=profit;
-    if(!S.last||l.doc_date>S.last)S.last=l.doc_date;
+    if(l.last_date&&(!S.last||l.last_date>S.last))S.last=l.last_date;
     S.mon.set(midx,(S.mon.get(midx)||0)+sales);
     let it=S.items.get(l.item_code);
-    if(!it){ it={code:l.item_code, name:ITEMNAMES.get(l.item_code)||l.item_code, qty:0,sales:0,cost:0,profit:0, dates:new Set(), last:null, est:false, mon:new Map()}; S.items.set(l.item_code,it); }
+    if(!it){ it={code:l.item_code, name:ITEMNAMES.get(l.item_code)||l.item_code, qty:0,sales:0,cost:0,profit:0,
+                 buyCount:0, first:null, last:null, est:false, mon:new Map()}; S.items.set(l.item_code,it); }
     it.qty+=qty; it.sales+=sales; it.cost+=cost; it.profit+=profit;
-    if(l.cost_estimated) it.est=true;
-    if(l.doc_type==='فاتورة') it.dates.add(l.doc_date);
-    if(!it.last||l.doc_date>it.last)it.last=l.doc_date;
+    it.buyCount+=Number(l.buys||0);
+    if(l.est) it.est=true;
+    if(l.first_date&&(!it.first||l.first_date<it.first))it.first=l.first_date;
+    if(l.last_date&&(!it.last||l.last_date>it.last))it.last=l.last_date;
     it.mon.set(midx,(it.mon.get(midx)||0)+sales);
   });
+  const invoices=(invRows||[]).reduce((s,r)=>s+Number(r.invoices||0),0);
   const win=(mon,from,to)=>{ let s=0; mon.forEach((v,k)=>{ if(k>=from&&k<=to)s+=v; }); return s; };
   const MX=MAXMIDX||((last&&monthIdx(last))||0);
   const supList=[...sups.values()].map(S=>{
     S.itemsArr=[...S.items.values()].map(it=>{
-      const ds=[...it.dates].sort(); it.buyCount=ds.length;
-      it.avgGap=ds.length>1?Math.round((new Date(ds[ds.length-1])-new Date(ds[0]))/86400000/(ds.length-1)):null;
+      it.avgGap=(it.buyCount>1&&it.first&&it.last)
+        ? Math.round((new Date(it.last)-new Date(it.first))/86400000/(it.buyCount-1)) : null;
       it.last3=win(it.mon,MX-2,MX); it.prev3=win(it.mon,MX-5,MX-3); it.delta=it.last3-it.prev3;
       it.margin=it.sales>0.005?it.profit/it.sales:null;
       return it;
@@ -925,8 +964,8 @@ function analyzeCustomer(code,lines){
     return S;
   }).sort((a,b)=>b.sales-a.sales);
   const allItems=supList.flatMap(S=>S.itemsArr.map(it=>({...it, sup:S.name})));
-  return {code, lines:lines.length, sales:tS, cost:tC, profit:tP,
-    margin:tS>0.005?tP/tS:null, invoices:docs.size, itemsCount:allItems.length,
+  return {code, lines:rows.length, sales:tS, cost:tC, profit:tP,
+    margin:tS>0.005?tP/tS:null, invoices, itemsCount:allItems.length,
     first, last, monthly, MX, supList, allItems,
     last3:win(monthly,MX-2,MX), prev3:win(monthly,MX-5,MX-3)};
 }
