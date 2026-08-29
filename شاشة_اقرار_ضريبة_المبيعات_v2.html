@@ -1422,8 +1422,17 @@ function setAnthKey(v){ try{ if(v) localStorage.setItem('kfc_anth_key', v.trim()
 function changeAnthKey(){ setAnthKey(''); renderPdfKeyAsk(); }
 function anthWsid(){ try{ return localStorage.getItem('kfc_anth_wsid')||''; }catch(e){ return ''; } }
 function setAnthWsid(v){ try{ if(v) localStorage.setItem('kfc_anth_wsid', v.trim()); else localStorage.removeItem('kfc_anth_wsid'); }catch(e){} }
-function renderPdfWsAsk(){
+/* جلب مساحات العمل تلقائياً من الـ API (يعمل عندما يكون صاحب المفتاح مديراً) */
+async function fetchWorkspaces(){
+  const rs=await fetch('https://api.anthropic.com/v1/organizations/workspaces?limit=100',{
+    headers:{'x-api-key':anthKey(),'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'}});
+  if(!rs.ok){ const err=new Error('خطأ '+rs.status); err.status=rs.status; throw err; }
+  const j=await rs.json();
+  return (j.data||[]).filter(w=>!w.archived_at);
+}
+function renderPdfWsAsk(msg){
   $('pdfReadWrap').innerHTML=`<div class="duebox" style="background:var(--gold-bg); border-color:#E8D9B0; margin-top:10px;">
+    ${msg?`<div style="color:var(--crimson); font-weight:700; margin-bottom:6px;">${esc(msg)}</div>`:''}
     <b>🏢 مطلوب رقم مساحة العمل (Workspace ID) — مرة واحدة فقط</b><br>
     <span class="hint">مفتاحك من النوع المربوط بالحساب، والـ API بيطلب رقم مساحة العمل معه (يبدأ بـ <b>wrkspc_</b>). أسهل طريقة مضمونة:
     افتح <b>platform.claude.com/settings/workspaces</b> ← اضغط <b>Create workspace</b> وسمّها kfc ← بعد ما تنفتح،
@@ -1524,7 +1533,7 @@ async function startPdfRead(){
   }catch(e){ PDFR.busy=false; renderPdfKeyAsk('تعذر فتح الملف: '+e.message); return; }
   PDFR.pages=pdf.numPages;
   renderPdfReview();
-  let prevNo=''; const retried=new Set();
+  let prevNo=''; const retried=new Set(); let wsTried=false;
   for(let pg=1; pg<=pdf.numPages; pg++){
     if(PDFR.cancel) break;
     try{
@@ -1551,8 +1560,20 @@ async function startPdfRead(){
         PDFR.errs.push(`صفحة ${pg}: بيان ${no||'؟'} بلا أسطر ضريبة مقروءة — راجعها يدوياً`);
     }catch(e){
       if(e.status===401){ PDFR.busy=false; renderPdfKeyAsk('المفتاح مرفوض (401) — الصق مفتاحاً صحيحاً.'); PDF_PENDING=f; return; }
-      if(e.status===400 && /workspace.?id/i.test(e.message||'')){
-        PDFR.busy=false; PDF_PENDING=f; renderPdfWsAsk(); return; }
+      if((e.status===400 && /workspace.?id/i.test(e.message||'')) || (e.status===404 && /workspace/i.test(e.message||''))){
+        // محاولة جلب رقم مساحة العمل تلقائياً من الـ API (مرة واحدة)
+        if(!wsTried){
+          wsTried=true;
+          try{
+            const ws=await fetchWorkspaces();
+            const pick=ws.find(w=>/default/i.test(w.name||''))||ws[0];
+            if(pick && pick.id){ setAnthWsid(pick.id); pg--; continue; }
+          }catch(_e){}
+        }
+        PDFR.busy=false; PDF_PENDING=f;
+        renderPdfWsAsk('تعذر تحديد رقم مساحة العمل تلقائياً'+(anthWsid()?' (الرقم المحفوظ مرفوض وتم مسحه)':'')+' — الصقه يدوياً حسب الشرح.');
+        setAnthWsid('');
+        return; }
       if(e.status===403){ PDFR.busy=false; renderPdfKeyAsk('الوصول مرفوض (403) — تأكد من المفتاح ومن وجود رصيد بالحساب.'); PDF_PENDING=f; return; }
       if((e.status===429 || e.status===529 || e.status===500) && !retried.has(pg)){
         // ضغط مؤقت على الخدمة: انتظار ثم محاولة ثانية واحدة لنفس الصفحة
