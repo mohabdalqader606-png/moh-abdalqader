@@ -1488,19 +1488,22 @@ function savePdfKey(){
 function cancelPdfRead(){ PDFR.cancel=true; }
 const PDF_PROMPT=`هذه صورة صفحة من ملف بيانات جمركية أردنية (قد تكون بياناً جمركياً أو وصل مقبوضات مالي أو صفحة تكميلية/مرفقات).
 أعد JSON فقط بلا أي شرح، بهذا الشكل بالضبط:
-{"kind":"declaration","decl_no":null,"decl_date":null,"fin_date":null,"items":null,"tax_lines":[{"rate":16,"base":0.000,"tax":0.000}]}
+{"kind":"declaration","decl_no":null,"decl_date":null,"fin_no":null,"fin_date":null,"order_no":null,"entry_no":null,"items":null,"tax_lines":[{"rate":16,"base":0.000,"tax":0.000}]}
 القواعد:
 - kind واحدة من: declaration (بيان جمركي رئيسي) / receipt (وصل مقبوضات أو وصل مالي) / continuation (صفحة تكميلية لبيان سابق بلا رقم بيان) / other.
-- decl_no: رقم البيان الجمركي كما هو مكتوب (مثل 32116/4)، أو null إن لم يظهر.
-- decl_date: تاريخ تسجيل البيان (يوم/شهر/سنة)، fin_date: تاريخ الوصل المالي إن كانت الصفحة وصلاً، وإلا null.
-- items: وصف مختصر جداً للبضاعة إن ظهر، وإلا null.
-- tax_lines: فقط أسطر "الضريبة العامة على المبيعات". لا تُدخل الرسوم الجمركية ولا رسم الطوابع ولا الرسوم الأخرى ولا الغرامات.
-- base = القيمة الخاضعة التي حُسبت عليها ضريبة المبيعات لذلك السطر، tax = مبلغ ضريبة المبيعات، بالدينار بثلاث خانات عشرية.
-- إن كان البيان يحوي أكثر من نسبة ضريبة مبيعات أعد سطراً لكل نسبة.
-- إن كانت البضاعة معفاة أو بنسبة صفر ولا ضريبة مبيعات عليها: أعد سطراً rate=0 و tax=0 و base=قيمة البضاعة.
-- صفحات receipt: اجعل tax_lines فارغة [] (حتى لا تتكرر المبالغ) وأعد fin_date فقط.
-- صفحات other أو التي لا تحوي أرقام ضريبة مبيعات: tax_lines فارغة [].
-- اقرأ الأرقام بدقة متناهية رقماً رقماً؛ وإن تعذّرت قراءة رقم بثقة اجعله null بدل التخمين.`;
+- decl_no: رقم البيان الجمركي كما هو مكتوب (مثل 32116/4)، decl_date: تاريخ تسجيل البيان (يوم/شهر/سنة).
+- ⚠ الأهم: ضريبة المبيعات هي فقط المبلغ المقابل للرمز 020 في جدول الرسوم والضرائب على البيان.
+  لا تأخذ أبداً الرسوم الجمركية ولا الطوابع ولا أي رمز آخر غير 020 مهما كان.
+- tax_lines: سطر لكل سطر 020: tax = مبلغ الـ 020، base = القيمة الخاضعة له، rate = نسبته إن كانت مطبوعة،
+  وإن لم تكن مطبوعة اجعل rate=null (سيُحسب تلقائياً). بالدينار بثلاث خانات عشرية.
+- إن لم يوجد رمز 020 على البيان أو كان مبلغه صفراً: البضاعة بلا ضريبة مبيعات — أعد سطراً واحداً rate=0 و tax=0 و base=القيمة الجمركية للبضاعة.
+- حقول مكتوبة غالباً بخط اليد أو بختم على البيان — اقرأها بعناية فائقة رقماً رقماً:
+  fin_no = رقم الوصل المالي، fin_date = التاريخ المقابل لرقم الوصل المالي (يوم/شهر/سنة)،
+  order_no = رقم الطلبية، entry_no = رقم القيد. إن لم تستطع قراءة أي منها بثقة اجعله null.
+- صفحات receipt (وصل المقبوضات): أعد decl_no إن ظهر مع fin_no و fin_date، واجعل tax_lines فارغة [] حتى لا تتكرر المبالغ.
+- صفحات other أو التي لا تخص البيانات: tax_lines فارغة [].
+- items: وصف مختصر جداً للبضاعة إن ظهر.
+- اقرأ الأرقام بدقة متناهية؛ وإن تعذّرت قراءة رقم بثقة اجعله null بدل التخمين.`;
 async function aiReadPage(b64, prevNo){
   const body={model:ANTH_MODEL, max_tokens:1500,
     messages:[{role:'user', content:[
@@ -1525,7 +1528,7 @@ async function aiReadPage(b64, prevNo){
 async function startPdfRead(){
   const f=PDF_PENDING; if(!f) return;
   PDF_PENDING=null;
-  PDFR.rows=[]; PDFR.fin={}; PDFR.errs=[]; PDFR.busy=true; PDFR.cancel=false; PDFR.done=0; PDFR.fname=f.name;
+  PDFR.rows=[]; PDFR.fin={}; PDFR.finNo={}; PDFR.errs=[]; PDFR.busy=true; PDFR.cancel=false; PDFR.done=0; PDFR.fname=f.name;
   renderPdfReview();
   let pdf;
   try{
@@ -1551,12 +1554,24 @@ async function startPdfRead(){
       let no=res.decl_no?String(res.decl_no).trim():'';
       if(!no && (kind==='continuation'||kind==='receipt') && prevNo) no=prevNo;
       if(res.decl_no && kind==='declaration') prevNo=no;
-      if(kind==='receipt' && res.fin_date && no) PDFR.fin[no]=String(res.fin_date).trim();
+      const S=v=>v===null||v===undefined?'':String(v).trim();
+      if(no){
+        if(res.fin_date) PDFR.fin[no]=S(res.fin_date);
+        if(res.fin_no){ PDFR.finNo=PDFR.finNo||{}; PDFR.finNo[no]=S(res.fin_no); }
+      }
       (res.tax_lines||[]).forEach(L=>{
-        const rate=+L.rate||0, base=r3(+L.base||0), tax=r3(+L.tax||0);
+        let rate=+L.rate||0;
+        const base=r3(+L.base||0), tax=r3(+L.tax||0);
         if(!base && !tax) return;
-        PDFR.rows.push({page:pg, no, dateDecl:res.decl_date?String(res.decl_date).trim():'',
-          items:res.items?String(res.items).trim():'', rate, base, tax, use:true});
+        // النسبة غير مطبوعة على البيان؟ تُشتق من الضريبة ÷ القيمة وتُقرَّب لأقرب نسبة أردنية
+        if(!rate && tax>0 && base>0){
+          const d=tax/base*100;
+          const near=[16,13.5,10,8,5,4,2].find(c=>Math.abs(d-c)<=0.35);
+          rate = near!==undefined ? near : r3(d);
+        }
+        PDFR.rows.push({page:pg, no, dateDecl:S(res.decl_date),
+          finNo:S(res.fin_no), dateFin:S(res.fin_date), order:S(res.order_no), entry:S(res.entry_no),
+          items:S(res.items), rate, base, tax, use:true});
       });
       if(kind==='declaration' && !(res.tax_lines||[]).length)
         PDFR.errs.push(`صفحة ${pg}: بيان ${no||'؟'} بلا أسطر ضريبة مقروءة — راجعها يدوياً`);
@@ -1583,13 +1598,20 @@ async function startPdfRead(){
         await new Promise(r=>setTimeout(r,20000));
         pg--; continue;
       }
+      if(!e.status && !retried.has(pg)){
+        // ردّ غير مفهوم أو خطأ عابر: محاولة ثانية واحدة لنفس الصفحة
+        retried.add(pg); pg--; continue;
+      }
       PDFR.errs.push(`صفحة ${pg}: ${e.message}`);
     }
     PDFR.done=pg;
     renderPdfReview();
   }
-  // تعبئة تاريخ الوصل المالي من صفحات الوصولات
-  PDFR.rows.forEach(r=>{ if(PDFR.fin[r.no]) r.dateFin=PDFR.fin[r.no]; });
+  // تعبئة رقم الوصل المالي وتاريخه من صفحات الوصولات لما لم يُقرأ من البيان نفسه
+  PDFR.rows.forEach(r=>{
+    if(!r.dateFin && PDFR.fin[r.no]) r.dateFin=PDFR.fin[r.no];
+    if(!r.finNo && PDFR.finNo && PDFR.finNo[r.no]) r.finNo=PDFR.finNo[r.no];
+  });
   PDFR.busy=false;
   renderPdfReview();
 }
@@ -1638,7 +1660,10 @@ function renderPdfReview(){
         <td class="num">${r.page}</td>
         <td><input type="text" value="${esc(r.no)}" style="width:90px;" onchange="pdfSet(${i},'no',this.value)"></td>
         <td><input type="text" value="${esc(r.dateDecl||'')}" style="width:88px;" onchange="pdfSet(${i},'dateDecl',this.value)"></td>
+        <td><input type="text" value="${esc(r.finNo||'')}" style="width:80px;" onchange="pdfSet(${i},'finNo',this.value)"></td>
         <td><input type="text" value="${esc(r.dateFin||'')}" style="width:88px;" onchange="pdfSet(${i},'dateFin',this.value)"></td>
+        <td><input type="text" value="${esc(r.entry||'')}" style="width:80px;" onchange="pdfSet(${i},'entry',this.value)"></td>
+        <td><input type="text" value="${esc(r.order||'')}" style="width:80px;" onchange="pdfSet(${i},'order',this.value)"></td>
         <td><input type="text" value="${esc(r.items||'')}" style="width:150px;" onchange="pdfSet(${i},'items',this.value)"></td>
         <td><input type="text" value="${r.rate}" style="width:48px; text-align:center;" onchange="pdfSet(${i},'rate',this.value)"></td>
         <td><input type="text" value="${r.base.toFixed(3)}" style="width:100px; text-align:end;" onchange="pdfSet(${i},'base',this.value)"></td>
@@ -1647,9 +1672,9 @@ function renderPdfReview(){
       </tr>`;
     }).join('');
     html+=`<div class="scrollbox" style="max-height:340px; margin-top:8px;">
-      <table class="t"><thead><tr><th>✓</th><th>صفحة</th><th>رقم البيان</th><th>تاريخ البيان</th><th>تاريخ الوصل</th><th>الأصناف</th><th>النسبة %</th><th>قيمة الاستيراد</th><th>الضريبة</th><th>فحص</th></tr></thead>
+      <table class="t"><thead><tr><th>✓</th><th>صفحة</th><th>رقم البيان</th><th>تاريخ البيان</th><th>رقم الوصل</th><th>تاريخ الوصل</th><th>رقم القيد</th><th>رقم الطلبية</th><th>الأصناف</th><th>النسبة %</th><th>قيمة الاستيراد</th><th>الضريبة</th><th>فحص</th></tr></thead>
       <tbody>${trs}</tbody>
-      <tfoot><tr><td colspan="7">مجموع المحدد</td><td class="num">${fmt(tb)}</td><td class="num">${fmt(tt)}</td><td></td></tr></tfoot></table></div>
+      <tfoot><tr><td colspan="10">مجموع المحدد</td><td class="num">${fmt(tb)}</td><td class="num">${fmt(tt)}</td><td></td></tr></tfoot></table></div>
       <div class="toolrow" style="margin-top:8px;">
         <button class="btn-teal btn-sm" ${PDFR.busy?'disabled':''} onclick="pdfApprove()">✔ اعتماد المحدد وإضافته لكشف المستوردات</button>
         <button class="btn-ghost btn-sm" onclick="pdfClear()">مسح النتائج</button>
@@ -1679,8 +1704,9 @@ function pdfApprove(){
     let cls0='zero';
     if(r.rate===0 && /طحين|زيت|فاصوليا|بقول|سكر|أرز|ارز|حليب|عدس|شاي|قهوة/.test(r.items||'')) cls0='exm';
     const dd=parseAnyDate(r.dateFin);
-    ST.imports.rows.push({no:r.no, dateFin:dd?fmtDMY(dd):String(r.dateFin||''), dateDecl:r.dateDecl||'', order:'',
-      entry:'', items:r.items||'', rate:+r.rate||0, base:r3(r.base), tax:r3(r.tax),
+    ST.imports.rows.push({no:r.no, dateFin:dd?fmtDMY(dd):String(r.dateFin||''), dateDecl:r.dateDecl||'',
+      finNo:r.finNo||'', order:r.order||'', entry:r.entry||'',
+      items:r.items||'', rate:+r.rate||0, base:r3(r.base), tax:r3(r.tax),
       excl:false, cls0, src:'pdf'});
     added++;
   }
@@ -2059,6 +2085,7 @@ function renderAll(C){
       {id:'excl',l:'استبعاد',sum:false,get:r=>r.excl?'مستبعد':'',printText:r=>r.excl?'مستبعد':'',
        render:r=>`<input type="checkbox" ${r.excl?'checked':''} ${canEdit?'':'disabled'} onchange="toggleImpExcl(${ST.imports.rows.indexOf(r)})">`},
       {id:'no',l:'رقم البيان',get:r=>r.no},
+      {id:'finNo',l:'رقم الوصل',get:r=>r.finNo||''},
       {id:'dateFin',l:'تاريخ الوصل المالي',get:r=>r.dateFin},
       {id:'dateDecl',l:'تاريخ البيان',get:r=>r.dateDecl||''},
       {id:'order',l:'رقم الطلبية',get:r=>r.order||''},
