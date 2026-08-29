@@ -249,6 +249,19 @@
       </details>
     </div>
 
+    <div class="toolbar" id="filterBar">
+      <label style="font-size:12px; font-weight:600; color:var(--ink-soft);">📅 فلترة الفترة:</label>
+      <input type="date" id="fFrom" style="border:1.5px solid var(--line); border-radius:8px; padding:6px 10px; font-size:12px; font-family:var(--disp);">
+      <label style="font-size:12px; color:var(--ink-soft);">إلى</label>
+      <input type="date" id="fTo" style="border:1.5px solid var(--line); border-radius:8px; padding:6px 10px; font-size:12px; font-family:var(--disp);">
+      <button class="btn-primary btn-sm" onclick="applyFilter()">تطبيق</button>
+      <button class="btn-ghost btn-sm" onclick="quickFilter('all')">الكل</button>
+      <button class="btn-ghost btn-sm" onclick="quickFilter('ytd')">هذه السنة</button>
+      <button class="btn-ghost btn-sm" onclick="quickFilter('12m')">آخر ١٢ شهر</button>
+      <button class="btn-ghost btn-sm" onclick="quickFilter('3m')">آخر ٣ أشهر</button>
+      <span class="status-msg" id="filterInfo"></span>
+    </div>
+
     <div class="summary" id="kpiRow" style="display:none;"></div>
 
     <div class="toolbar" id="custToolbar" style="display:none;">
@@ -278,6 +291,7 @@
       <h2 id="drillTitle">—</h2>
       <span class="code" id="drillCode"></span>
       <span class="code" id="drillRep"></span>
+      <span class="code" id="drillPeriod" style="color:var(--gold); font-weight:700;"></span>
       <div style="flex:1;"></div>
       <button class="print-btn" onclick="window.print()">🖨️ طباعة</button>
       <button class="btn-ghost btn-sm" onclick="exportDrillCsv()">تصدير أصناف CSV</button>
@@ -307,6 +321,8 @@ let CUSTS=[];                // من cal_v_customers + إثراء
 let MAXMIDX=0;               // آخر شهر في البيانات (y*12+m)
 let PENDING=null;            // دفعة جاهزة للرفع
 let DRILL=null;              // بيانات تحليل العميل الحالي
+let F_FROM=null, F_TO=null;  // فلترة الفترة الزمنية
+let FN_OK=true;              // دوال الفلترة منفذة على السيرفر؟
 
 /* ======================= أدوات عامة ======================= */
 function parseNum(v){ if(v==null) return 0; v=String(v).trim().replace(/,/g,''); if(v===''||v==='-') return 0;
@@ -570,18 +586,59 @@ async function deleteUpload(id){
   await loadUploads(); await loadCustomers();
 }
 
+/* ======================= فلترة الفترة الزمنية ======================= */
+function applyFilter(){
+  F_FROM=document.getElementById('fFrom').value||null;
+  F_TO=document.getElementById('fTo').value||null;
+  loadCustomers();
+  if(DRILL) openCustomer(DRILL.code);
+}
+function quickFilter(kind){
+  const t=new Date(), p=n=>String(n).padStart(2,'0');
+  const iso=d=>`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`;
+  let from='';
+  if(kind==='all') from='';
+  else if(kind==='ytd') from=`${t.getFullYear()}-01-01`;
+  else if(kind==='12m'){ const d=new Date(t); d.setFullYear(d.getFullYear()-1); from=iso(d); }
+  else if(kind==='3m'){ const d=new Date(t); d.setMonth(d.getMonth()-3); from=iso(d); }
+  document.getElementById('fFrom').value=from;
+  document.getElementById('fTo').value=kind==='all'?'':iso(t);
+  applyFilter();
+}
+function filterLabel(){ return (F_FROM||F_TO)?`${F_FROM||'البداية'} ← ${F_TO||'النهاية'}`:''; }
+
+async function fetchCustomersBase(){
+  if(FN_OK){
+    try{
+      const base=await fetchAll(()=>db.rpc('cal_fn_customers',{d_from:F_FROM,d_to:F_TO}).order('customer_code'));
+      const sups=await fetchAll(()=>db.rpc('cal_fn_customer_suppliers',{d_from:F_FROM,d_to:F_TO}).order('customer_code').order('supplier'));
+      return {base,sups,fallback:false};
+    }catch(e){
+      const s=String(e).toLowerCase();
+      if(s.includes('function')||s.includes('pgrst202')) FN_OK=false; else throw e;
+    }
+  }
+  // بديل بدون فلترة إذا دوال v2.1 غير منفذة بعد
+  const base=await fetchAll(()=>db.from('cal_v_customers').select('*').order('customer_code'));
+  const sups=await fetchAll(()=>db.from('cal_v_customer_suppliers').select('*').order('customer_code').order('supplier'));
+  return {base,sups,fallback:true};
+}
+
 /* ======================= نظرة عامة على العملاء ======================= */
 async function loadCustomers(){
   const wrap=document.getElementById('custTableWrap');
   wrap.innerHTML='<div class="empty-state"><div class="ic">⏳</div>جارٍ تحميل ملخص العملاء من السيرفر...</div>';
-  let base,sups;
+  let base,sups,fallback;
   try{
-    base=await fetchAll(()=>db.from('cal_v_customers').select('*').order('customer_code'));
-    sups=await fetchAll(()=>db.from('cal_v_customer_suppliers').select('*').order('customer_code').order('supplier'));
+    ({base,sups,fallback}=await fetchCustomersBase());
   }catch(e){
     wrap.innerHTML=`<div class="empty-state"><div class="ic">⚠</div>${esc(e)}${String(e).includes('does not exist')?' — نفّذ سكربت SQL أولاً':''}</div>`;
     return;
   }
+  const fi=document.getElementById('filterInfo');
+  if(fallback&&(F_FROM||F_TO)){ fi.textContent='⚠ الفلترة تحتاج تنفيذ سكربت v2.1 في SQL Editor — المعروض كل الفترات'; fi.className='status-msg err'; }
+  else if(F_FROM||F_TO){ fi.textContent='✓ الفترة المطبّقة: '+filterLabel(); fi.className='status-msg ok'; }
+  else { fi.textContent='كل الفترات'; fi.className='status-msg'; }
   const byCust=new Map();
   sups.forEach(r=>{ if(!byCust.has(r.customer_code)) byCust.set(r.customer_code,[]); byCust.get(r.customer_code).push(r); });
   MAXMIDX=0;
@@ -693,15 +750,21 @@ async function openCustomer(code){
   document.getElementById('drillTitle').textContent=cust?cust.name:code;
   document.getElementById('drillCode').textContent=code;
   document.getElementById('drillRep').textContent=cust&&cust.rep?('المندوب: '+cust.rep):'';
+  document.getElementById('drillPeriod').textContent=(FN_OK&&(F_FROM||F_TO))?('📅 '+filterLabel()):'';
   document.getElementById('drillKpis').innerHTML='';
   document.getElementById('drillTrend').innerHTML='<div class="hint">جارٍ تحميل سطور العميل...</div>';
   document.getElementById('drillGrowth').innerHTML='';
   document.getElementById('drillSuppliers').innerHTML='';
   let lines;
   try{
-    lines=await fetchAll(()=>db.from('cal_lines')
-      .select('doc_type,doc_no,doc_date,supplier,item_code,item_name,qty,net_sales,total_cost,gross_profit,cost_estimated')
-      .eq('customer_code',code).order('doc_date').order('id'));
+    lines=await fetchAll(()=>{
+      let q=db.from('cal_lines')
+        .select('doc_type,doc_no,doc_date,supplier,item_code,item_name,qty,net_sales,total_cost,gross_profit,cost_estimated')
+        .eq('customer_code',code);
+      if(F_FROM) q=q.gte('doc_date',F_FROM);
+      if(F_TO) q=q.lte('doc_date',F_TO);
+      return q.order('doc_date').order('id');
+    });
   }catch(e){ document.getElementById('drillTrend').innerHTML=`<div class="hint" style="color:var(--crimson);">✗ ${esc(e)}</div>`; return; }
   DRILL=analyzeCustomer(code,lines);
   renderDrill();
