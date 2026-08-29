@@ -468,11 +468,19 @@ async function onSignedIn(user){
   canEdit=['admin','editor'].includes(curProfile.role);
   const roleAr={admin:'مدير',editor:'مدخل بيانات',viewer:'مطالع'}[curProfile.role]||curProfile.role;
   $('uName').textContent=curProfile.full_name||user.email;
-  $('uRole').textContent=user.email+' · '+roleAr;
+  $('uRole').textContent=user.email+' · '+roleAr+(canEdit?'':' · 👁 مطالعة فقط');
   $('userbox').style.display='flex';
   $('loginView').style.display='none';
   $('appView').style.display='block';
   ['btnSave','btnFinal','btnSaveCC'].forEach(id=>{ if($(id)) $(id).disabled=!canEdit; });
+  // وضع المطالعة: تعطيل رفع الملفات وكل حقول الإدخال
+  if(!canEdit){
+    ['fileNT','fileSales','filePurch','fileImports','fileTrust'].forEach(id=>{ if($(id)) $(id).disabled=true; });
+    document.querySelectorAll('.filebox label.up').forEach(l=>{ l.style.opacity='.45'; l.style.cursor='not-allowed'; });
+    ['prevCredit','otherAdj','pPayDate','pWeekRate','pFixed','ref16','ref17',
+     'regName','regTaxNo','regPhone','regCell','regAddress','regGov','regIBAN','regEmail',
+     'trustBulkText','trustBulkClass','invPaste'].forEach(id=>{ if($(id)) $(id).disabled=true; });
+  }
   const {data:profs}=await sb.from('profiles').select('id, full_name, email');
   (profs||[]).forEach(p=>profilesMap[p.id]=p.full_name||p.email);
   await loadCC();
@@ -581,7 +589,9 @@ function gtPrint(tid,defs,rows,opts={}){
 }
 
 /* ================= 1) الجهات غير الخاضعة ================= */
+function guardEdit(inp){ if(!canEdit){ alert('حسابك «مطالعة فقط» — لا يمكنك رفع كشوفات أو التعديل. راجع مدير النظام.'); if(inp) inp.value=''; return false; } return true; }
 async function onFileNT(inp){
+  if(!guardEdit(inp)) return;
   const f=inp.files[0]; if(!f) return;
   $('fnameNT').textContent=f.name;
   const rows=tsvRows(await readFileText(f));
@@ -706,6 +716,7 @@ function printNTSummary(){
 
 /* ================= 2) تحليل المبيعات ================= */
 async function onFileSales(inp){
+  if(!guardEdit(inp)) return;
   const f=inp.files[0]; if(!f) return;
   if(!ST.nt){ alert('ارفع كشف الجهات غير الخاضعة أولاً (تبويب ١) — الاستثناءات تعتمد عليه.'); inp.value=''; return; }
   $('fnameSales').textContent=f.name;
@@ -967,6 +978,7 @@ function exportItemsCSV(){
 let PROWS=[];        // تفصيل أسطر المشتريات (بالذاكرة — من الملف المرفوع في الجلسة)
 let PVIEW='vendor';  // العرض الحالي بتبويب المشتريات
 async function onFilePurch(inp){
+  if(!guardEdit(inp)) return;
   const f=inp.files[0]; if(!f) return;
   $('fnamePurch').textContent=f.name;
   const rows=tsvRows(await readFileText(f));
@@ -1127,6 +1139,7 @@ function exportPurchCSV(){
 
 /* ================= 4) المستوردات ================= */
 async function onFileImports(inp){
+  if(!guardEdit(inp)) return;
   const f=inp.files[0]; if(!f) return;
   $('fnameImports').textContent=f.name;
   const aoa=await readFileXlsxAoA(f);
@@ -1205,6 +1218,7 @@ const TRUST_RULES=[
 ];
 function trustAutoClass(details){ const d=String(details||''); for(const [cls,re] of TRUST_RULES){ if(re.test(d)) return cls; } return ''; }
 async function onFileTrust(inp){
+  if(!guardEdit(inp)) return;
   const f=inp.files[0]; if(!f) return;
   $('fnameTrust').textContent=f.name;
   const aoa=await readFileXlsxAoA(f);
