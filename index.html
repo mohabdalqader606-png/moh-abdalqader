@@ -295,6 +295,12 @@
         <span class="hint">ملف <b>مستوردات شهر…xlsx</b> — يُجمَّع حسب نسبة الضريبة (0% / 16%).</span>
         <span class="fname" id="fnameImports"></span>
       </div>
+      <div class="filebox" style="margin-top:8px;">
+        <label class="up">🤖 قراءة بيانات جمركية PDF<input type="file" id="filePdfImports" accept=".pdf" onchange="onFilePdfImports(this)"></label>
+        <span class="hint">ارفع ملف <b>PDF</b> للبيانات الجمركية (حتى الممسوحة ضوئياً) — يقرأها الذكاء الاصطناعي صفحة صفحة ويعرض النتيجة بجدول <b>للمراجعة والتعديل والاعتماد</b> قبل إضافتها للكشف. يحتاج مفتاح Anthropic API (يُحفظ على جهازك فقط).</span>
+        <span class="fname" id="fnamePdfImports"></span>
+      </div>
+      <div id="pdfReadWrap"></div>
       <div id="importsWrap"><div class="empty-state">ارفع الكشف أولاً</div></div>
     </div>
   </section>
@@ -1275,6 +1281,220 @@ async function onFileImports(inp){
 }
 function setImp0(idx, v){ if(!canEdit||!ST.imports) return; ST.imports.rows[idx].cls0=v; recomputeAll(); }
 function toggleImpExcl(idx){ if(!canEdit||!ST.imports) return; ST.imports.rows[idx].excl=!ST.imports.rows[idx].excl; recomputeAll(); }
+
+/* ============ قراءة البيانات الجمركية من PDF بالذكاء الاصطناعي ============ */
+const ANTH_MODEL='claude-sonnet-5';
+const PDFR={rows:[], fin:{}, busy:false, cancel:false, pages:0, done:0, errs:[], fname:''};
+let PDF_PENDING=null;
+function anthKey(){ try{ return localStorage.getItem('kfc_anth_key')||''; }catch(e){ return ''; } }
+function setAnthKey(v){ try{ if(v) localStorage.setItem('kfc_anth_key', v.trim()); else localStorage.removeItem('kfc_anth_key'); }catch(e){} }
+function changeAnthKey(){ setAnthKey(''); renderPdfKeyAsk(); }
+async function loadPdfJs(){
+  if(window.pdfjsLib) return window.pdfjsLib;
+  await new Promise((res,rej)=>{ const s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js';
+    s.onload=res; s.onerror=()=>rej(new Error('تعذر تحميل مكتبة قراءة PDF — تأكد من الاتصال بالإنترنت')); document.head.appendChild(s); });
+  window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js';
+  return window.pdfjsLib;
+}
+function onFilePdfImports(inp){
+  if(!guardEdit(inp)) return;
+  const f=inp.files[0]; if(!f) return;
+  if(PDFR.busy){ alert('قراءة PDF أخرى قيد التنفيذ — انتظر انتهاءها أو ألغِها.'); inp.value=''; return; }
+  $('fnamePdfImports').textContent=f.name;
+  PDF_PENDING=f; inp.value='';
+  if(!anthKey()){ renderPdfKeyAsk(); return; }
+  startPdfRead();
+}
+function renderPdfKeyAsk(msg){
+  $('pdfReadWrap').innerHTML=`<div class="duebox" style="background:var(--gold-bg); border-color:#E8D9B0; margin-top:10px;">
+    ${msg?`<div style="color:var(--crimson); font-weight:700; margin-bottom:6px;">${esc(msg)}</div>`:''}
+    <b>🔑 مفتاح Anthropic API مطلوب لقراءة الـ PDF</b> — يُحفظ على هذا الجهاز فقط ولا يُرسل لسيرفرنا أبداً.<br>
+    <span class="hint">تحصل عليه من console.anthropic.com ← API Keys ← Create Key، ثم الصقه هنا (يبدأ بـ sk-ant-).
+    التكلفة تقريباً قرش إلى قرشين لكل صفحة تُقرأ.</span>
+    <div class="toolrow" style="margin-top:8px;">
+      <input type="password" id="anthKeyInp" placeholder="sk-ant-..." style="width:320px; direction:ltr;">
+      <button class="btn-teal btn-sm" onclick="savePdfKey()">حفظ المفتاح والمتابعة</button>
+    </div></div>`;
+}
+function savePdfKey(){
+  const v=($('anthKeyInp').value||'').trim();
+  if(!v){ alert('الصق المفتاح أولاً.'); return; }
+  setAnthKey(v);
+  if(PDF_PENDING) startPdfRead(); else $('pdfReadWrap').innerHTML='<div class="hint" style="margin-top:6px;">تم حفظ المفتاح — ارفع ملف PDF الآن.</div>';
+}
+function cancelPdfRead(){ PDFR.cancel=true; }
+const PDF_PROMPT=`هذه صورة صفحة من ملف بيانات جمركية أردنية (قد تكون بياناً جمركياً أو وصل مقبوضات مالي أو صفحة تكميلية/مرفقات).
+أعد JSON فقط بلا أي شرح، بهذا الشكل بالضبط:
+{"kind":"declaration","decl_no":null,"decl_date":null,"fin_date":null,"items":null,"tax_lines":[{"rate":16,"base":0.000,"tax":0.000}]}
+القواعد:
+- kind واحدة من: declaration (بيان جمركي رئيسي) / receipt (وصل مقبوضات أو وصل مالي) / continuation (صفحة تكميلية لبيان سابق بلا رقم بيان) / other.
+- decl_no: رقم البيان الجمركي كما هو مكتوب (مثل 32116/4)، أو null إن لم يظهر.
+- decl_date: تاريخ تسجيل البيان (يوم/شهر/سنة)، fin_date: تاريخ الوصل المالي إن كانت الصفحة وصلاً، وإلا null.
+- items: وصف مختصر جداً للبضاعة إن ظهر، وإلا null.
+- tax_lines: فقط أسطر "الضريبة العامة على المبيعات". لا تُدخل الرسوم الجمركية ولا رسم الطوابع ولا الرسوم الأخرى ولا الغرامات.
+- base = القيمة الخاضعة التي حُسبت عليها ضريبة المبيعات لذلك السطر، tax = مبلغ ضريبة المبيعات، بالدينار بثلاث خانات عشرية.
+- إن كان البيان يحوي أكثر من نسبة ضريبة مبيعات أعد سطراً لكل نسبة.
+- إن كانت البضاعة معفاة أو بنسبة صفر ولا ضريبة مبيعات عليها: أعد سطراً rate=0 و tax=0 و base=قيمة البضاعة.
+- صفحات receipt: اجعل tax_lines فارغة [] (حتى لا تتكرر المبالغ) وأعد fin_date فقط.
+- صفحات other أو التي لا تحوي أرقام ضريبة مبيعات: tax_lines فارغة [].
+- اقرأ الأرقام بدقة متناهية رقماً رقماً؛ وإن تعذّرت قراءة رقم بثقة اجعله null بدل التخمين.`;
+async function aiReadPage(b64, prevNo){
+  const body={model:ANTH_MODEL, max_tokens:1500,
+    messages:[{role:'user', content:[
+      {type:'image', source:{type:'base64', media_type:'image/jpeg', data:b64}},
+      {type:'text', text: PDF_PROMPT + (prevNo?`\n- رقم البيان في آخر صفحة رئيسية سابقة: ${prevNo} (استخدمه لصفحات continuation/receipt).`:'')}
+    ]}]};
+  const rs=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+    headers:{'content-type':'application/json','x-api-key':anthKey(),
+      'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify(body)});
+  if(!rs.ok){
+    let msg='خطأ '+rs.status; try{ const ej=await rs.json(); msg+=': '+(ej.error&&ej.error.message||''); }catch(e){}
+    const err=new Error(msg); err.status=rs.status; throw err;
+  }
+  const j=await rs.json();
+  let txt=(j.content||[]).map(c=>c.text||'').join('').replace(/```json|```/g,'').trim();
+  const a=txt.indexOf('{'), b=txt.lastIndexOf('}');
+  if(a<0||b<0) throw new Error('ردّ غير مفهوم من القارئ');
+  return JSON.parse(txt.slice(a,b+1));
+}
+async function startPdfRead(){
+  const f=PDF_PENDING; if(!f) return;
+  PDF_PENDING=null;
+  PDFR.rows=[]; PDFR.fin={}; PDFR.errs=[]; PDFR.busy=true; PDFR.cancel=false; PDFR.done=0; PDFR.fname=f.name;
+  renderPdfReview();
+  let pdf;
+  try{
+    const lib=await loadPdfJs();
+    const buf=await f.arrayBuffer();
+    pdf=await lib.getDocument({data:buf}).promise;
+  }catch(e){ PDFR.busy=false; renderPdfKeyAsk('تعذر فتح الملف: '+e.message); return; }
+  PDFR.pages=pdf.numPages;
+  renderPdfReview();
+  let prevNo='';
+  for(let pg=1; pg<=pdf.numPages; pg++){
+    if(PDFR.cancel) break;
+    try{
+      const page=await pdf.getPage(pg);
+      let vp=page.getViewport({scale:1});
+      const vpScale=Math.min(2.2, 1700/vp.width);
+      vp=page.getViewport({scale:vpScale});
+      const cv=document.createElement('canvas'); cv.width=Math.round(vp.width); cv.height=Math.round(vp.height);
+      await page.render({canvasContext:cv.getContext('2d'), viewport:vp}).promise;
+      const b64=cv.toDataURL('image/jpeg',0.85).split(',')[1];
+      const res=await aiReadPage(b64, prevNo);
+      const kind=res.kind||'other';
+      let no=res.decl_no?String(res.decl_no).trim():'';
+      if(!no && (kind==='continuation'||kind==='receipt') && prevNo) no=prevNo;
+      if(res.decl_no && kind==='declaration') prevNo=no;
+      if(kind==='receipt' && res.fin_date && no) PDFR.fin[no]=String(res.fin_date).trim();
+      (res.tax_lines||[]).forEach(L=>{
+        const rate=+L.rate||0, base=r3(+L.base||0), tax=r3(+L.tax||0);
+        if(!base && !tax) return;
+        PDFR.rows.push({page:pg, no, dateDecl:res.decl_date?String(res.decl_date).trim():'',
+          items:res.items?String(res.items).trim():'', rate, base, tax, use:true});
+      });
+      if(kind==='declaration' && !(res.tax_lines||[]).length)
+        PDFR.errs.push(`صفحة ${pg}: بيان ${no||'؟'} بلا أسطر ضريبة مقروءة — راجعها يدوياً`);
+    }catch(e){
+      if(e.status===401){ PDFR.busy=false; renderPdfKeyAsk('المفتاح مرفوض (401) — الصق مفتاحاً صحيحاً.'); PDF_PENDING=f; return; }
+      PDFR.errs.push(`صفحة ${pg}: ${e.message}`);
+    }
+    PDFR.done=pg;
+    renderPdfReview();
+  }
+  // تعبئة تاريخ الوصل المالي من صفحات الوصولات
+  PDFR.rows.forEach(r=>{ if(PDFR.fin[r.no]) r.dateFin=PDFR.fin[r.no]; });
+  PDFR.busy=false;
+  renderPdfReview();
+}
+function pdfSet(i,k,v){
+  const r=PDFR.rows[i]; if(!r) return;
+  if(k==='rate'||k==='base'||k==='tax'){ const n=parseFloat(String(v).replace(/,/g,'')); r[k]=isNaN(n)?0:(k==='rate'?n:r3(n)); }
+  else r[k]=String(v).trim();
+  renderPdfReview();
+}
+function pdfToggle(i){ const r=PDFR.rows[i]; if(r){ r.use=!r.use; renderPdfReview(); } }
+function pdfClear(){ if(PDFR.busy){ alert('ألغِ القراءة أولاً.'); return; } PDFR.rows=[]; PDFR.errs=[]; PDFR.pages=0; PDFR.done=0; $('pdfReadWrap').innerHTML=''; $('fnamePdfImports').textContent=''; }
+function pdfRowIssue(r){
+  const iss=[];
+  if(!r.no) iss.push('رقم البيان فارغ');
+  if(r.rate>0){ const dev=r3(r.tax-r.base*r.rate/100); if(Math.abs(dev)>0.02) iss.push(`الضريبة ≠ القيمة×النسبة (فرق ${fmt(dev)})`); }
+  return iss.join(' · ');
+}
+function pdfExisting(r){
+  if(!ST.imports) return false;
+  const key=String(r.no).split('/').pop().trim();
+  return ST.imports.rows.some(x=>String(x.no).split('/').pop().trim()===key && +x.rate===+r.rate);
+}
+function renderPdfReview(){
+  const el=$('pdfReadWrap'); if(!el) return;
+  let html='';
+  if(PDFR.busy||PDFR.pages){
+    const pct=PDFR.pages?Math.round(PDFR.done/PDFR.pages*100):0;
+    html+=`<div class="duebox" style="margin-top:10px; background:${PDFR.busy?'var(--gold-bg)':'var(--teal-bg)'}; border-color:${PDFR.busy?'#E8D9B0':'#BFE3DA'};">
+      ${PDFR.busy?`⏳ جاري قراءة <b>${esc(PDFR.fname)}</b> — صفحة ${PDFR.done} من ${PDFR.pages} (${pct}%)
+        <button class="btn-danger btn-sm" style="margin-inline-start:10px;" onclick="cancelPdfRead()">إلغاء</button>`
+      :`✔ انتهت القراءة${PDFR.cancel?' (أُلغيت مبكراً)':''} — <b>${PDFR.rows.length}</b> سطر ضريبة من <b>${PDFR.done}</b> صفحة. راجع الجدول وعدّل ما يلزم ثم اعتمد.`}
+    </div>`;
+  }
+  if(PDFR.errs.length)
+    html+=`<div class="duebox" style="margin-top:8px; background:var(--crimson-bg); border-color:#EBC7C4; color:var(--crimson);">
+      <b>ملاحظات القراءة (${PDFR.errs.length}):</b><br>${PDFR.errs.slice(0,15).map(e=>'• '+esc(e)).join('<br>')}${PDFR.errs.length>15?`<br>… و${PDFR.errs.length-15} أخرى`:''}</div>`;
+  if(PDFR.rows.length){
+    let tb=0, tt=0;
+    const trs=PDFR.rows.map((r,i)=>{
+      if(r.use){ tb=r3(tb+r.base); tt=r3(tt+r.tax); }
+      const iss=pdfRowIssue(r), ex=pdfExisting(r);
+      return `<tr ${r.use?'':'style="background:#F1F3F6; color:#888;"'}>
+        <td><input type="checkbox" ${r.use?'checked':''} onchange="pdfToggle(${i})"></td>
+        <td class="num">${r.page}</td>
+        <td><input type="text" value="${esc(r.no)}" style="width:90px;" onchange="pdfSet(${i},'no',this.value)"></td>
+        <td><input type="text" value="${esc(r.dateDecl||'')}" style="width:88px;" onchange="pdfSet(${i},'dateDecl',this.value)"></td>
+        <td><input type="text" value="${esc(r.dateFin||'')}" style="width:88px;" onchange="pdfSet(${i},'dateFin',this.value)"></td>
+        <td><input type="text" value="${esc(r.items||'')}" style="width:150px;" onchange="pdfSet(${i},'items',this.value)"></td>
+        <td><input type="text" value="${r.rate}" style="width:48px; text-align:center;" onchange="pdfSet(${i},'rate',this.value)"></td>
+        <td><input type="text" value="${r.base.toFixed(3)}" style="width:100px; text-align:end;" onchange="pdfSet(${i},'base',this.value)"></td>
+        <td><input type="text" value="${r.tax.toFixed(3)}" style="width:90px; text-align:end;" onchange="pdfSet(${i},'tax',this.value)"></td>
+        <td>${iss?`<span class="badge warn">⚠ ${esc(iss)}</span>`:'<span class="badge ok">✔</span>'}${ex?' <span class="badge grace">موجود بالكشف</span>':''}</td>
+      </tr>`;
+    }).join('');
+    html+=`<div class="scrollbox" style="max-height:340px; margin-top:8px;">
+      <table class="t"><thead><tr><th>✓</th><th>صفحة</th><th>رقم البيان</th><th>تاريخ البيان</th><th>تاريخ الوصل</th><th>الأصناف</th><th>النسبة %</th><th>قيمة الاستيراد</th><th>الضريبة</th><th>فحص</th></tr></thead>
+      <tbody>${trs}</tbody>
+      <tfoot><tr><td colspan="7">مجموع المحدد</td><td class="num">${fmt(tb)}</td><td class="num">${fmt(tt)}</td><td></td></tr></tfoot></table></div>
+      <div class="toolrow" style="margin-top:8px;">
+        <button class="btn-teal btn-sm" ${PDFR.busy?'disabled':''} onclick="pdfApprove()">✔ اعتماد المحدد وإضافته لكشف المستوردات</button>
+        <button class="btn-ghost btn-sm" onclick="pdfClear()">مسح النتائج</button>
+        <button class="btn-ghost btn-sm" onclick="changeAnthKey()">🔑 تغيير مفتاح API</button>
+        <span class="hint">الأسطر المعلَّمة «موجود بالكشف» ستُتخطى تلقائياً عند الاعتماد حتى لا تتكرر.</span>
+      </div>`;
+  }
+  el.innerHTML=html;
+}
+function pdfApprove(){
+  if(!canEdit){ alert('صلاحيتك مطالعة فقط.'); return; }
+  const picked=PDFR.rows.filter(r=>r.use);
+  if(!picked.length){ alert('لا أسطر محددة.'); return; }
+  const bad=picked.filter(r=>pdfRowIssue(r));
+  if(bad.length && !confirm(`${bad.length} سطر عليه ملاحظة فحص (⚠) — اعتماد رغم ذلك؟`)) return;
+  if(!ST.imports) ST.imports={rows:[], fname:'قراءة PDF'};
+  let added=0, skipped=0;
+  for(const r of picked){
+    if(pdfExisting(r)){ skipped++; continue; }
+    let cls0='zero';
+    if(r.rate===0 && /طحين|زيت|فاصوليا|بقول|سكر|أرز|ارز|حليب|عدس|شاي|قهوة/.test(r.items||'')) cls0='exm';
+    ST.imports.rows.push({no:r.no, dateFin:r.dateFin||'', dateDecl:r.dateDecl||'', order:'',
+      entry:'', items:r.items||'', rate:+r.rate||0, base:r3(r.base), tax:r3(r.tax),
+      excl:false, cls0, src:'pdf'});
+    added++;
+  }
+  PDFR.rows=[]; PDFR.errs=[]; PDFR.pages=0; PDFR.done=0;
+  $('fnamePdfImports').textContent='';
+  recomputeAll();
+  alert(`تمت الإضافة: ${added} سطر${skipped?` — وتخطّي ${skipped} موجود مسبقاً`:''}. الأسطر الجديدة دخلت الكشف وفحوصاته وستُحفظ تلقائياً.`);
+}
 
 /* فحوصات المستوردات: المعادلة سطرياً + المطابقة بيان-بيان مع قيود الأمانات */
 function renderImportsChecks(){
