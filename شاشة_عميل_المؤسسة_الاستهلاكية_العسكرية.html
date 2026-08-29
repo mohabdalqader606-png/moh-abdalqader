@@ -355,7 +355,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
 
     <div class="input-panel" style="border-bottom:1px solid var(--line);">
       <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;"><span class="num">3</span><b style="font-size:13px;">مطابقة كميات الكشف مع سندات التحويل (011)</b></div>
-      <div class="hint">بيقارن "كمية العقبة" بكشف المؤسسة مع صافي كميات سندات 011 المستوردة بصفحة "سندات التحويل" (بوحدة المؤسسة/حبة — والمرتجع من 011 مطروح تلقائياً). أي صنف فيه فرق بيظهر بصف ملوّن، ومن زر "تفاصيل" بتشوف توزيع كمياتنا عالفروع والسندات — ولو الفرق بيطابق سند معيّن بالظبط منأشّرلك عليه وعلى فرعه.</div>
+      <div class="hint">بيقارن الكشف مع سندات 011 المستوردة بصفحة "سندات التحويل" (بوحدة المؤسسة/حبة) على العمودين: <b>كمية عمان</b> بالكشف مقابل المحوّل من 011 إلى <b>007</b> (حصة فواتير باقي المملكة)، و<b>كمية العقبة</b> مقابل الصافي الباقي بـ011 (الداخل − المحوّل لـ007 − المرتجع الحقيقي). أي صنف فيه فرق بأي عمود بيظهر بصف ملوّن، ومن زر "تفاصيل" بتشوف توزيع التوريد عالفروع وكل السندات بنوعها — ولو الفرق بيطابق سند معيّن بالظبط منأشّرلك عليه وعلى فرعه.</div>
       <div class="row-actions">
         <button class="btn-primary btn-sm" onclick="compareStatementTransfers()">🆚 مطابقة الكميات</button>
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="cmpOnlyDiff" checked onchange="compareStatementTransfers()"> عرض الأصناف يلي فيها فرق بس</label>
@@ -2045,6 +2045,8 @@ function normDocNum(v){ return String(v||'').replace(/[^0-9]/g,''); }
 
 // هل هاد الحقل (من مستودع / الى مستودع) هو مستودع 011؟ — منطابق "011" ككود قائم بحاله مو كجزء من رقم أطول (مثل 0113 أو 2011)
 function isWhs011(v){ return /(^|\D)011(\D|$)/.test(String(v||'').trim()); }
+// وهل هو مستودع 007؟ (يلي بتنقله الكميات المخصصة لفواتير باقي المملكة)
+function isWhs007(v){ return /(^|\D)007(\D|$)/.test(String(v||'').trim()); }
 // إشارة السطر: التحويل إلى 011 بيضيف الكمية، والتحويل من 011 (مرتجع) بيطرحها
 function trLineSign(t){
   const from011 = isWhs011(t.fromWhs), to011 = isWhs011(t.toWhs);
@@ -2888,31 +2890,46 @@ function renderStatementPage(){
   `;
 }
 
-/* ==================== مطابقة كميات الكشف مع سندات التحويل (011) ==================== */
+/* ==================== مطابقة كميات الكشف مع سندات التحويل (011) ====================
+   منطق الحركة: كل بضاعة المؤسسة بتفوت على مستودع 011.
+   - يلي بيتحوّل من 011 إلى 007 = حصة فواتير باقي المملكة → بينقارن مع "كمية عمان" بالكشف.
+   - يلي بيضل صافي بـ011 (الداخل − الطالع لـ007 − المرتجع الحقيقي) = حصة فواتير العقبة → بينقارن مع "كمية العقبة".
+*/
 function compareStatementTransfers(){
   const box = document.getElementById('cmpResultBox');
   const sumRow = document.getElementById('cmpSummaryRow');
   if(!STATEMENT.length){ flash('cmpMsg','استورد كشف المؤسسة أول (القسم 1 فوق).', false); return; }
   if(!TRANSFERS.length){ flash('cmpMsg','ما في سندات تحويل مستوردة — استوردها بصفحة "سندات التحويل (011)".', false); return; }
 
-  // صافي كمياتنا (بوحدة المؤسسة/حبة) لكل صنف من كل السندات المستوردة — مع تفاصيل الفروع والسندات
+  // تجميع كمياتنا (بوحدة المؤسسة/حبة) لكل صنف من كل السندات المستوردة
   const byTheir = new Map();
   const unmappedCodes = new Set();
   TRANSFERS.forEach(t=>{
     const it = ITEMS.find(x=>x.ourCode===t.ourCode);
     if(!it){ unmappedCodes.add(t.ourCode); return; }
-    const sign = trLineSign(t);
-    if(!sign) return;
-    const theirQty = sign * t.qty * (it.factor||1);
+    const from011 = isWhs011(t.fromWhs), to011 = isWhs011(t.toWhs);
+    if(from011 === to011) return; // مو حركة على 011، أو داخلية 011→011
+    const theirQty = t.qty * (it.factor||1);
     const code = String(it.theirCode).trim();
-    if(!byTheir.has(code)) byTheir.set(code, {theirCode:code, theirName:it.theirName||'', qty:0, byBranch:new Map(), byVoucher:new Map()});
+    if(!byTheir.has(code)) byTheir.set(code, {theirCode:code, theirName:it.theirName||'', aqNet:0, amman007:0, byBranch:new Map(), byVoucher:new Map()});
     const e = byTheir.get(code);
-    e.qty += theirQty;
-    const br = t.branch || '—';
-    e.byBranch.set(br, (e.byBranch.get(br)||0) + theirQty);
-    const vk = normDocNum(t.docNum) + '|' + br;
-    if(!e.byVoucher.has(vk)) e.byVoucher.set(vk, {docNum:t.docNum, docDate:t.docDate||'', branch:br, qty:0});
-    e.byVoucher.get(vk).qty += theirQty;
+    let type, signedQty;
+    if(to011){
+      type = 'in'; signedQty = theirQty;
+      e.aqNet += theirQty;
+      const br = t.branch || '—';
+      e.byBranch.set(br, (e.byBranch.get(br)||0) + theirQty);
+    }else if(isWhs007(t.toWhs)){
+      type = 'to007'; signedQty = theirQty;
+      e.amman007 += theirQty;
+      e.aqNet -= theirQty;
+    }else{
+      type = 'return'; signedQty = -theirQty;
+      e.aqNet -= theirQty;
+    }
+    const vk = normDocNum(t.docNum) + '|' + type + '|' + (t.branch||'');
+    if(!e.byVoucher.has(vk)) e.byVoucher.set(vk, {docNum:t.docNum, docDate:t.docDate||'', branch:t.branch||'—', type, qty:0});
+    e.byVoucher.get(vk).qty += signedQty;
   });
 
   // بناء صفوف المقارنة: كل أصناف الكشف + أي صنف بالسندات مو موجود بالكشف
@@ -2922,29 +2939,32 @@ function compareStatementTransfers(){
     const code = String(s.theirCode).trim();
     seen.add(code);
     const e = byTheir.get(code);
-    rows.push({theirCode:code, theirName:s.theirName||(e&&e.theirName)||'', stQty:s.qtyAqaba||0, trQty:e?e.qty:0, e});
+    rows.push({theirCode:code, theirName:s.theirName||(e&&e.theirName)||'', stAmman:s.qtyAmman||0, stAqaba:s.qtyAqaba||0, trAmman:e?e.amman007:0, trAqaba:e?e.aqNet:0, e});
   });
   byTheir.forEach((e,code)=>{
-    if(!seen.has(code)) rows.push({theirCode:code, theirName:e.theirName, stQty:0, trQty:e.qty, e, notInStatement:true});
+    if(!seen.has(code)) rows.push({theirCode:code, theirName:e.theirName, stAmman:0, stAqaba:0, trAmman:e.amman007, trAqaba:e.aqNet, e, notInStatement:true});
   });
   const EPS = 0.001;
-  rows.forEach(r=>{ r.diff = r.trQty - r.stQty; r.hasDiff = Math.abs(r.diff) > EPS; });
+  rows.forEach(r=>{
+    r.diffAmman = r.trAmman - r.stAmman;
+    r.diffAqaba = r.trAqaba - r.stAqaba;
+    r.hasDiff = Math.abs(r.diffAmman) > EPS || Math.abs(r.diffAqaba) > EPS;
+  });
   rows.sort((a,b)=> (b.hasDiff-a.hasDiff) || String(a.theirCode).localeCompare(String(b.theirCode),'ar'));
 
   const onlyDiff = document.getElementById('cmpOnlyDiff').checked;
   const shown = onlyDiff ? rows.filter(r=>r.hasDiff) : rows;
   const diffCount = rows.filter(r=>r.hasDiff).length;
-  const totalSt = rows.reduce((s,r)=>s+r.stQty,0);
-  const totalTr = rows.reduce((s,r)=>s+r.trQty,0);
+  const totDiffAmman = rows.reduce((s,r)=>s+r.diffAmman,0);
+  const totDiffAqaba = rows.reduce((s,r)=>s+r.diffAqaba,0);
 
   sumRow.style.display = '';
   sumRow.innerHTML = `
     <div class="card"><div class="lbl">أصناف مقارنة</div><div class="val">${rows.length}</div></div>
     <div class="card good"><div class="lbl">متطابقة</div><div class="val">${rows.length-diffCount}</div></div>
     <div class="card ${diffCount?'warn':'good'}"><div class="lbl">فيها فرق</div><div class="val">${diffCount}</div></div>
-    <div class="card"><div class="lbl">كمية العقبة بالكشف</div><div class="val">${fmtNum(totalSt)}</div></div>
-    <div class="card"><div class="lbl">صافي كمية السندات</div><div class="val">${fmtNum(totalTr)}</div></div>
-    <div class="card ${Math.abs(totalTr-totalSt)>EPS?'warn':'good'}"><div class="lbl">صافي الفرق (سندات - كشف)</div><div class="val">${fmtNum(totalTr-totalSt)}</div></div>
+    <div class="card ${Math.abs(totDiffAmman)>EPS?'warn':'good'}"><div class="lbl">صافي فرق عمان (سندات - كشف)</div><div class="val">${fmtNum(totDiffAmman)}</div></div>
+    <div class="card ${Math.abs(totDiffAqaba)>EPS?'warn':'good'}"><div class="lbl">صافي فرق العقبة (سندات - كشف)</div><div class="val">${fmtNum(totDiffAqaba)}</div></div>
   `;
 
   let warnHtml = '';
@@ -2953,14 +2973,24 @@ function compareStatementTransfers(){
   }
 
   if(!shown.length){
-    box.innerHTML = warnHtml + `<div class="hint" style="color:var(--teal);">✔ كل الكميات متطابقة بين الكشف والسندات — ما في ولا فرق.</div>`;
-    flash('cmpMsg', diffCount ? '' : 'تمت المطابقة — كل شي مظبوط.', true);
+    box.innerHTML = warnHtml + `<div class="hint" style="color:var(--teal);">✔ كل الكميات متطابقة بين الكشف والسندات (عمان والعقبة) — ما في ولا فرق.</div>`;
+    flash('cmpMsg','تمت المطابقة — كل شي مظبوط.', true);
     return;
   }
 
+  const TYPE_LABELS = {in:'توريد إلى 011', to007:'→ 007 (عمان)', return:'مرتجع من 011'};
+  const diffCell = (d)=> `<td class="mono" style="font-weight:700; color:${Math.abs(d)>EPS?'var(--crimson)':'var(--teal)'};">${fmtNum(d)}</td>`;
   let html = warnHtml + `<div class="tbl-wrap" style="max-height:520px; padding:0;">
     <table class="grid">
-      <thead><tr><th>رقم المادة</th><th>اسم المادة</th><th>كمية العقبة بالكشف</th><th>صافي كمية السندات (حبة)</th><th>الفرق (سندات - كشف)</th><th></th></tr></thead>
+      <thead><tr>
+        <th rowspan="2">رقم المادة</th><th rowspan="2">اسم المادة</th>
+        <th colspan="3" style="background:#EEF3FB;">عمان (باقي المملكة = المحوّل لـ007)</th>
+        <th colspan="3" style="background:#EDF7F4;">العقبة (الصافي بـ011)</th>
+        <th rowspan="2"></th>
+      </tr><tr>
+        <th style="background:#EEF3FB;">بالكشف</th><th style="background:#EEF3FB;">بالسندات</th><th style="background:#EEF3FB;">الفرق</th>
+        <th style="background:#EDF7F4;">بالكشف</th><th style="background:#EDF7F4;">بالسندات</th><th style="background:#EDF7F4;">الفرق</th>
+      </tr></thead>
       <tbody>`;
   shown.forEach((r,idx)=>{
     const detId = 'cmpDet_'+idx;
@@ -2968,50 +2998,70 @@ function compareStatementTransfers(){
     html += `<tr${rowStyle}>
       <td class="mono">${esc(r.theirCode)}</td>
       <td>${esc(r.theirName)}${r.notInStatement?' <b style="color:var(--crimson); font-size:11px;">(مش موجود بالكشف)</b>':''}</td>
-      <td class="mono">${fmtNum(r.stQty)}</td>
-      <td class="mono">${fmtNum(r.trQty)}</td>
-      <td class="mono" style="font-weight:700; color:${r.hasDiff?'var(--crimson)':'var(--teal)'};">${fmtNum(r.diff)}</td>
+      <td class="mono">${fmtNum(r.stAmman)}</td>
+      <td class="mono">${fmtNum(r.trAmman)}</td>
+      ${diffCell(r.diffAmman)}
+      <td class="mono">${fmtNum(r.stAqaba)}</td>
+      <td class="mono">${fmtNum(r.trAqaba)}</td>
+      ${diffCell(r.diffAqaba)}
       <td>${r.hasDiff && r.e ? `<button class="btn-ghost btn-sm" onclick="toggleCmpDetail('${detId}', this)">تفاصيل ▾</button>` : ''}</td>
     </tr>`;
     if(r.hasDiff && r.e){
-      // مرشّحين: سند كميته (لهاد الصنف) بتساوي الفرق بالظبط — وكذلك فرع مجموعه بيساوي الفرق
       const vouchers = Array.from(r.e.byVoucher.values());
-      const candidates = vouchers.filter(v=> Math.abs(v.qty - r.diff) <= EPS);
-      const branchTotals = Array.from(r.e.byBranch.entries());
-      const branchCandidates = branchTotals.filter(([br,q])=> Math.abs(q - r.diff) <= EPS);
-      let conclusion = '';
-      if(r.diff > 0 && candidates.length === 1){
-        conclusion = `<div style="color:var(--crimson); font-weight:700; margin-bottom:4px;">🎯 الفرق بيطابق تماماً سند <span class="mono">${esc(candidates[0].docNum)}</span> — فرع <b>${esc(candidates[0].branch)}</b> (${fmtNum(candidates[0].qty)} حبة): غالباً هاد السند مش محسوب بالكشف.</div>`;
-      }else if(r.diff > 0 && candidates.length > 1){
-        conclusion = `<div style="color:var(--crimson); font-weight:700; margin-bottom:4px;">🎯 الفرق بيطابق كمية ${candidates.length} سندات (معلّمين تحت) — واحد منهم غالباً مش محسوب بالكشف.</div>`;
-      }else if(r.diff > 0 && branchCandidates.length === 1){
-        conclusion = `<div style="color:var(--crimson); font-weight:700; margin-bottom:4px;">🎯 الفرق بيطابق مجموع فرع <b>${esc(branchCandidates[0][0])}</b> كامل (${fmtNum(branchCandidates[0][1])} حبة).</div>`;
-      }else if(r.diff < 0){
-        conclusion = `<div style="color:var(--crimson); font-weight:700; margin-bottom:4px;">الكشف أكثر من سنداتنا بـ${fmtNum(-r.diff)} حبة — يا في سند مش مستورد عنا بصفحة السندات، يا المؤسسة حاسبة كمية زيادة.</div>`;
+      const conclusions = [];
+      const candSet = new Set();
+      // فرق العقبة: منفتش على سند توريد/مرتجع كميته بتساوي الفرق
+      if(Math.abs(r.diffAqaba) > EPS){
+        const pool = vouchers.filter(v=>v.type!=='to007');
+        const cands = pool.filter(v=> Math.abs(v.qty - r.diffAqaba) <= EPS);
+        if(cands.length===1){
+          conclusions.push(`🎯 فرق <b>العقبة</b> بيطابق تماماً سند <span class="mono">${esc(cands[0].docNum)}</span> — فرع <b>${esc(cands[0].branch)}</b> (${fmtNum(cands[0].qty)} حبة): غالباً هاد السند مش محسوب بالكشف.`);
+          candSet.add(cands[0]);
+        }else if(cands.length>1){
+          conclusions.push(`🎯 فرق <b>العقبة</b> بيطابق كمية ${cands.length} سندات (معلّمين تحت) — واحد منهم غالباً مش محسوب بالكشف.`);
+          cands.forEach(c=>candSet.add(c));
+        }else if(r.diffAqaba < 0){
+          conclusions.push(`فرق <b>العقبة</b>: الكشف أكثر من سنداتنا بـ${fmtNum(-r.diffAqaba)} حبة — يا في سند مش مستورد عنا، يا المؤسسة حاسبة زيادة.`);
+        }
       }
-      const brHtml = branchTotals.map(([br,q])=>`<span style="display:inline-block; border:1px solid var(--line); border-radius:8px; padding:2px 8px; margin:2px;">${esc(br)}: <b class="mono">${fmtNum(q)}</b></span>`).join('');
+      // فرق عمان: منفتش بين تحويلات 007
+      if(Math.abs(r.diffAmman) > EPS){
+        const pool = vouchers.filter(v=>v.type==='to007');
+        const cands = pool.filter(v=> Math.abs(v.qty - r.diffAmman) <= EPS);
+        if(cands.length>=1){
+          conclusions.push(`🎯 فرق <b>عمان</b> بيطابق تحويل 007 رقم <span class="mono">${esc(cands[0].docNum)}</span> (${fmtNum(cands[0].qty)} حبة).`);
+          cands.forEach(c=>candSet.add(c));
+        }else if(r.diffAmman < 0){
+          conclusions.push(`فرق <b>عمان</b>: كمية الكشف أكثر من المحوّل لـ007 بـ${fmtNum(-r.diffAmman)} حبة — يا في تحويل 007 مش مستورد عنا، يا المؤسسة حاسبة زيادة.`);
+        }else{
+          conclusions.push(`فرق <b>عمان</b>: المحوّل لـ007 أكثر من كمية الكشف بـ${fmtNum(r.diffAmman)} حبة.`);
+        }
+      }
+      const conclusionHtml = conclusions.length ? `<div style="color:var(--crimson); font-weight:700; margin-bottom:4px; line-height:1.9;">${conclusions.join('<br>')}</div>` : '';
+      const brHtml = Array.from(r.e.byBranch.entries()).map(([br,q])=>`<span style="display:inline-block; border:1px solid var(--line); border-radius:8px; padding:2px 8px; margin:2px;">${esc(br)}: <b class="mono">${fmtNum(q)}</b></span>`).join('');
       const vHtml = vouchers.map(v=>{
-        const isCand = r.diff>0 && Math.abs(v.qty - r.diff) <= EPS;
+        const isCand = candSet.has(v);
         return `<tr${isCand?' style="background:#FDECEC; font-weight:700;"':''}>
           <td class="mono">${esc(v.docNum)}${isCand?' 🎯':''}</td>
           <td>${esc(v.docDate)||'—'}</td>
+          <td>${TYPE_LABELS[v.type]||''}</td>
           <td>${esc(v.branch)}</td>
           <td class="mono">${fmtNum(v.qty)}</td>
         </tr>`;
       }).join('');
-      html += `<tr id="${detId}" style="display:none;"><td colspan="6" style="background:var(--paper); padding:10px 14px;">
-        ${conclusion}
-        <div style="margin-bottom:6px;"><b style="font-size:12px;">توزيع كمياتنا بالفروع (حبة):</b> ${brHtml||'—'}</div>
-        <table class="grid" style="max-width:560px;">
-          <thead><tr><th>السند</th><th>التاريخ</th><th>الفرع</th><th>الكمية (حبة)</th></tr></thead>
-          <tbody>${vHtml||'<tr><td colspan="4">ما في سندات لهاد الصنف</td></tr>'}</tbody>
+      html += `<tr id="${detId}" style="display:none;"><td colspan="9" style="background:var(--paper); padding:10px 14px;">
+        ${conclusionHtml}
+        <div style="margin-bottom:6px;"><b style="font-size:12px;">توزيع التوريد لـ011 بالفروع (حبة):</b> ${brHtml||'—'}</div>
+        <table class="grid" style="max-width:680px;">
+          <thead><tr><th>السند</th><th>التاريخ</th><th>النوع</th><th>الفرع</th><th>الكمية (حبة)</th></tr></thead>
+          <tbody>${vHtml||'<tr><td colspan="5">ما في سندات لهاد الصنف</td></tr>'}</tbody>
         </table>
       </td></tr>`;
     }
   });
   html += `</tbody></table></div>`;
   box.innerHTML = html;
-  flash('cmpMsg', diffCount ? `في ${diffCount} صنف فيه فرق — افتح "تفاصيل" لتوصل للسند والفرع.` : 'تمت المطابقة — كل شي مظبوط.', !diffCount);
+  flash('cmpMsg', diffCount ? `في ${diffCount} صنف فيه فرق (عمان أو عقبة) — افتح "تفاصيل" لتوصل للسند والفرع.` : 'تمت المطابقة — كل شي مظبوط.', !diffCount);
 }
 function toggleCmpDetail(id, btn){
   const tr = document.getElementById(id);
