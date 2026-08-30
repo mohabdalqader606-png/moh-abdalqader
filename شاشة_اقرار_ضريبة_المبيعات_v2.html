@@ -391,7 +391,7 @@
 </main>
 
 <div id="printSheet"></div>
-<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 56</b></footer>
+<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 57</b></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -2695,6 +2695,9 @@ CRITICAL RULES:
    - اتساق بند التعريفة مع وصف البضاعة الفعلي
    - أي اختلاف في النوع أو المنشأ أو العدد أو الوزن بين البيان والفاتورة والمنافست
    severity: "high" لما يعرّض لغرامة مباشرة، "medium" لما يحتاج تدقيقاً، "info" ملاحظة. basis: رقم المادة من قانون الجمارك إن كنت متأكداً منه وإلا اتركه null — لا تخترع أرقام مواد. إن لم توجد ملاحظات أعد [].
+13. DOCUMENTS INVENTORY: go through EVERY page and list EVERY document found in "documents" — البيان الجمركي، الفاتورة/الفواتير، المنافست/بوليصة الشحن، شهادة المنشأ، الشهادات الصحية/البيطرية/الحلال، إجازات الاستيراد، وصولات المقبوضات، قوائم التعبئة، أي مراسلات أو أوراق أخرى. لكل وثيقة: نوعها، صفحاتها، رقمها/مرجعها، وسطر أو سطران يلخصان محتواها.
+14. EXECUTIVE SUMMARY: fill "summary" with 4-6 أسطر عربية تلخص الملف كاملاً: ماذا اشتُري وممن وبأي قيمة وعملة، كيف شُحن، شرط ومكان التسليم وأثرهما على القيمة، حالة الدفع، وأهم ما يلفت النظر في الملف.
+15. ⚠ DELIVERY TERM & PLACE — أهم بند في التدقيق كله: fill "delivery" بعناية فائقة — شرط التسليم ومكانه من البيان (خانة 20 ومكان التسليم) ومن الفاتورة، وحلّل: ماذا يعني الشرط (Incoterm) بالضبط، من يتحمل الشحن والتأمين وإلى أي نقطة، هل القيمة المصرحة عولجت صحيحاً وفق هذا الشرط (مثلاً EXW/FOB/FCA يوجب إضافة الشحن والتأمين حتى مركز الدخول، وCIF يشملهما حتى ميناء التفريغ المسمى)، وهل يوجد أي تعارض بين شرط البيان وشرط الفاتورة أو بين الشرط والمكان المذكور. أي تعارض هنا يُدرج أيضاً في legal_findings بدرجة high.
 
 JSON ONLY. No markdown. No backticks.
 {
@@ -2737,6 +2740,9 @@ JSON ONLY. No markdown. No backticks.
     "loading_port":"ميناء الشحن","discharge_port":"ميناء التفريغ"
   },
   "legal_findings":[{"severity":"high|medium|info","issue":"وصف الملاحظة","basis":"رقم المادة من قانون الجمارك أو null","risk":"الغرامة أو الأثر المحتمل"}],
+  "documents":[{"type":"نوع الوثيقة","pages":"أرقام صفحاتها","ref":"رقمها أو مرجعها","summary":"سطر أو سطران عن محتواها"}],
+  "summary":"الملخص التنفيذي الشامل للملف 4-6 أسطر",
+  "delivery":{"term_decl":"شرط التسليم بالبيان خانة 20","place_decl":"مكان التسليم بالبيان","term_inv":"شرط التسليم بالفاتورة","place_inv":"مكان التسليم بالفاتورة أو null","analysis":"تحليل الشرط والمكان وأثرهما على القيمة المصرحة وأي تعارض"},
   "comparisons":[
     {"id":"sender_supplier","dec_label":"المصدر/المرسل (خانة 2)","inv_label":"اسم المورد","dec_val":"","inv_val":"","match":true,"note":""},
     {"id":"consignee_customer","dec_label":"المرسل إليه (خانة 8)","inv_label":"اسم العميل","dec_val":"","inv_val":"","match":true,"note":""},
@@ -2856,7 +2862,7 @@ async function caCallAPI(b64){
   const tid=setTimeout(()=>controller.abort(),180000);
   try{
     const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:hdrs,signal:controller.signal,
-      body:JSON.stringify({model:ANTH_MODEL, max_tokens:12000, system:CA_PROMPT, stream:true,
+      body:JSON.stringify({model:ANTH_MODEL, max_tokens:16000, system:CA_PROMPT, stream:true,
         messages:[{role:'user',content:[
           {type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},
           {type:'text',text:'هذا الملف يحتوي على بيان جمركي وفاتورة مورد. استخرج جميع البيانات وكل الأصناف من كل الصفحات بدون أي حد أقصى. ابحث جيداً عن أي نص مكتوب بخط اليد. أجب بـ JSON فقط بدون أي نص آخر.'}]}]})});
@@ -2988,6 +2994,33 @@ function caResultHTML(r,ri,forPrint){
   let h=`<div style="border:2px solid var(--navy);border-radius:12px;padding:14px;margin-bottom:16px;">`;
   h+=`<div style="font-weight:700;font-size:14px;color:var(--navy);margin-bottom:10px;">📄 ${esc(r.file)}</div>`;
   alerts.forEach(a=>{ h+=`<div style="padding:8px 12px;background:var(--gold-bg);border:1px solid #E8D9B0;border-radius:8px;margin-bottom:6px;font-size:12px;">⚠️ <b>${esc(a.item)}</b>: السعر تغيّر من <b>${caF(a.oldPrice)}</b> إلى <b>${caF(a.newPrice)}</b> (${a.pct>0?'+':''}${a.pct.toFixed(1)}%) — فاتورة سابقة: ${esc(a.oldInv)}</div>`; });
+  // ===== الملخص التنفيذي =====
+  if(r.data.summary){
+    h+=caTitle('📌 الملخص التنفيذي');
+    h+=caCard(`<div style="line-height:2;font-size:12.5px;">${esc(r.data.summary)}</div>`);
+  }
+  // ===== شرط ومكان التسليم — الفحص الأهم =====
+  const dv=r.data.delivery||{};
+  if(dv.term_decl||dv.term_inv||dv.analysis){
+    const nt=s=>(s||'').toUpperCase().replace(/[^A-Z]/g,'');
+    const t1=nt(dv.term_decl), t2=nt(dv.term_inv);
+    const clash=t1&&t2&&t1!==t2;
+    h+=caTitle('🚚 شرط ومكان التسليم — الفحص الأهم');
+    h+=caCard(`<table class="t"><thead><tr><th></th><th>البيان الجمركي (خانة 20)</th><th>الفاتورة</th></tr></thead><tbody>
+      <tr><td style="font-weight:700;">شرط التسليم</td><td style="font-weight:700;">${esc(dv.term_decl||'—')}</td><td style="font-weight:700;">${esc(dv.term_inv||'—')}</td></tr>
+      <tr><td style="font-weight:700;">مكان التسليم</td><td>${esc(dv.place_decl||'—')}</td><td>${esc(dv.place_inv||'—')}</td></tr></tbody></table>
+      ${clash?caNo('✗ تعارض بين شرط التسليم في البيان وشرطه في الفاتورة — مخالفة محتملة، دقق أيهما الصحيح')
+        :(t1&&t2?caOk('✓ شرط التسليم متطابق بين البيان والفاتورة'):'')}
+      ${(!dv.place_decl||dv.place_decl==='—')?`<div style="padding:6px 12px;background:var(--gold-bg);border:1px solid #E8D9B0;border-radius:8px;margin:6px 0;font-size:12px;">⚠ مكان التسليم غير مذكور بالبيان — الشرط بلا مكان مسمى ناقص</div>`:''}
+      ${dv.analysis?`<div style="margin-top:6px;padding:9px 12px;background:#EEF2F8;border:1px solid #C9D4E4;border-radius:8px;font-size:12px;line-height:1.9;"><b>التحليل:</b> ${esc(dv.analysis)}</div>`:''}`);
+  }
+  // ===== جرد الوثائق المرفقة =====
+  const docs=r.data.documents||[];
+  if(docs.length){
+    h+=caTitle(`🗂 الوثائق المرفقة بالملف (${docs.length})`);
+    h+=`<table class="t"><thead><tr><th>#</th><th>الوثيقة</th><th>الصفحات</th><th>الرقم/المرجع</th><th>ملخصها</th></tr></thead><tbody>`+
+      docs.map((d,j)=>`<tr><td>${j+1}</td><td style="font-weight:600;white-space:nowrap;">${esc(d.type||'—')}</td><td>${esc(String(d.pages||'—'))}</td><td>${esc(String(d.ref||'—'))}</td><td>${esc(d.summary||'')}</td></tr>`).join('')+`</tbody></table>`;
+  }
   h+=caTitle('📋 ملخص البيان الجمركي');
   h+=caCard([['رقم البيان',dec.declaration_number],['تاريخ البيان',dec.declaration_date],['نوع البيان',dec.declaration_type],
     ['المكتب الجمركي',dec.customs_office],['رقم مرجع المصرح (خانة 7)',dec.box7_declarant_ref],['بلد التصدير',dec.export_country],
