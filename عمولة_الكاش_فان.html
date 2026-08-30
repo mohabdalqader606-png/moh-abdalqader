@@ -279,6 +279,7 @@ function importJSON(ev){const f=ev.target.files[0];if(!f)return;const r=new File
 function fmt(v){if(v==null||isNaN(v))return '—';const a=Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2});return v<0?'('+a+')':a}
 function pct(v){return v==null||isNaN(v)||!isFinite(v)?'—':(v*100).toFixed(1)+'%'}
 function endOfMonth(y,m){return new Date(y,m+1,0)} // m 0-based
+function isoLocal(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')} // بديل toISOString() — هذيك بتحول لتوقيت UTC وبتقص يوم كامل بمناطق زمنية متقدمة عن UTC (زي الأردن)
 function repName(id){const r=ST.reps.find(x=>x.id===id);return r?r.name:'—'}
 function repByName(name){name=(name||'').trim();if(!name)return null;let r=ST.reps.find(x=>x.name===name);if(!r){r={id:uid(),name};ST.reps.push(r)}return r}
 function fillRepSelects(){const opts=ST.reps.map(r=>`<option value="${r.id}">${r.name}</option>`).join('')||'<option value="">— أضف مندوباً أولاً —</option>';['salesRep','collRep'].forEach(id=>{const el=document.getElementById(id);const cur=el.value;el.innerHTML=opts;if([...el.options].some(o=>o.value===cur))el.value=cur})}
@@ -413,7 +414,7 @@ function renderComm(){
  else if(!fEl.value)fEl.value=tEl.value;
  else if(!tEl.value)tEl.value=fEl.value;
  const f=fEl.value,t=tEl.value;
- const fromISO=f+'-01';const [ty,tm]=t.split('-').map(Number);const toISO=endOfMonth(ty,tm-1).toISOString().slice(0,10);
+ const fromISO=f+'-01';const [ty,tm]=t.split('-').map(Number);const toISO=isoLocal(endOfMonth(ty,tm-1));
  const X=computeCV(fromISO,toISO);window._CV=X;const P=X.P,PD=X.PD;
  document.getElementById('cvParams').innerHTML=[['salesRate','% عمولة المبيعات'],['salesTarget','هدف المبيعات لمكافأة كاملة'],['salesBonus','قيمة مكافأة البيع الكاملة'],['collBonus','قيمة مكافأة التحصيل الممتاز'],['collWeakDays','حد الأيام (أكثر = ضعيف)'],['retChqRate','% خصم الشيكات المرتجعة']].map(([k,l])=>`<label>${l}</label><input type="number" step="any" value="${P[k]}" onchange="ST.params['${k}']=+this.value;saveState();renderComm()">`).join('');
  const T=X.rows.reduce((a,r)=>{['sales','salesComm','salesBonus','collBonus','mgrBonus','retDed','assistFee','total'].forEach(k=>a[k]=(a[k]||0)+r[k]);return a},{sales:0,salesComm:0,salesBonus:0,collBonus:0,mgrBonus:0,retDed:0,assistFee:0,total:0});
@@ -511,7 +512,23 @@ document.querySelectorAll('nav button[data-t]').forEach(b=>b.onclick=()=>{
  if(b.dataset.t==='comm')renderComm();
 });
 function renderAll(){fillRepSelects();renderReps();renderSales();renderColl();renderComm()}
-loadState();renderAll();
+function migrateLegacyPeriodKeys(){
+ // كان "endOfMonth" يستخدم toISOString() اللي بتحوّل لتوقيت UTC وبتقص يوم كامل بمناطق زمنية متقدمة (زي الأردن UTC+3) —
+ // فكانت فترات الشهر تنحفظ بتاريخ نهاية أقل بيوم من الصحيح (٣٠ بدل ٣١ لشهر تموز مثلاً). هذي بترحّل أي فترة قديمة متأثرة لمفتاحها الصحيح.
+ let changed=false;
+ Object.keys(ST.periods||{}).forEach(key=>{
+  const parts=key.split('|');if(parts.length!==2)return;
+  const [from,to]=parts;const tp=to.split('-').map(Number);if(tp.length!==3)return;
+  const [ty,tm,td]=tp;const trueLast=new Date(ty,tm,0).getDate();
+  if(td===trueLast-1){
+   const newTo=ty+'-'+String(tm).padStart(2,'0')+'-'+String(trueLast).padStart(2,'0');
+   const newKey=from+'|'+newTo;
+   if(!ST.periods[newKey]){ST.periods[newKey]=ST.periods[key];changed=true}
+  }
+ });
+ if(changed)saveState();
+}
+loadState();migrateLegacyPeriodKeys();renderAll();
 </script>
 </body>
 </html>
