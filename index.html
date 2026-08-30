@@ -391,7 +391,7 @@
 </main>
 
 <div id="printSheet"></div>
-<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 52</b></footer>
+<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 53</b></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -1383,15 +1383,22 @@ function exportPurchCSV(){
 
 /* ================= 4) المستوردات ================= */
 /* اشتقاق نسبة ضريبة المبيعات من المبلغ ÷ القيمة وتقريبها لأقرب نسبة أردنية */
-function deriveRate(tax, base){
+const STD_RATES=[16,13.5,10,8,5,4,2];
+function deriveRate(tax, base, feesCap){
   if(Math.abs(tax)<0.0005) return 0;
   if(!(base>0)) return 0;
   const d=tax/base*100;
-  const near=[16,13.5,10,8,5,4,2].find(c=>Math.abs(d-c)<=0.35);
-  // نسبة غير قياسية (سلع عليها ضريبة خاصة مدمجة مثلاً): تُقرَّب لخانة عشرية واحدة للتجميع
-  return near!==undefined?near:Math.round(d*10)/10;
+  const near=STD_RATES.find(c=>Math.abs(d-c)<=0.35);
+  if(near!==undefined) return near;
+  // النسبة الظاهرة أعلى من القياسية لأن وعاء الجمرك = قيمة البند + الرسم الجمركي:
+  // نأخذ أكبر نسبة قياسية لا تتجاوزها، بشرط أن يبقى الرسم الضمني ضمن رسوم البيان
+  const below=STD_RATES.filter(c=>c<d).sort((a,b)=>b-a);
+  for(const c of below){
+    const impliedDuty=tax/c*100-base;
+    if(feesCap===undefined || impliedDuty<=feesCap+0.5) return c;
+  }
+  return Math.round(d*10)/10;
 }
-const STD_RATES=[16,13.5,10,8,5,4,2];
 /* قارئ كشف البيانات الرسمي من نظام الجمارك (سطر لكل بند تعريفة) —
    يُجمَّع بسطر واحد لكل بيان لكل نسبة، ويُستبعد الترانزيت تلقائياً */
 function parseImportsCustoms(aoa, hdr, fname){
@@ -1401,7 +1408,8 @@ function parseImportsCustoms(aoa, hdr, fname){
         iVal=col(/^قيمة البند/), iDesc=col(/^وصف بند التعريفة/), iXDesc=col(/الوصف الاضافي|الوصف الإضافي/),
         iExp=col(/^المصدر/), iImp=col(/^المستورد/), iTrans=col(/وسيلة النقل/), iAgr=col(/^اتفاقيات/),
         iTerms=col(/شرط التسليم/), iPlace=col(/مكان التسليم/), iExpC=col(/بلد التصدير/),
-        iDoc=col(/الوثائق حقل 44|الوثائق/), iRef=col(/رقم المرجع/), iDest=col(/بلد المقصد/);
+        iDoc=col(/الوثائق حقل 44|الوثائق/), iRef=col(/رقم المرجع/), iDest=col(/بلد المقصد/),
+        iFees=col(/^الرسوم$/);
   const groups={}; let transitN=0, lineN=0;
   for(const r of aoa.slice(1)){
     const no=String(r[iNo]||'').trim(); if(!no) continue;
@@ -1410,7 +1418,9 @@ function parseImportsCustoms(aoa, hdr, fname){
     const base=pnum(r[iVal]), tax=iTax>=0?pnum(r[iTax]):0;
     if(!base && !tax) continue;
     lineN++;
-    const rate=deriveRate(tax, base);
+    const rate=deriveRate(tax, base, iFees>=0?pnum(r[iFees]):undefined);
+    // نسبة معدّلة: وعاء الجمرك يشمل الرسم فالضريبة أعلى من القيمة×النسبة — يُعفى السطر من فحص المعادلة
+    const rateAdj = tax>0 && base>0 && STD_RATES.includes(rate) && Math.abs(tax/base*100-rate)>0.35;
     const k=declKey(no)+'@'+rate;
     if(!groups[k]){
       const dD=parseAnyDate(r[iDateD]), dF=parseAnyDate(r[iFinDt]);
@@ -1431,6 +1441,7 @@ function parseImportsCustoms(aoa, hdr, fname){
     }
     const g=groups[k];
     g.base=r3(g.base+base); g.tax=r3(g.tax+tax);
+    if(rateAdj) g.rateAdj=true;
     const d=[iDesc>=0?String(r[iDesc]||'').trim():'', iXDesc>=0?String(r[iXDesc]||'').trim():''].filter(x=>x).join(' — ');
     if(d && !g.descs.includes(d)) g.descs.push(d);
   }
@@ -1443,7 +1454,7 @@ function parseImportsCustoms(aoa, hdr, fname){
       order:'', entry:'', items:allDesc.slice(0,220),
       exporter:g.exporter, importer:g.importer, transport:g.transport, agr:g.agr,
       terms:g.terms, place:g.place, expCountry:g.expCountry, doc44:g.doc44, refNo:g.refNo,
-      rate:g.rate, base:g.base, tax:g.tax,
+      rate:g.rate, base:g.base, tax:g.tax, rateAdj:g.rateAdj||undefined,
       excl:!!finErr, cls0, finErr:finErr||undefined};
   });
   return {rowsOut, transitN, lineN};
@@ -1678,7 +1689,8 @@ async function startPdfRead(){
         // لا ضريبة (لا يوجد 020 أو مبلغه صفر) ← النسبة صفر حتماً؛ وغير المطبوعة تُشتق من الضريبة ÷ القيمة
         if(Math.abs(tax)<0.0005) rate=0;
         else if(!rate && base>0) rate=deriveRate(tax, base);
-        PDFR.rows.push({page:pg, no, dateDecl:S(res.decl_date),
+        const rateAdj = tax>0 && base>0 && STD_RATES.includes(rate) && Math.abs(tax/base*100-rate)>0.35;
+        PDFR.rows.push({page:pg, no, dateDecl:S(res.decl_date), rateAdj:rateAdj||undefined,
           finNo:S(res.fin_no), dateFin:S(res.fin_date), clearNo:S(res.clear_no),
           order:S(res.order_no), entry:S(res.entry_no),
           items:S(res.items), exporter:S(res.exporter), transport:S(res.transport),
@@ -1751,8 +1763,8 @@ function pdfRowIssue(r){
   if(!r.no) iss.push('رقم البيان فارغ');
   const fe=finDateIssue(r.dateFin);
   if(fe) iss.push(fe+' — مرفوض');
-  if(r.rate>0 && ![16,13.5,10,8,5,4,2].includes(+r.rate)) iss.push('نسبة غير معتمدة — دقق سطر 020 على البيان');
-  if(r.rate>0){ const dev=r3(r.tax-r.base*r.rate/100); if(Math.abs(dev)>0.02) iss.push(`الضريبة ≠ القيمة×النسبة (فرق ${fmt(dev)})`); }
+  if(r.rate>0 && !STD_RATES.includes(+r.rate)) iss.push('نسبة غير معتمدة — دقق سطر 020 على البيان');
+  if(r.rate>0 && !r.rateAdj){ const dev=r3(r.tax-r.base*r.rate/100); if(Math.abs(dev)>0.02) iss.push(`الضريبة ≠ القيمة×النسبة (فرق ${fmt(dev)})`); }
   return iss.join(' · ');
 }
 function pdfExisting(r){
@@ -1834,7 +1846,7 @@ function pdfApprove(){
       items:r.items||'', exporter:r.exporter||'', transport:r.transport||'',
       agr:r.agr||'', terms:r.terms||'', place:r.place||'', expCountry:r.expCountry||'',
       doc44:r.doc44||'', refNo:r.refNo||'',
-      rate:+r.rate||0, base:r3(r.base), tax:r3(r.tax),
+      rate:+r.rate||0, base:r3(r.base), tax:r3(r.tax), rateAdj:r.rateAdj||undefined,
       excl:false, cls0, src:'pdf'});
     added++;
   }
@@ -1852,7 +1864,7 @@ function renderImportsChecks(){
   // 1) أخطاء المعادلة والتكرار
   const dup={}; rows.forEach(r=>{ const k=declKey(r.no)+'@'+r.rate; dup[k]=(dup[k]||0)+1; });
   let eqIssues=0;
-  rows.forEach(r=>{ if(STD_RATES.includes(+r.rate) && Math.abs(r3(r.tax-r.base*r.rate/100))>0.02) eqIssues++;
+  rows.forEach(r=>{ if(!r.rateAdj && STD_RATES.includes(+r.rate) && Math.abs(r3(r.tax-r.base*r.rate/100))>0.02) eqIssues++;
     if(r.no && dup[declKey(r.no)+'@'+r.rate]>1) eqIssues++; });
   let html='';
   html += eqIssues
@@ -2206,7 +2218,7 @@ function renderAll(C){
       if(r.excl) return r.finErr||'';
       const iss=[];
       if(r.finErr) iss.push(r.finErr);
-      if(STD_RATES.includes(+r.rate)){ const exp=r3(r.base*r.rate/100), dev=r3(r.tax-exp);
+      if(!r.rateAdj && STD_RATES.includes(+r.rate)){ const exp=r3(r.base*r.rate/100), dev=r3(r.tax-exp);
         if(Math.abs(dev)>0.02) iss.push(`متوقع ${fmt(exp)} (فرق ${fmt(dev)})`); }
       if(r.no && dupMap[declKey(r.no)+'@'+r.rate]>1) iss.push('بيان مكرر بنفس النسبة');
       return iss.join(' · ');
