@@ -391,7 +391,7 @@
 </main>
 
 <div id="printSheet"></div>
-<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 53</b></footer>
+<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 54</b></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -1450,7 +1450,13 @@ function parseImportsCustoms(aoa, hdr, fname){
     const allDesc=g.descs.join('، ');
     if(g.rate===0 && /طحين|زيت|فاصوليا|بقول|سكر|أرز|ارز|حليب|عدس|شاي|قهوة/.test(allDesc)) cls0='exm';
     const finErr=finDateIssue(g.dateFin);
-    return {no:g.no, dateDecl:g.dateDecl, dateFin:g.dateFin, finNo:g.finNo, clearNo:g.clearNo,
+    // قيمة الاستيراد النهائية = الضريبة ÷ النسبة عندما لا تساوي قيمة البند × النسبة
+    // (وعاء الجمرك يشمل الرسم الجمركي) — فتبقى القسمة بالملخص والإقرار مضبوطة تماماً
+    let valOrig;
+    if(g.rate>0 && Math.abs(r3(g.tax-g.base*g.rate/100))>0.02){
+      valOrig=g.base; g.base=r3(g.tax*100/g.rate);
+    }
+    return {no:g.no, dateDecl:g.dateDecl, dateFin:g.dateFin, finNo:g.finNo, clearNo:g.clearNo, valOrig,
       order:'', entry:'', items:allDesc.slice(0,220),
       exporter:g.exporter, importer:g.importer, transport:g.transport, agr:g.agr,
       terms:g.terms, place:g.place, expCountry:g.expCountry, doc44:g.doc44, refNo:g.refNo,
@@ -1840,6 +1846,8 @@ function pdfApprove(){
     if(pdfExisting(r)){ skipped++; continue; }
     let cls0='zero';
     if(r.rate===0 && /طحين|زيت|فاصوليا|بقول|سكر|أرز|ارز|حليب|عدس|شاي|قهوة/.test(r.items||'')) cls0='exm';
+    // نفس قاعدة الإكسل: قيمة الاستيراد = الضريبة ÷ النسبة إن لم تطابق قيمة البند × النسبة
+    if(r.rate>0 && Math.abs(r3(r.tax-r.base*r.rate/100))>0.02){ r.valOrig=r.base; r.base=r3(r.tax*100/r.rate); }
     const dd=parseAnyDate(r.dateFin);
     ST.imports.rows.push({no:r.no, dateFin:dd?fmtDMY(dd):String(r.dateFin||''), dateDecl:r.dateDecl||'',
       finNo:r.finNo||'', clearNo:r.clearNo||'', order:r.order||'', entry:r.entry||'',
