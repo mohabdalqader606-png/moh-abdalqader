@@ -391,7 +391,7 @@
 </main>
 
 <div id="printSheet"></div>
-<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 54</b></footer>
+<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 55</b></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -1410,11 +1410,12 @@ function parseImportsCustoms(aoa, hdr, fname){
         iTerms=col(/شرط التسليم/), iPlace=col(/مكان التسليم/), iExpC=col(/بلد التصدير/),
         iDoc=col(/الوثائق حقل 44|الوثائق/), iRef=col(/رقم المرجع/), iDest=col(/بلد المقصد/),
         iFees=col(/^الرسوم$/);
-  const groups={}; let transitN=0, lineN=0;
+  const groups={}; let transitN=0, exportN=0, lineN=0;
   for(const r of aoa.slice(1)){
     const no=String(r[iNo]||'').trim(); if(!no) continue;
     const dest=iDest>=0?String(r[iDest]||''):'';
     if(/ترانزيت/.test(dest)){ transitN++; continue; }        // بيانات ترانزيت — ليست مستوردات
+    if(String(no).split('/')[1]==='1'){ exportN++; continue; } // الرقم الأوسط 1 = بيان تصدير — يُستثنى
     const base=pnum(r[iVal]), tax=iTax>=0?pnum(r[iTax]):0;
     if(!base && !tax) continue;
     lineN++;
@@ -1463,7 +1464,7 @@ function parseImportsCustoms(aoa, hdr, fname){
       rate:g.rate, base:g.base, tax:g.tax, rateAdj:g.rateAdj||undefined,
       excl:!!finErr, cls0, finErr:finErr||undefined};
   });
-  return {rowsOut, transitN, lineN};
+  return {rowsOut, transitN, exportN, lineN};
 }
 async function onFileImports(inp){
   if(!guardEdit(inp)) return;
@@ -1473,13 +1474,14 @@ async function onFileImports(inp){
   const hdr=(aoa[0]||[]).map(h=>String(h).replace(/\s+/g,' ').trim());
   // كشف البيانات الرسمي من نظام الجمارك؟ (فيه ضريبة المبيعات وقيمة البند ورقم الوصل المالي)
   if(findCol(hdr,/^ضريبة المبيعات/)>=0 && findCol(hdr,/^قيمة البند/)>=0){
-    const {rowsOut, transitN, lineN}=parseImportsCustoms(aoa, hdr, f.name);
+    const {rowsOut, transitN, exportN, lineN}=parseImportsCustoms(aoa, hdr, f.name);
     mergePdfRows(rowsOut);
     ST.imports={rows:rowsOut, fname:f.name, fmt:'cust'};
     recomputeAll();
     const nRej=rowsOut.filter(r=>r.finErr).length;
     alert(`تمت قراءة كشف نظام الجمارك:\n• ${lineN} بند تعريفة جُمعت في ${rowsOut.length} سطراً (بيان × نسبة)`
       +(transitN?`\n• استُبعد ${transitN} بند ترانزيت تلقائياً (ليست مستوردات)`:'')
+      +(exportN?`\n• استُبعد ${exportN} بند تصدير تلقائياً (رقم البيان على /1/)`:'')
       +(nRej?`\n• ⛔ ${nRej} سطر مرفوض: تاريخ الوصل المالي مفقود أو خارج حدود الفترة — ظاهرة رمادية بالجدول مع السبب`:''));
     return;
   }
@@ -1769,6 +1771,7 @@ function pdfRowIssue(r){
   if(!r.no) iss.push('رقم البيان فارغ');
   const fe=finDateIssue(r.dateFin);
   if(fe) iss.push(fe+' — مرفوض');
+  if(String(r.no||'').split('/')[1]==='1') iss.push('بيان تصدير (/1/) — يُستثنى');
   if(r.rate>0 && !STD_RATES.includes(+r.rate)) iss.push('نسبة غير معتمدة — دقق سطر 020 على البيان');
   if(r.rate>0 && !r.rateAdj){ const dev=r3(r.tax-r.base*r.rate/100); if(Math.abs(dev)>0.02) iss.push(`الضريبة ≠ القيمة×النسبة (فرق ${fmt(dev)})`); }
   return iss.join(' · ');
@@ -1831,9 +1834,11 @@ function pdfApprove(){
   if(!canEdit){ alert('صلاحيتك مطالعة فقط.'); return; }
   const picked=PDFR.rows.filter(r=>r.use);
   if(!picked.length){ alert('لا أسطر محددة.'); return; }
-  // تاريخ الوصل المالي هو المعتمد: مفقود أو غير مقروء أو خارج الفترة ← السطر مرفوض ولا يدخل الكشف
-  const dateBad=picked.filter(r=>finDateIssue(r.dateFin));
-  const good=picked.filter(r=>!finDateIssue(r.dateFin));
+  // بيانات التصدير (/1/) تُستثنى تلقائياً، وتاريخ الوصل المالي المفقود/الخارج عن الفترة يرفض السطر
+  const isExport=r=>String(r.no||'').split('/')[1]==='1';
+  const expBad=picked.filter(isExport);
+  const dateBad=picked.filter(r=>!isExport(r) && finDateIssue(r.dateFin));
+  const good=picked.filter(r=>!isExport(r) && !finDateIssue(r.dateFin));
   if(!good.length){
     alert('⛔ كل الأسطر المحددة مرفوضة: تاريخ الوصل المالي مفقود أو غير مقروء أو خارج حدود الفترة.\nاكتب التاريخ الصحيح في عمود «تاريخ الوصل» بجدول المراجعة (يوم/شهر/سنة) ثم أعد الاعتماد.');
     return;
@@ -1862,7 +1867,7 @@ function pdfApprove(){
   PDFR.rows=PDFR.rows.filter(r=>!good.includes(r));
   if(!PDFR.rows.length){ PDFR.errs=[]; PDFR.pages=0; PDFR.done=0; $('fnamePdfImports').textContent=''; }
   recomputeAll(); renderPdfReview();
-  alert(`تمت الإضافة: ${added} سطر${skipped?` — وتخطّي ${skipped} موجود مسبقاً`:''}${dateBad.length?`\n⛔ ورُفض ${dateBad.length} سطر (تاريخ الوصل المالي) — بقيت بجدول المراجعة لتصحيح تاريخها ثم إعادة الاعتماد`:''}.`);
+  alert(`تمت الإضافة: ${added} سطر${skipped?` — وتخطّي ${skipped} موجود مسبقاً`:''}${expBad.length?`\n• استُثني ${expBad.length} بيان تصدير (/1/)`:''}${dateBad.length?`\n⛔ ورُفض ${dateBad.length} سطر (تاريخ الوصل المالي) — بقيت بجدول المراجعة لتصحيح تاريخها ثم إعادة الاعتماد`:''}.`);
 }
 
 /* فحوصات المستوردات: المعادلة سطرياً + المطابقة بيان-بيان مع قيود الأمانات */
