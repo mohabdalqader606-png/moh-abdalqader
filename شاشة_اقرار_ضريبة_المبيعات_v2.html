@@ -391,7 +391,7 @@
 </main>
 
 <div id="printSheet"></div>
-<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 55</b></footer>
+<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 56</b></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -2685,6 +2685,16 @@ CRITICAL RULES:
 8. tariff_items: ALL tariff lines.
 9. items: Extract ALL items from ALL invoices, no limit, from ALL PAGES of the document — do not stop early. Items may span multiple pages (e.g. "Nr. Pag./Page 3/5" means page 3 of 5 total pages, there are more items on other pages). Each item MUST include "invoice_ref" (the invoice_number it belongs to). Some invoices show the item name on one line and a tariff/reference code (e.g. "C TARIFF xxxxx") on the line directly below it — treat these as ONE item, put the code in a field, not as two separate items. Go through the ENTIRE document page by page and extract every single line item row, including all rows even if there are 25, 50, or more.
 10. Keep string values SHORT to prevent truncation but do not drop any invoice or item.
+11. MANIFEST (المنافست / بيان الحمولة / bill of lading): if the PDF includes a manifest or B/L page, extract it into "manifest". If absent, set every manifest field to null.
+12. LEGAL COMPLIANCE (قانون الجمارك الأردني رقم 20 لسنة 1998 وتعديلاته): act as a Jordanian customs compliance expert. After extraction, review the declaration against the law and fill "legal_findings" with every issue you find, including at least these checks:
+   - تطابق عدد الطرود والوزن القائم والعلامات بين المنافست والبيان الجمركي (الاختلاف عن المنافست مخالفة تستوجب غرامة)
+   - تطابق الشاحن/المرسل إليه بين المنافست والبيان والفاتورة
+   - اكتمال القيمة المصرحة: القيمة الجمركية تشمل قيمة البضاعة + الشحن + التأمين حتى مركز الدخول (تصريح ناقص بالقيمة = غرامة نسبية من الرسوم)
+   - صحة الاتفاقية المطبقة مقابل بلد المنشأ ووجود شهادة منشأ ضمن الوثائق (حقل 44)
+   - اكتمال الوثائق المطلوبة: فاتورة أصلية، بوليصة/وثيقة شحن، شهادة منشأ، وأي إجازات استيراد لازمة
+   - اتساق بند التعريفة مع وصف البضاعة الفعلي
+   - أي اختلاف في النوع أو المنشأ أو العدد أو الوزن بين البيان والفاتورة والمنافست
+   severity: "high" لما يعرّض لغرامة مباشرة، "medium" لما يحتاج تدقيقاً، "info" ملاحظة. basis: رقم المادة من قانون الجمارك إن كنت متأكداً منه وإلا اتركه null — لا تخترع أرقام مواد. إن لم توجد ملاحظات أعد [].
 
 JSON ONLY. No markdown. No backticks.
 {
@@ -2719,6 +2729,14 @@ JSON ONLY. No markdown. No backticks.
     }
   ],
   "items":[{"name":"","qty":"","unit":"","unit_price":"","total":"","invoice_ref":"رقم الفاتورة التي ينتمي لها الصنف","tariff_code":"رمز C TARIFF أو رمز التعرفة إن وجد أسفل اسم الصنف"}],
+  "manifest":{
+    "manifest_no":"رقم بيان الحمولة/المنافست","transport_doc":"رقم بوليصة الشحن أو سند الشحن",
+    "vessel":"اسم أو رقم واسطة النقل","packages_count":"عدد الطرود بالمنافست - رقم",
+    "packages_marks":"علامات وأرقام الطرود","gross_weight":"الوزن القائم بالمنافست - رقم",
+    "shipper":"الشاحن","consignee":"المرسل إليه بالمنافست",
+    "loading_port":"ميناء الشحن","discharge_port":"ميناء التفريغ"
+  },
+  "legal_findings":[{"severity":"high|medium|info","issue":"وصف الملاحظة","basis":"رقم المادة من قانون الجمارك أو null","risk":"الغرامة أو الأثر المحتمل"}],
   "comparisons":[
     {"id":"sender_supplier","dec_label":"المصدر/المرسل (خانة 2)","inv_label":"اسم المورد","dec_val":"","inv_val":"","match":true,"note":""},
     {"id":"consignee_customer","dec_label":"المرسل إليه (خانة 8)","inv_label":"اسم العميل","dec_val":"","inv_val":"","match":true,"note":""},
@@ -2996,6 +3014,46 @@ function caResultHTML(r,ri,forPrint){
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 14px;">
       ${caIR('مجموع قيمة البضاعة',caF(C.sumGoodsOnly))}${caIR('مجموع الشحن',caF(C.sumInvShp)||'0')}
       ${caIR('مجموع التأمين',caF(C.sumInvIns)||'0')}${caIR('مجموع الإجمالي',caF(C.sumInvTotal))}</div>`);
+  }
+  // ===== المنافست (بيان الحمولة) ومطابقته مع البيان =====
+  const mf=r.data.manifest||{};
+  const mfHas=['manifest_no','transport_doc','vessel','packages_count','gross_weight','shipper','consignee'].some(k=>mf[k]&&mf[k]!=='غير موجود'&&mf[k]!=='0');
+  if(mfHas){
+    const decPk=caN(dec.box31_packages), mfPk=caN(mf.packages_count);
+    const decWt=caN(dec.box35_gross_weight), mfWt=caN(mf.gross_weight);
+    const pkChk = (decPk>0&&mfPk>0) ? (Math.abs(decPk-mfPk)<0.01) : null;
+    const wtChk = (decWt>0&&mfWt>0) ? (Math.abs(decWt-mfWt)<=Math.max(decWt,mfWt)*0.01+0.01) : null;
+    h+=caTitle('🛳 المنافست (بيان الحمولة) ومطابقته');
+    h+=caCard(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 14px;">
+      <div>${caIR('رقم المنافست/بيان الحمولة',mf.manifest_no)}${caIR('بوليصة/سند الشحن',mf.transport_doc)}${caIR('واسطة النقل',mf.vessel)}${caIR('ميناء الشحن',mf.loading_port)}${caIR('ميناء التفريغ',mf.discharge_port)}</div>
+      <div>${caIR('الشاحن (بالمنافست)',mf.shipper)}${caIR('المرسل إليه (بالمنافست)',mf.consignee)}${caIR('علامات وأرقام الطرود',mf.packages_marks)}</div></div>
+      <table class="t" style="margin-top:8px;"><thead><tr><th>البند</th><th>المنافست</th><th>البيان الجمركي</th><th>النتيجة</th></tr></thead><tbody>
+      <tr><td>عدد الطرود</td><td>${mfPk?caF(mfPk):'—'}</td><td>${decPk?caF(decPk):'—'}</td>
+        <td>${pkChk===null?'<span class="badge gray">غير متوفر للمقارنة</span>':pkChk?'<span class="badge ok">✓ متطابق</span>':'<span class="badge warn">✗ اختلاف — مخالفة محتملة (اختلاف عن المنافست)</span>'}</td></tr>
+      <tr><td>الوزن القائم</td><td>${mfWt?caF(mfWt):'—'}</td><td>${decWt?caF(decWt):'—'}</td>
+        <td>${wtChk===null?'<span class="badge gray">غير متوفر للمقارنة</span>':wtChk?'<span class="badge ok">✓ متطابق (ضمن 1%)</span>':'<span class="badge warn">✗ اختلاف — مخالفة محتملة (اختلاف عن المنافست)</span>'}</td></tr>
+      </tbody></table>`);
+  } else {
+    h+=caTitle('🛳 المنافست (بيان الحمولة)');
+    h+=`<div style="padding:8px 12px;background:var(--gold-bg);border:1px solid #E8D9B0;border-radius:8px;margin-bottom:6px;font-size:12px;">⚠ لم يُعثر على منافست/بوليصة شحن ضمن هذا الملف — أرفقه مع الـ PDF ليتم تدقيق تطابق الطرود والأوزان والأسماء مع البيان.</div>`;
+  }
+  // ===== الفحص القانوني (قانون الجمارك رقم 20 لسنة 1998) =====
+  const lf=r.data.legal_findings||[];
+  {
+    const noShip = !C.isCIF && (dec.box20_delivery_terms||'').trim() && C.shippingJOD<=0;
+    h+=caTitle('⚖ الفحص القانوني — قانون الجمارك رقم 20 لسنة 1998 وتعديلاته');
+    let rowsL='';
+    if(noShip) rowsL+=`<div style="padding:8px 12px;background:var(--crimson-bg);border:1px solid #EBC7C4;border-radius:8px;margin-bottom:6px;font-size:12px;"><b>عالية:</b> شرط التسليم ${esc(dec.box20_delivery_terms)} (غير CIF) ولا يوجد شحن مصرح به بأي مصدر — القيمة الجمركية يجب أن تشمل الشحن والتأمين حتى مركز الدخول، وهذا قد يُعد تصريحاً ناقصاً بالقيمة.</div>`;
+    lf.forEach(f=>{
+      const sv=String(f.severity||'info');
+      const st=sv==='high'?'background:var(--crimson-bg);border:1px solid #EBC7C4;':sv==='medium'?'background:var(--gold-bg);border:1px solid #E8D9B0;':'background:#F1F3F6;border:1px solid var(--line);';
+      rowsL+=`<div style="padding:8px 12px;${st}border-radius:8px;margin-bottom:6px;font-size:12px;">
+        <b>${sv==='high'?'عالية':sv==='medium'?'متوسطة':'ملاحظة'}:</b> ${esc(f.issue||'')}
+        ${f.basis?`<span style="color:#667;"> · الأساس: ${esc(f.basis)}</span>`:''}
+        ${f.risk?`<div style="color:#833;font-size:11px;margin-top:2px;">الأثر المحتمل: ${esc(f.risk)}</div>`:''}</div>`;
+    });
+    h+= rowsL || caOk('✔ لا ملاحظات قانونية — البيان يبدو معداً وفق الأصول');
+    h+=`<div style="font-size:10.5px;color:#889;margin:2px 0 6px;">فحص استرشادي داخلي بالذكاء الاصطناعي وليس رأياً قانونياً — عند وجود ملاحظة عالية تُراجع مع المخلص الجمركي أو المستشار قبل أي إجراء.</div>`;
   }
   if(tariffItems.length){
     h+=caTitle(`📑 بنود التعريفة (خانة 5: ${esc(String(dec.box5_items_count||tariffItems.length))} بند)`);
