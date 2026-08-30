@@ -391,7 +391,7 @@
 </main>
 
 <div id="printSheet"></div>
-<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 57</b></footer>
+<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 58</b></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -2755,6 +2755,7 @@ const caF = n => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, m
 const caB64 = f => new Promise((r, j) => { const rd = new FileReader(); rd.onload = () => r(rd.result.split(',')[1]); rd.onerror = () => j(new Error('err')); rd.readAsDataURL(f); });
 const caInv = d => (d && d.invoices && d.invoices.length ? d.invoices[0] : (d && d.invoice) || {});
 function caSafeParse(text){
+  if(!text || text.indexOf('{')<0) throw new Error('لا يوجد JSON في ردّ القارئ — أعد المحاولة');
   try { return JSON.parse(text); } catch (e) {}
   let t = text;
   const firstBrace = t.indexOf('{');
@@ -2877,12 +2878,15 @@ async function caCallAPI(b64){
       for(const line of lines){
         if(!line.startsWith('data: ')) continue;
         try{ const evt=JSON.parse(line.slice(6));
+          if(evt.type==='error') throw new Error((evt.error&&evt.error.message)||'خطأ من الخادم أثناء البث');
+          if(evt.type==='message_delta'&&evt.delta&&evt.delta.stop_reason==='max_tokens') CA._truncated=true;
           if(evt.type==='content_block_delta'&&evt.delta&&evt.delta.text){
             full+=evt.delta.text; nch+=evt.delta.text.length;
             caProg(`جاري استلام البيانات... (${nch.toLocaleString()} حرف)`);
-          } }catch(_e){}
+          } }catch(e){ if(e&&e.message&&!(e instanceof SyntaxError)) throw e; }
       }
     }
+    if(!full.trim()){ throw new Error('وصل ردّ فارغ من القارئ — أعد المحاولة'); }
     return full;
   } finally { clearTimeout(tid); }
 }
@@ -2898,6 +2902,7 @@ async function caRun(){
       if(att>0){ caProg(`جاري إعادة المحاولة للملف ${i+1} من ${CA.files.length}...`); await new Promise(r=>setTimeout(r,4000)); }
       caProg(`جاري تحليل الملف ${i+1} من ${CA.files.length}...`);
       try{
+        CA._truncated=false;
         const b64=await caB64(CA.files[i]);
         const full=await caCallAPI(b64);
         raw=full;
@@ -2908,8 +2913,8 @@ async function caRun(){
         else lastErr=err;
       }
     }
-    if(parsed) all.push({file:CA.files[i].name, data:parsed});
-    else all.push({file:CA.files[i].name, error:(lastErr&&lastErr.message)||'خطأ غير معروف', raw:raw?raw.substring(0,500)+'…':''});
+    if(parsed) all.push({file:CA.files[i].name, data:parsed, raw:raw?raw.substring(0,3000):'', truncated:!!CA._truncated});
+    else all.push({file:CA.files[i].name, error:(lastErr&&lastErr.message)||'خطأ غير معروف', raw:raw?raw.substring(0,1500)+'…':''});
   }
   CA.results=all; CA.loading=false; caRender();
 }
@@ -2993,6 +2998,16 @@ function caResultHTML(r,ri,forPrint){
   const b46diff=Math.abs(C.b46v1-C.b46v2);
   let h=`<div style="border:2px solid var(--navy);border-radius:12px;padding:14px;margin-bottom:16px;">`;
   h+=`<div style="font-weight:700;font-size:14px;color:var(--navy);margin-bottom:10px;">📄 ${esc(r.file)}</div>`;
+  // كشف الاستخراج الفارغ: لا رقم بيان ولا فاتورة ولا أصناف = القراءة فشلت فعلياً
+  const emptyEx = !dec.declaration_number && !(invoices[0]&&invoices[0].invoice_number) && !items.length;
+  if(emptyEx && !forPrint)
+    h+=`<div style="padding:10px 12px;background:var(--crimson-bg);border:1px solid #EBC7C4;border-radius:8px;margin-bottom:8px;font-size:12px;color:var(--crimson);">
+      ⛔ <b>القارئ لم يستخرج أي بيانات من هذا الملف</b> — النتائج أدناه فارغة ولا تعني تطابقاً.
+      الأسباب المحتملة: مسح ضوئي بجودة منخفضة جداً، ملف كبير انقطع رده، أو خلل مؤقت. أعد المحاولة، وإن تكرر افتح «عرض الرد الخام» أدناه وأرسل صورته للدعم.</div>`;
+  if(r.truncated && !forPrint)
+    h+=`<div style="padding:8px 12px;background:var(--gold-bg);border:1px solid #E8D9B0;border-radius:8px;margin-bottom:8px;font-size:12px;">⚠ ردّ القارئ انقطع لبلوغه الحد الأقصى — النتائج قد تكون ناقصة (خاصة الأصناف الأخيرة). أعد المحاولة أو قسّم الملف.</div>`;
+  if(r.raw && !forPrint)
+    h+=`<details style="margin-bottom:8px;font-size:11px;"><summary style="cursor:pointer;color:#889;">عرض الرد الخام (للتشخيص)</summary><pre style="margin-top:4px;padding:8px;background:#f7f8fb;border-radius:6px;max-height:220px;overflow:auto;white-space:pre-wrap;direction:ltr;font-size:10px;">${esc(r.raw)}</pre></details>`;
   alerts.forEach(a=>{ h+=`<div style="padding:8px 12px;background:var(--gold-bg);border:1px solid #E8D9B0;border-radius:8px;margin-bottom:6px;font-size:12px;">⚠️ <b>${esc(a.item)}</b>: السعر تغيّر من <b>${caF(a.oldPrice)}</b> إلى <b>${caF(a.newPrice)}</b> (${a.pct>0?'+':''}${a.pct.toFixed(1)}%) — فاتورة سابقة: ${esc(a.oldInv)}</div>`; });
   // ===== الملخص التنفيذي =====
   if(r.data.summary){
