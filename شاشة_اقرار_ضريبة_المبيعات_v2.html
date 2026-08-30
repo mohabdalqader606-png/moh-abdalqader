@@ -146,6 +146,7 @@
     <button id="tabBtn4" onclick="switchTab(4)">٤· المستوردات<span class="st" id="st4"></span></button>
     <button id="tabBtn5" onclick="switchTab(5)">٥· الأمانات<span class="st" id="st5"></span></button>
     <button id="tabBtn6" onclick="switchTab(6)">📄 الإقرار النهائي<span class="st" id="st6"></span></button>
+    <button id="tabBtn7" onclick="switchTab(7); caRender();">⚖ تدقيق بيان/فاتورة</button>
     <span style="flex:1;"></span>
     <span class="status-msg" id="syncMsg"></span>
   </div>
@@ -377,10 +378,20 @@
       </div>
     </div>
   </section>
+
+  <!-- ============ تبويب 7: تدقيق البيان الجمركي مقابل الفاتورة (وحدة مستقلة) ============ -->
+  <section class="panel" id="page7" style="display:none;">
+    <div class="pad">
+      <div class="grp-title"><span class="num">⚖</span> تدقيق البيان الجمركي مقابل فاتورة المورد
+        <span class="hint" style="font-weight:400;">وحدة مستقلة تماماً — لا علاقة لها ببيانات الإقرار، وأرشيفها الخاص محفوظ على السيرفر</span></div>
+      <div class="toolrow" id="caNav"></div>
+      <div id="caWrap"></div>
+    </div>
+  </section>
 </main>
 
 <div id="printSheet"></div>
-<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 50</b></footer>
+<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 51</b></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -533,6 +544,7 @@ async function onSignedIn(user){
   const {data:profs}=await sb.from('profiles').select('id, full_name, email');
   (profs||[]).forEach(p=>profilesMap[p.id]=p.full_name||p.email);
   await loadCC();
+  loadCAdb(); // أرشيف وحدة تدقيق البيان/الفاتورة — مستقل وغير معطِّل
   // فتح آخر إقرار جرى العمل عليه تلقائياً (بدل الفترة الحالية الفارغة)
   try{
     const {data:last}=await sb.from('sales_tax_declarations')
@@ -2514,9 +2526,659 @@ function renderItemBrackets(){
     (list.length>300?`<div class="hint" style="padding:8px 12px;">يعرض 300 من ${list.length.toLocaleString()} صنف — استخدم البحث.</div>`:'');
 }
 
+/* ============================================================
+   وحدة مستقلة: تدقيق البيان الجمركي مقابل فاتورة المورد
+   منقولة من مشروع customs_app — لا تتقاطع مع بيانات الإقرار إطلاقاً
+   أرشيفها بجدول customs_audits (سكربت v5) ومفتاح API نفس مفتاح قراءة PDF
+   ============================================================ */
+const CA_PROMPT = `You are an expert Jordanian customs document analyst. Extract ALL data from the PDF(s).
+
+AGREEMENTS: GAFTA=اتفاقية منطقة التجارة الحرة العربية الكبرى, JEUSFTA=اتفاقية التجارة الحرة بين الأردن والولايات المتحدة, JOEU=اتفاقية الشراكة الأردنية الأوروبية, EFTA=اتفاقية التجارة الحرة مع رابطة التجارة الحرة الأوروبية, TR=الأردن وتركيا, AGADIR=أغادير, QIZ=المناطق الصناعية المؤهلة
+
+CRITICAL RULES:
+1. MULTIPLE INVOICES: A single customs declaration may have MORE THAN ONE supplier invoice attached (e.g. multiple shipments/orders combined in one declaration). Look through ALL pages carefully and extract EVERY separate invoice you find as a SEPARATE object in the "invoices" array. Do not merge them or skip any.
+2. goods_subtotal = ONLY merchandise price WITHOUT freight or insurance for EACH invoice. Read numbers digit by digit carefully.
+3. total_value_jod: Read from تفاصيل المحاسبة or ملخص المحاسبة section. Look for مجموع قيمة البضاعة. Read VERY carefully.
+4. Box 9: Look carefully. If it contains ANY shipping/freight amount (شحن، أجرة، نولون، freight), extract that NUMBER into box9_shipping_amount.
+5. Box 12: shipping expenses in JOD. Never 0 unless truly empty.
+6. Box 46: This box has TWO columns typically labeled "القيمة الجمركية للبند" (customs value of item) and "القيمة المصرحة" (declared value) — sometimes per-line, but often a TOTAL row at the bottom. Extract the TOTAL row's two values: box46_value1 = total القيمة الجمركية للبند, box46_value2 = total القيمة المصرحة. These should normally be equal or very close.
+7. Box 47: Extract FULL tax table every row.
+8. tariff_items: ALL tariff lines.
+9. items: Extract ALL items from ALL invoices, no limit, from ALL PAGES of the document — do not stop early. Items may span multiple pages (e.g. "Nr. Pag./Page 3/5" means page 3 of 5 total pages, there are more items on other pages). Each item MUST include "invoice_ref" (the invoice_number it belongs to). Some invoices show the item name on one line and a tariff/reference code (e.g. "C TARIFF xxxxx") on the line directly below it — treat these as ONE item, put the code in a field, not as two separate items. Go through the ENTIRE document page by page and extract every single line item row, including all rows even if there are 25, 50, or more.
+10. Keep string values SHORT to prevent truncation but do not drop any invoice or item.
+
+JSON ONLY. No markdown. No backticks.
+{
+  "declaration":{
+    "declaration_number":"","declaration_date":"","declaration_type":"",
+    "customs_office":"","export_country":"","origin_country":"",
+    "agreements":"بالعربي","agreements_code":"","currency":"",
+    "box2_sender":"اسم فقط","box5_items_count":"",
+    "box7_declarant_ref":"","box8_consignee":"اسم فقط",
+    "box9_financial":"مختصر","box9_shipping_amount":"ابحث عن أي رقم شحن أو نولون أو freight في خانة 9 - رقم فقط - 0 فقط إذا لم يذكر أي مبلغ شحن",
+    "box12_shipping_expenses":"رقم بالدينار",
+    "box14_declarant":"","box19_container":"","box20_delivery_terms":"",
+    "box22_currency_code":"","box22_amount":"رقم بدقة",
+    "box23_exchange_rate":"رقم","box25_transport":"",
+    "box31_packages":"مختصر","box35_gross_weight":"","box38_net_weight":"",
+    "box46_value1":"مجموع القيمة الجمركية للبند - رقم","box46_value2":"مجموع القيمة المصرحة - رقم",
+    "box47_table":[{"type":"","base":"","rate":"","amount":""}],
+    "total_value_jod":"من تفاصيل المحاسبة مجموع قيمة البضاعة بالدينار رقم بدقة",
+    "total_taxes_jod":"رقم",
+    "tariff_items":[{"item_no":"","tariff_code":"","tariff_desc":"مختصر","extra_desc":"مختصر"}]
+  },
+  "invoices":[
+    {
+      "handwritten_order_number":"","invoice_number":"","invoice_date":"",
+      "supplier_name":"","supplier_country":"",
+      "customer_name":"","invoice_currency":"",
+      "goods_subtotal":"بضاعة فقط بدون شحن/تأمين رقم بدقة",
+      "shipping_on_invoice":"رقم 0 إذا لا",
+      "insurance_on_invoice":"رقم 0 إذا لا",
+      "invoice_total":"إجمالي شامل رقم",
+      "shipping_terms":"","payment_terms":""
+    }
+  ],
+  "items":[{"name":"","qty":"","unit":"","unit_price":"","total":"","invoice_ref":"رقم الفاتورة التي ينتمي لها الصنف","tariff_code":"رمز C TARIFF أو رمز التعرفة إن وجد أسفل اسم الصنف"}],
+  "comparisons":[
+    {"id":"sender_supplier","dec_label":"المصدر/المرسل (خانة 2)","inv_label":"اسم المورد","dec_val":"","inv_val":"","match":true,"note":""},
+    {"id":"consignee_customer","dec_label":"المرسل إليه (خانة 8)","inv_label":"اسم العميل","dec_val":"","inv_val":"","match":true,"note":""},
+    {"id":"currency_amount","dec_label":"العملة والقيمة (خانة 22)","inv_label":"العملة والمبلغ (مجموع كل الفواتير)","dec_val":"","inv_val":"","match":true,"note":""},
+    {"id":"origin","dec_label":"بلد المنشأ","inv_label":"بلد المورد","dec_val":"","inv_val":"","match":true,"note":""}
+  ]
+}`;
+const caN = v => { if (!v || v === 'غير موجود') return 0; return parseFloat(String(v).replace(/[^0-9.\-]/g, '')) || 0; };
+const caF = n => Number(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 3 });
+const caB64 = f => new Promise((r, j) => { const rd = new FileReader(); rd.onload = () => r(rd.result.split(',')[1]); rd.onerror = () => j(new Error('err')); rd.readAsDataURL(f); });
+const caInv = d => (d && d.invoices && d.invoices.length ? d.invoices[0] : (d && d.invoice) || {});
+function caSafeParse(text){
+  try { return JSON.parse(text); } catch (e) {}
+  let t = text;
+  const firstBrace = t.indexOf('{');
+  if (firstBrace > 0) t = t.substring(firstBrace);
+  t = t.replace(/(?<=":[ ]*"[^"]*)\n([^"]*")/g, ' $1');
+  t = t.replace(/[\x00-\x1f]/g, ' ');
+  try { return JSON.parse(t); } catch (e) {}
+  try {
+    let fixed = t;
+    let inStr = false, escp = false, lastGoodPos = 0;
+    for (let i = 0; i < fixed.length; i++) {
+      const c = fixed[i];
+      if (escp) { escp = false; continue; }
+      if (c === '\\') { escp = true; continue; }
+      if (c === '"') { inStr = !inStr; if (!inStr) lastGoodPos = i; continue; }
+      if (!inStr && (c === '}' || c === ']' || c === ',')) lastGoodPos = i;
+    }
+    if (inStr) fixed = fixed.substring(0, lastGoodPos + 1);
+    fixed = fixed.replace(/,\s*$/, '');
+    let braces = 0, brackets = 0;
+    inStr = false; escp = false;
+    for (let i = 0; i < fixed.length; i++) {
+      const c = fixed[i];
+      if (escp) { escp = false; continue; }
+      if (c === '\\') { escp = true; continue; }
+      if (c === '"') { inStr = !inStr; continue; }
+      if (inStr) continue;
+      if (c === '{') braces++;
+      if (c === '}') braces--;
+      if (c === '[') brackets++;
+      if (c === ']') brackets--;
+    }
+    while (brackets > 0) { fixed += ']'; brackets--; }
+    while (braces > 0) { fixed += '}'; braces--; }
+    return JSON.parse(fixed);
+  } catch (e2) {}
+  try {
+    const extract = (key) => { const m = t.match(new RegExp('"' + key + '"\\s*:\\s*(\\{[\\s\\S]*?\\})\\s*[,}]')); return m ? m[1] : '{}'; };
+    const extractArr = (key) => { const m = t.match(new RegExp('"' + key + '"\\s*:\\s*(\\[[\\s\\S]*?\\])\\s*[,}]')); return m ? m[1] : '[]'; };
+    return JSON.parse(`{"declaration":${extract('declaration')},"invoice":${extract('invoice')},"items":${extractArr('items')},"comparisons":${extractArr('comparisons')}}`);
+  } catch (e3) {}
+  try {
+    const getVal = (key) => { const m = t.match(new RegExp('"' + key + '"\\s*:\\s*"([^"]*)"')); return m ? m[1] : ''; };
+    return {
+      declaration: {
+        declaration_number: getVal('declaration_number'), declaration_date: getVal('declaration_date'),
+        box2_sender: getVal('box2_sender'), box8_consignee: getVal('box8_consignee'),
+        box22_amount: getVal('box22_amount'), box22_currency_code: getVal('box22_currency_code'),
+        box23_exchange_rate: getVal('box23_exchange_rate'), box12_shipping_expenses: getVal('box12_shipping_expenses'),
+        box20_delivery_terms: getVal('box20_delivery_terms'), total_value_jod: getVal('total_value_jod'),
+        origin_country: getVal('origin_country'), agreements: getVal('agreements'),
+        box7_declarant_ref: getVal('box7_declarant_ref'), box5_items_count: getVal('box5_items_count'),
+        box9_shipping_amount: getVal('box9_shipping_amount'), box46_value1: getVal('box46_value1'),
+        box46_value2: getVal('box46_value2'), total_taxes_jod: getVal('total_taxes_jod'),
+        tariff_items: [], box47_table: []
+      },
+      invoice: {
+        invoice_number: getVal('invoice_number'), invoice_date: getVal('invoice_date'),
+        supplier_name: getVal('supplier_name'), customer_name: getVal('customer_name'),
+        goods_subtotal: getVal('goods_subtotal'), invoice_total: getVal('invoice_total'),
+        shipping_on_invoice: getVal('shipping_on_invoice'), insurance_on_invoice: getVal('insurance_on_invoice'),
+        invoice_currency: getVal('invoice_currency'), handwritten_order_number: getVal('handwritten_order_number')
+      },
+      items: [], comparisons: []
+    };
+  } catch (e4) {}
+  throw new Error('فشل قراءة رد الذكاء الاصطناعي — حاول مرة أخرى');
+}
+const CA={page:'new', files:[], results:null, loading:false, db:[], dbOK:true, dbLoaded:false,
+  hasShip:false, shipAmt:'', shipCur:'', shipEx:'', search:'', repType:'items',
+  dashPeriod:'month', dashDate:'all', dashFilter:'all', dashFilterVal:''};
+function caGuard(){ if(!roleEdit){ alert('حسابك «مطالعة فقط» — التدقيق والحفظ يحتاجان صلاحية إدخال.'); return false; } return true; }
+async function loadCAdb(){
+  try{
+    const {data,error}=await sb.from('customs_audits').select('*').order('ts',{ascending:false});
+    if(error) throw error;
+    CA.db=(data||[]).map(r=>({id:r.id, timestamp:r.ts, data:r.data, shipInfo:r.ship||{}, created_by:r.created_by}));
+    CA.dbOK=true;
+  }catch(e){ CA.dbOK=false; }
+  CA.dbLoaded=true;
+}
+function caToast(msg,isErr){
+  let el=$('caToast');
+  if(!el){ el=document.createElement('div'); el.id='caToast';
+    el.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);color:#fff;padding:10px 20px;border-radius:10px;font-size:13px;font-weight:600;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,.2);';
+    document.body.appendChild(el); }
+  el.style.background=isErr?'#a03020':'#1a7a1a'; el.textContent=msg; el.style.display='block';
+  clearTimeout(el._t); el._t=setTimeout(()=>{ el.style.display='none'; },2500);
+}
+function caProg(t){ const el=$('caProgTxt'); if(el) el.textContent=t; }
+function caDownload(content,name,type){
+  const b=new Blob([content],{type}); const a=document.createElement('a');
+  a.href=URL.createObjectURL(b); a.download=name; a.click();
+}
+function caFiles(inp){
+  const f=Array.from(inp.files||[]).filter(f=>f.type==='application/pdf');
+  if(f.length){ CA.files=f; CA.results=null; caRender(); }
+  inp.value='';
+}
+async function caCallAPI(b64){
+  const hdrs={'content-type':'application/json','x-api-key':anthKey(),
+    'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'};
+  if(anthWsid()) hdrs['anthropic-workspace-id']=anthWsid();
+  const controller=new AbortController();
+  const tid=setTimeout(()=>controller.abort(),180000);
+  try{
+    const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:hdrs,signal:controller.signal,
+      body:JSON.stringify({model:ANTH_MODEL, max_tokens:12000, system:CA_PROMPT, stream:true,
+        messages:[{role:'user',content:[
+          {type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},
+          {type:'text',text:'هذا الملف يحتوي على بيان جمركي وفاتورة مورد. استخرج جميع البيانات وكل الأصناف من كل الصفحات بدون أي حد أقصى. ابحث جيداً عن أي نص مكتوب بخط اليد. أجب بـ JSON فقط بدون أي نص آخر.'}]}]})});
+    if(resp.status===529||resp.status===503){ const e=new Error('الخادم مشغول'); e.busy=true; throw e; }
+    if(!resp.ok||!resp.body){ const ej=await resp.json().catch(()=>({})); throw new Error((ej.error&&ej.error.message)||('خطأ '+resp.status)); }
+    const reader=resp.body.getReader(); const decd=new TextDecoder();
+    let buffer='', full='', nch=0;
+    while(true){
+      const {done,value}=await reader.read(); if(done) break;
+      buffer+=decd.decode(value,{stream:true});
+      const lines=buffer.split('\n'); buffer=lines.pop();
+      for(const line of lines){
+        if(!line.startsWith('data: ')) continue;
+        try{ const evt=JSON.parse(line.slice(6));
+          if(evt.type==='content_block_delta'&&evt.delta&&evt.delta.text){
+            full+=evt.delta.text; nch+=evt.delta.text.length;
+            caProg(`جاري استلام البيانات... (${nch.toLocaleString()} حرف)`);
+          } }catch(_e){}
+      }
+    }
+    return full;
+  } finally { clearTimeout(tid); }
+}
+async function caRun(){
+  if(!caGuard()) return;
+  if(!CA.files.length) return;
+  if(!anthKey()){ alert('مفتاح Anthropic API غير محفوظ على هذا الجهاز.\nفعّله مرة واحدة من تبويب ٤ المستوردات ← «قراءة بيانات جمركية PDF» — نفس المفتاح يخدم الوحدتين.'); return; }
+  CA.loading=true; CA.results=null; caRender();
+  const all=[];
+  for(let i=0;i<CA.files.length;i++){
+    let parsed=null, lastErr=null, raw='';
+    for(let att=0; att<2; att++){
+      if(att>0){ caProg(`جاري إعادة المحاولة للملف ${i+1} من ${CA.files.length}...`); await new Promise(r=>setTimeout(r,4000)); }
+      caProg(`جاري تحليل الملف ${i+1} من ${CA.files.length}...`);
+      try{
+        const b64=await caB64(CA.files[i]);
+        const full=await caCallAPI(b64);
+        raw=full;
+        parsed=caSafeParse(full.replace(/```json|```/g,'').trim());
+        lastErr=null; break;
+      }catch(err){
+        if(err.name==='AbortError') lastErr=new Error('انتهت المهلة الزمنية (3 دقائق) — جرب ملفاً أصغر');
+        else lastErr=err;
+      }
+    }
+    if(parsed) all.push({file:CA.files[i].name, data:parsed});
+    else all.push({file:CA.files[i].name, error:(lastErr&&lastErr.message)||'خطأ غير معروف', raw:raw?raw.substring(0,500)+'…':''});
+  }
+  CA.results=all; CA.loading=false; caRender();
+}
+function caCheckAlerts(items){
+  const alerts=[];
+  if(!items||!items.length) return alerts;
+  items.forEach(item=>{
+    const name=(item.name||'').trim().toLowerCase();
+    if(!name) return;
+    for(const entry of CA.db){
+      for(const old of ((entry.data&&entry.data.items)||[])){
+        if((old.name||'').trim().toLowerCase()===name && caN(old.unit_price)>0 && caN(item.unit_price)>0){
+          const op=caN(old.unit_price), np=caN(item.unit_price);
+          if(Math.abs(op-np)>0.01){
+            const oldInvNum=(entry.data&&entry.data.invoices&&entry.data.invoices[0]&&entry.data.invoices[0].invoice_number)
+              ||(entry.data&&entry.data.invoice&&entry.data.invoice.invoice_number)||'سابقة';
+            alerts.push({item:item.name, oldPrice:op, newPrice:np, pct:((np-op)/op)*100, oldInv:oldInvNum});
+          }
+          return;
+        }
+      }
+    }
+  });
+  return alerts;
+}
+/* حساب نتيجة ملف واحد (منطق الحسابات منقول حرفياً) */
+function caCompute(data){
+  const dec=data.declaration||{};
+  const invoices=data.invoices&&data.invoices.length?data.invoices:(data.invoice?[data.invoice]:[]);
+  const b22=caN(dec.box22_amount), ex=caN(dec.box23_exchange_rate), b12=caN(dec.box12_shipping_expenses);
+  const dtv=caN(dec.total_value_jod);
+  const b22j=b22*ex, dCalc=b22j+b12;
+  const terms=(dec.box20_delivery_terms||'').toUpperCase(), isCIF=terms.includes('CIF');
+  let sumGoodsOnly=0, sumInvIns=0, sumInvShp=0, sumInvTotal=0;
+  invoices.forEach(inv=>{
+    const invIns=caN(inv.insurance_on_invoice), invShp=caN(inv.shipping_on_invoice);
+    const invTotal=caN(inv.invoice_total);
+    const rawGoods=caN(inv.goods_subtotal);
+    let goodsOnly;
+    if(rawGoods>0 && rawGoods<invTotal-0.01) goodsOnly=rawGoods;
+    else goodsOnly=invTotal-invShp-invIns;
+    if(goodsOnly<=0) goodsOnly=invTotal;
+    sumGoodsOnly+=goodsOnly; sumInvIns+=invIns; sumInvShp+=invShp; sumInvTotal+=invTotal;
+  });
+  const hasInvIns=sumInvIns>0;
+  const goodsJOD=sumGoodsOnly*ex;
+  const box9Ship=caN(dec.box9_shipping_amount);
+  let shippingJOD=0, shipNote='';
+  if(CA.hasShip && caN(CA.shipAmt)>0){
+    const dc=(dec.box22_currency_code||'').toUpperCase(), sc=(CA.shipCur||'').toUpperCase();
+    if(sc==='JOD'){ shippingJOD=caN(CA.shipAmt); shipNote='أدخلتها يدوياً بالدينار'; }
+    else if(sc===dc && ex>0){ shippingJOD=caN(CA.shipAmt)*ex; shipNote=`أدخلتها يدوياً: ${CA.shipAmt}×${ex}`; }
+    else if(caN(CA.shipEx)>0){ shippingJOD=caN(CA.shipAmt)*caN(CA.shipEx); shipNote=`أدخلتها يدوياً: ${CA.shipAmt}×${CA.shipEx}`; }
+    else { shippingJOD=caN(CA.shipAmt)*ex; shipNote=`أدخلتها يدوياً: ${CA.shipAmt}×${ex}`; }
+  } else if(box9Ship>0){ shippingJOD=box9Ship*ex; shipNote=`خانة 9: ${box9Ship} × ${ex}`; }
+  else if(sumInvShp>0){ shippingJOD=sumInvShp*ex; shipNote=`فاتورة/فواتير المورد: ${caF(sumInvShp)} × ${ex}`; }
+  const insuranceJOD=hasInvIns?sumInvIns*ex:(!isCIF?goodsJOD*0.01:0);
+  const invTJ=goodsJOD+insuranceJOD+shippingJOD;
+  return {dec, invoices, b22, ex, b12, dtv, b22j, dCalc, isCIF,
+    sumGoodsOnly, sumInvIns, sumInvShp, sumInvTotal, hasInvIns, goodsJOD,
+    shippingJOD, shipNote, insuranceJOD, invTJ,
+    d1:Math.abs(dCalc-dtv), d2:Math.abs(dCalc-invTJ),
+    b46v1:caN(dec.box46_value1), b46v2:caN(dec.box46_value2)};
+}
+function caIR(l,v){ if(!v||v==='غير موجود'||v==='0') return '';
+  return `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #f2f4f8;font-size:12px;gap:4px;"><span style="color:#666;white-space:nowrap;">${esc(l)}</span><span style="font-weight:600;text-align:left;word-break:break-word;">${esc(v)}</span></div>`; }
+const caCard=inner=>`<div style="background:#fff;border-radius:10px;padding:12px;margin-bottom:10px;border:1px solid var(--line);">${inner}</div>`;
+const caTitle=t=>`<div style="font-size:13.5px;font-weight:700;margin:16px 0 8px;padding-right:8px;border-right:3px solid var(--navy);color:var(--navy);">${t}</div>`;
+const caOk=t=>`<div style="margin:8px;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:700;text-align:center;background:var(--teal-bg);color:var(--teal);border:1px solid #BFE3DA;">${t}</div>`;
+const caNo=t=>`<div style="margin:8px;padding:8px 12px;border-radius:8px;font-size:12px;font-weight:700;text-align:center;background:var(--crimson-bg);color:var(--crimson);border:1px solid #EBC7C4;">${t}</div>`;
+function caResultHTML(r,ri,forPrint){
+  if(r.error) return `<div style="margin-top:12px;padding:10px;background:var(--crimson-bg);border:1px solid #EBC7C4;border-radius:9px;color:var(--crimson);font-size:12px;">❌ ${esc(r.file)}: ${esc(r.error)}
+    ${r.raw?`<details style="margin-top:6px;font-size:11px;"><summary style="cursor:pointer;color:#666;">عرض الرد الخام</summary><pre style="margin-top:4px;padding:8px;background:#f8f8fc;border-radius:6px;max-height:200px;overflow:auto;white-space:pre-wrap;direction:ltr;font-size:10px;">${esc(r.raw)}</pre></details>`:''}</div>`;
+  const C=caCompute(r.data);
+  const dec=C.dec, invoices=C.invoices, items=r.data.items||[], cmp=r.data.comparisons||[];
+  const tariffItems=dec.tariff_items||[], box47=dec.box47_table||[];
+  const alerts=forPrint?[]:caCheckAlerts(items);
+  const itemsQtySum=items.reduce((s,it)=>s+caN(it.qty),0);
+  const itemsTotalSum=items.reduce((s,it)=>s+caN(it.total),0);
+  const itemsDiff=Math.abs(itemsTotalSum-C.sumGoodsOnly);
+  const b46diff=Math.abs(C.b46v1-C.b46v2);
+  let h=`<div style="border:2px solid var(--navy);border-radius:12px;padding:14px;margin-bottom:16px;">`;
+  h+=`<div style="font-weight:700;font-size:14px;color:var(--navy);margin-bottom:10px;">📄 ${esc(r.file)}</div>`;
+  alerts.forEach(a=>{ h+=`<div style="padding:8px 12px;background:var(--gold-bg);border:1px solid #E8D9B0;border-radius:8px;margin-bottom:6px;font-size:12px;">⚠️ <b>${esc(a.item)}</b>: السعر تغيّر من <b>${caF(a.oldPrice)}</b> إلى <b>${caF(a.newPrice)}</b> (${a.pct>0?'+':''}${a.pct.toFixed(1)}%) — فاتورة سابقة: ${esc(a.oldInv)}</div>`; });
+  h+=caTitle('📋 ملخص البيان الجمركي');
+  h+=caCard([['رقم البيان',dec.declaration_number],['تاريخ البيان',dec.declaration_date],['نوع البيان',dec.declaration_type],
+    ['المكتب الجمركي',dec.customs_office],['رقم مرجع المصرح (خانة 7)',dec.box7_declarant_ref],['بلد التصدير',dec.export_country],
+    ['بلد المنشأ',dec.origin_country],['الاتفاقية',dec.agreements],['العملة',dec.currency||dec.box22_currency_code],
+    ['عدد البنود (خانة 5)',dec.box5_items_count],['المصرح/الوكيل',dec.box14_declarant],['خانة 9',dec.box9_financial],
+    ['شحن خانة 9',dec.box9_shipping_amount&&dec.box9_shipping_amount!=='0'?dec.box9_shipping_amount:''],
+    ['شحن/مصاريف خانة 12 (د.أ)',dec.box12_shipping_expenses],['نوع النقل',dec.box25_transport],['الحاويات',dec.box19_container],
+    ['الطرود',dec.box31_packages],['الوزن القائم',dec.box35_gross_weight],['الوزن الصافي',dec.box38_net_weight],
+    ['شروط التسليم',dec.box20_delivery_terms],['سعر التعادل',dec.box23_exchange_rate],
+    ['مجموع الرسوم',dec.total_taxes_jod?caF(caN(dec.total_taxes_jod))+' د.أ':'']].map(([l,v])=>caIR(l,v)).join(''));
+  h+=caTitle(`📄 فواتير المورد (${invoices.length})`);
+  invoices.forEach((inv,ii)=>{
+    h+=caCard((invoices.length>1?`<div style="font-weight:700;font-size:12px;color:var(--navy);margin-bottom:6px;">فاتورة ${ii+1}: ${esc(inv.invoice_number||'—')}</div>`:'')+
+      `<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 14px;">`+
+      `<div>`+[['رقم الطلبية (بخط اليد)',inv.handwritten_order_number],['رقم الفاتورة',inv.invoice_number],['تاريخ الفاتورة',inv.invoice_date],['اسم المورد',inv.supplier_name],['بلد المورد',inv.supplier_country]].map(([l,v])=>caIR(l,v)).join('')+`</div>`+
+      `<div>`+[['عملة الفاتورة',inv.invoice_currency],['قيمة البضاعة فقط',caN(inv.goods_subtotal)?caF(caN(inv.goods_subtotal))+' '+(inv.invoice_currency||''):''],
+        ['شحن على الفاتورة',caN(inv.shipping_on_invoice)?caF(caN(inv.shipping_on_invoice))+' '+(inv.invoice_currency||''):''],
+        ['تأمين على الفاتورة',caN(inv.insurance_on_invoice)?caF(caN(inv.insurance_on_invoice))+' '+(inv.invoice_currency||''):''],
+        ['الإجمالي الشامل',inv.invoice_total?caF(caN(inv.invoice_total))+' '+(inv.invoice_currency||''):''],
+        ['شروط التسليم',inv.shipping_terms]].map(([l,v])=>caIR(l,v)).join('')+`</div></div>`);
+  });
+  if(invoices.length>1){
+    h+=caCard(`<div style="font-weight:700;font-size:12px;margin-bottom:4px;">📊 مجموع كل الفواتير</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 14px;">
+      ${caIR('مجموع قيمة البضاعة',caF(C.sumGoodsOnly))}${caIR('مجموع الشحن',caF(C.sumInvShp)||'0')}
+      ${caIR('مجموع التأمين',caF(C.sumInvIns)||'0')}${caIR('مجموع الإجمالي',caF(C.sumInvTotal))}</div>`);
+  }
+  if(tariffItems.length){
+    h+=caTitle(`📑 بنود التعريفة (خانة 5: ${esc(String(dec.box5_items_count||tariffItems.length))} بند)`);
+    h+=`<div class="scrollbox" style="max-height:260px;"><table class="t"><thead><tr><th>#</th><th>بند التعريفة</th><th>وصف التعرفة</th><th>وصف إضافي</th></tr></thead><tbody>`+
+      tariffItems.map((ti,j)=>`<tr><td>${esc(String(ti.item_no||j+1))}</td><td style="font-family:monospace;font-weight:600;">${esc(ti.tariff_code||'—')}</td><td>${esc(ti.tariff_desc||'—')}</td><td>${esc(ti.extra_desc||'—')}</td></tr>`).join('')+`</tbody></table></div>`;
+  }
+  if(C.b46v1>0||C.b46v2>0){
+    h+=caTitle('📊 خانة 46 — القيمة الإحصائية');
+    h+=caCard(`<div style="display:grid;grid-template-columns:1fr 1fr;gap:0 14px;">${caIR('القيمة الجمركية للبند',caF(C.b46v1))}${caIR('القيمة المصرحة',caF(C.b46v2))}</div>`+
+      (b46diff>1?caNo(`⚠️ يوجد فرق بين القيمة الجمركية والقيمة المصرحة: ${caF(b46diff)}`)
+        :(C.b46v1>0?caOk('✓ القيمتان متطابقتان'):'')));
+  }
+  if(box47.length){
+    h+=caTitle('💰 خانة 47 — حساب الرسوم والضرائب');
+    h+=`<table class="t"><thead><tr><th>نوع الرسم</th><th>الوعاء</th><th>النسبة</th><th>المبلغ</th></tr></thead><tbody>`+
+      box47.map(row=>`<tr><td>${esc(row.type||'—')}</td><td>${esc(String(row.base||'—'))}</td><td>${esc(String(row.rate||'—'))}</td><td style="font-weight:600;">${esc(String(row.amount||'—'))}</td></tr>`).join('')+
+      (caN(dec.total_taxes_jod)>0?`<tr style="background:#EEF2F8;font-weight:700;"><td colspan="3">مجموع الرسوم</td><td>${caF(caN(dec.total_taxes_jod))}</td></tr>`:'')+`</tbody></table>`;
+  }
+  h+=caTitle('🔍 نتائج المقارنة');
+  cmp.forEach(c=>{
+    h+=`<div style="background:#fff;border-radius:9px;margin-bottom:8px;overflow:hidden;border:1px solid var(--line);">
+      <div style="padding:8px 12px;font-weight:700;font-size:12px;background:#F6F7FA;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;">
+        <span>${esc(c.dec_label)} ↔ ${esc(c.inv_label)}</span>
+        <span class="badge ${c.match?'ok':'warn'}">${c.match?'✓ متطابق':'✗ مختلف'}</span></div>
+      <div style="padding:10px 12px;display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div><div style="font-size:10px;color:#888;margin-bottom:3px;font-weight:600;">📌 ${esc(c.dec_label)}</div><div style="font-size:12px;font-weight:600;padding:5px 8px;background:#f7f8fb;border-radius:6px;min-height:28px;">${esc(c.dec_val||'—')}</div></div>
+        <div><div style="font-size:10px;color:#888;margin-bottom:3px;font-weight:600;">📄 ${esc(c.inv_label)}</div><div style="font-size:12px;font-weight:600;padding:5px 8px;background:#f7f8fb;border-radius:6px;min-height:28px;">${esc(c.inv_val||'—')}</div></div>
+      </div>${c.note?`<div style="padding:6px 12px;font-size:10.5px;color:#888;border-top:1px solid #f2f4f8;">💡 ${esc(c.note)}</div>`:''}</div>`;
+  });
+  h+=caTitle('📊 حساب القيمة — البيان الجمركي');
+  h+=`<table class="t"><thead><tr><th>البند</th><th>التفاصيل</th><th>المبلغ (د.أ)</th></tr></thead><tbody>
+    <tr><td>قيمة الفاتورة (خانة 22)</td><td>${caF(C.b22)} ${esc(dec.box22_currency_code||'')} × ${C.ex}</td><td>${caF(C.b22j)}</td></tr>
+    <tr><td>شحن / مصاريف أخرى (خانة 12)</td><td>بالدينار</td><td>${caF(C.b12)}</td></tr>
+    <tr><td>شروط التسليم (خانة 20)</td><td colspan="2">${esc(dec.box20_delivery_terms||'—')}</td></tr>
+    <tr style="background:#EEF2F8;font-weight:700;"><td>المجموع المحسوب</td><td></td><td>${caF(C.dCalc)}</td></tr>
+    <tr style="background:var(--teal-bg);font-weight:700;"><td>مجموع قيمة البيان الرسمي</td><td></td><td>${caF(C.dtv)}</td></tr></tbody></table>`;
+  h+=C.d1<=10?caOk(`✓ متطابق ${C.d1>0?'(فرق '+caF(C.d1)+' د.أ)':''}`):caNo(`✗ فرق: ${caF(C.d1)} د.أ`);
+  h+=caTitle('📄 حساب القيمة — فاتورة/فواتير المورد');
+  h+=`<table class="t"><thead><tr><th>البند</th><th>التفاصيل</th><th>المبلغ (د.أ)</th></tr></thead><tbody>
+    <tr><td>قيمة البضاعة فقط${invoices.length>1?' (مجموع الفواتير)':''}</td><td>${caF(C.sumGoodsOnly)} × ${C.ex}</td><td>${caF(C.goodsJOD)}</td></tr>
+    ${C.shippingJOD>0?`<tr><td>أجور شحن</td><td>${esc(C.shipNote)}</td><td>${caF(C.shippingJOD)}</td></tr>`:''}
+    ${C.hasInvIns?`<tr><td>تأمين (من فاتورة/فواتير المورد)</td><td>${caF(C.sumInvIns)} × ${C.ex}</td><td>${caF(C.insuranceJOD)}</td></tr>`
+      :(!C.isCIF?`<tr style="background:var(--gold-bg);"><td>بدل تأمين 1%</td><td>${esc(dec.box20_delivery_terms||'')} (غير CIF + لا تأمين بالفاتورة)</td><td>${caF(C.insuranceJOD)}</td></tr>`
+      :`<tr><td>تأمين</td><td>CIF — مشمول</td><td>—</td></tr>`)}
+    <tr style="background:var(--teal-bg);font-weight:700;"><td>الإجمالي بالدينار</td><td></td><td>${caF(C.invTJ)}</td></tr></tbody></table>`;
+  h+=C.d2<=10?caOk(`✓ متطابق ${C.d2>0?'(فرق '+caF(C.d2)+' د.أ)':''}`):caNo(`✗ فرق: ${caF(C.d2)} د.أ`);
+  if(items.length){
+    h+=caTitle(`📦 كل أصناف الفواتير (${items.length} صنف)`);
+    h+=`<div class="scrollbox" style="max-height:340px;"><table class="t"><thead><tr><th>#</th>${invoices.length>1?'<th>الفاتورة</th>':''}<th>الصنف</th><th>الكمية</th><th>الوحدة</th><th>السعر</th><th>الإجمالي</th></tr></thead><tbody>`+
+      items.map((it,j)=>`<tr><td>${j+1}</td>${invoices.length>1?`<td style="font-size:10px;color:#888;">${esc(it.invoice_ref||'—')}</td>`:''}<td>${esc(it.name||'')}</td><td>${esc(String(it.qty||''))}</td><td>${esc(it.unit||'')}</td><td>${esc(String(it.unit_price||''))}</td><td>${esc(String(it.total||''))}</td></tr>`).join('')+
+      `<tr style="background:#EEF2F8;font-weight:700;"><td colspan="${invoices.length>1?3:2}">مجموع الأصناف</td><td>${caF(itemsQtySum)}</td><td></td><td>${caF(itemsTotalSum)}</td></tr>
+       <tr style="background:var(--teal-bg);font-weight:700;"><td colspan="${invoices.length>1?5:4}">قيمة البضاعة فقط (من حساب الفاتورة أعلاه)</td><td>${caF(C.sumGoodsOnly)}</td></tr></tbody></table></div>`;
+    h+=itemsDiff<=10?caOk(`✓ مجموع الأصناف يطابق قيمة البضاعة ${itemsDiff>0?`(فرق ${caF(itemsDiff)})`:''}`):caNo(`✗ فرق بين مجموع الأصناف وقيمة البضاعة: ${caF(itemsDiff)}`);
+  }
+  if(!forPrint) h+=`<div style="display:flex;gap:6px;margin-top:12px;justify-content:center;">
+    <button class="btn-primary btn-sm" onclick="caSaveEntry(${ri})">💾 حفظ في السجل</button>
+    <button class="btn-ghost btn-sm" onclick="caPrint(${ri})">🖨 طباعة</button></div>`;
+  h+=`</div>`;
+  return h;
+}
+async function caSaveEntry(ri){
+  if(!caGuard()) return;
+  const r=CA.results&&CA.results[ri]; if(!r||r.error) return;
+  const ship={hasShip:CA.hasShip, shipAmt:caN(CA.shipAmt), shipCur:CA.shipCur, shipEx:caN(CA.shipEx)};
+  const {data,error}=await sb.from('customs_audits').insert({data:r.data, ship}).select().single();
+  if(error){ caToast('تعذر الحفظ: '+error.message+' — هل نُفِّذ سكربت v5؟', true); return; }
+  CA.db.unshift({id:data.id, timestamp:data.ts, data:r.data, shipInfo:ship, created_by:data.created_by});
+  caToast('✅ تم الحفظ في السجل');
+}
+async function caSaveAll(){
+  if(!caGuard()||!CA.results) return;
+  let n=0;
+  for(let i=0;i<CA.results.length;i++){ if(!CA.results[i].error){ await caSaveEntry(i); n++; } }
+  if(n) caToast(`✅ تم حفظ ${n} مقارنة`);
+}
+async function caDelete(id){
+  if(!confirm('حذف هذه المقارنة نهائياً من السجل؟')) return;
+  const {error}=await sb.from('customs_audits').delete().eq('id',id);
+  if(error){ caToast('تعذر الحذف: '+error.message, true); return; }
+  CA.db=CA.db.filter(e=>e.id!==id); caRender(); caToast('تم الحذف');
+}
+function caOpen(id){
+  const e=CA.db.find(x=>x.id===id); if(!e) return;
+  CA.results=[{file:'محفوظ — '+new Date(e.timestamp).toLocaleDateString('en-GB'), data:e.data}];
+  CA.page='new'; caRender();
+}
+function caPrint(ri){
+  const r=CA.results&&CA.results[ri]; if(!r) return;
+  $('printSheet').innerHTML=`<style>@page{size:A4 portrait; margin:10mm;}</style>
+    <div class="phead"><h2>مركز الكيلاني للأغذية</h2>
+    <div style="font-size:13px;margin-top:4px;">تدقيق البيان الجمركي مقابل فاتورة المورد</div></div>`+caResultHTML(r,ri,true);
+  window.print();
+}
+function caCSV(){
+  if(!CA.db.length){ caToast('لا توجد بيانات', true); return; }
+  let csv='﻿'+'رقم البيان,تاريخ,المورد,رقم الفاتورة,بلد المنشأ,الاتفاقية,العملة,سعر التعادل,قيمة الفاتورة,قيمة البيان د.أ\n';
+  CA.db.forEach(e=>{
+    const d=(e.data&&e.data.declaration)||{}, i=caInv(e.data)||{};
+    csv+=[d.declaration_number,d.declaration_date,'"'+(i.supplier_name||'')+'"',i.invoice_number,d.origin_country,'"'+(d.agreements||'')+'"',d.box22_currency_code,d.box23_exchange_rate,d.box22_amount,d.total_value_jod].join(',')+'\n';
+  });
+  caDownload(csv,'customs_report.csv','text/csv');
+}
+async function caImportJSON(inp){
+  if(!caGuard()) return;
+  const f=inp.files[0]; inp.value=''; if(!f) return;
+  try{
+    const d=JSON.parse(await f.text());
+    if(!Array.isArray(d)) throw 0;
+    let n=0;
+    for(const e of d){
+      if(!e||!e.data) continue;
+      const {data,error}=await sb.from('customs_audits').insert({data:e.data, ship:e.shipInfo||null}).select().single();
+      if(!error){ CA.db.unshift({id:data.id, timestamp:data.ts, data:e.data, shipInfo:e.shipInfo||{}}); n++; }
+    }
+    caRender(); caToast('✅ تم استيراد '+n+' مقارنة');
+  }catch(_e){ caToast('❌ ملف غير صالح', true); }
+}
+async function caDeleteAll(){
+  if(!isAdmin){ caToast('حذف الكل صلاحية المدير فقط', true); return; }
+  if(!confirm('حذف كل سجل التدقيق نهائياً من السيرفر؟ لا يمكن التراجع.')) return;
+  const {error}=await sb.from('customs_audits').delete().gte('ts','1970-01-01');
+  if(error){ caToast('تعذر الحذف: '+error.message, true); return; }
+  CA.db=[]; caRender(); caToast('تم حذف كل البيانات');
+}
+/* التقارير */
+function caItemsReportHTML(){
+  const itemMap={};
+  CA.db.forEach(e=>{
+    const items=(e.data&&e.data.items)||[], inv=caInv(e.data)||{};
+    const sup=inv.supplier_name||'—', invNo=inv.invoice_number||'—', dt=inv.invoice_date||'—', cur=inv.invoice_currency||'';
+    items.forEach(it=>{
+      const name=(it.name||'').trim(); if(!name) return;
+      (itemMap[name]=itemMap[name]||[]).push({supplier:sup, invoice:invNo, date:dt, qty:it.qty, price:caN(it.unit_price), currency:cur});
+    });
+  });
+  const names=Object.keys(itemMap).sort();
+  if(!names.length) return '<div class="empty-state">لا توجد أصناف محفوظة</div>';
+  return names.map(name=>caCard(`<div style="font-weight:700;margin-bottom:6px;">${esc(name)} (${itemMap[name].length} فاتورة)</div>
+    <table class="t"><thead><tr><th>المورد</th><th>الفاتورة</th><th>التاريخ</th><th>الكمية</th><th>السعر</th><th>التغيّر</th></tr></thead><tbody>`+
+    itemMap[name].map((r,i)=>{
+      let chg='—';
+      if(i>0 && itemMap[name][i-1].price>0){
+        const pct=((r.price-itemMap[name][i-1].price)/itemMap[name][i-1].price)*100;
+        if(pct!==0) chg=`<span class="badge ${pct>0?'warn':'ok'}">${pct>0?'+':''}${pct.toFixed(1)}%</span>`;
+      }
+      return `<tr><td>${esc(r.supplier)}</td><td>${esc(r.invoice)}</td><td>${esc(r.date)}</td><td>${esc(String(r.qty||'—'))}</td><td>${r.price?caF(r.price):'—'}</td><td>${chg}</td></tr>`;
+    }).join('')+`</tbody></table>`)).join('');
+}
+function caGroupReportHTML(type){
+  const groups={};
+  CA.db.forEach(e=>{
+    const d=(e.data&&e.data.declaration)||{}, inv=caInv(e.data)||{};
+    let key='—';
+    if(type==='supplier') key=inv.supplier_name||'—';
+    else if(type==='country') key=(d.origin_country||'—')+' | '+(d.agreements||'بدون اتفاقية');
+    else if(type==='currency') key=(d.box22_currency_code||inv.invoice_currency||'—')+' | تعادل: '+(d.box23_exchange_rate||'—');
+    if(!groups[key]) groups[key]={count:0,totalJOD:0,totalForeign:0};
+    groups[key].count++; groups[key].totalJOD+=caN(d.total_value_jod); groups[key].totalForeign+=caN(d.box22_amount);
+  });
+  return Object.entries(groups).sort((a,b)=>b[1].totalJOD-a[1].totalJOD).map(([key,g])=>caCard(
+    `<div style="display:flex;justify-content:space-between;margin-bottom:6px;"><span style="font-weight:700;">${esc(key)}</span><span class="badge ok">${g.count} بيان</span></div>
+     <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 14px;">${caIR('إجمالي القيم (د.أ)',caF(g.totalJOD))}${caIR('إجمالي بالعملة الأجنبية',caF(g.totalForeign))}</div>`)).join('');
+}
+/* الداشبورد */
+function caDashHTML(){
+  const filtered=CA.db.filter(e=>{
+    if(CA.dashDate!=='all'){
+      const dt=(e.data&&e.data.declaration&&e.data.declaration.declaration_date)||e.timestamp||'';
+      const d=new Date(dt); if(isNaN(d)) return false;
+      if(CA.dashPeriod==='month'){ if(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')!==CA.dashDate) return false; }
+      else { if(String(d.getFullYear())!==CA.dashDate) return false; }
+    }
+    if(CA.dashFilter!=='all' && CA.dashFilterVal){
+      const dc=(e.data&&e.data.declaration)||{}, iv=caInv(e.data)||{};
+      if(CA.dashFilter==='supplier'&&(iv.supplier_name||'—')!==CA.dashFilterVal) return false;
+      if(CA.dashFilter==='country'&&(dc.origin_country||'—')!==CA.dashFilterVal) return false;
+      if(CA.dashFilter==='currency'&&(dc.box22_currency_code||'—')!==CA.dashFilterVal) return false;
+      if(CA.dashFilter==='agreement'&&(dc.agreements||'بدون')!==CA.dashFilterVal) return false;
+    }
+    return true;
+  });
+  let totalJOD=0; const suppliers=new Set(), countries=new Set(), supT={}, cntT={}, curT={}, agrT={};
+  filtered.forEach(e=>{
+    const d=(e.data&&e.data.declaration)||{}, i=caInv(e.data)||{};
+    const v=caN(d.total_value_jod); totalJOD+=v;
+    suppliers.add(i.supplier_name||'—'); countries.add(d.origin_country||'—');
+    const s=i.supplier_name||'—', c=d.origin_country||'—', cu=d.box22_currency_code||'—', ag=d.agreements||'بدون';
+    supT[s]=(supT[s]||0)+v; cntT[c]=(cntT[c]||0)+v; curT[cu]=(curT[cu]||0)+v; agrT[ag]=(agrT[ag]||0)+v;
+  });
+  const dates=new Set();
+  CA.db.forEach(e=>{
+    const dt=(e.data&&e.data.declaration&&e.data.declaration.declaration_date)||e.timestamp||'';
+    const d=new Date(dt); if(isNaN(d)) return;
+    if(CA.dashPeriod==='month') dates.add(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'));
+    else dates.add(String(d.getFullYear()));
+  });
+  const filterVals=new Set();
+  CA.db.forEach(e=>{
+    const d=(e.data&&e.data.declaration)||{}, i=caInv(e.data)||{};
+    if(CA.dashFilter==='supplier') filterVals.add(i.supplier_name||'—');
+    if(CA.dashFilter==='country') filterVals.add(d.origin_country||'—');
+    if(CA.dashFilter==='currency') filterVals.add(d.box22_currency_code||'—');
+    if(CA.dashFilter==='agreement') filterVals.add(d.agreements||'بدون');
+  });
+  const bar=(title,data,color)=>{
+    const entries=Object.entries(data).sort((a,b)=>b[1]-a[1]).slice(0,8);
+    if(!entries.length) return '';
+    const max=Math.max(...entries.map(e=>e[1]))||1;
+    return caCard(`<div style="font-size:13px;font-weight:700;color:var(--navy);margin-bottom:8px;">${title}</div>`+
+      entries.map(([k,v])=>`<div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
+        <div style="width:130px;font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${esc(k)}</div>
+        <div style="flex:1;height:20px;background:#F1F3F6;border-radius:4px;overflow:hidden;">
+          <div style="height:100%;width:${Math.max((v/max)*100,10)}%;background:${color};border-radius:4px;display:flex;align-items:center;justify-content:flex-end;padding-inline-end:6px;font-size:10px;font-weight:700;color:#fff;">${caF(v)}</div>
+        </div></div>`).join(''));
+  };
+  let h=`<div class="toolrow" style="margin-bottom:10px;">
+    <select onchange="CA.dashPeriod=this.value; CA.dashDate='all'; caRender();"><option value="month" ${CA.dashPeriod==='month'?'selected':''}>شهري</option><option value="year" ${CA.dashPeriod==='year'?'selected':''}>سنوي</option></select>
+    <select onchange="CA.dashDate=this.value; caRender();"><option value="all">كل الفترات</option>${[...dates].sort().reverse().map(d=>`<option value="${d}" ${CA.dashDate===d?'selected':''}>${d}</option>`).join('')}</select>
+    <select onchange="CA.dashFilter=this.value; CA.dashFilterVal=''; caRender();">
+      <option value="all" ${CA.dashFilter==='all'?'selected':''}>بدون تصفية</option><option value="supplier" ${CA.dashFilter==='supplier'?'selected':''}>مورد</option>
+      <option value="country" ${CA.dashFilter==='country'?'selected':''}>بلد</option><option value="currency" ${CA.dashFilter==='currency'?'selected':''}>عملة</option>
+      <option value="agreement" ${CA.dashFilter==='agreement'?'selected':''}>اتفاقية</option></select>
+    ${CA.dashFilter!=='all'?`<select onchange="CA.dashFilterVal=this.value; caRender();"><option value="">الكل</option>${[...filterVals].sort().map(v=>`<option value="${esc(v)}" ${CA.dashFilterVal===v?'selected':''}>${esc(v)}</option>`).join('')}</select>`:''}
+  </div>`;
+  if(!CA.db.length) return h+'<div class="empty-state">لا توجد بيانات</div>';
+  h+=`<div class="cards">
+    <div class="card"><div class="lbl">عدد البيانات</div><div class="val">${filtered.length}</div></div>
+    <div class="card good"><div class="lbl">إجمالي القيم (د.أ)</div><div class="val">${caF(totalJOD)}</div></div>
+    <div class="card"><div class="lbl">موردين</div><div class="val">${suppliers.size}</div></div>
+    <div class="card"><div class="lbl">بلدان</div><div class="val">${countries.size}</div></div></div>`;
+  h+=bar('حسب المورد',supT,'linear-gradient(90deg,#152A4A,#3050A0)');
+  h+=bar('حسب البلد',cntT,'linear-gradient(90deg,#1a7a1a,#30a030)');
+  h+=bar('حسب العملة',curT,'linear-gradient(90deg,#c07000,#e8a020)');
+  h+=bar('حسب الاتفاقية',agrT,'linear-gradient(90deg,#a03020,#d04030)');
+  return h;
+}
+function caHistListHTML(){
+  const q=(CA.search||'').toLowerCase();
+  const list=CA.db.filter(e=>{
+    if(!q) return true;
+    const d=e.data; if(!d) return false;
+    const inv=caInv(d)||{};
+    return [(d.declaration||{}).declaration_number, inv.supplier_name, inv.invoice_number,
+            (d.declaration||{}).declaration_date, (d.declaration||{}).origin_country]
+      .some(v=>(v||'').toLowerCase().includes(q));
+  });
+  if(!list.length) return '<div class="empty-state">لا توجد نتائج</div>';
+  return list.map(e=>{
+    const dt=new Date(e.timestamp).toLocaleDateString('en-GB');
+    const dec=(e.data&&e.data.declaration)||{}, inv=caInv(e.data)||{};
+    return `<div style="padding:10px;background:#fff;border-radius:9px;margin-bottom:6px;border:1px solid var(--line);display:flex;justify-content:space-between;align-items:center;">
+      <div style="cursor:pointer;flex:1;" onclick="caOpen('${e.id}')">
+        <div style="font-weight:700;font-size:12.5px;">بيان: ${esc(dec.declaration_number||'—')} | فاتورة: ${esc(inv.invoice_number||'—')}</div>
+        <div style="font-size:10.5px;color:#666;margin-top:2px;">${dt} — ${esc(inv.supplier_name||'')} — ${esc(dec.origin_country||'')} — أضافها: ${esc(profilesMap[e.created_by]||'—')}</div></div>
+      <button class="btn-danger btn-sm" onclick="caDelete('${e.id}')">حذف</button></div>`;
+  }).join('');
+}
+function caRender(){
+  const nav=$('caNav'), wrap=$('caWrap');
+  if(!nav||!wrap) return;
+  const P=[['new','➕ مقارنة جديدة'],['hist','📁 السجل ('+CA.db.length+')'],['reports','📊 التقارير'],['dash','📈 داشبورد'],['backup','💾 نسخ احتياطي']];
+  nav.innerHTML=P.map(([p,l])=>`<button class="${CA.page===p?'btn-primary':'btn-ghost'} btn-sm" onclick="CA.page='${p}'; caRender();">${l}</button>`).join('');
+  let h='';
+  if(CA.dbLoaded && !CA.dbOK)
+    h+=`<div class="duebox" style="background:var(--gold-bg);border-color:#E8D9B0;margin-bottom:10px;">⚠ أرشيف التدقيق يحتاج تنفيذ <b>سكربت v5</b> (جدول customs_audits) مرة واحدة من Supabase ← SQL Editor — بدونه المقارنة تشتغل لكن الحفظ بالسجل لن يعمل.</div>`;
+  if(CA.page==='new'){
+    if(!CA.results){
+      h+=`<div class="filebox">
+        <label class="up">📄 رفع ملفات PDF (بيان + فاتورة)<input type="file" accept=".pdf" multiple onchange="caFiles(this)"></label>
+        <span class="hint">كل ملف PDF = طلبية مستقلة (البيان الجمركي وفاتورة/فواتير المورد معاً بنفس الملف). يقرأه الذكاء الاصطناعي ويقارن البيان بالفاتورة ويحسب القيمة بالطريقتين.</span>
+        <span class="fname">${CA.files.map(f=>esc(f.name)).join('، ')}</span></div>`;
+      if(CA.files.length){
+        h+=caCard(`<label style="font-weight:600;font-size:12px;">هل يوجد فاتورة شحن؟</label>
+          <div style="display:flex;gap:12px;margin:6px 0;">
+            <label style="font-size:12px;cursor:pointer;"><input type="radio" name="caShip" ${!CA.hasShip?'checked':''} onchange="CA.hasShip=false; caRender();"> لا</label>
+            <label style="font-size:12px;cursor:pointer;"><input type="radio" name="caShip" ${CA.hasShip?'checked':''} onchange="CA.hasShip=true; caRender();"> نعم</label></div>
+          ${CA.hasShip?`<div class="toolrow">
+            <input type="number" placeholder="مبلغ الشحن" value="${esc(CA.shipAmt)}" oninput="CA.shipAmt=this.value" style="width:120px;">
+            <select onchange="CA.shipCur=this.value"><option value="">عملة</option>${['USD','EUR','GBP','CNY','JPY','TRY','SAR','AED','JOD'].map(c=>`<option ${CA.shipCur===c?'selected':''}>${c}</option>`).join('')}</select>
+            <input type="number" placeholder="سعر تعادل (إن اختلفت)" value="${esc(CA.shipEx)}" oninput="CA.shipEx=this.value" style="width:170px;"></div>`:''}`);
+        h+=`<div class="toolrow" style="justify-content:center;">
+          <button class="btn-primary" onclick="caRun()" ${CA.loading?'disabled':''}>${CA.loading?'جاري التحليل…':'ابدأ المقارنة ⚡'}</button>
+          <button class="btn-ghost" onclick="CA.files=[]; CA.results=null; CA.hasShip=false; CA.shipAmt=''; CA.shipCur=''; CA.shipEx=''; caRender();">إعادة</button></div>`;
+      }
+      if(CA.loading) h+=`<div class="duebox" style="background:var(--gold-bg);border-color:#E8D9B0;margin-top:10px;">⏳ <span id="caProgTxt">جاري التحليل…</span> — التحليل الشامل يأخذ دقيقة إلى 3 دقائق للملفات الكبيرة.</div>`;
+    } else {
+      h+=CA.results.map((r,i)=>caResultHTML(r,i,false)).join('');
+      h+=`<div class="toolrow" style="justify-content:center;">
+        <button class="btn-primary" onclick="caSaveAll()">💾 حفظ الكل في السجل</button>
+        <button class="btn-ghost" onclick="CA.results=null; CA.files=[]; caRender();">🔄 مقارنة جديدة</button></div>`;
+    }
+  } else if(CA.page==='hist'){
+    h+=`<input type="text" placeholder="ابحث برقم البيان، المورد، رقم الفاتورة…" value="${esc(CA.search)}"
+      oninput="CA.search=this.value; document.getElementById('caHistList').innerHTML=caHistListHTML();"
+      style="width:100%;max-width:420px;margin-bottom:12px;">`;
+    h+=`<div id="caHistList">${caHistListHTML()}</div>`;
+  } else if(CA.page==='reports'){
+    h+=`<div class="toolrow" style="margin-bottom:10px;">
+      <select onchange="CA.repType=this.value; caRender();">
+        <option value="items" ${CA.repType==='items'?'selected':''}>مقارنة أسعار الأصناف</option>
+        <option value="supplier" ${CA.repType==='supplier'?'selected':''}>حسب المورد</option>
+        <option value="country" ${CA.repType==='country'?'selected':''}>حسب البلد والاتفاقية</option>
+        <option value="currency" ${CA.repType==='currency'?'selected':''}>حسب العملة</option></select>
+      <button class="btn-ghost btn-sm" onclick="caCSV()">⬇ تصدير CSV</button></div>`;
+    h+=!CA.db.length?'<div class="empty-state">لا توجد بيانات</div>':(CA.repType==='items'?caItemsReportHTML():caGroupReportHTML(CA.repType));
+  } else if(CA.page==='dash'){
+    h+=caDashHTML();
+  } else if(CA.page==='backup'){
+    h+=caCard(`<div style="font-weight:700;color:var(--navy);margin-bottom:8px;">📦 تصدير</div>
+      <button class="btn-primary btn-sm" onclick="if(!CA.db.length){caToast('لا توجد بيانات',true);}else{caDownload(JSON.stringify(CA.db,null,2),'customs_backup.json','application/json');}">JSON ⬇</button>
+      <button class="btn-ghost btn-sm" onclick="caCSV()">CSV ⬇</button>`);
+    h+=caCard(`<div style="font-weight:700;color:var(--navy);margin-bottom:8px;">📥 استيراد نسخة JSON (تُضاف للسجل على السيرفر)</div>
+      <input type="file" accept=".json" onchange="caImportJSON(this)" style="font-size:12px;">`);
+    h+=caCard(`<div style="font-weight:700;color:var(--crimson);margin-bottom:8px;">🗑 حذف كل السجل (المدير فقط)</div>
+      <button class="btn-danger btn-sm" onclick="caDeleteAll()">حذف الكل</button>`);
+  }
+  wrap.innerHTML=h;
+}
+
 /* ================= تنقّل وإقلاع ================= */
 function switchTab(n){
-  for(let i=0;i<=6;i++){ $('page'+i).style.display = i===n?'block':'none';
+  for(let i=0;i<=7;i++){ $('page'+i).style.display = i===n?'block':'none';
     $('tabBtn'+i).className = i===n?'btn-primary':'btn-ghost'; }
 }
 window.addEventListener('DOMContentLoaded', async ()=>{
