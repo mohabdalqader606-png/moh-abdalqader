@@ -541,6 +541,49 @@ ORDER BY T0."DocNum"</code>
 2621313434	2026-08-01	سوق السلام التجاري	11062673	جبنة قشقوان GENUIVE 350غم كيس	45	2.900	130.500</code>
         بتتربط تلقائياً مع سندات التحويل بطريقتين: <b>دقيقة</b> لو رقم الفاتورة نفسه مكتوب بخانة "رقم فاتورة الصرف" (Remarks) على السند، و<b>حسب اسم السوق والتاريخ</b> لباقي السندات (لما الملاحظة اسم سوق بس بدون رقم). <b>مهم:</b> المطابقة حسب اسم السوق بتقارن بيوم كامل — لو رفعت جزء بس من فواتير يوم/سوق معيّن (مو كلها)، رح تطلع فرق حتى لو كل فاتورة رفعتها صح، لأنه ناقص فواتير عن نفس اليوم. لتقرير موثوق ليوم معيّن، ارفع كل فواتير هداك اليوم مع بعض.
       </div>
+
+      <div style="border:1px dashed var(--navy); border-radius:10px; padding:10px 12px; margin:8px 0; background:#F7FAFE;">
+        <b style="font-size:12.5px;">📄 إدخال يومي من الفاتورة — بدون كتابة الفاتورة كاملة</b>
+        <div class="hint" style="margin:4px 0 6px;">ارفع ملف PDF (يقدر يكون فيه أكثر من فاتورة مع بعض، صفحة لكل فاتورة). الفاتورة بتنعرض جنب صندوق الإدخال، وبس تكتب <b>رمز الصنف والكمية</b> — الاسم والسعر بيتعبوا لحالهم من ربط الأصناف. <b>ملاحظة:</b> ما في قراءة ضوئية آلية للأرقام (جربتها وطلعت غير موثوقة لبيانات مالية) — انت اللي بتكتب وهي بس بتسهّل عليك بعرض الفاتورة والتعبئة التلقائية للاسم/السعر.</div>
+        <div class="row-actions">
+          <label class="btn-primary btn-sm" style="cursor:pointer; display:inline-flex; align-items:center; gap:6px;">
+            📤 رفع PDF
+            <input type="file" id="dummyInvPdfInput" accept="application/pdf" style="display:none;" onchange="loadDummyInvPdf(event)">
+          </label>
+          <span class="status-msg" id="dummyInvPdfMsg"></span>
+        </div>
+        <div id="dummyInvPdfViewerBox" style="display:none; margin-top:10px;">
+          <div class="row-actions" style="margin:0 0 6px;">
+            <button class="btn-ghost btn-sm" onclick="dummyInvPdfPrevPage()">‹ السابقة</button>
+            <span style="font-size:12px;">صفحة <b id="dummyInvPdfPageNum">1</b> من <span id="dummyInvPdfPageTotal">1</span></span>
+            <button class="btn-ghost btn-sm" onclick="dummyInvPdfNextPage()">التالية ›</button>
+            <button class="btn-ghost btn-sm" onclick="dummyInvPdfRotate()">🔄 تدوير</button>
+          </div>
+          <div style="display:flex; gap:14px; flex-wrap:wrap; align-items:flex-start;">
+            <div style="flex:1; min-width:280px; max-width:520px; border:1px solid var(--line); border-radius:8px; overflow:auto; max-height:560px; background:#fff;">
+              <canvas id="dummyInvPdfCanvas" style="display:block; width:100%;"></canvas>
+            </div>
+            <div style="flex:1; min-width:320px;">
+              <div class="row-actions" style="margin:0 0 6px;">
+                <label style="font-size:12px; display:flex; align-items:center; gap:6px;">رقم الفاتورة <input type="text" id="qeInvoiceNo" style="width:150px; direction:ltr; text-align:left;"></label>
+                <label style="font-size:12px; display:flex; align-items:center; gap:6px;">التاريخ <input type="date" id="qeInvoiceDate"></label>
+              </div>
+              <label style="font-size:12px; display:flex; align-items:center; gap:6px; margin-bottom:6px;">اسم السوق <input type="text" id="qeInvoiceMarket" style="width:100%;"></label>
+              <table class="grid" id="qeItemsTable" style="max-width:100%;">
+                <thead><tr><th style="width:120px;">رمز الصنف</th><th>اسم الصنف</th><th style="width:90px;">الكمية</th><th></th></tr></thead>
+                <tbody id="qeItemsTbody"></tbody>
+              </table>
+              <div class="row-actions" style="margin-top:6px;">
+                <button class="btn-ghost btn-sm" onclick="qeAddItemRow()">+ إضافة صنف</button>
+                <button class="btn-primary btn-sm" onclick="qeConfirmInvoice()">✔ إضافة هاي الفاتورة وكمّل للتالية</button>
+                <span class="status-msg" id="qeMsg"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="hint" style="margin:8px 0 4px;">أو الطريقة الثانية — لصق جماعي (Tab مفصول) لأكثر من فاتورة مرة وحدة (مفيدة لو حد ثاني جهّزلك جدول جاهز):</div>
       <textarea id="dummyInvItemsPasteArea" placeholder="الصق هنا أصناف فواتير الصرف الوهمي..."></textarea>
       <div class="row-actions">
         <button class="btn-primary" onclick="importDummyInvItems()">استيراد / تحديث</button>
@@ -2536,15 +2579,125 @@ function importDummyInvItems(){
     rec.theirName = rec.theirName || '';
     newItems.push(rec);
   }
+  const touchedInvCount = new Set(newItems.map(r=>normDocNum(r.invoiceNo))).size;
+  const replaced = upsertDummyInvItems(newItems);
+  document.getElementById('dummyInvItemsPasteArea').value = '';
+  flash('dummyInvItemsMsg', `تم استيراد ${newItems.length} سطر (${touchedInvCount} فاتورة)${replaced?` — استبدلت ${replaced} سطر قديم لنفس الفواتير`:''}.`, true);
+  renderDailyInvoiceMatch();
+}
+// إضافة/استبدال أصناف فواتير — بيستبدل أي أصناف قديمة لنفس أرقام الفواتير الملموسة (يمنع التكرار لو استوردت نفس الفاتورة مرتين)، وبيرجع عدد الأسطر المستبدلة
+function upsertDummyInvItems(newItems){
   const touchedInvNos = new Set(newItems.map(r=>normDocNum(r.invoiceNo)));
   const before = DUMMY_INV_ITEMS.length;
   DUMMY_INV_ITEMS = DUMMY_INV_ITEMS.filter(r=> !touchedInvNos.has(normDocNum(r.invoiceNo)));
   const replaced = before - DUMMY_INV_ITEMS.length;
   DUMMY_INV_ITEMS.push(...newItems);
   saveState();
-  document.getElementById('dummyInvItemsPasteArea').value = '';
-  flash('dummyInvItemsMsg', `تم استيراد ${newItems.length} سطر (${touchedInvNos.size} فاتورة)${replaced?` — استبدلت ${replaced} سطر قديم لنفس الفواتير`:''}.`, true);
+  return replaced;
+}
+/* ==================== عرض فاتورة الصرف الوهمي PDF جنب إدخال سريع (رمز الصنف + الكمية بس) ==================== */
+let dummyInvPdfDoc = null, dummyInvPdfPageIdx = 1, dummyInvPdfRotation = 0;
+async function loadDummyInvPdf(evt){
+  const file = evt.target.files[0];
+  evt.target.value = '';
+  if(!file) return;
+  if(!window.pdfjsLib){ flash('dummyInvPdfMsg','مكتبة قراءة PDF ما تحمّلت (تحتاج اتصال إنترنت أول مرة).', false); return; }
+  flash('dummyInvPdfMsg','جارِ فتح الملف...', true);
+  try{
+    const buf = await file.arrayBuffer();
+    dummyInvPdfDoc = await pdfjsLib.getDocument({data:buf}).promise;
+    dummyInvPdfPageIdx = 1;
+    dummyInvPdfRotation = 0;
+    document.getElementById('dummyInvPdfPageTotal').textContent = dummyInvPdfDoc.numPages;
+    document.getElementById('dummyInvPdfViewerBox').style.display = '';
+    await renderDummyInvPdfPage();
+    qeClearForm();
+    flash('dummyInvPdfMsg', `تم فتح الملف — ${dummyInvPdfDoc.numPages} صفحة.`, true);
+  }catch(e){
+    flash('dummyInvPdfMsg','تعذر فتح ملف الـPDF: '+e.message, false);
+  }
+}
+async function renderDummyInvPdfPage(){
+  if(!dummyInvPdfDoc) return;
+  const page = await dummyInvPdfDoc.getPage(dummyInvPdfPageIdx);
+  const viewport = page.getViewport({scale:2, rotation: dummyInvPdfRotation});
+  const canvas = document.getElementById('dummyInvPdfCanvas');
+  canvas.width = viewport.width; canvas.height = viewport.height;
+  const ctx = canvas.getContext('2d');
+  await page.render({canvasContext: ctx, viewport}).promise;
+  document.getElementById('dummyInvPdfPageNum').textContent = dummyInvPdfPageIdx;
+}
+function dummyInvPdfNextPage(){
+  if(!dummyInvPdfDoc || dummyInvPdfPageIdx>=dummyInvPdfDoc.numPages) return;
+  dummyInvPdfPageIdx++;
+  renderDummyInvPdfPage();
+  qeClearForm();
+}
+function dummyInvPdfPrevPage(){
+  if(!dummyInvPdfDoc || dummyInvPdfPageIdx<=1) return;
+  dummyInvPdfPageIdx--;
+  renderDummyInvPdfPage();
+  qeClearForm();
+}
+function dummyInvPdfRotate(){
+  dummyInvPdfRotation = (dummyInvPdfRotation + 90) % 360;
+  renderDummyInvPdfPage();
+}
+function qeClearForm(){
+  document.getElementById('qeInvoiceNo').value = '';
+  document.getElementById('qeItemsTbody').innerHTML = '';
+  qeAddItemRow(); qeAddItemRow(); qeAddItemRow();
+}
+function qeAddItemRow(code, qty){
+  const tbody = document.getElementById('qeItemsTbody');
+  const tr = document.createElement('tr');
+  tr.innerHTML = `
+    <td><input type="text" class="qe-code" value="${esc(code||'')}" style="width:100%; direction:ltr;" oninput="qeItemCodeChanged(this)"></td>
+    <td class="qe-name" style="color:var(--ink-soft); font-size:12px;">—</td>
+    <td><input type="number" class="qe-qty" value="${qty!=null?esc(qty):''}" style="width:100%;" step="any"></td>
+    <td><button class="btn-danger tiny-btn" onclick="this.closest('tr').remove()">✕</button></td>
+  `;
+  tbody.appendChild(tr);
+  return tr;
+}
+function qeItemCodeChanged(inputEl){
+  const nameCell = inputEl.closest('tr').querySelector('.qe-name');
+  const code = inputEl.value.trim();
+  if(!code){ nameCell.textContent='—'; nameCell.style.color='var(--ink-soft)'; return; }
+  const it = ITEMS.find(x=>String(x.theirCode).trim()===code);
+  if(it){ nameCell.textContent = it.theirName || it.ourName || '(بلا اسم)'; nameCell.style.color='var(--teal)'; }
+  else{ nameCell.textContent = '⚠ رمز غير معروف بربط الأصناف'; nameCell.style.color='var(--crimson)'; }
+}
+function qeConfirmInvoice(){
+  const invoiceNo = document.getElementById('qeInvoiceNo').value.trim();
+  const date = document.getElementById('qeInvoiceDate').value;
+  const market = document.getElementById('qeInvoiceMarket').value.trim();
+  if(!invoiceNo){ flash('qeMsg','لازم تكتب رقم الفاتورة.', false); return; }
+  const rows = Array.from(document.querySelectorAll('#qeItemsTbody tr'));
+  const newItems = [];
+  let hasUnknown = false;
+  rows.forEach(tr=>{
+    const code = tr.querySelector('.qe-code').value.trim();
+    const qty = parseNum(tr.querySelector('.qe-qty').value);
+    if(!code || !qty) return;
+    const it = ITEMS.find(x=>String(x.theirCode).trim()===code);
+    if(!it) hasUnknown = true;
+    newItems.push({
+      invoiceNo, date, market,
+      theirCode: code, theirName: it ? (it.theirName||it.ourName||'') : '',
+      qty, price: it ? (it.salePricePiece||0) : 0, value: it ? +((it.salePricePiece||0)*qty).toFixed(3) : 0
+    });
+  });
+  if(!newItems.length){ flash('qeMsg','لازم صنف واحد على الأقل برمز وكمية.', false); return; }
+  if(hasUnknown && !confirm('في رمز صنف واحد أو أكثر مش موجود بربط الأصناف — بتضيف الفاتورة برضه؟')) return;
+  upsertDummyInvItems(newItems);
+  flash('qeMsg', `✔ اتضافت الفاتورة ${invoiceNo} (${newItems.length} صنف).`, true);
   renderDailyInvoiceMatch();
+  if(dummyInvPdfDoc && dummyInvPdfPageIdx < dummyInvPdfDoc.numPages){
+    dummyInvPdfNextPage();
+  }else{
+    qeClearForm();
+  }
 }
 function clearDummyInvItems(){
   if(!confirm('مسح كل أصناف فواتير الصرف الوهمي التفصيلية المستوردة؟')) return;
