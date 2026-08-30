@@ -111,6 +111,10 @@
   .empty-state{text-align:center; padding:60px 20px; color:var(--ink-soft);}
   .empty-state .ic{font-size:34px; margin-bottom:10px;}
   footer{max-width:1440px; margin:14px auto 0; padding:0 24px; font-size:11.5px; color:var(--ink-soft); text-align:center;}
+
+  .pager{display:flex; align-items:center; justify-content:center; gap:12px; padding:12px 0; font-size:12px; color:var(--ink-soft);}
+  .pager button:disabled{opacity:.4; cursor:default;}
+  .pager b{font-family:var(--mono); color:var(--ink);}
 </style>
 </head>
 <body>
@@ -193,12 +197,12 @@ ORDER BY R."CardCode", K."DueDate"</code>
         <button data-f="immaterial" onclick="setFilter('immaterial')">غير مؤثر مادياً ◌</button>
         <button data-f="ok" onclick="setFilter('ok')">طبيعي ✓</button>
       </div>
-      <input type="text" class="search" id="searchBox" placeholder="بحث برمز/اسم العميل..." oninput="renderList()">
+      <input type="text" class="search" id="searchBox" placeholder="بحث برمز/اسم العميل..." oninput="debouncedListSearch()">
       <div class="spacer"></div>
       <label style="display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--ink-soft); cursor:pointer;">
-        <input type="checkbox" id="showHiddenChk" onchange="renderList()"> إظهار المخفي (<span id="hiddenCount">0</span>)
+        <input type="checkbox" id="showHiddenChk" onchange="listPage=1; renderList();"> إظهار المخفي (<span id="hiddenCount">0</span>)
       </label>
-      <button class="print-btn" onclick="window.print()">🖨️ طباعة</button>
+      <button class="print-btn" onclick="printApprovalsList()">🖨️ طباعة</button>
       <button class="btn-ghost btn-sm" style="border-color:var(--crimson); color:var(--crimson);" onclick="toggleViolationReport()">📄 تقرير مخالفات للإرسال</button>
       <button class="btn-ghost btn-sm" onclick="exportCsv()">تصدير CSV</button>
       <button class="btn-ghost btn-sm" onclick="expandAll()">فتح الكل</button>
@@ -256,7 +260,7 @@ ORDER BY R."CardCode", K."DueDate"</code>
         <option value="exposure">ترتيب حسب: أعلى تعرض</option>
         <option value="name">ترتيب حسب: اسم العميل</option>
       </select>
-      <input type="text" class="search" id="agingSearchBox" placeholder="بحث برمز/اسم العميل أو المندوب..." oninput="renderAging()">
+      <input type="text" class="search" id="agingSearchBox" placeholder="بحث برمز/اسم العميل أو المندوب..." oninput="debouncedAgingSearch()">
       <div class="spacer"></div>
       <button class="btn-primary btn-sm" onclick="generateReminders()">✉️ توليد رسائل تذكير للمحددين</button>
       <div style="display:flex; gap:4px;">
@@ -333,7 +337,7 @@ ORDER BY R."CardCode", K."DueDate"</code>
         <button data-f="onTime" onclick="setDailyFilter('onTime')">🟢 حسب التعريف</button>
         <button data-f="early" onclick="setDailyFilter('early')">🔵 مبكر</button>
       </div>
-      <input type="text" class="search" id="dailySearchBox" placeholder="بحث برمز/اسم العميل أو المندوب..." oninput="renderDaily()">
+      <input type="text" class="search" id="dailySearchBox" placeholder="بحث برمز/اسم العميل أو المندوب..." oninput="debouncedDailySearch()">
       <div class="spacer"></div>
       <div style="display:flex; gap:4px;">
         <button class="print-btn" onclick="printFilteredDaily('all','كل التحصيلات')">🖨️ الكل</button>
@@ -434,6 +438,42 @@ let currentFilter = 'all';
 let HIDDEN = new Set(); // رموز عملاء أو "cardCode|docNum" لفواتير مخفية
 const N_MONTHS = 10; // M0..M9plus
 
+// ===== أداء: منع تجميد الشاشة عند كميات بيانات كبيرة =====
+// 1) تقسيم كل قائمة/جدول لصفحات بدل بناء عشرات آلاف عناصر DOM دفعة وحدة.
+// 2) تفاصيل كل صف (جدول الاستهلاك، شبكة الأشهر) تُبنى فقط أول ما المستخدم يفتحها (Lazy) مش لكل صف مسبقاً.
+// 3) البحث اللحظي مُهدَّأ (debounce) عشان الكتابة السريعة ما تعيد آلاف عناصر DOM بكل حرف.
+function debounce(fn, wait){
+  let t;
+  return function(...args){ clearTimeout(t); t = setTimeout(()=>fn.apply(this,args), wait); };
+}
+function escAttr(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;'); }
+function pagerHtml(page, pageSize, totalItems, onPageFn){
+  const totalPages = Math.max(1, Math.ceil(totalItems/pageSize));
+  if(totalPages<=1) return '';
+  return `<div class="pager">
+    <button class="btn-ghost btn-sm" ${page<=1?'disabled':''} onclick="${onPageFn}(${page-1})">‹ السابق</button>
+    <span>صفحة <b>${page}</b> من <b>${totalPages}</b> — <b>${totalItems.toLocaleString('en-US')}</b> عنصر</span>
+    <button class="btn-ghost btn-sm" ${page>=totalPages?'disabled':''} onclick="${onPageFn}(${page+1})">التالي ›</button>
+  </div>`;
+}
+
+let INVOICE_INDEX = new Map(); // "cardCode|docNum" -> صف الفاتورة، لبناء تفاصيلها عند الفتح فقط
+let PRINT_MODE = false; // عند الطباعة نعطّل التصفيح ونبني كل التفاصيل كاملة مؤقتاً
+
+let listPage = 1;
+const LIST_PAGE_SIZE = 80; // عدد العملاء بكل صفحة بتبويب مراجعة الموافقات
+const debouncedListSearch = debounce(()=>{ listPage=1; renderList(); }, 200);
+
+let agingPage = 1;
+const AGING_PAGE_SIZE = 150; // عدد الصفوف بكل صفحة بتبويب عمر الذمة
+let AGING_PAGE_ROWS = [];
+const debouncedAgingSearch = debounce(()=>{ agingPage=1; renderAging(); }, 200);
+
+let dailyPage = 1;
+const DAILY_PAGE_SIZE = 150; // عدد الصفوف بكل صفحة بتبويب التحصيل اليومي
+let DAILY_PAGE_ROWS = [];
+const debouncedDailySearch = debounce(()=>{ dailyPage=1; renderDaily(); }, 200);
+
 function parseNum(v){ if(v==null) return 0; v=String(v).trim().replace(/,/g,''); if(v===''||v==='-') return 0; const n=parseFloat(v); return isNaN(n)?0:n; }
 function parseSapDate(v){
   if(!v) return null; v=String(v).trim();
@@ -495,6 +535,9 @@ function processData(){
 
   INVOICES = parsed.map(computeInvoice);
   groupByCustomer();
+  INVOICE_INDEX = new Map();
+  INVOICES.forEach(r => INVOICE_INDEX.set((r.cardCode||'')+'|'+(r.docNum||''), r));
+  listPage = 1;
   msg.textContent = `تم تحليل ${INVOICES.length} فاتورة ضمن ${CUSTOMERS.length} عميل.`;
   msg.className='status-msg ok';
   renderSummary();
@@ -699,7 +742,7 @@ function renderSummary(){
   ]);
 }
 
-function setFilter(f){ currentFilter=f; document.querySelectorAll('#filterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===f)); renderList(); }
+function setFilter(f){ currentFilter=f; listPage=1; document.querySelectorAll('#filterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===f)); renderList(); }
 
 function chunksTableHtml(r){
   if(r.chunkResults.length===0) return '<div style="font-size:11.5px;color:var(--ink-soft);padding:8px 0;">ما في تفاصيل استهلاك (تحقق من وجود بيانات الأشهر أو الرصيد=0).</div>';
@@ -754,8 +797,14 @@ function renderList(){
 
   if(list.length===0){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🔍</div>ما في نتائج مطابقة</div>`; return; }
 
-  wrap.innerHTML = list.map((c,ci)=>{
-    const cid = 'c_'+ci;
+  const totalItems = list.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems/LIST_PAGE_SIZE));
+  if(listPage>totalPages) listPage = totalPages;
+  const pageList = PRINT_MODE ? list : list.slice((listPage-1)*LIST_PAGE_SIZE, listPage*LIST_PAGE_SIZE);
+  const pager = PRINT_MODE ? '' : pagerHtml(listPage, LIST_PAGE_SIZE, totalItems, 'goToListPage');
+
+  const bodyHtml = pageList.map((c,ci)=>{
+    const cid = 'c_'+((listPage-1)*LIST_PAGE_SIZE+ci);
     const custHidden = HIDDEN.has('cust:'+c.cardCode);
     const gapBadge = c.gapCount>0 ? `<span class="pill" style="background:var(--crimson);color:#fff;">🚨 ${c.gapCount} ثغرة</span>` : '';
     const badge = c.warnCount>0 ? `<span class="pill warn">⚠ ${c.warnCount} مخالفة</span>`
@@ -777,8 +826,10 @@ function renderList(){
       const gapAlert = (r.hasViolation && !wentToApproval)
         ? `<div style="background:var(--crimson-bg); border:1.5px solid var(--crimson); border-radius:8px; padding:8px 12px; margin-bottom:10px; font-size:12px; color:var(--crimson); font-weight:700;">🚨 ثغرة: هذه الفاتورة مخالفة فعلياً (عمر ذمة متجاوز) لكنها لم تُحوَّل لإجراء الموافقة إطلاقاً</div>`
         : '';
+      // التفاصيل الثقيلة (KPIs + جدول الاستهلاك) تُبنى فقط عند فتح الفاتورة (Lazy) — إلا وقت الطباعة فتُبنى كاملة فوراً
+      const bodyInner = PRINT_MODE ? (gapAlert + invoiceDetailHtml(r)) : (gapAlert + '<div class="inv-lazy"></div>');
       return `
-      <div class="inv-block ${invHidden?'is-hidden-item':''}" id="${iid}">
+      <div class="inv-block ${invHidden?'is-hidden-item':''}" id="${iid}" data-key="${escAttr(invKey.slice(4))}">
         <div class="inv-head" onclick="toggleInv('${iid}')">
           <svg class="chev2" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           <span>فاتورة <b>${r.docNum||'—'}</b> · ${r.invoiceDate?fmtDate(r.invoiceDate):'—'} · قيمة <b>${fmtNum(parseNum(r.docTotal))}</b></span>
@@ -789,17 +840,8 @@ function renderList(){
         ${r.hasViolation && r.violationReasonsList && r.violationReasonsList.length ? `<div style="padding:4px 14px 8px; font-size:11px; color:var(--crimson);">
           ${r.violationReasonsList.map((rsn,i)=>`<div>↳ ${r.violationReasonsList.length>1?`السبب ${i+1}: `:'السبب: '}${rsn}</div>`).join('')}
         </div>` : ''}
-        <div class="inv-body">
-          ${gapAlert}
-          <div class="kpis">
-            <div class="kpi">أيام السماح<b>${r.extraDays}</b></div>
-            <div class="kpi">الرصيد قبل الفاتورة<b>${fmtNum(r.balance)}</b></div>
-            <div class="kpi">الشيكات المؤجلة<b>${fmtNum(r.checksSum)}</b>${r.checks.length?` (${r.checks.length} شيك)`:''}</div>
-            <div class="kpi">التعرض قبل الفاتورة<b>${fmtNum(r.totalExposureBefore)}</b></div>
-            <div class="kpi">التعرض بعد الفاتورة<b>${fmtNum(r.totalExposureAfter)}</b></div>
-            <div class="kpi">السقف الائتماني<b>${r.creditLine?fmtNum(r.creditLine):'—'}</b></div>
-          </div>
-          ${chunksTableHtml(r)}
+        <div class="inv-body" data-rendered="${PRINT_MODE?'1':'0'}">
+          ${bodyInner}
         </div>
       </div>`;
     }).join('');
@@ -816,6 +858,32 @@ function renderList(){
       <div class="cust-body">${invBlocks || '<div style="font-size:12px;color:var(--ink-soft);">كل فواتير هذا العميل مخفية.</div>'}</div>
     </div>`;
   }).join('');
+
+  wrap.innerHTML = pager + bodyHtml + pager;
+}
+
+// KPIs + جدول الاستهلاك التفصيلي لفاتورة واحدة — يُستدعى فقط عند فتح الفاتورة (أو وقت الطباعة)
+function invoiceDetailHtml(r){
+  return `
+    <div class="kpis">
+      <div class="kpi">أيام السماح<b>${r.extraDays}</b></div>
+      <div class="kpi">الرصيد قبل الفاتورة<b>${fmtNum(r.balance)}</b></div>
+      <div class="kpi">الشيكات المؤجلة<b>${fmtNum(r.checksSum)}</b>${r.checks.length?` (${r.checks.length} شيك)`:''}</div>
+      <div class="kpi">التعرض قبل الفاتورة<b>${fmtNum(r.totalExposureBefore)}</b></div>
+      <div class="kpi">التعرض بعد الفاتورة<b>${fmtNum(r.totalExposureAfter)}</b></div>
+      <div class="kpi">السقف الائتماني<b>${r.creditLine?fmtNum(r.creditLine):'—'}</b></div>
+    </div>
+    ${chunksTableHtml(r)}`;
+}
+
+function ensureInvRendered(el){
+  const body = el.querySelector('.inv-body');
+  if(!body || body.dataset.rendered==='1') return;
+  const key = el.dataset.key;
+  const r = key ? INVOICE_INDEX.get(key) : null;
+  const lazy = body.querySelector('.inv-lazy');
+  if(r && lazy) lazy.outerHTML = invoiceDetailHtml(r);
+  body.dataset.rendered = '1';
 }
 
 function toggleHide(key){
@@ -824,9 +892,27 @@ function toggleHide(key){
 }
 
 function toggleCust(id){ document.getElementById(id).classList.toggle('open'); }
-function toggleInv(id){ document.getElementById(id).classList.toggle('open'); }
-function expandAll(){ document.querySelectorAll('.cust').forEach(c=>c.classList.add('open')); document.querySelectorAll('.inv-block').forEach(c=>c.classList.add('open')); }
+function toggleInv(id){
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.classList.toggle('open');
+  if(el.classList.contains('open')) ensureInvRendered(el);
+}
+function expandAll(){
+  document.querySelectorAll('.cust').forEach(c=>c.classList.add('open'));
+  document.querySelectorAll('.inv-block').forEach(el=>{ el.classList.add('open'); ensureInvRendered(el); });
+}
 function collapseAll(){ document.querySelectorAll('.cust').forEach(c=>c.classList.remove('open')); document.querySelectorAll('.inv-block').forEach(c=>c.classList.remove('open')); }
+
+function goToListPage(p){ listPage=p; renderList(); }
+
+function printApprovalsList(){
+  // الطباعة تحتاج كل العملاء (مو صفحة وحدة) وكل تفاصيل الفواتير كاملة، فنبنيها كاملة مؤقتاً ثم نرجع للوضع العادي (المصفّح + Lazy)
+  PRINT_MODE = true;
+  renderList();
+  window.print();
+  setTimeout(()=>{ PRINT_MODE = false; renderList(); }, 500);
+}
 
 function clearAll(){
   document.getElementById('pasteArea').value='';
@@ -1001,6 +1087,7 @@ function processAging(){
   }
 
   AGING_ROWS = parsed.map(r => computeAgingRow(r, snapshotDate, checksByCustomer[r.cardCode]||[]));
+  agingPage = 1;
   msg.textContent = `تم تحليل ${AGING_ROWS.length} عميل بتاريخ اللقطة ${fmtDate(snapshotDate)}.`;
   msg.className='status-msg ok';
   renderAgingSummary();
@@ -1127,6 +1214,7 @@ function renderAgingSummary(){
 
 function setAgingFilter(f){
   agingFilter = f;
+  agingPage = 1;
   document.querySelectorAll('#agingFilterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===f));
   renderAging();
 }
@@ -1197,15 +1285,22 @@ function renderAging(){
 
   if(rows.length===0){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🔍</div>ما في نتائج مطابقة</div>`; return; }
 
-  let html = `<table class="aging-tbl"><thead><tr>`;
+  const totalItems = rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems/AGING_PAGE_SIZE));
+  if(agingPage>totalPages) agingPage = totalPages;
+  const pageRows = PRINT_MODE ? rows : rows.slice((agingPage-1)*AGING_PAGE_SIZE, agingPage*AGING_PAGE_SIZE);
+  const pager = PRINT_MODE ? '' : pagerHtml(agingPage, AGING_PAGE_SIZE, totalItems, 'goToAgingPage');
+  AGING_PAGE_ROWS = pageRows;
+
+  let html = pager + `<table class="aging-tbl"><thead><tr>`;
   AGING_COLS.forEach(c=>{
-    if(!c.sortable){ html += `<th><input type="checkbox" onclick="toggleAllAgingCheck(this)" title="تحديد الكل"></th>`; return; }
+    if(!c.sortable){ html += `<th><input type="checkbox" onclick="toggleAllAgingCheck(this)" title="تحديد الكل بهذه الصفحة"></th>`; return; }
     const arrow = (sortMode==='column' && agingSortKey===c.key) ? (agingSortDir==='asc'?' ▲':' ▼') : '';
     html += `<th class="${c.num?'num':''}" style="cursor:pointer; user-select:none;" onclick="sortAgingByColumn('${c.key}')">${c.label}${arrow}</th>`;
   });
   html += `</tr></thead><tbody>`;
 
-  rows.forEach((r,ri)=>{
+  pageRows.forEach((r,ri)=>{
     const rowClass = r.status==='overdue' ? 'overdue' : (r.status==='soon' ? 'soon' : '');
     const badge = r.status==='overdue' ? `<span class="badge warn">🔴 ${r.statusLabel}</span>`
                 : r.status==='soon' ? `<span class="badge grace">🟡 ${r.statusLabel}</span>`
@@ -1217,8 +1312,8 @@ function renderAging(){
                        : `<span class="badge gray">${r.checksLabel}</span>`;
     const monthLabel = r.beyondRange ? '12+ شهر' : AGING_MONTH_LABELS[r.oldestIdx];
     const checkAttr = (r.status==='overdue'||r.status==='soon') ? `<input type="checkbox" class="aging-check" data-card="${r.cardCode}" onclick="event.stopPropagation()">` : '';
-    const detailId = 'agdet_'+ri;
-    html += `<tr class="${rowClass}" style="cursor:pointer;" onclick="toggleAgingDetail('${detailId}')">
+    // صف التفاصيل (شبكة الأشهر) يُبنى فقط عند الفتح — لا مبرر لبنائه لكل صف مسبقاً
+    html += `<tr class="${rowClass}" style="cursor:pointer;" onclick="toggleAgingDetail(${ri})">
       <td>${checkAttr}</td>
       <td>${r.cardCode}</td><td>${r.cardName||''}</td><td>${r.slpName||'—'}</td>
       <td class="num">${r.creditLine?fmtNum(r.creditLine):'—'}</td><td class="num">${r.extraDays}</td>
@@ -1226,25 +1321,35 @@ function renderAging(){
       <td>${monthLabel}</td><td>${r.dueDate?fmtDate(r.dueDate):'—'}</td>
       <td>${badge}</td><td>${checksBadge}</td><td>${creditTxt}</td>
     </tr>
-    <tr id="${detailId}" style="display:none;"><td colspan="14" style="padding:0;">
-      <div style="padding:12px 16px; background:#F7F9FC; border-bottom:1px solid var(--line);">
-        <div class="months-grid">
-          ${r.monthsAvail.map((m,i)=>{
-            const covered = i<=r.oldestIdx && !r.beyondRange;
-            return `<div class="mcell ${covered?'covered':''}"><div class="mlbl">${AGING_MONTH_LABELS[i]||'أقدم'}</div><div class="mval">${fmtNum(m)}</div></div>`;
-          }).join('')}
-        </div>
-      </div>
-    </td></tr>`;
+    <tr id="agdet_${ri}" data-rendered="0" style="display:none;"><td colspan="14" style="padding:0;"></td></tr>`;
   });
-  html += '</tbody></table>';
+  html += '</tbody></table>' + pager;
   wrap.innerHTML = html;
 }
 
-function toggleAgingDetail(id){
-  const row = document.getElementById(id);
+function agingDetailHtml(r){
+  return `<div style="padding:12px 16px; background:#F7F9FC; border-bottom:1px solid var(--line);">
+    <div class="months-grid">
+      ${r.monthsAvail.map((m,i)=>{
+        const covered = i<=r.oldestIdx && !r.beyondRange;
+        return `<div class="mcell ${covered?'covered':''}"><div class="mlbl">${AGING_MONTH_LABELS[i]||'أقدم'}</div><div class="mval">${fmtNum(m)}</div></div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
+
+function toggleAgingDetail(ri){
+  const row = document.getElementById('agdet_'+ri);
   if(!row) return;
-  row.style.display = (row.style.display==='none') ? 'table-row' : 'none';
+  if(row.style.display==='none'){
+    if(row.dataset.rendered!=='1'){
+      const r = AGING_PAGE_ROWS[ri];
+      if(r){ row.querySelector('td').innerHTML = agingDetailHtml(r); row.dataset.rendered='1'; }
+    }
+    row.style.display='table-row';
+  } else {
+    row.style.display='none';
+  }
 }
 
 function clearAging(){
@@ -1258,9 +1363,12 @@ function clearAging(){
   AGING_ROWS=[];
 }
 
+function goToAgingPage(p){ agingPage=p; renderAging(); }
+
 function printFilteredAging(status, label){
   const prevFilter = agingFilter;
   agingFilter = status;
+  PRINT_MODE = true; // نطبع كل الصفوف المطابقة، مو صفحة وحدة
   document.querySelectorAll('#agingFilterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===status));
   renderAging();
 
@@ -1279,6 +1387,7 @@ function printFilteredAging(status, label){
   window.print();
   setTimeout(()=>{
     agingFilter = prevFilter;
+    PRINT_MODE = false;
     document.querySelectorAll('#agingFilterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===prevFilter));
     renderAging();
     header.style.display='none';
@@ -1566,6 +1675,7 @@ function processDaily(){
   if(parsed.length===0){ msg.textContent='ما قدرت أتعرف على أي صف صالح — تأكد من سطر العناوين (كويري ١٠).'; msg.className='status-msg err'; return; }
 
   DAILY_ROWS = parsed.map(computeDailyRow);
+  dailyPage = 1;
   msg.textContent = `تم تحليل ${DAILY_ROWS.length} تحصيل.`;
   msg.className='status-msg ok';
   renderDailySummary();
@@ -1649,6 +1759,7 @@ function renderDailySummary(){
 
 function setDailyFilter(f){
   dailyFilter = f;
+  dailyPage = 1;
   document.querySelectorAll('#dailyFilterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===f));
   renderDaily();
 }
@@ -1702,21 +1813,27 @@ function renderDaily(){
 
   if(rows.length===0){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🔍</div>ما في نتائج مطابقة</div>`; return; }
 
-  let html = `<table class="aging-tbl"><thead><tr>`;
+  const totalItems = rows.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems/DAILY_PAGE_SIZE));
+  if(dailyPage>totalPages) dailyPage = totalPages;
+  const pageRows = PRINT_MODE ? rows : rows.slice((dailyPage-1)*DAILY_PAGE_SIZE, dailyPage*DAILY_PAGE_SIZE);
+  const pager = PRINT_MODE ? '' : pagerHtml(dailyPage, DAILY_PAGE_SIZE, totalItems, 'goToDailyPage');
+  DAILY_PAGE_ROWS = pageRows;
+
+  let html = pager + `<table class="aging-tbl"><thead><tr>`;
   DAILY_COLS.forEach(c=>{
     const arrow = dailySortKey===c.key ? (dailySortDir==='asc'?' ▲':' ▼') : '';
     html += `<th class="${c.num?'num':''}" style="cursor:pointer; user-select:none;" onclick="sortDailyByColumn('${c.key}')">${c.label}${arrow}</th>`;
   });
   html += `</tr></thead><tbody>`;
-  rows.forEach((r,ri)=>{
+  pageRows.forEach((r,ri)=>{
     const rowClass = r.status==='late' ? 'overdue' : (r.status==='early' ? '' : '');
     const badge = r.status==='late' ? `<span class="badge warn">🔴 ${r.statusLabel}</span>`
                 : r.status==='immaterial' ? `<span class="badge immaterial">◌ ${r.statusLabel}</span>`
                 : r.status==='early' ? `<span class="badge" style="background:#E7F0FA;color:#3A6EA5;">🔵 ${r.statusLabel}</span>`
                 : `<span class="badge ok">🟢 ${r.statusLabel}</span>`;
     const monthLabel = r.beyondRange ? '12+ شهر' : AGING_MONTH_LABELS[r.oldestIdx];
-    const detailId = 'dldet_'+ri;
-    html += `<tr class="${rowClass}" style="${r.status==='early'?'background:#F0F6FC;':''}cursor:pointer;" onclick="toggleDailyDetail('${detailId}')">
+    html += `<tr class="${rowClass}" style="${r.status==='early'?'background:#F0F6FC;':''}cursor:pointer;" onclick="toggleDailyDetail(${ri})">
       <td>${r.cardCode}</td><td>${r.cardName||''}</td><td>${r.slpName||'—'}</td>
       <td>${r.collectDate?fmtDate(r.collectDate):'—'}</td><td class="num">${fmtNum(r.amount)}</td>
       <td class="num" style="font-weight:700;">${fmtNum(r.balance)}</td><td class="num">${r.extraDays}</td>
@@ -1724,25 +1841,35 @@ function renderDaily(){
       <td>${r.actualDate?fmtDate(r.actualDate):'—'}</td>
       <td>${badge}</td>
     </tr>
-    <tr id="${detailId}" style="display:none;"><td colspan="11" style="padding:0;">
-      <div style="padding:12px 16px; background:#F7F9FC; border-bottom:1px solid var(--line);">
-        <div class="months-grid">
-          ${r.monthsAvail.map((m,i)=>{
-            const covered = i<=r.oldestIdx && !r.beyondRange;
-            return `<div class="mcell ${covered?'covered':''}"><div class="mlbl">${AGING_MONTH_LABELS[i]||'أقدم'}</div><div class="mval">${fmtNum(m)}</div></div>`;
-          }).join('')}
-        </div>
-      </div>
-    </td></tr>`;
+    <tr id="dldet_${ri}" data-rendered="0" style="display:none;"><td colspan="11" style="padding:0;"></td></tr>`;
   });
-  html += '</tbody></table>';
+  html += '</tbody></table>' + pager;
   wrap.innerHTML = html;
 }
 
-function toggleDailyDetail(id){
-  const row = document.getElementById(id);
+function dailyDetailHtml(r){
+  return `<div style="padding:12px 16px; background:#F7F9FC; border-bottom:1px solid var(--line);">
+    <div class="months-grid">
+      ${r.monthsAvail.map((m,i)=>{
+        const covered = i<=r.oldestIdx && !r.beyondRange;
+        return `<div class="mcell ${covered?'covered':''}"><div class="mlbl">${AGING_MONTH_LABELS[i]||'أقدم'}</div><div class="mval">${fmtNum(m)}</div></div>`;
+      }).join('')}
+    </div>
+  </div>`;
+}
+
+function toggleDailyDetail(ri){
+  const row = document.getElementById('dldet_'+ri);
   if(!row) return;
-  row.style.display = (row.style.display==='none') ? 'table-row' : 'none';
+  if(row.style.display==='none'){
+    if(row.dataset.rendered!=='1'){
+      const r = DAILY_PAGE_ROWS[ri];
+      if(r){ row.querySelector('td').innerHTML = dailyDetailHtml(r); row.dataset.rendered='1'; }
+    }
+    row.style.display='table-row';
+  } else {
+    row.style.display='none';
+  }
 }
 
 function clearDaily(){
@@ -1755,9 +1882,12 @@ function clearDaily(){
   DAILY_ROWS=[];
 }
 
+function goToDailyPage(p){ dailyPage=p; renderDaily(); }
+
 function printFilteredDaily(status, label){
   const prevFilter = dailyFilter;
   dailyFilter = status;
+  PRINT_MODE = true; // نطبع كل الصفوف المطابقة، مو صفحة وحدة
   document.querySelectorAll('#dailyFilterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===status));
   renderDaily();
 
@@ -1776,6 +1906,7 @@ function printFilteredDaily(status, label){
   window.print();
   setTimeout(()=>{
     dailyFilter = prevFilter;
+    PRINT_MODE = false;
     document.querySelectorAll('#dailyFilterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===prevFilter));
     renderDaily();
     header.style.display='none';
