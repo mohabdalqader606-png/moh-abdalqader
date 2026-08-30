@@ -296,7 +296,7 @@
       <div class="grp-title"><span class="num">٤</span> المستوردات (البيانات الجمركية)</div>
       <div class="filebox">
         <label class="up">📂 رفع الكشف (xlsx)<input type="file" id="fileImports" accept=".xlsx,.xls" onchange="onFileImports(this)"></label>
-        <span class="hint">ملف <b>مستوردات شهر…xlsx</b> — يُجمَّع حسب نسبة الضريبة (0% / 16%).</span>
+        <span class="hint"><b>كشف البيانات من نظام الجمارك</b> (xls/xlsx) — كل بنود التعريفة تُجمَّع بسطر واحد لكل بيان لكل نسبة، والترانزيت يُستبعد تلقائياً، والنسبة تُحسب من الضريبة ÷ قيمة البند. (كشف المستودعات القديم مقبول أيضاً.)</span>
         <span class="fname" id="fnameImports"></span>
       </div>
       <div class="filebox" style="margin-top:8px;">
@@ -391,7 +391,7 @@
 </main>
 
 <div id="printSheet"></div>
-<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 51</b></footer>
+<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 52</b></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -467,8 +467,22 @@ function decodeSmart(buf){
 }
 function readFileText(file){ return file.arrayBuffer().then(decodeSmart); }
 function readFileXlsxAoA(file){ return file.arrayBuffer().then(buf=>{
+  // بعض الأنظمة (نظام الجمارك مثلاً) تصدّر HTML بامتداد xls — نكشفه ونقرأ جدوله مباشرة
+  const head=new TextDecoder('utf-8').decode(buf.slice(0,4096));
+  if(/<table|<html|<!doctype/i.test(head)){
+    const txt=new TextDecoder('utf-8').decode(buf);
+    const start=txt.search(/<table|<html|<!doctype/i);
+    const doc=new DOMParser().parseFromString(txt.substring(start<0?0:start),'text/html');
+    const tbl=doc.querySelector('table');
+    if(tbl) return [...tbl.rows].map(tr=>[...tr.cells].map(td=>td.textContent.replace(/\s+/g,' ').trim()));
+  }
   const wb=XLSX.read(buf,{type:'array'}); const ws=wb.Sheets[wb.SheetNames[0]];
   return XLSX.utils.sheet_to_json(ws,{header:1, raw:true, defval:''}); }); }
+/* رقم البيان المفتاحي: المقطع الرقمي الأول (53630/4/2026 ← 53630، و32116/4 ← 32116) */
+function declKey(no){
+  const m=String(no||'').trim().match(/^(\d+)/);
+  return m?m[1]:String(no||'').trim();
+}
 function tsvRows(text){ return text.split(/\r?\n/).filter(l=>l.trim()!=='').map(l=>l.split('\t').map(c=>c.trim())); }
 function findCol(hdr, ...pats){
   const norm = h => String(h).replace(/\s+/g,' ').trim();
@@ -1368,12 +1382,90 @@ function exportPurchCSV(){
 }
 
 /* ================= 4) المستوردات ================= */
+/* اشتقاق نسبة ضريبة المبيعات من المبلغ ÷ القيمة وتقريبها لأقرب نسبة أردنية */
+function deriveRate(tax, base){
+  if(Math.abs(tax)<0.0005) return 0;
+  if(!(base>0)) return 0;
+  const d=tax/base*100;
+  const near=[16,13.5,10,8,5,4,2].find(c=>Math.abs(d-c)<=0.35);
+  // نسبة غير قياسية (سلع عليها ضريبة خاصة مدمجة مثلاً): تُقرَّب لخانة عشرية واحدة للتجميع
+  return near!==undefined?near:Math.round(d*10)/10;
+}
+const STD_RATES=[16,13.5,10,8,5,4,2];
+/* قارئ كشف البيانات الرسمي من نظام الجمارك (سطر لكل بند تعريفة) —
+   يُجمَّع بسطر واحد لكل بيان لكل نسبة، ويُستبعد الترانزيت تلقائياً */
+function parseImportsCustoms(aoa, hdr, fname){
+  const col=re=>findCol(hdr,re);
+  const iNo=col(/^رقم البيان/), iDateD=col(/تاريخ البيان/), iFinNo=col(/رقم الوصل المالي/),
+        iFinDt=col(/تاريخ الوصل المالي/), iClear=col(/رقم وصل التصفية/), iTax=col(/^ضريبة المبيعات/),
+        iVal=col(/^قيمة البند/), iDesc=col(/^وصف بند التعريفة/), iXDesc=col(/الوصف الاضافي|الوصف الإضافي/),
+        iExp=col(/^المصدر/), iImp=col(/^المستورد/), iTrans=col(/وسيلة النقل/), iAgr=col(/^اتفاقيات/),
+        iTerms=col(/شرط التسليم/), iPlace=col(/مكان التسليم/), iExpC=col(/بلد التصدير/),
+        iDoc=col(/الوثائق حقل 44|الوثائق/), iRef=col(/رقم المرجع/), iDest=col(/بلد المقصد/);
+  const groups={}; let transitN=0, lineN=0;
+  for(const r of aoa.slice(1)){
+    const no=String(r[iNo]||'').trim(); if(!no) continue;
+    const dest=iDest>=0?String(r[iDest]||''):'';
+    if(/ترانزيت/.test(dest)){ transitN++; continue; }        // بيانات ترانزيت — ليست مستوردات
+    const base=pnum(r[iVal]), tax=iTax>=0?pnum(r[iTax]):0;
+    if(!base && !tax) continue;
+    lineN++;
+    const rate=deriveRate(tax, base);
+    const k=declKey(no)+'@'+rate;
+    if(!groups[k]){
+      const dD=parseAnyDate(r[iDateD]), dF=parseAnyDate(r[iFinDt]);
+      groups[k]={no, rate, base:0, tax:0, descs:[],
+        dateDecl:dD?fmtDMY(dD):String(r[iDateD]||'').trim(),
+        dateFin:dF?fmtDMY(dF):String(iFinDt>=0?(r[iFinDt]||''):'').trim(),
+        finNo:iFinNo>=0?String(r[iFinNo]||'').trim():'',
+        clearNo:iClear>=0?String(r[iClear]||'').trim():'',
+        exporter:iExp>=0?String(r[iExp]||'').trim():'',
+        importer:iImp>=0?String(r[iImp]||'').trim():'',
+        transport:iTrans>=0?String(r[iTrans]||'').trim():'',
+        agr:iAgr>=0?String(r[iAgr]||'').trim():'',
+        terms:iTerms>=0?String(r[iTerms]||'').trim():'',
+        place:iPlace>=0?String(r[iPlace]||'').trim():'',
+        expCountry:iExpC>=0?String(r[iExpC]||'').trim():'',
+        doc44:iDoc>=0?String(r[iDoc]||'').trim():'',
+        refNo:iRef>=0?String(r[iRef]||'').trim():''};
+    }
+    const g=groups[k];
+    g.base=r3(g.base+base); g.tax=r3(g.tax+tax);
+    const d=[iDesc>=0?String(r[iDesc]||'').trim():'', iXDesc>=0?String(r[iXDesc]||'').trim():''].filter(x=>x).join(' — ');
+    if(d && !g.descs.includes(d)) g.descs.push(d);
+  }
+  const rowsOut=Object.values(groups).map(g=>{
+    let cls0='zero';
+    const allDesc=g.descs.join('، ');
+    if(g.rate===0 && /طحين|زيت|فاصوليا|بقول|سكر|أرز|ارز|حليب|عدس|شاي|قهوة/.test(allDesc)) cls0='exm';
+    const finErr=finDateIssue(g.dateFin);
+    return {no:g.no, dateDecl:g.dateDecl, dateFin:g.dateFin, finNo:g.finNo, clearNo:g.clearNo,
+      order:'', entry:'', items:allDesc.slice(0,220),
+      exporter:g.exporter, importer:g.importer, transport:g.transport, agr:g.agr,
+      terms:g.terms, place:g.place, expCountry:g.expCountry, doc44:g.doc44, refNo:g.refNo,
+      rate:g.rate, base:g.base, tax:g.tax,
+      excl:!!finErr, cls0, finErr:finErr||undefined};
+  });
+  return {rowsOut, transitN, lineN};
+}
 async function onFileImports(inp){
   if(!guardEdit(inp)) return;
   const f=inp.files[0]; if(!f) return;
   $('fnameImports').textContent=f.name;
   const aoa=await readFileXlsxAoA(f);
   const hdr=(aoa[0]||[]).map(h=>String(h).replace(/\s+/g,' ').trim());
+  // كشف البيانات الرسمي من نظام الجمارك؟ (فيه ضريبة المبيعات وقيمة البند ورقم الوصل المالي)
+  if(findCol(hdr,/^ضريبة المبيعات/)>=0 && findCol(hdr,/^قيمة البند/)>=0){
+    const {rowsOut, transitN, lineN}=parseImportsCustoms(aoa, hdr, f.name);
+    mergePdfRows(rowsOut);
+    ST.imports={rows:rowsOut, fname:f.name, fmt:'cust'};
+    recomputeAll();
+    const nRej=rowsOut.filter(r=>r.finErr).length;
+    alert(`تمت قراءة كشف نظام الجمارك:\n• ${lineN} بند تعريفة جُمعت في ${rowsOut.length} سطراً (بيان × نسبة)`
+      +(transitN?`\n• استُبعد ${transitN} بند ترانزيت تلقائياً (ليست مستوردات)`:'')
+      +(nRej?`\n• ⛔ ${nRej} سطر مرفوض: تاريخ الوصل المالي مفقود أو خارج حدود الفترة — ظاهرة رمادية بالجدول مع السبب`:''));
+    return;
+  }
   const iNo=findCol(hdr,/رقم البيان/), iDateF=findCol(hdr,/تاريخ الوصل/), iRate=findCol(hdr,/نسبة الضريبة/),
         iBase=findCol(hdr,/قيمة الاستيراد/), iTax=findCol(hdr,/مبلغ الضريبة/),
         iEntry=findCol(hdr,/رقم القيد/), iItems=findCol(hdr,/الأصناف|الاصناف/),
@@ -1408,19 +1500,21 @@ async function onFileImports(inp){
   }
   const nRej=rowsOut.filter(r=>r.finErr).length;
   if(nRej) alert(`⛔ رُفض ${nRej} سطر من الكشف: تاريخ الوصل المالي مفقود أو غير مقروء أو خارج حدود الفترة المختارة.\nالأسطر المرفوضة ظاهرة بالجدول رمادية (مستبعدة) مع سبب الرفض بعمود «فحص» — صحّح الملف وأعد رفعه، أو أزل ☑ الاستبعاد يدوياً إن كان التاريخ صحيحاً فعلاً.`);
-  // الأسطر المضافة سابقاً من قراءة PDF تبقى — إلا إذا صار نفس البيان بنفس النسبة موجوداً في الإكسل (الإكسل أدق فيغلب)
-  const pdfKept=(ST.imports&&ST.imports.rows||[]).filter(r=>r.src==='pdf');
-  if(pdfKept.length){
-    const keys=new Set(rowsOut.map(r=>String(r.no).split('/').pop().trim()+'@'+r.rate));
-    let kept=0, dropped=0;
-    for(const r of pdfKept){
-      const k=String(r.no).split('/').pop().trim()+'@'+r.rate;
-      if(keys.has(k)) dropped++; else { rowsOut.push(r); kept++; }
-    }
-    if(kept||dropped) alert(`تم دمج الإكسل مع أسطر قراءة PDF: أُبقي ${kept} سطر PDF غير موجود بالإكسل${dropped?`، وحُذف ${dropped} سطر PDF لأن بيانه صار موجوداً بالإكسل بنفس النسبة`:''}.`);
-  }
+  mergePdfRows(rowsOut);
   ST.imports={rows:rowsOut, fname:f.name};
   recomputeAll();
+}
+/* الأسطر المضافة سابقاً من قراءة PDF تبقى — إلا إذا صار نفس البيان بنفس النسبة موجوداً في الإكسل (الإكسل أدق فيغلب) */
+function mergePdfRows(rowsOut){
+  const pdfKept=(ST.imports&&ST.imports.rows||[]).filter(r=>r.src==='pdf');
+  if(!pdfKept.length) return;
+  const keys=new Set(rowsOut.map(r=>declKey(r.no)+'@'+r.rate));
+  let kept=0, dropped=0;
+  for(const r of pdfKept){
+    const k=declKey(r.no)+'@'+r.rate;
+    if(keys.has(k)) dropped++; else { rowsOut.push(r); kept++; }
+  }
+  if(kept||dropped) alert(`تم دمج الإكسل مع أسطر قراءة PDF: أُبقي ${kept} سطر PDF غير موجود بالإكسل${dropped?`، وحُذف ${dropped} سطر PDF لأن بيانه صار موجوداً بالإكسل بنفس النسبة`:''}.`);
 }
 function setImp0(idx, v){ if(!canEdit||!ST.imports) return; ST.imports.rows[idx].cls0=v; recomputeAll(); }
 function toggleImpExcl(idx){ if(!canEdit||!ST.imports) return; ST.imports.rows[idx].excl=!ST.imports.rows[idx].excl; recomputeAll(); }
@@ -1500,7 +1594,7 @@ function savePdfKey(){
 function cancelPdfRead(){ PDFR.cancel=true; }
 const PDF_PROMPT=`هذه صورة صفحة من ملف بيانات جمركية أردنية (قد تكون بياناً جمركياً أو وصل مقبوضات مالي أو صفحة تكميلية/مرفقات).
 أعد JSON فقط بلا أي شرح، بهذا الشكل بالضبط:
-{"kind":"declaration","decl_no":null,"decl_date":null,"fin_no":null,"fin_date":null,"order_no":null,"entry_no":null,"items":null,"tax_lines":[{"rate":16,"base":0.000,"tax":0.000}]}
+{"kind":"declaration","decl_no":null,"decl_date":null,"fin_no":null,"fin_date":null,"clear_no":null,"order_no":null,"entry_no":null,"items":null,"exporter":null,"transport":null,"agreement":null,"terms":null,"place":null,"exp_country":null,"doc44":null,"ref_no":null,"tax_lines":[{"rate":16,"base":0.000,"tax":0.000}]}
 القواعد:
 - kind واحدة من: declaration (بيان جمركي رئيسي) / receipt (وصل مقبوضات أو وصل مالي) / continuation (صفحة تكميلية لبيان سابق بلا رقم بيان) / other.
 - decl_no: رقم البيان الجمركي كما هو مكتوب (مثل 32116/4)، decl_date: تاريخ تسجيل البيان (يوم/شهر/سنة).
@@ -1513,7 +1607,11 @@ const PDF_PROMPT=`هذه صورة صفحة من ملف بيانات جمركية
 - إن لم يوجد رمز 020 على البيان أو كان مبلغه صفراً: البضاعة بلا ضريبة مبيعات — أعد سطراً واحداً rate=0 و tax=0 و base=القيمة الجمركية للبضاعة.
 - حقول مكتوبة غالباً بخط اليد أو بختم على البيان — اقرأها بعناية فائقة رقماً رقماً:
   fin_no = رقم الوصل المالي، fin_date = التاريخ المقابل لرقم الوصل المالي (يوم/شهر/سنة)،
-  order_no = رقم الطلبية، entry_no = رقم القيد. إن لم تستطع قراءة أي منها بثقة اجعله null.
+  clear_no = رقم وصل التصفية، order_no = رقم الطلبية، entry_no = رقم القيد. إن لم تستطع قراءة أي منها بثقة اجعله null.
+- حقول مطبوعة على البيان أعدها إن ظهرت وإلا null:
+  exporter = المصدر/المرسل (خانة 2)، transport = وسيلة النقل، agreement = الاتفاقية،
+  terms = شرط التسليم (خانة 20)، place = مكان التسليم، exp_country = بلد التصدير،
+  doc44 = الوثائق حقل 44، ref_no = رقم المرجع.
 - صفحات receipt (وصل المقبوضات): أعد decl_no إن ظهر مع fin_no و fin_date، واجعل tax_lines فارغة [] حتى لا تتكرر المبالغ.
 - صفحات other أو التي لا تخص البيانات: tax_lines فارغة [].
 - items: وصف مختصر جداً للبضاعة إن ظهر.
@@ -1577,17 +1675,16 @@ async function startPdfRead(){
         let rate=+L.rate||0;
         const base=r3(+L.base||0), tax=r3(+L.tax||0);
         if(!base && !tax) return;
-        // لا ضريبة (لا يوجد 020 أو مبلغه صفر) ← النسبة صفر حتماً مهما قرأ القارئ
+        // لا ضريبة (لا يوجد 020 أو مبلغه صفر) ← النسبة صفر حتماً؛ وغير المطبوعة تُشتق من الضريبة ÷ القيمة
         if(Math.abs(tax)<0.0005) rate=0;
-        // النسبة غير مطبوعة على البيان؟ تُشتق من الضريبة ÷ القيمة وتُقرَّب لأقرب نسبة أردنية
-        else if(!rate && base>0){
-          const d=tax/base*100;
-          const near=[16,13.5,10,8,5,4,2].find(c=>Math.abs(d-c)<=0.35);
-          rate = near!==undefined ? near : r3(d);
-        }
+        else if(!rate && base>0) rate=deriveRate(tax, base);
         PDFR.rows.push({page:pg, no, dateDecl:S(res.decl_date),
-          finNo:S(res.fin_no), dateFin:S(res.fin_date), order:S(res.order_no), entry:S(res.entry_no),
-          items:S(res.items), rate, base, tax, use:true});
+          finNo:S(res.fin_no), dateFin:S(res.fin_date), clearNo:S(res.clear_no),
+          order:S(res.order_no), entry:S(res.entry_no),
+          items:S(res.items), exporter:S(res.exporter), transport:S(res.transport),
+          agr:S(res.agreement), terms:S(res.terms), place:S(res.place),
+          expCountry:S(res.exp_country), doc44:S(res.doc44), refNo:S(res.ref_no),
+          rate, base, tax, use:true});
       });
       if(kind==='declaration' && !(res.tax_lines||[]).length)
         PDFR.errs.push(`صفحة ${pg}: بيان ${no||'؟'} بلا أسطر ضريبة مقروءة — راجعها يدوياً`);
@@ -1633,7 +1730,7 @@ async function startPdfRead(){
   PDFR.rows.forEach(r=>{ if(r.no){ (byNo[r.no]=byNo[r.no]||[]).push(r); } });
   for(const no in byNo){
     const g=byNo[no];
-    ['finNo','dateFin','dateDecl','entry','order','items'].forEach(k=>{
+    ['finNo','dateFin','dateDecl','clearNo','entry','order','items','exporter','transport','agr','terms','place','expCountry','doc44','refNo'].forEach(k=>{
       const v=g.map(r=>r[k]).find(x=>x);
       if(v) g.forEach(r=>{ if(!r[k]) r[k]=v; });
     });
@@ -1660,8 +1757,8 @@ function pdfRowIssue(r){
 }
 function pdfExisting(r){
   if(!ST.imports) return false;
-  const key=String(r.no).split('/').pop().trim();
-  return ST.imports.rows.some(x=>String(x.no).split('/').pop().trim()===key && +x.rate===+r.rate);
+  const key=declKey(r.no);
+  return ST.imports.rows.some(x=>declKey(x.no)===key && +x.rate===+r.rate);
 }
 function renderPdfReview(){
   const el=$('pdfReadWrap'); if(!el) return;
@@ -1689,6 +1786,7 @@ function renderPdfReview(){
         <td><input type="text" value="${esc(r.dateDecl||'')}" style="width:88px;" onchange="pdfSet(${i},'dateDecl',this.value)"></td>
         <td><input type="text" value="${esc(r.finNo||'')}" style="width:80px;" onchange="pdfSet(${i},'finNo',this.value)"></td>
         <td><input type="text" value="${esc(r.dateFin||'')}" style="width:88px;" onchange="pdfSet(${i},'dateFin',this.value)"></td>
+        <td><input type="text" value="${esc(r.clearNo||'')}" style="width:80px;" onchange="pdfSet(${i},'clearNo',this.value)"></td>
         <td><input type="text" value="${esc(r.entry||'')}" style="width:80px;" onchange="pdfSet(${i},'entry',this.value)"></td>
         <td><input type="text" value="${esc(r.order||'')}" style="width:80px;" onchange="pdfSet(${i},'order',this.value)"></td>
         <td><input type="text" value="${esc(r.items||'')}" style="width:150px;" onchange="pdfSet(${i},'items',this.value)"></td>
@@ -1699,9 +1797,9 @@ function renderPdfReview(){
       </tr>`;
     }).join('');
     html+=`<div class="scrollbox" style="max-height:340px; margin-top:8px;">
-      <table class="t"><thead><tr><th>✓</th><th>صفحة</th><th>رقم البيان</th><th>تاريخ البيان</th><th>رقم الوصل</th><th>تاريخ الوصل</th><th>رقم القيد</th><th>رقم الطلبية</th><th>الأصناف</th><th>النسبة %</th><th>قيمة الاستيراد</th><th>الضريبة</th><th>فحص</th></tr></thead>
+      <table class="t"><thead><tr><th>✓</th><th>صفحة</th><th>رقم البيان</th><th>تاريخ البيان</th><th>رقم الوصل</th><th>تاريخ الوصل</th><th>وصل التصفية</th><th>رقم القيد</th><th>رقم الطلبية</th><th>الأصناف</th><th>النسبة %</th><th>قيمة الاستيراد</th><th>الضريبة</th><th>فحص</th></tr></thead>
       <tbody>${trs}</tbody>
-      <tfoot><tr><td colspan="10">مجموع المحدد</td><td class="num">${fmt(tb)}</td><td class="num">${fmt(tt)}</td><td></td></tr></tfoot></table></div>
+      <tfoot><tr><td colspan="11">مجموع المحدد</td><td class="num">${fmt(tb)}</td><td class="num">${fmt(tt)}</td><td></td></tr></tfoot></table></div>
       <div class="toolrow" style="margin-top:8px;">
         <button class="btn-teal btn-sm" ${PDFR.busy?'disabled':''} onclick="pdfApprove()">✔ اعتماد المحدد وإضافته لكشف المستوردات</button>
         <button class="btn-ghost btn-sm" onclick="pdfClear()">مسح النتائج</button>
@@ -1732,8 +1830,11 @@ function pdfApprove(){
     if(r.rate===0 && /طحين|زيت|فاصوليا|بقول|سكر|أرز|ارز|حليب|عدس|شاي|قهوة/.test(r.items||'')) cls0='exm';
     const dd=parseAnyDate(r.dateFin);
     ST.imports.rows.push({no:r.no, dateFin:dd?fmtDMY(dd):String(r.dateFin||''), dateDecl:r.dateDecl||'',
-      finNo:r.finNo||'', order:r.order||'', entry:r.entry||'',
-      items:r.items||'', rate:+r.rate||0, base:r3(r.base), tax:r3(r.tax),
+      finNo:r.finNo||'', clearNo:r.clearNo||'', order:r.order||'', entry:r.entry||'',
+      items:r.items||'', exporter:r.exporter||'', transport:r.transport||'',
+      agr:r.agr||'', terms:r.terms||'', place:r.place||'', expCountry:r.expCountry||'',
+      doc44:r.doc44||'', refNo:r.refNo||'',
+      rate:+r.rate||0, base:r3(r.base), tax:r3(r.tax),
       excl:false, cls0, src:'pdf'});
     added++;
   }
@@ -1749,10 +1850,10 @@ function renderImportsChecks(){
   const el=$('importsChecks'); if(!el||!ST.imports) return;
   const rows=ST.imports.rows.filter(r=>!r.excl);
   // 1) أخطاء المعادلة والتكرار
-  const dup={}; rows.forEach(r=>{ const k=r.no+'@'+r.rate; dup[k]=(dup[k]||0)+1; });
+  const dup={}; rows.forEach(r=>{ const k=declKey(r.no)+'@'+r.rate; dup[k]=(dup[k]||0)+1; });
   let eqIssues=0;
-  rows.forEach(r=>{ if(r.rate>0 && Math.abs(r3(r.tax-r.base*r.rate/100))>0.02) eqIssues++;
-    if(r.no && dup[r.no+'@'+r.rate]>1) eqIssues++; });
+  rows.forEach(r=>{ if(STD_RATES.includes(+r.rate) && Math.abs(r3(r.tax-r.base*r.rate/100))>0.02) eqIssues++;
+    if(r.no && dup[declKey(r.no)+'@'+r.rate]>1) eqIssues++; });
   let html='';
   html += eqIssues
     ? `<div class="duebox" style="background:var(--crimson-bg); border-color:#EBC7C4; color:var(--crimson);">⚠ <b>${eqIssues}</b> ملاحظة إدخال بالجدول أدناه (ضريبة لا تساوي القيمة×النسبة، أو بيان مكرر) — انظر عمود «فحص» وتتبّع الأسطر الحمراء.</div>`
@@ -1761,7 +1862,7 @@ function renderImportsChecks(){
   if(ST.trust){
     const imps=ST.trust.rows.filter(t=>t.cls==='imp');
     const taxByNo={};
-    rows.forEach(r=>{ if(!r.tax) return; const n=String(r.no).split('/').pop().trim();
+    rows.forEach(r=>{ if(!r.tax) return; const n=declKey(r.no);
       if(n.length>=3) taxByNo[n]=r3((taxByNo[n]||0)+r.tax); });
     const probs=[]; const usedEntries=new Set();
     for(const n in taxByNo){
@@ -1790,21 +1891,25 @@ function printImportsReport(){
   const C=calc();
   const pr=periodRangeText();
   // المعتمد فقط (بدون المستبعد) مرتباً حسب رقم البيان
-  const keyOf=no=>{ const m=String(no).match(/(\d+)\s*$/); return m?+m[1]:0; };
-  const rows=ST.imports.rows.filter(r=>!r.excl).sort((a,b)=>keyOf(a.no)-keyOf(b.no) || String(a.no).localeCompare(String(b.no)));
+  const rows=ST.imports.rows.filter(r=>!r.excl).sort((a,b)=>(+declKey(a.no)-+declKey(b.no)) || String(a.no).localeCompare(String(b.no)) || a.rate-b.rate);
   let totB=0, totT=0; rows.forEach(r=>{ totB=r3(totB+r.base); totT=r3(totT+r.tax); });
   const ks=Object.keys(C.imports).sort((a,b)=>b-a);
-  $('printSheet').innerHTML=`<style>@page{size:A4 portrait; margin:10mm;}</style>
+  $('printSheet').innerHTML=`<style>@page{size:A3 landscape; margin:8mm;}</style>
     <div class="phead"><h2>مركز الكيلاني للأغذية</h2>
     <div style="font-size:14px; margin-top:5px; font-weight:700;">كشف المستوردات من تاريخ ${pr.from} الى تاريخ ${pr.to}</div></div>
-    <table style="font-size:10px;"><thead><tr>
-      <th>رقم البيان</th><th>تاريخ البيان</th><th>تاريخ الوصل المالي</th><th>رقم الطلبية</th><th>رقم القيد</th><th>الأصناف</th><th>النسبة %</th><th>قيمة الاستيراد</th><th>مبلغ الضريبة</th>
+    <table style="font-size:8.5px;"><thead><tr>
+      <th>التسلسل</th><th>رقم البيان</th><th>تاريخ البيان</th><th>تاريخ الوصل المالي</th><th>رقم الوصل المالي</th><th>رقم وصل التصفية</th>
+      <th>قيمة البند</th><th>نسبة الضريبة</th><th>مبلغ الضريبة</th><th>وصف بند التعريفة</th><th>المصدر</th><th>المستورد</th>
+      <th>وسيلة النقل</th><th>اتفاقيات</th><th>شرط التسليم</th><th>مكان التسليم</th><th>بلد التصدير</th><th>الوثائق حقل 44</th><th>رقم المرجع</th>
     </tr></thead><tbody>`+
-    rows.map(r=>`<tr>
-      <td class="num">${esc(r.no)}</td><td class="num">${esc(r.dateDecl||'')}</td><td class="num">${esc(r.dateFin)}</td>
-      <td class="num">${esc(r.order||'')}</td><td class="num">${esc(r.entry||'')}</td><td>${esc(r.items||'')}</td><td class="num">${r.rate}%</td>
-      <td class="num">${fmt(r.base)}</td><td class="num">${fmt(r.tax)}</td></tr>`).join('')+
-    `<tr><td colspan="7" style="font-weight:700;">المجموع (${rows.length} سطر)</td><td class="num" style="font-weight:700;">${fmt(totB)}</td><td class="num" style="font-weight:700;">${fmt(totT)}</td></tr>
+    rows.map((r,i)=>`<tr>
+      <td class="num">${i+1}</td><td class="num">${esc(r.no)}</td><td class="num">${esc(r.dateDecl||'')}</td><td class="num">${esc(r.dateFin||'')}</td>
+      <td class="num">${esc(r.finNo||'')}</td><td class="num">${esc(r.clearNo||'')}</td>
+      <td class="num">${fmt(r.base)}</td><td class="num">${r.rate}%</td><td class="num">${fmt(r.tax)}</td>
+      <td>${esc(r.items||'')}</td><td>${esc(r.exporter||'')}</td><td>${esc(r.importer||'مركز الكيلاني للأغذية')}</td>
+      <td>${esc(r.transport||'')}</td><td>${esc(r.agr||'')}</td><td>${esc(r.terms||'')}</td><td>${esc(r.place||'')}</td>
+      <td>${esc(r.expCountry||'')}</td><td>${esc(r.doc44||'')}</td><td>${esc(r.refNo||'')}</td></tr>`).join('')+
+    `<tr><td colspan="6" style="font-weight:700;">المجموع (${rows.length} سطر)</td><td class="num" style="font-weight:700;">${fmt(totB)}</td><td></td><td class="num" style="font-weight:700;">${fmt(totT)}</td><td colspan="10"></td></tr>
     </tbody></table>
     <table style="font-size:11.5px; max-width:560px; margin:14px 0 0; margin-inline-start:auto;">
       <tbody>`+
@@ -2096,14 +2201,14 @@ function renderAll(C){
       <div class="scrollbox" style="max-height:380px; margin-top:10px;"><div id="importsRows"></div></div>`;
     renderImportsChecks();
     const dupMap={};
-    ST.imports.rows.forEach(r=>{ if(!r.excl){ const k=r.no+'@'+r.rate; dupMap[k]=(dupMap[k]||0)+1; } });
+    ST.imports.rows.forEach(r=>{ if(!r.excl){ const k=declKey(r.no)+'@'+r.rate; dupMap[k]=(dupMap[k]||0)+1; } });
     const rowIssue=r=>{
       if(r.excl) return r.finErr||'';
       const iss=[];
       if(r.finErr) iss.push(r.finErr);
-      if(r.rate>0){ const exp=r3(r.base*r.rate/100), dev=r3(r.tax-exp);
+      if(STD_RATES.includes(+r.rate)){ const exp=r3(r.base*r.rate/100), dev=r3(r.tax-exp);
         if(Math.abs(dev)>0.02) iss.push(`متوقع ${fmt(exp)} (فرق ${fmt(dev)})`); }
-      if(r.no && dupMap[r.no+'@'+r.rate]>1) iss.push('بيان مكرر بنفس النسبة');
+      if(r.no && dupMap[declKey(r.no)+'@'+r.rate]>1) iss.push('بيان مكرر بنفس النسبة');
       return iss.join(' · ');
     };
     gtRender('importsRows',[
@@ -2112,12 +2217,21 @@ function renderAll(C){
       {id:'excl',l:'استبعاد',sum:false,get:r=>r.excl?'مستبعد':'',printText:r=>r.excl?'مستبعد':'',
        render:r=>`<input type="checkbox" ${r.excl?'checked':''} ${canEdit?'':'disabled'} onchange="toggleImpExcl(${ST.imports.rows.indexOf(r)})">`},
       {id:'no',l:'رقم البيان',get:r=>r.no},
-      {id:'finNo',l:'رقم الوصل',get:r=>r.finNo||''},
-      {id:'dateFin',l:'تاريخ الوصل المالي',get:r=>r.dateFin},
       {id:'dateDecl',l:'تاريخ البيان',get:r=>r.dateDecl||''},
+      {id:'dateFin',l:'تاريخ الوصل المالي',get:r=>r.dateFin},
+      {id:'finNo',l:'رقم الوصل',get:r=>r.finNo||''},
+      {id:'clearNo',l:'وصل التصفية',get:r=>r.clearNo||''},
+      {id:'items',l:'وصف البنود',get:r=>r.items||''},
+      {id:'exporter',l:'المصدر',get:r=>r.exporter||''},
+      {id:'transport',l:'وسيلة النقل',get:r=>r.transport||''},
+      {id:'agr',l:'اتفاقيات',get:r=>r.agr||''},
+      {id:'terms',l:'شرط التسليم',get:r=>r.terms||''},
+      {id:'place',l:'مكان التسليم',get:r=>r.place||''},
+      {id:'expCountry',l:'بلد التصدير',get:r=>r.expCountry||''},
+      {id:'doc44',l:'الوثائق 44',get:r=>r.doc44||''},
+      {id:'refNo',l:'رقم المرجع',get:r=>r.refNo||''},
       {id:'order',l:'رقم الطلبية',get:r=>r.order||''},
       {id:'entry',l:'رقم القيد',get:r=>r.entry||''},
-      {id:'items',l:'الأصناف',get:r=>r.items||''},
       {id:'rate',l:'النسبة %',n:1,sum:false,get:r=>r.rate},
       {id:'cls0',l:'تصنيف 0%',sum:false,get:r=>r.rate===0?(r.cls0==='exm'?'معفاة':'صفرية'):'',printText:r=>r.rate===0?(r.cls0==='exm'?'معفاة':'صفرية'):'',
        render:r=>r.rate===0?`<select onchange="setImp0(${ST.imports.rows.indexOf(r)},this.value)" ${canEdit?'':'disabled'}><option value="zero" ${r.cls0!=='exm'?'selected':''}>صفرية</option><option value="exm" ${r.cls0==='exm'?'selected':''}>معفاة</option></select>`:''},
