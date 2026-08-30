@@ -57,14 +57,44 @@ details summary{cursor:pointer;font-weight:600;color:var(--navy);font-size:13px}
 th .sort-arrow{margin-inline-start:4px;font-size:10px;opacity:.8}
 #printArea{display:none}
 @media print{
+ @page{size:A4 landscape;margin:12mm}
  header,nav,.noprint{display:none!important}
  .tab{display:block!important}
  main{max-width:100%}
  body.print-single-mode>*:not(#printArea){display:none!important}
  body.print-single-mode #printArea{display:block!important}
 }
-#printArea table{margin-top:10px}
-#printArea .tot td{font-weight:700;background:#f7f9fd}
+#printArea{font-size:11.5px}
+#printArea .rpt-head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid var(--navy);padding-bottom:12px;margin-bottom:16px}
+#printArea .rpt-brand{font-weight:800;font-size:19px;color:var(--navy)}
+#printArea .rpt-brand small{display:block;font-weight:500;font-size:11.5px;color:var(--muted);margin-top:3px}
+#printArea .rpt-title{text-align:left}
+#printArea .rpt-title h1{font-size:15px;font-weight:800;margin:0 0 4px;color:var(--navy)}
+#printArea .rpt-period{font-family:'Consolas',monospace;font-size:11.5px;color:var(--gold)}
+#printArea .rpt-kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:9px;margin-bottom:16px}
+#printArea .rpt-kpi{border:1px solid var(--line);border-radius:8px;padding:9px 10px;background:#f7f9fd}
+#printArea .rpt-kpi .l{font-size:9.5px;color:var(--muted);margin-bottom:3px}
+#printArea .rpt-kpi .v{font-weight:800;font-size:14px;color:var(--navy)}
+#printArea table{width:100%;border-collapse:collapse;margin-top:0}
+#printArea th{background:var(--navy);color:#fff;font-weight:700;font-size:10px;padding:7px 5px;text-align:center;border-left:1px solid rgba(255,255,255,.15)}
+#printArea td{padding:6px 5px;border-bottom:1px solid var(--line);text-align:center;font-size:11px}
+#printArea td.name{text-align:right;font-weight:600}
+#printArea td.idx{color:var(--muted);font-family:'Consolas',monospace}
+#printArea tr.alt td{background:#f7f9fd}
+#printArea tr{break-inside:avoid}
+#printArea td.manual{color:var(--gold);font-weight:600}
+#printArea td.neg{color:#c0503f}
+#printArea td.total{font-weight:800;background:#fbf3e2}
+#printArea tr.special{background:#fbf8f1}
+#printArea .tot td{font-weight:800;background:#f7f9fd;border-top:2px solid var(--navy);border-bottom:none;padding-top:9px}
+#printArea .tot td.total{background:var(--navy);color:#fff}
+#printArea .rpt-legend{display:flex;gap:16px;margin-top:9px;font-size:10px;color:var(--muted)}
+#printArea .rpt-legend span{display:inline-flex;align-items:center;gap:5px}
+#printArea .rpt-legend i{width:8px;height:8px;border-radius:2px;display:inline-block}
+#printArea .rpt-sign{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:40px}
+#printArea .rpt-sign div{border-top:1px solid var(--navy);padding-top:7px;font-size:10.5px;color:var(--muted);text-align:center}
+#printArea .rpt-sign b{display:block;color:var(--navy);font-size:11.5px;margin-bottom:2px}
+#printArea .rpt-foot{margin-top:18px;padding-top:8px;border-top:1px solid var(--line);display:flex;justify-content:space-between;font-size:9px;color:var(--muted)}
 </style>
 </head>
 <body>
@@ -215,7 +245,8 @@ ORDER BY 1,2</textarea>
  <div class="card">
   <h2>احتساب عمولة الكاش فان</h2>
   <p class="hint">العمولة = 2% من صافي المبيعات + مكافأة بيع (حتى 50 د.أ بالتناسب مع هدف المبيعات) + مكافأة جودة تحصيل (حتى 50 د.أ حسب نسبة الشيكات الضعيفة) + مكافأة مدير يدوية − خصم 2% من الشيكات المرتجعة − مقابل استخدام مساعد.</p>
-  <div class="row noprint"><label>من شهر</label><input type="month" id="cvFrom" onchange="document.getElementById('cvTo').value=this.value;renderComm()"><label>إلى شهر</label><input type="month" id="cvTo" onchange="renderComm()"><button class="btn sm" onclick="renderComm()">تحديث</button><button class="btn gold sm" onclick="window.print()">🖨 طباعة</button></div>
+  <div class="row noprint"><label>من شهر</label><input type="month" id="cvFrom" onchange="document.getElementById('cvTo').value=this.value;renderComm()"><label>إلى شهر</label><input type="month" id="cvTo" onchange="renderComm()"><button class="btn sm" onclick="renderComm()">تحديث</button><button class="btn gold sm" onclick="printFullReport()">🖨 طباعة تقرير احترافي</button></div>
+  <div class="row noprint"><label>اسم الشركة (يظهر برأس التقرير المطبوع)</label><input type="text" id="companyName" value="مركز الكيلاني للأغذية" style="width:260px" onchange="saveCompanyName()"></div>
   <p class="hint noprint">تغيير "من شهر" بيحدّث "إلى شهر" ليطابقه (فترة شهر واحد). لفترة أطول، غيّر "إلى شهر" بعدها يدوياً.</p>
   <div class="grid g6" id="cvKpi" style="margin-top:10px"></div>
   <details class="noprint" style="margin-top:10px" open><summary>⚙️ إعدادات معادلة العمولة (عدّل أي رقم وبيتحدّث الجدول فوراً)</summary>
@@ -249,9 +280,9 @@ ORDER BY 1,2</textarea>
   </tr><tbody id="cvTbl"></tbody></table></div>
  </div>
 </section>
-<div id="printArea"></div>
 
 </main>
+<div id="printArea"></div>
 <script>
 /* ================= STATE ================= */
 const LSK='cvcomm_standalone_v1';
@@ -440,6 +471,57 @@ function renderComm(){
 }
 
 /* ================= PRINT SINGLE REP ================= */
+function saveCompanyName(){ST.companyName=document.getElementById('companyName').value;saveState()}
+const MONTH_AR={'01':'كانون الثاني','02':'شباط','03':'آذار','04':'نيسان','05':'أيار','06':'حزيران','07':'تموز','08':'آب','09':'أيلول','10':'تشرين الأول','11':'تشرين الثاني','12':'كانون الأول'};
+function printFullReport(){
+ const X=window._CV;if(!X){alert('اضغط "تحديث" أولاً');return}
+ const P=X.P,PD=X.PD;
+ const rows=X.rows.slice().sort((a,b)=>b.total-a.total);
+ const T=rows.reduce((a,r)=>{['sales','salesComm','salesBonus','collTot','collWeak','collBonus','mgrBonus','retDed','assistFee','total'].forEach(k=>a[k]=(a[k]||0)+r[k]);return a},{});
+ const assistTot=(PD.assistants||[]).reduce((a,x)=>a+(+x.amt||0),0);
+ const grand=T.total+(+PD.mgrAmt||0)+(+PD.supAmt||0)+assistTot;
+ const [fromISO,toISO]=X.key.split('|');
+ const [fy,fm]=fromISO.split('-');
+ const periodLabel=(MONTH_AR[fm]||fm)+' '+fy;
+ const company=(ST.companyName||document.getElementById('companyName').value||'').trim();
+ const rowHtml=rows.map((r,i)=>`<tr class="${i%2?'alt':''}">
+   <td class="idx">${i+1}</td><td class="name">${r.rep.name}</td>
+   <td>${fmt(r.sales)}</td><td>${fmt(r.salesComm)}</td>
+   <td class="${r.salesBonusOv!=null?'manual':''}">${fmt(r.salesBonus)}</td>
+   <td>${fmt(r.collTot)}</td><td class="${r.collWeak?'neg':''}">${fmt(r.collWeak)}</td><td>${pct(r.weakRatio)}</td>
+   <td class="${r.collBonusOv!=null?'manual':''}">${fmt(r.collBonus)}</td>
+   <td class="${r.mgrBonus?'manual':''}">${fmt(r.mgrBonus)}</td>
+   <td class="${r.retDed?'neg':''}">${fmt(r.retDed)}</td>
+   <td class="${r.assistFee?'neg':''}">${fmt(r.assistFee)}</td>
+   <td class="total">${fmt(r.total)}</td></tr>`).join('');
+ const specialRow=(label,name,amount)=>`<tr class="special"><td class="idx">—</td><td class="name"><b>${label}</b>${name?' — '+name:''}</td>${'<td>—</td>'.repeat(10)}<td class="total">${fmt(amount)}</td></tr>`;
+ const assistantsRows=(PD.assistants||[]).map(a=>specialRow('مساعد',a.name,a.amt||0)).join('');
+ document.getElementById('printArea').innerHTML=`
+  <div class="rpt-head">
+   <div class="rpt-brand">${company}</div>
+   <div class="rpt-title"><h1>تقرير عمولة مندوبي الكاش فان</h1><div class="rpt-period">فترة ${periodLabel} (${fromISO} → ${toISO})</div></div>
+  </div>
+  <div class="rpt-kpis">
+   <div class="rpt-kpi"><div class="l">عدد المندوبين</div><div class="v">${rows.length}</div></div>
+   <div class="rpt-kpi"><div class="l">صافي المبيعات</div><div class="v">${fmt(T.sales)}</div></div>
+   <div class="rpt-kpi"><div class="l">عمولة المبيعات</div><div class="v">${fmt(T.salesComm)}</div></div>
+   <div class="rpt-kpi"><div class="l">مكافآت البيع والتحصيل</div><div class="v">${fmt(T.salesBonus+T.collBonus)}</div></div>
+   <div class="rpt-kpi"><div class="l">إجمالي عمولات المندوبين</div><div class="v">${fmt(T.total)}</div></div>
+   <div class="rpt-kpi"><div class="l">الإجمالي الكلي</div><div class="v">${fmt(grand)}</div></div>
+  </div>
+  <table><tr><th>#</th><th>المندوب</th><th>صافي المبيعات</th><th>عمولة المبيعات</th><th>مكافأة البيع</th><th>تحصيل الفترة</th><th>شيكات ضعيفة</th><th>%ضعيف</th><th>مكافأة التحصيل</th><th>مكافأة المدير</th><th>خصم المرتجع</th><th>مقابل مساعد</th><th>الإجمالي</th></tr>
+   ${rowHtml}
+   ${specialRow('مدير المبيعات',PD.mgrName,PD.mgrAmt||0)}
+   ${specialRow('مشرف المبيعات',PD.supName,PD.supAmt||0)}
+   ${assistantsRows}
+   <tr class="tot"><td colspan="2">الإجمالي العام</td><td>${fmt(T.sales)}</td><td>${fmt(T.salesComm)}</td><td>${fmt(T.salesBonus)}</td><td>${fmt(T.collTot)}</td><td>${fmt(T.collWeak)}</td><td></td><td>${fmt(T.collBonus)}</td><td>${fmt(T.mgrBonus)}</td><td>${fmt(T.retDed)}</td><td>${fmt(T.assistFee)}</td><td class="total">${fmt(grand)}</td></tr>
+  </table>
+  <div class="rpt-legend"><span><i style="background:var(--gold)"></i> قيمة يدوية (مكافأة أو مبلغ مُدخل مباشرة، وليس ناتج معادلة)</span><span><i style="background:#c0503f"></i> خصم</span></div>
+  <div class="rpt-sign"><div><b>إعداد</b>نظام عمولة الكاش فان</div><div><b>مراجعة</b>&nbsp;</div><div><b>اعتماد</b>&nbsp;</div></div>
+  <div class="rpt-foot"><span>تاريخ الإصدار: ${new Date().toLocaleDateString('ar-JO',{year:'numeric',month:'long',day:'numeric'})}</span><span>تقرير عمولة الكاش فان — للاستخدام الداخلي</span></div>`;
+ document.body.classList.add('print-single-mode');
+ window.print();
+}
 function printRepSlip(repId){
  const X=window._CV;if(!X)return;
  const r=X.rows.find(x=>x.rep.id===repId);if(!r)return;
@@ -511,7 +593,7 @@ document.querySelectorAll('nav button[data-t]').forEach(b=>b.onclick=()=>{
  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.getElementById('tab-'+b.dataset.t).classList.add('active');
  if(b.dataset.t==='comm')renderComm();
 });
-function renderAll(){fillRepSelects();renderReps();renderSales();renderColl();renderComm()}
+function renderAll(){if(ST.companyName!=null)document.getElementById('companyName').value=ST.companyName;fillRepSelects();renderReps();renderSales();renderColl();renderComm()}
 function migrateLegacyPeriodKeys(){
  // كان "endOfMonth" يستخدم toISOString() اللي بتحوّل لتوقيت UTC وبتقص يوم كامل بمناطق زمنية متقدمة (زي الأردن UTC+3) —
  // فكانت فترات الشهر تنحفظ بتاريخ نهاية أقل بيوم من الصحيح (٣٠ بدل ٣١ لشهر تموز مثلاً). هذي بترحّل أي فترة قديمة متأثرة لمفتاحها الصحيح.
