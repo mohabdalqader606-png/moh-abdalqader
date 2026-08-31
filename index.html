@@ -302,12 +302,8 @@
         <span class="hint"><b>كشف البيانات من نظام الجمارك</b> (xls/xlsx) — كل بنود التعريفة تُجمَّع بسطر واحد لكل بيان لكل نسبة، والترانزيت يُستبعد تلقائياً، والنسبة تُحسب من الضريبة ÷ قيمة البند. (كشف المستودعات القديم مقبول أيضاً.)</span>
         <span class="fname" id="fnameImports"></span>
       </div>
-      <div class="filebox" style="margin-top:8px;">
-        <label class="up">🤖 قراءة بيانات جمركية PDF<input type="file" id="filePdfImports" accept=".pdf" onchange="onFilePdfImports(this)"></label>
-        <span class="hint">ارفع ملف <b>PDF</b> للبيانات الجمركية (حتى الممسوحة ضوئياً) — يقرأها الذكاء الاصطناعي صفحة صفحة ويعرض النتيجة بجدول <b>للمراجعة والتعديل والاعتماد</b> قبل إضافتها للكشف. يحتاج مفتاح Anthropic API (يُحفظ على جهازك فقط).</span>
-        <span class="fname" id="fnamePdfImports"></span>
-      </div>
-      <div id="pdfReadWrap"></div>
+      <div id="pdfReadWrap" style="display:none;"></div>
+      <span class="fname" id="fnamePdfImports" style="display:none;"></span>
       <div id="importsWrap"><div class="empty-state">ارفع الكشف أولاً</div></div>
     </div>
   </section>
@@ -394,7 +390,7 @@
 </main>
 
 <div id="printSheet"></div>
-<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 63</b></footer>
+<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 64</b></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -2908,10 +2904,26 @@ async function caCallAPI(b64){
     return full;
   } finally { clearTimeout(tid); }
 }
+function caKeyAsk(msg){
+  $('caWrap').innerHTML=`<div class="duebox" style="background:var(--gold-bg); border-color:#E8D9B0; margin-top:10px;">
+    ${msg?`<div style="color:var(--crimson); font-weight:700; margin-bottom:6px;">${esc(msg)}</div>`:''}
+    <b>🔑 مفتاح Anthropic API مطلوب للتحليل</b> — يُحفظ على هذا الجهاز فقط ولا يُرسل لسيرفرنا أبداً.<br>
+    <span class="hint">من console.anthropic.com ← API Keys ← Create Key (الاسم أي شيء · Expires: Never · Scope: مساحة عمل محددة Default) ثم الصقه هنا.</span>
+    <div class="toolrow" style="margin-top:8px;">
+      <input type="password" id="caKeyInp" placeholder="sk-ant-..." style="width:320px; direction:ltr;">
+      <button class="btn-teal btn-sm" onclick="caSaveKey()">حفظ المفتاح والمتابعة</button>
+    </div></div>`;
+}
+function caSaveKey(){
+  const v=($('caKeyInp').value||'').trim();
+  if(!v){ alert('الصق المفتاح أولاً.'); return; }
+  setAnthKey(v);
+  if(CA.files.length) caRun(); else caRender();
+}
 async function caRun(){
   if(!caGuard()) return;
   if(!CA.files.length) return;
-  if(!anthKey()){ alert('مفتاح Anthropic API غير محفوظ على هذا الجهاز.\nفعّله مرة واحدة من تبويب ٤ المستوردات ← «قراءة بيانات جمركية PDF» — نفس المفتاح يخدم الوحدتين.'); return; }
+  if(!anthKey()){ caKeyAsk(); return; }
   CA.loading=true; CA.results=null; caRender();
   const all=[];
   for(let i=0;i<CA.files.length;i++){
@@ -3460,6 +3472,9 @@ function caRender(){
       <button class="btn-ghost btn-sm" onclick="caCSV()">CSV ⬇</button>`);
     h+=caCard(`<div style="font-weight:700;color:var(--navy);margin-bottom:8px;">📥 استيراد نسخة JSON (تُضاف للسجل على السيرفر)</div>
       <input type="file" accept=".json" onchange="caImportJSON(this)" style="font-size:12px;">`);
+    h+=caCard(`<div style="font-weight:700;color:var(--navy);margin-bottom:8px;">🔑 مفتاح Anthropic API</div>
+      <span class="hint">${anthKey()?'المفتاح محفوظ على هذا الجهاز ✔':'لا يوجد مفتاح محفوظ — سيُطلب عند أول تحليل'}</span><br>
+      <button class="btn-ghost btn-sm" style="margin-top:6px;" onclick="setAnthKey(''); CA.page='new'; caKeyAsk();">تغيير / إدخال مفتاح جديد</button>`);
     h+=caCard(`<div style="font-weight:700;color:var(--crimson);margin-bottom:8px;">🗑 حذف كل السجل (المدير فقط)</div>
       <button class="btn-danger btn-sm" onclick="caDeleteAll()">حذف الكل</button>`);
   }
