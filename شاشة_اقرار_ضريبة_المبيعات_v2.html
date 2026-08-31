@@ -330,6 +330,7 @@
           <option value="imp">مستوردات</option><option value="exp">مصاريف وأصول ضريبية</option><option value="oth">أخرى</option>
         </select>
         <button class="btn-ghost btn-sm" onclick="trustBulk()">تصنيف كل الحركات المطابقة</button>
+        <button class="btn-teal btn-sm" onclick="trustSeedRef()" title="يحفظ كل تصنيفات هذه الفترة كمرجع دائم يُطبق تلقائياً على الفترات القادمة">📤 اعتماد تصنيفات الفترة كمرجع دائم</button>
         <label style="font-size:12px;"><input type="checkbox" id="trustOnlyUn" onchange="renderTrustRows()"> غير المصنفة فقط</label>
         <span class="status-msg" id="trustMsg"></span>
       </div>
@@ -390,7 +391,7 @@
 </main>
 
 <div id="printSheet"></div>
-<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 65</b></footer>
+<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 66</b></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -576,6 +577,10 @@ async function loadCC(){
   try{
     const {data:ib}=await sb.from('item_brackets').select('*');
     IB_DB={}; (ib||[]).forEach(r=>IB_DB[r.item_code]=r.bracket);
+  }catch(e){}
+  try{
+    const {data:tc}=await sb.from('trust_classifications').select('sig, cls');
+    TC_DB={}; (tc||[]).forEach(r=>TC_DB[r.sig]=r.cls);
   }catch(e){}
 }
 async function setItemBr(ic, br){
@@ -1964,6 +1969,32 @@ const TRUST_RULES=[
   ['exp', /صيانة|صيانه|قرطاسية|قرطاسيه|حبر|احبار|أحبار|مستلزم|عقد|اشتراك|كهرباء|مياه|تأمين|تامين|رسوم|تجديد|بطاري|غاز|أصول|اصول|اثاث|أثاث|سيار|مصعد|مصاعد|قاطع|كيبل|مفتاح|شراء|خطوط|اورانج|أورانج|زين|امنية|أمنية|انترنت|إنترنت|هاتف|بدل نقل|نقل اموال|نقل أموال|^\s*ف\s/],
 ];
 function trustAutoClass(details){ const d=String(details||''); for(const [cls,re] of TRUST_RULES){ if(re.test(d)) return cls; } return ''; }
+/* المرجع الدائم لتصنيف القيود: توقيع البيان = النص مع استبدال الأرقام بـ # وتوحيد المسافات
+   فيتطابق «ف 123 شراء خطوط» مع «ف 456 شراء خطوط» عبر الفترات */
+let TC_DB={};
+function trustSig(details){
+  return String(details||'').replace(/[0-9٠-٩]+/g,'#').replace(/\s+/g,' ').trim();
+}
+async function trustSeedRef(){
+  if(!canEdit||!ST.trust||!ST.trust.rows.length){ alert('ارفع كشف الأمانات وصنّفه أولاً.'); return; }
+  const classed=ST.trust.rows.filter(r=>r.cls);
+  if(!classed.length){ alert('لا حركات مصنفة بهذه الفترة.'); return; }
+  if(!confirm(`اعتماد تصنيفات ${classed.length} حركة كمرجع دائم؟\nستُطبَّق تلقائياً على كل كشف أمانات يُرفع مستقبلاً (نفس نص البيان = نفس التصنيف).`)) return;
+  await saveTrustRef(classed);
+  setMsg('trustMsg',`✔ حُفظ المرجع من ${classed.length} حركة — الفترات القادمة ستُصنَّف تلقائياً`,'ok');
+}
+async function saveTrustRef(rows){
+  const seen={}; const ups=[]; const dels=[];
+  for(const r of rows){
+    const s=trustSig(r.details); if(!s||seen[s]) continue; seen[s]=1;
+    if(r.cls){ TC_DB[s]=r.cls; ups.push({sig:s, sample:String(r.details||'').slice(0,180), cls:r.cls}); }
+    else { delete TC_DB[s]; dels.push(s); }
+  }
+  try{
+    if(ups.length){ const {error}=await sb.from('trust_classifications').upsert(ups); if(error) throw error; }
+    if(dels.length) await sb.from('trust_classifications').delete().in('sig',dels);
+  }catch(e){ setMsg('trustMsg','⚠ لم يُحفظ مرجع التصنيف — هل نُفِّذ سكربت v6؟','err'); }
+}
 async function onFileTrust(inp){
   if(!guardEdit(inp)) return;
   const f=inp.files[0]; if(!f) return;
@@ -1980,13 +2011,15 @@ async function onFileTrust(inp){
     if(origin==='OB'){ ob=r3(pnum(r[iCum])); return; }
     if(!deb && !cred) return;
     const det=String(r[iDet]||'');
-    const auto=trustAutoClass(det);
-    rowsOut.push({i:ix, date:iDate>=0?String(r[iDate]||'').trim():'', origin, details:det, debit:r3(deb), credit:r3(cred), cls:auto, auto:!!auto});
+    // الأولوية: المرجع المحفوظ من تصنيفاتك السابقة ← ثم القواعد التلقائية
+    const ref=TC_DB[trustSig(det)];
+    const auto=ref||trustAutoClass(det);
+    rowsOut.push({i:ix, date:iDate>=0?String(r[iDate]||'').trim():'', origin, details:det, debit:r3(deb), credit:r3(cred), cls:auto, auto:!ref&&!!auto, ref:!!ref});
   });
   ST.trust={ob, rows:rowsOut, fname:f.name};
   recomputeAll();
 }
-function setTrustCls(i, cls){ if(!canEdit) return; const row=ST.trust.rows.find(r=>r.i===i); if(row){ row.cls=cls; row.auto=false; recomputeAll(); } }
+function setTrustCls(i, cls){ if(!canEdit) return; const row=ST.trust.rows.find(r=>r.i===i); if(row){ row.cls=cls; row.auto=false; saveTrustRef([row]); recomputeAll(); } }
 function setTrustJust(k, field, v){ if(!canEdit||!ST.trust) return;
   if(!ST.trust.just) ST.trust.just={};
   if(!ST.trust.just[k]) ST.trust.just[k]={};
@@ -1996,8 +2029,9 @@ function setTrustJust(k, field, v){ if(!canEdit||!ST.trust) return;
 function trustBulk(){
   if(!canEdit||!ST.trust) return;
   const q=($('trustBulkText').value||'').trim(); if(!q){ setMsg('trustMsg','اكتب نص البحث أولاً','err'); return; }
-  const cls=$('trustBulkClass').value; let n=0;
-  for(const r of ST.trust.rows){ if(r.details.includes(q)){ r.cls=cls; r.auto=false; n++; } }
+  const cls=$('trustBulkClass').value; let n=0; const changed=[];
+  for(const r of ST.trust.rows){ if(r.details.includes(q)){ r.cls=cls; r.auto=false; n++; changed.push(r); } }
+  if(changed.length) saveTrustRef(changed);
   setMsg('trustMsg',`صُنفت ${n} حركة كـ«${TCLS_AR[cls]}»`,'ok'); recomputeAll();
 }
 function renderTrustRows(){
