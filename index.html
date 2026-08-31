@@ -394,7 +394,7 @@
 </main>
 
 <div id="printSheet"></div>
-<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 62</b></footer>
+<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 63</b></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -1543,6 +1543,12 @@ function toggleImpExcl(idx){ if(!canEdit||!ST.imports) return; ST.imports.rows[i
 
 /* ============ قراءة البيانات الجمركية من PDF بالذكاء الاصطناعي ============ */
 const ANTH_MODEL='claude-sonnet-5';
+/* تسعير النموذج بالدولار لكل مليون توكن (إدخال/إخراج) + سعر صرف تقريبي للدينار */
+const ANTH_PRICE={inM:2, outM:10, jod:0.709};
+const anthCost=(ti,to)=>({usd:(ti/1e6)*ANTH_PRICE.inM+(to/1e6)*ANTH_PRICE.outM,
+  get jod(){ return this.usd*ANTH_PRICE.jod; }});
+const costTxt=(ti,to)=>{ const c=anthCost(ti||0,to||0);
+  return `$${c.usd.toFixed(3)} ≈ ${(c.jod*1000).toFixed(0)} فلس (إدخال ${(ti||0).toLocaleString()} / إخراج ${(to||0).toLocaleString()} توكن)`; };
 const PDFR={rows:[], fin:{}, busy:false, cancel:false, pages:0, done:0, errs:[], fname:''};
 let PDF_PENDING=null;
 function anthKey(){ try{ return localStorage.getItem('kfc_anth_key')||''; }catch(e){ return ''; } }
@@ -1654,6 +1660,7 @@ async function aiReadPage(b64, prevNo){
     const err=new Error(msg); err.status=rs.status; throw err;
   }
   const j=await rs.json();
+  if(j.usage){ PDFR.tokIn=(PDFR.tokIn||0)+(j.usage.input_tokens||0); PDFR.tokOut=(PDFR.tokOut||0)+(j.usage.output_tokens||0); }
   let txt=(j.content||[]).map(c=>c.text||'').join('').replace(/```json|```/g,'').trim();
   const a=txt.indexOf('{'), b=txt.lastIndexOf('}');
   if(a<0||b<0) throw new Error('ردّ غير مفهوم من القارئ');
@@ -1663,6 +1670,7 @@ async function startPdfRead(){
   const f=PDF_PENDING; if(!f) return;
   PDF_PENDING=null;
   PDFR.rows=[]; PDFR.fin={}; PDFR.finNo={}; PDFR.errs=[]; PDFR.busy=true; PDFR.cancel=false; PDFR.done=0; PDFR.fname=f.name;
+  PDFR.tokIn=0; PDFR.tokOut=0;
   renderPdfReview();
   let pdf;
   try{
@@ -1792,7 +1800,8 @@ function renderPdfReview(){
     html+=`<div class="duebox" style="margin-top:10px; background:${PDFR.busy?'var(--gold-bg)':'var(--teal-bg)'}; border-color:${PDFR.busy?'#E8D9B0':'#BFE3DA'};">
       ${PDFR.busy?`⏳ جاري قراءة <b>${esc(PDFR.fname)}</b> — صفحة ${PDFR.done} من ${PDFR.pages} (${pct}%)
         <button class="btn-danger btn-sm" style="margin-inline-start:10px;" onclick="cancelPdfRead()">إلغاء</button>`
-      :`✔ انتهت القراءة${PDFR.cancel?' (أُلغيت مبكراً)':''} — <b>${PDFR.rows.length}</b> سطر ضريبة من <b>${PDFR.done}</b> صفحة. راجع الجدول وعدّل ما يلزم ثم اعتمد.`}
+      :`✔ انتهت القراءة${PDFR.cancel?' (أُلغيت مبكراً)':''} — <b>${PDFR.rows.length}</b> سطر ضريبة من <b>${PDFR.done}</b> صفحة. راجع الجدول وعدّل ما يلزم ثم اعتمد.
+       ${(PDFR.tokIn||PDFR.tokOut)?`<div style="font-size:11px;color:#667;margin-top:4px;">💵 كلفة هذه القراءة: ${costTxt(PDFR.tokIn,PDFR.tokOut)}</div>`:''}`}
     </div>`;
   }
   if(PDFR.errs.length)
@@ -2886,6 +2895,8 @@ async function caCallAPI(b64){
         if(!line.startsWith('data: ')) continue;
         try{ const evt=JSON.parse(line.slice(6));
           if(evt.type==='error') throw new Error((evt.error&&evt.error.message)||'خطأ من الخادم أثناء البث');
+          if(evt.type==='message_start'&&evt.message&&evt.message.usage) CA._tokIn=evt.message.usage.input_tokens||0;
+          if(evt.type==='message_delta'&&evt.usage) CA._tokOut=evt.usage.output_tokens||0;
           if(evt.type==='message_delta'&&evt.delta&&evt.delta.stop_reason==='max_tokens') CA._truncated=true;
           if(evt.type==='content_block_delta'&&evt.delta&&evt.delta.text){
             full+=evt.delta.text; nch+=evt.delta.text.length;
@@ -2909,11 +2920,12 @@ async function caRun(){
       if(att>0){ caProg(`جاري إعادة المحاولة للملف ${i+1} من ${CA.files.length}...`); await new Promise(r=>setTimeout(r,4000)); }
       caProg(`جاري تحليل الملف ${i+1} من ${CA.files.length}...`);
       try{
-        CA._truncated=false;
+        CA._truncated=false; CA._tokIn=0; CA._tokOut=0;
         const b64=await caB64(CA.files[i]);
         const full=await caCallAPI(b64);
         raw=full;
         parsed=caSafeParse(full.replace(/```json|```/g,'').trim());
+        if(parsed && (CA._tokIn||CA._tokOut)) parsed._cost={ti:CA._tokIn, to:CA._tokOut};
         lastErr=null; break;
       }catch(err){
         if(err.name==='AbortError') lastErr=new Error('انتهت المهلة الزمنية (3 دقائق) — جرب ملفاً أصغر');
@@ -3005,6 +3017,9 @@ function caResultHTML(r,ri,forPrint){
   const b46diff=Math.abs(C.b46v1-C.b46v2);
   let h=`<div style="border:2px solid var(--navy);border-radius:12px;padding:14px;margin-bottom:16px;">`;
   h+=`<div style="font-weight:700;font-size:14px;color:var(--navy);margin-bottom:10px;">📄 ${esc(r.file)}</div>`;
+  const uc=r.data._cost;
+  if(uc && !forPrint)
+    h+=`<div style="font-size:11px;color:#667;margin:-6px 0 8px;">💵 تكلفة تحليل هذا الملف: ${costTxt(uc.ti,uc.to)}</div>`;
   // كشف الاستخراج الفارغ: لا رقم بيان ولا فاتورة ولا أصناف = القراءة فشلت فعلياً
   const emptyEx = !dec.declaration_number && !(invoices[0]&&invoices[0].invoice_number) && !items.length;
   if(emptyEx && !forPrint)
