@@ -2977,6 +2977,15 @@ function diSafeParse(text){
   const lb=t.lastIndexOf('}'); if(lb>=0) t=t.substring(0,lb+1);
   return JSON.parse(t);
 }
+/* لو خانتين من (الكمية، السعر، القيمة) واضحتين والثالثة طلعت فاضية من القراءة —
+   منحسبها حسابياً (مو تخمين، ضرب/قسمة مضمونة 100%) بدل ما تضل فاضية بالمراجعة. */
+function diBackfillItem(it){
+  const q = it.qty, p = it.price, v = it.value;
+  if(p==null && q!=null && v!=null && q!==0) it.price = Math.round((v/q)*1000)/1000;
+  else if(v==null && q!=null && p!=null) it.value = Math.round(q*p*1000)/1000;
+  else if(q==null && p!=null && v!=null && p!==0) it.qty = Math.round((v/p)*1000)/1000;
+  return it;
+}
 function diLineMismatch(it){
   if(it.qty==null||it.price==null||it.value==null) return false;
   const q=+it.qty, p=+it.price, v=+it.value;
@@ -3021,7 +3030,7 @@ async function diHandleFiles(evt){
       const parsed=diSafeParse(text);
       const invs=(parsed.invoices||[]).map(inv=>({
         invoiceNo: inv.invoiceNo||'', date: inv.date||'', market: inv.market||'',
-        items:(inv.items||[]).map(it=>({code:it.code??null, name:it.name??null, qty:it.qty??null, price:it.price??null, value:it.value??null})),
+        items:(inv.items||[]).map(it=>diBackfillItem({code:it.code??null, name:it.name??null, qty:it.qty??null, price:it.price??null, value:it.value??null})),
         srcFile: files[i].name
       }));
       DI_READ.invoices.push(...invs);
@@ -3293,9 +3302,9 @@ function renderDailyInvoiceMatch(){
   const invNoToPreciseKey = new Map();
 
   // ---- تجميع جهة السندات ----
-  const buckets = new Map(); // key -> {label, kind, dates:Set, trItems:Map(theirCode->qty), invItems:Map(theirCode->qty), invValue:Map(theirCode->value), invNos:Set, unmappedOurCodes:Set}
+  const buckets = new Map(); // key -> {label, kind, dates:Set, trItems:Map(theirCode->qty), invItems:Map(theirCode->qty), invValue:Map(theirCode->value), invNos:Set, docNums:Set, unmappedOurCodes:Set}
   function getBucket(key, label, kind){
-    if(!buckets.has(key)) buckets.set(key, {label, kind, dates:new Set(), trItems:new Map(), invItems:new Map(), invValue:new Map(), invNos:new Set(), unmappedOurCodes:new Set()});
+    if(!buckets.has(key)) buckets.set(key, {label, kind, dates:new Set(), trItems:new Map(), invItems:new Map(), invValue:new Map(), invNos:new Set(), docNums:new Set(), unmappedOurCodes:new Set()});
     return buckets.get(key);
   }
   const priceByTheirCode = new Map(ITEMS.filter(it=>it.theirCode).map(it=>[it.theirCode, it.salePricePiece||0]));
@@ -3330,6 +3339,7 @@ function renderDailyInvoiceMatch(){
     }
     const b = getBucket(key, label, kind);
     b.dates.add(normDateToISO(t.docDate));
+    b.docNums.add(t.docNum);
     b.trItems.set(it.theirCode, (b.trItems.get(it.theirCode)||0) + theirQty);
   });
 
@@ -3376,7 +3386,7 @@ function renderDailyInvoiceMatch(){
       trTotal+=t; invTotal+=i;
       return {code:c, tr:t, inv:i, diff, ourPrice, invPrice, priceDiff, priceMismatch};
     }).sort((a,b2)=>String(a.code).localeCompare(String(b2.code),'ar'));
-    return {key, label:b.label, kind:b.kind, awaitingInvoice, dates:Array.from(b.dates).filter(Boolean).sort(), invNos:Array.from(b.invNos), rows, hasDiff: hasDiff && !awaitingInvoice, trTotal, invTotal};
+    return {key, label:b.label, kind:b.kind, awaitingInvoice, dates:Array.from(b.dates).filter(Boolean).sort(), invNos:Array.from(b.invNos), docNums:Array.from(b.docNums).filter(Boolean), rows, hasDiff: hasDiff && !awaitingInvoice, trTotal, invTotal};
   });
 
   if(from||to){
@@ -3415,10 +3425,10 @@ function renderDailyInvoiceMatch(){
     html += `<div style="border:1px solid ${g.hasDiff?'var(--crimson)':'var(--line)'}; border-radius:10px; padding:10px 14px; margin-bottom:8px; ${g.hasDiff?'background:#FDF7F7;':''}">
       <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
         <div><b>${esc(g.label)}</b> ${badge}</div>
-        <div style="font-size:12px; color:var(--ink-soft);">التاريخ: ${esc(dateStr)}${g.invNos.length?' · فواتير: '+esc(g.invNos.join('، ')):''}</div>
+        <div style="font-size:12px; color:var(--ink-soft);">التاريخ: ${esc(dateStr)}${g.docNums.length?' · رقم/أرقام سند التحويل: '+esc(g.docNums.join('، ')):''}${g.invNos.length?' · فواتير: '+esc(g.invNos.join('، ')):''}</div>
       </div>
       <table class="grid" style="max-width:820px;">
-        <thead><tr><th>رقم المادة</th><th>كمية السندات</th><th>كمية الفواتير</th><th>فرق الكمية</th><th>سعرنا</th><th>سعر الفاتورة</th><th>فرق السعر</th></tr></thead>
+        <thead><tr><th>رقم المادة</th><th>الكمية حسب سند التحويل</th><th>الكمية حسب الفاتورة</th><th>فرق الكمية</th><th>السعر حسب سند التحويل (المتوقع)</th><th>السعر حسب الفاتورة</th><th>فرق السعر</th></tr></thead>
         <tbody>${g.rows.map(r=>`<tr${(Math.abs(r.diff)>EPS||r.priceMismatch)?' style="background:#FDECEC;"':''}>
           <td class="mono">${esc(r.code)}</td>
           <td class="mono">${fmtNum(r.tr)}</td>
