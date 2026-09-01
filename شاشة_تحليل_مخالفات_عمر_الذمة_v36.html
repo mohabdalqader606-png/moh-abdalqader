@@ -150,7 +150,8 @@
       <b>الاستهلاك:</b> رصيد أولاً (من الأحدث للأقدم) ثم الشيكات بترتيب استحقاقها
     </div>
     <div class="userbox" id="userbox" style="display:none;">
-      <div class="who"><b id="uName"></b><span id="uRole"></span></div>
+      <div class="who"><b id="uName"></b><span id="uRole"></span><span class="status-msg" id="cloudSyncMsg" style="margin-top:2px;"></span></div>
+      <button class="btn-ghost btn-sm" onclick="pullStateFromCloud()" title="تحميل آخر نسخة من السيرفر المشترك">🔄</button>
       <button class="btn-ghost btn-sm" onclick="doLogout()">خروج</button>
     </div>
   </div>
@@ -197,7 +198,7 @@ ORDER BY R."CardCode", K."DueDate"</code>
       </details>
 
       <div class="row-actions">
-        <button class="btn-primary" onclick="processData()">تحليل البيانات</button>
+        <button class="btn-primary" onclick="processData(); scheduleAutoSave();">تحليل البيانات</button>
         <button class="btn-ghost" onclick="clearAll()">تفريغ</button>
         <span class="status-msg" id="statusMsg"></span>
       </div>
@@ -261,7 +262,7 @@ ORDER BY R."CardCode", K."DueDate"</code>
       <div class="row-actions">
         <label style="font-size:12px; color:var(--ink-soft);">تاريخ اللقطة (نفس [%0] يلي استخدمته بالكويري):</label>
         <input type="date" id="snapshotDate" style="border:1.5px solid var(--line); border-radius:8px; padding:7px 10px; font-size:12.5px;">
-        <button class="btn-primary" onclick="processAging()">تحليل عمر الذمة</button>
+        <button class="btn-primary" onclick="processAging(); scheduleAutoSave();">تحليل عمر الذمة</button>
         <button class="btn-ghost" onclick="clearAging()">تفريغ</button>
         <span class="status-msg" id="agingStatusMsg"></span>
       </div>
@@ -321,7 +322,7 @@ ORDER BY R."CardCode", K."DueDate"</code>
       <div class="row-actions">
         <label style="font-size:12px; color:var(--ink-soft);">أيام السماح لهذا العميل:</label>
         <input type="number" id="singleExtraDays" placeholder="مثلاً 90" style="width:90px; border:1.5px solid var(--line); border-radius:8px; padding:7px 10px; font-size:12.5px;">
-        <button class="btn-primary" onclick="processSingle()">تحليل</button>
+        <button class="btn-primary" onclick="processSingle(); scheduleAutoSave();">تحليل</button>
         <button class="btn-ghost" onclick="clearSingle()">تفريغ</button>
         <span class="status-msg" id="singleStatusMsg"></span>
       </div>
@@ -345,7 +346,7 @@ ORDER BY R."CardCode", K."DueDate"</code>
         <textarea id="dailyPasteArea" placeholder="الصق هنا نتيجة كويري ١٠..."></textarea>
       </details>
       <div class="row-actions">
-        <button class="btn-primary" onclick="processDaily()">تحليل التحصيل</button>
+        <button class="btn-primary" onclick="processDaily(); scheduleAutoSave();">تحليل التحصيل</button>
         <button class="btn-ghost" onclick="clearDaily()">تفريغ</button>
         <span class="status-msg" id="dailyStatusMsg"></span>
       </div>
@@ -850,6 +851,7 @@ function renderList(){
 function toggleHide(key){
   if(HIDDEN.has(key)) HIDDEN.delete(key); else HIDDEN.add(key);
   renderList();
+  scheduleAutoSave();
 }
 
 function toggleCust(id){ document.getElementById(id).classList.toggle('open'); }
@@ -1346,9 +1348,9 @@ function renderManagersGrid(){
   grid.innerHTML = TEST_MANAGERS.map((m,i)=>`
     <div style="border:1px solid var(--line); border-radius:8px; padding:8px; background:#fff;">
       <div style="font-size:11px; color:var(--ink-soft); margin-bottom:4px;">مدير ${i+1}</div>
-      <input type="text" placeholder="الاسم" value="${m.name}" oninput="TEST_MANAGERS[${i}].name=this.value" style="width:100%; margin-bottom:4px; padding:5px 7px; font-size:12px; border:1px solid var(--line); border-radius:6px;">
-      <input type="text" placeholder="رقم واتساب (بصيغة دولية بدون +، مثال 9627xxxxxxxx)" value="${m.phone}" oninput="TEST_MANAGERS[${i}].phone=this.value" style="width:100%; margin-bottom:4px; padding:5px 7px; font-size:12px; border:1px solid var(--line); border-radius:6px; direction:ltr;">
-      <input type="email" placeholder="الإيميل" value="${m.email}" oninput="TEST_MANAGERS[${i}].email=this.value" style="width:100%; padding:5px 7px; font-size:12px; border:1px solid var(--line); border-radius:6px; direction:ltr;">
+      <input type="text" placeholder="الاسم" value="${m.name}" oninput="TEST_MANAGERS[${i}].name=this.value; scheduleAutoSave();" style="width:100%; margin-bottom:4px; padding:5px 7px; font-size:12px; border:1px solid var(--line); border-radius:6px;">
+      <input type="text" placeholder="رقم واتساب (بصيغة دولية بدون +، مثال 9627xxxxxxxx)" value="${m.phone}" oninput="TEST_MANAGERS[${i}].phone=this.value; scheduleAutoSave();" style="width:100%; margin-bottom:4px; padding:5px 7px; font-size:12px; border:1px solid var(--line); border-radius:6px; direction:ltr;">
+      <input type="email" placeholder="الإيميل" value="${m.email}" oninput="TEST_MANAGERS[${i}].email=this.value; scheduleAutoSave();" style="width:100%; padding:5px 7px; font-size:12px; border:1px solid var(--line); border-radius:6px; direction:ltr;">
     </div>`).join('');
 }
 document.addEventListener('DOMContentLoaded', renderManagersGrid);
@@ -1826,8 +1828,8 @@ function exportDailyCsv(){
 // ============================================================
 // نسخة احتياطية / استرجاع — كل بيانات الشاشة (الأربع تبويبات)
 // ============================================================
-function downloadBackup(){
-  const backup = {
+function buildBackupObject(){
+  return {
     _meta: { app: 'شاشة تحليل مخالفات عمر الذمة', savedAt: new Date().toISOString(), version:'v36' },
     approvals: {
       pasteArea: document.getElementById('pasteArea').value,
@@ -1848,6 +1850,9 @@ function downloadBackup(){
     hidden: Array.from(HIDDEN||[]),
     testManagers: (typeof TEST_MANAGERS!=='undefined') ? TEST_MANAGERS : []
   };
+}
+function downloadBackup(){
+  const backup = buildBackupObject();
   const json = JSON.stringify(backup, null, 2);
   const blob = new Blob(['\uFEFF'+json], {type:'application/json;charset=utf-8;'});
   const a = document.createElement('a');
@@ -1860,6 +1865,37 @@ function downloadBackup(){
   setTimeout(()=>{msg.textContent='';}, 4000);
 }
 
+// يطبّق كائن نسخة احتياطية (من ملف أو من السيرفر المشترك) على الشاشة، ويعيد تشغيل التحليل لكل تبويب فيه بيانات ملصوقة
+function applyBackup(backup){
+  if(backup.approvals){
+    document.getElementById('pasteArea').value = backup.approvals.pasteArea||'';
+    document.getElementById('checksArea').value = backup.approvals.checksArea||'';
+    if(backup.approvals.pasteArea && backup.approvals.pasteArea.trim()) processData();
+  }
+  if(backup.aging){
+    document.getElementById('agingPasteArea').value = backup.aging.agingPasteArea||'';
+    document.getElementById('agingChecksPasteArea').value = backup.aging.agingChecksPasteArea||'';
+    if(backup.aging.snapshotDate) document.getElementById('snapshotDate').value = backup.aging.snapshotDate;
+    if(backup.aging.agingPasteArea && backup.aging.agingPasteArea.trim()) processAging();
+  }
+  if(backup.single){
+    document.getElementById('singlePasteArea').value = backup.single.singlePasteArea||'';
+    document.getElementById('singleExtraDays').value = backup.single.singleExtraDays||'';
+    if(backup.single.singlePasteArea && backup.single.singlePasteArea.trim()) processSingle();
+  }
+  if(backup.daily){
+    document.getElementById('dailyPasteArea').value = backup.daily.dailyPasteArea||'';
+    if(backup.daily.dailyPasteArea && backup.daily.dailyPasteArea.trim()) processDaily();
+  }
+  if(backup.hidden && Array.isArray(backup.hidden)){
+    HIDDEN = new Set(backup.hidden);
+    if(typeof renderList==='function' && INVOICES && INVOICES.length) renderList();
+  }
+  if(backup.testManagers && Array.isArray(backup.testManagers) && typeof TEST_MANAGERS!=='undefined'){
+    TEST_MANAGERS = backup.testManagers;
+    if(typeof renderManagersGrid==='function') renderManagersGrid();
+  }
+}
 function restoreBackup(event){
   const file = event.target.files[0];
   const msg = document.getElementById('backupStatusMsg');
@@ -1875,50 +1911,60 @@ function restoreBackup(event){
       msg.textContent = '✗ الملف غير صالح (مش JSON نسخة احتياطية سليمة)'; msg.className='status-msg err';
       return;
     }
-
-    // ===== استرجاع تبويب الموافقات =====
-    if(backup.approvals){
-      document.getElementById('pasteArea').value = backup.approvals.pasteArea||'';
-      document.getElementById('checksArea').value = backup.approvals.checksArea||'';
-      if(backup.approvals.pasteArea && backup.approvals.pasteArea.trim()) processData();
-    }
-    // ===== استرجاع تبويب عمر الذمة =====
-    if(backup.aging){
-      document.getElementById('agingPasteArea').value = backup.aging.agingPasteArea||'';
-      document.getElementById('agingChecksPasteArea').value = backup.aging.agingChecksPasteArea||'';
-      if(backup.aging.snapshotDate) document.getElementById('snapshotDate').value = backup.aging.snapshotDate;
-      if(backup.aging.agingPasteArea && backup.aging.agingPasteArea.trim()) processAging();
-    }
-    // ===== استرجاع تبويب فحص عميل واحد =====
-    if(backup.single){
-      document.getElementById('singlePasteArea').value = backup.single.singlePasteArea||'';
-      document.getElementById('singleExtraDays').value = backup.single.singleExtraDays||'';
-      if(backup.single.singlePasteArea && backup.single.singlePasteArea.trim()) processSingle();
-    }
-    // ===== استرجاع تبويب التحصيل اليومي =====
-    if(backup.daily){
-      document.getElementById('dailyPasteArea').value = backup.daily.dailyPasteArea||'';
-      if(backup.daily.dailyPasteArea && backup.daily.dailyPasteArea.trim()) processDaily();
-    }
-    // ===== استرجاع العناصر المخفية =====
-    if(backup.hidden && Array.isArray(backup.hidden)){
-      HIDDEN = new Set(backup.hidden);
-      if(typeof renderList==='function' && INVOICES && INVOICES.length) renderList();
-    }
-    // ===== استرجاع جهات اتصال المدراء التجريبيين =====
-    if(backup.testManagers && Array.isArray(backup.testManagers) && typeof TEST_MANAGERS!=='undefined'){
-      TEST_MANAGERS = backup.testManagers;
-      if(typeof renderManagersGrid==='function') renderManagersGrid();
-    }
-
+    applyBackup(backup);
     const savedAt = backup._meta && backup._meta.savedAt ? new Date(backup._meta.savedAt).toLocaleString('ar-EG') : 'غير معروف';
     msg.textContent = `✓ تم استرجاع النسخة الاحتياطية (محفوظة بتاريخ: ${savedAt})`;
     msg.className='status-msg ok';
     event.target.value = ''; // للسماح برفع نفس الملف مرة تانية لو احتجت
+    scheduleAutoSave();
   };
   reader.onerror = () => { msg.textContent = '✗ فشل قراءة الملف'; msg.className='status-msg err'; };
   reader.readAsText(file, 'UTF-8');
 }
+
+/* ==================== حفظ محلي تلقائي + مزامنة على سيرفر مشترك (Supabase) ==================== */
+const DEBTAGING_STORAGE_KEY = 'debtAging_v1';
+function loadStateLocal(){
+  try{
+    const raw = localStorage.getItem(DEBTAGING_STORAGE_KEY);
+    if(raw) applyBackup(JSON.parse(raw));
+  }catch(e){ console.warn('تعذر تحميل البيانات المحفوظة محلياً', e); }
+}
+let debtAgingAutoSaveTimer = null, debtAgingCloudSaveTimer = null;
+function scheduleAutoSave(){
+  clearTimeout(debtAgingAutoSaveTimer);
+  debtAgingAutoSaveTimer = setTimeout(saveStateLocal, 400);
+}
+function saveStateLocal(){
+  try{ localStorage.setItem(DEBTAGING_STORAGE_KEY, JSON.stringify(buildBackupObject())); }
+  catch(e){ console.warn('تعذر الحفظ المحلي', e); }
+  queueCloudSave();
+}
+function queueCloudSave(){
+  if(!sb || !curUser || !roleEdit) return;
+  clearTimeout(debtAgingCloudSaveTimer);
+  debtAgingCloudSaveTimer = setTimeout(pushStateToCloud, 1500);
+}
+async function pushStateToCloud(){
+  if(!sb || !curUser || !roleEdit) return;
+  try{
+    await sb.from('debtaging_app_state').upsert({id:'main', data: buildBackupObject(), updated_by:curUser.id, updated_at:new Date().toISOString()});
+    const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ محفوظ على السيرفر المشترك · '+new Date().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}); el.className='status-msg ok'; }
+  }catch(e){
+    const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '⚠ تعذر الحفظ على السيرفر المشترك — البيانات محفوظة محلياً بس'; el.className='status-msg err'; }
+  }
+}
+async function pullStateFromCloud(){
+  if(!sb || !curUser) return;
+  try{
+    const {data, error} = await sb.from('debtaging_app_state').select('data, updated_at').eq('id','main').maybeSingle();
+    if(error || !data || !data.data) return;
+    applyBackup(data.data);
+    localStorage.setItem(DEBTAGING_STORAGE_KEY, JSON.stringify(data.data));
+    const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ تم تحميل آخر نسخة من السيرفر المشترك'; el.className='status-msg ok'; }
+  }catch(e){ console.warn('تعذر التحميل من السيرفر المشترك', e); }
+}
+loadStateLocal();
 
 /* ================= تسجيل الدخول (Supabase — مشترك مع باقي شاشات المؤسسة) ================= */
 const SUPABASE_URL = 'https://fxjdmqqmcgccocfbgopm.supabase.co';
@@ -1954,6 +2000,7 @@ async function onSignedIn(user){
   document.getElementById('userbox').style.display = 'flex';
   document.getElementById('loginView').style.display = 'none';
   document.getElementById('appView').style.display = 'block';
+  await pullStateFromCloud();
 }
 (async function bootAuth(){
   if(!window.supabase){ authMsg('تعذر تحميل مكتبة الاتصال — تحقق من الإنترنت وحدّث الصفحة', false); return; }
