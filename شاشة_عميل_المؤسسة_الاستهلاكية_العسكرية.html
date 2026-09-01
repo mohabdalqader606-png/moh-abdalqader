@@ -437,11 +437,12 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       </div>
     </div>
     <div class="input-panel" style="border-bottom:1px solid var(--line);">
-      <div class="hint" style="margin:0 0 8px;">🖨️ طباعة دفعة فواتير مرة واحدة (حسب المؤسسة، كل فاتورة بصفحة A4 لحالها، بنفس نموذج الفاتورة الرسمي تماماً) — اختر من فاتورة إلى فاتورة من المجموعة المفتوحة حالياً:</div>
+      <div class="hint" style="margin:0 0 8px;">🖨️ طباعة دفعة فواتير مرة واحدة، كل فاتورة بصفحة A4 لحالها — اختر من فاتورة إلى فاتورة من المجموعة المفتوحة حالياً (بدّل التبويب فوق لعمّان/العقبة قبل ما تختار):</div>
       <div class="row-actions" style="margin-top:0;">
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;">من <select id="batchPrintFrom"></select></label>
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;">إلى <select id="batchPrintTo"></select></label>
-        <button class="btn-primary btn-sm" onclick="batchPrintInvoices()">🖨️ معاينة وطباعة الدفعة</button>
+        <button class="btn-primary btn-sm" onclick="batchPrintInvoices()">🖨️ معاينة وطباعة الدفعة (حسب المؤسسة)</button>
+        <button class="btn-ghost btn-sm" onclick="batchPrintInvoices('company')" title="نفس الدفعة برموزنا وأسمائنا وسعرنا — لإدخالها بـ SAP">🏢 دفعة حسب الشركة (SAP)</button>
         <span class="status-msg" id="batchPrintMsg"></span>
       </div>
     </div>
@@ -1909,7 +1910,7 @@ function populateBatchPrintSelects(g){
   if([...toEl.options].some(o=>o.value===prevTo)) toEl.value = prevTo;
   else if(invoices.length) toEl.value = invoices[invoices.length-1].id;
 }
-function batchPrintInvoices(){
+function batchPrintInvoices(mode){
   const g = GROUPS.find(x=>x.id===currentGroupId);
   if(!g){ flash('batchPrintMsg','ما في مجموعة مختارة.', false); return; }
   const invoices = getPrintableInvoices(g);
@@ -1925,13 +1926,17 @@ function batchPrintInvoices(){
   let html = '';
   batch.forEach(inv=>{
     ensureInvoiceDefaults(inv);
-    html += buildPrintSheetHTML(g, inv);
-    logInvoicePrint('design', inv.id, g, inv, null);
+    if(mode==='company'){
+      html += buildCompanySheetHTML(g, inv);
+    }else{
+      html += buildPrintSheetHTML(g, inv);
+      logInvoicePrint('design', inv.id, g, inv, null);
+    }
   });
   document.getElementById('printSheetContent').innerHTML = html;
   document.getElementById('printOverlay').classList.add('active');
-  setPrintCopyModeLabel('customer');
-  flash('batchPrintMsg', `جهّزت ${batch.length} فاتورة للطباعة — كل وحدة بصفحة A4 لحالها.`, true);
+  setPrintCopyModeLabel(mode==='company' ? 'company' : 'customer');
+  flash('batchPrintMsg', `جهّزت ${batch.length} فاتورة${mode==='company'?' (برموزنا — SAP)':''} — كل وحدة بصفحة A4 لحالها.`, true);
 }
 function renderPrintPage(){
   if(currentPage!=='print') return;
