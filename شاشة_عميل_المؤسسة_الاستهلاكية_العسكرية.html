@@ -1160,17 +1160,16 @@ function rebuildGroupCategory(groupId, docType, orderField, invField){
   g.invoices.sort((a,b)=> (a.docType===docType && b.docType===docType) ? (a.slot||0)-(b.slot||0) : 0);
 }
 
-/* بترتب تلقائياً (10 أصناف بكل كشف) الأصناف يلي عندها كمية عقبة بالكشف الشهري المستورد
-   وما إلها رقم كشف تجميعي عقبة مضبوط يدوياً بعد — وبتحافظ على أي كشوف رتّبها المستخدم يدوياً
-   (تبلش الترقيم بعد آخر رقم كشف مستخدم فعلاً، وما تلمس أصناف مرتّبة أصلاً). */
+/* بترتب تلقائياً (10 أصناف بكل كشف، حسب رمز الصنف عنا تصاعدياً) الأصناف يلي عندها كمية عقبة
+   بالكشف الشهري المستورد وما إلها رقم كشف تجميعي عقبة مضبوط يدوياً بعد — وبتحافظ على أي كشوف
+   رتّبها المستخدم يدوياً (تبلش الترقيم بعد آخر رقم كشف مستخدم فعلاً، وما تلمس أصناف مرتّبة أصلاً). */
 function autoFillAqabaAggRest(){
   if(!STATEMENT.length){ flash('invStatusMsg','استورد كشف المؤسسة الشهري أول (صفحة "كشف المؤسسة الشهري") عشان نعرف أي أصناف إلها كمية عقبة.', false); return; }
   const eligibleTheirCodes = new Set(STATEMENT.filter(r=>r.qtyAqaba).map(r=>r.theirCode));
   const hasSlot = it => it.aqabaAggInvoiceNo!==undefined && it.aqabaAggInvoiceNo!==null && it.aqabaAggInvoiceNo!=='';
   let maxSlot = ITEMS.reduce((m,it)=> hasSlot(it) ? Math.max(m, parseInt(it.aqabaAggInvoiceNo,10)||0) : m, 0);
-  const stmtOrder = new Map(STATEMENT.map((r,i)=>[r.theirCode,i]));
   const rest = ITEMS.filter(it=> eligibleTheirCodes.has(it.theirCode) && !hasSlot(it));
-  rest.sort((a,b)=> (stmtOrder.get(a.theirCode) ?? 1e9) - (stmtOrder.get(b.theirCode) ?? 1e9));
+  rest.sort((a,b)=> String(a.ourCode||'').localeCompare(String(b.ourCode||''), 'ar', {numeric:true}));
   if(!rest.length){ flash('invStatusMsg','كل أصناف كشف تجميعي العقبة مرتّبة أصلاً — ما في أصناف باقية.', true); return; }
   rest.forEach((it,idx)=>{
     it.aqabaAggInvoiceNo = maxSlot + Math.floor(idx/10) + 1;
@@ -1180,7 +1179,7 @@ function autoFillAqabaAggRest(){
   saveState();
   renderInvoicesPage();
   renderMappingTable();
-  flash('invStatusMsg', `تم ترتيب ${rest.length} صنف تلقائياً على ${Math.ceil(rest.length/10)} كشف تجميعي جديد (10 أصناف لكل كشف)، بعد آخر رقم كشف كان مستخدم (${maxSlot}). الكشوف الأربعة (أو أكثر) يلي رتّبتها يدوياً ما انلمست.`, true);
+  flash('invStatusMsg', `تم ترتيب ${rest.length} صنف تلقائياً حسب رمز الصنف عنا على ${Math.ceil(rest.length/10)} كشف تجميعي جديد (10 أصناف لكل كشف)، بعد آخر رقم كشف كان مستخدم (${maxSlot}). الكشوف اللي رتّبتها يدوياً ما انلمست.`, true);
 }
 
 function editItemField(key, field, value){
