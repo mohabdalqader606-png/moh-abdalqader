@@ -345,6 +345,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         <button class="btn-ghost btn-sm" onclick="renameGroupPrompt()">✏️ إعادة تسمية المجموعة</button>
         <button class="btn-ghost btn-sm" onclick="addGroupPrompt()">+ مجموعة فواتير جديدة</button>
         <button class="btn-ghost btn-sm" id="autoFillAqabaAggBtn" style="display:none; border-color:var(--gold); color:var(--gold);" onclick="autoFillAqabaAggRest()">🧮 رتّب باقي أصناف كشف تجميعي العقبة تلقائياً (10 لكل كشف)</button>
+        <button class="btn-ghost btn-sm" id="clearAutoAqabaAggBtn" style="display:none; border-color:var(--crimson); color:var(--crimson);" onclick="clearAutoAqabaAggFrom()">🗑️ امسح ترتيب الكشوف التلقائية (لإعادة الترتيب)</button>
         <span class="status-msg" id="invStatusMsg"></span>
       </div>
       <div class="hint" style="margin-top:8px;" id="autoInvoiceNote"></div>
@@ -1182,6 +1183,27 @@ function autoFillAqabaAggRest(){
   flash('invStatusMsg', `تم ترتيب ${rest.length} صنف تلقائياً حسب رمز الصنف عنا على ${Math.ceil(rest.length/10)} كشف تجميعي جديد (10 أصناف لكل كشف)، بعد آخر رقم كشف كان مستخدم (${maxSlot}). الكشوف اللي رتّبتها يدوياً ما انلمست.`, true);
 }
 
+/* بيمسح ترتيب/رقم كشف تجميعي العقبة عن أي صنف رقم كشفه أكبر من رقم معيّن بتحدده —
+   يعني بيلغي بس الكشوف "التلقائية" (يلي زر autoFillAqabaAggRest سواها)، ويحافظ
+   على الكشوف الأولى يلي رتّبتها يدوياً. بعدها اضغط زر الترتيب التلقائي من جديد
+   عشان يعيد توزيعهم بالمعيار الجديد (حسب رمزنا). */
+function clearAutoAqabaAggFrom(){
+  const raw = prompt('امسح ترتيب كل كشوف تجميعي العقبة اللي رقمها أكبر من رقم معيّن (اكتب آخر رقم كشف رتّبته يدوياً بنفسك وتريد تحافظ عليه — مثلاً لو أول 4 كشوف يدوية اكتب 4):');
+  if(raw===null) return;
+  const keepUpTo = parseInt(raw,10);
+  if(isNaN(keepUpTo) || keepUpTo<0){ flash('invStatusMsg','رقم غير صالح.', false); return; }
+  let cleared = 0;
+  ITEMS.forEach(it=>{
+    const slot = parseInt(it.aqabaAggInvoiceNo,10);
+    if(slot && slot>keepUpTo){ it.aqabaAggInvoiceNo=''; it.aqabaAggOrder=''; cleared++; }
+  });
+  rebuildAutoInvoices();
+  saveState();
+  renderInvoicesPage();
+  renderMappingTable();
+  flash('invStatusMsg', `تم مسح ترتيب ${cleared} صنف من الكشوف اللي رقمها أكبر من ${keepUpTo}. اضغط الآن زر "رتّب باقي أصناف كشف تجميعي العقبة تلقائياً" عشان يرتبهم من جديد حسب رمزنا.`, true);
+}
+
 function editItemField(key, field, value){
   const it = findItem(key);
   if(!it) return;
@@ -1430,10 +1452,12 @@ function renderInvoicesPage(){
   const autoNote = document.getElementById('autoInvoiceNote');
   const manualNote = document.getElementById('manualInvoiceNote');
   const autoFillBtn = document.getElementById('autoFillAqabaAggBtn');
+  const clearAutoBtn = document.getElementById('clearAutoAqabaAggBtn');
   if(addBtn) addBtn.style.display = isAutoManagedGroup(g) ? 'none' : '';
   if(autoNote) autoNote.style.display = isAutoManagedGroup(g) ? '' : 'none';
   if(manualNote) manualNote.style.display = isAutoManagedGroup(g) ? 'none' : '';
   if(autoFillBtn) autoFillBtn.style.display = (g && g.id==='aqaba') ? '' : 'none';
+  if(clearAutoBtn) clearAutoBtn.style.display = (g && g.id==='aqaba') ? '' : 'none';
   if(autoNote && g){
     autoNote.textContent = g.id==='amman'
       ? 'الترتيب هون محسوب تلقائياً من عمودي "ترتيب - عمان" و"رقم فاتورة - عمان" بصفحة "ربط الأصناف" — عدّل من هناك.'
