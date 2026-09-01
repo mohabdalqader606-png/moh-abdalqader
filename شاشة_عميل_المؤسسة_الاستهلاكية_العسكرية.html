@@ -299,6 +299,11 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     <div class="row-actions" style="margin:6px 0 0;">
       <button class="btn-ghost btn-sm" onclick="exportMappingToExcel()">⬇ تصدير Excel</button>
       <button class="btn-ghost btn-sm" onclick="printSection('mapTable','ربط الأصناف')">🖨️ طباعة</button>
+      <label class="btn-ghost btn-sm" style="cursor:pointer; display:inline-flex; align-items:center; gap:6px; border-color:var(--crimson); color:var(--crimson);">
+        🩹 استرجاع ترتيب الفواتير بس من نسخة احتياطية
+        <input type="file" id="restoreOrderInput" accept=".json" style="display:none;" onchange="restoreOrderingOnly(event)">
+      </label>
+      <span class="status-msg" id="restoreOrderMsg"></span>
     </div>
 
     <div class="tbl-wrap">
@@ -889,15 +894,21 @@ function saveState(){
   catch(e){ console.warn('تعذر الحفظ المحلي', e); }
   queueCloudSave();
 }
-/* ==================== حفظ/تحميل الحالة الكاملة على سيرفر مشترك (Supabase) — نفس بيانات localStorage بالضبط ==================== */
+/* ==================== حفظ/تحميل الحالة الكاملة على سيرفر مشترك (Supabase) — نفس بيانات localStorage بالضبط ====================
+   حماية أساسية ضد فقدان بيانات: ما نسمح بأي رفع (push) للسيرفر قبل ما نكون سحبنا (pull) آخر نسخة موجودة
+   فيه مرة وحدة أول — هيك جهاز جديد فاضي (localStorage فاضي، أول تسجيل دخول) ما يقدر يستبدل بيانات حقيقية
+   موجودة بالسيرفر بنسخة فاضية/افتراضية قبل ما يشوفها أصلاً. */
 let cloudSaveTimer = null;
+let cloudSynced = false; // بيصير true بعد أول محاولة سحب من السيرفر هالجلسة (نجحت أو ما لقت شي — المهم إنه صار فيه فحص)
 function queueCloudSave(){
   if(!sb || !curUser || !roleEdit) return; // بدون تسجيل دخول بصلاحية تعديل: يضل الحفظ محلي بس
+  if(!cloudSynced) return; // حماية: ما نرفع قبل ما نتأكد شفنا آخر نسخة بالسيرفر أول
   clearTimeout(cloudSaveTimer);
   cloudSaveTimer = setTimeout(pushStateToCloud, 1500);
 }
 async function pushStateToCloud(){
-  if(!sb || !curUser || !roleEdit) return;
+  if(!sb || !curUser || !roleEdit || !cloudSynced) return;
+  if(!ITEMS.length){ return; } // حماية: ما نرفع أبداً لو صار ITEMS فاضي بالغلط (بدل ما يمسح نسخة السيرفر)
   try{
     const data = {ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, VOUCHER_META, DUMMY_INV_ITEMS, INVOICE_LOG, PRINT_ASSETS, BRANCHES, BRANCH_CODE_MAP};
     await sb.from('mil_app_state').upsert({id:'main', data, updated_by:curUser.id, updated_at:new Date().toISOString()});
@@ -910,7 +921,7 @@ async function pullStateFromCloud(){
   if(!sb || !curUser) return;
   try{
     const {data, error} = await sb.from('mil_app_state').select('data, updated_at').eq('id','main').maybeSingle();
-    if(error || !data || !data.data) return;
+    if(error || !data || !data.data){ cloudSynced = true; return; }
     const d = data.data;
     if(Array.isArray(d.ITEMS)) ITEMS = d.ITEMS;
     if(Array.isArray(d.GROUPS) && d.GROUPS.length) GROUPS = d.GROUPS;
@@ -929,6 +940,7 @@ async function pullStateFromCloud(){
     if(!GROUPS.find(g=>g.id===currentGroupId)) currentGroupId = GROUPS[0] ? GROUPS[0].id : null;
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, VOUCHER_META, DUMMY_INV_ITEMS, INVOICE_LOG, PRINT_ASSETS, BRANCHES, BRANCH_CODE_MAP}));
     switchPage(currentPage||'mapping');
+    cloudSynced = true;
     const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ تم تحميل آخر نسخة من السيرفر المشترك'; el.className='status-msg ok'; }
   }catch(e){ console.warn('تعذر التحميل من السيرفر المشترك', e); }
 }
@@ -1242,6 +1254,42 @@ function exportMappingToExcel(){
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'ربط الأصناف');
   XLSX.writeFile(wb, 'ربط_الأصناف.xlsx');
+}
+// استرجاع جزئي وآمن: بياخذ بس أعمدة ترتيب/رقم فاتورة الأصناف من ملف نسخة احتياطية (JSON) قديم،
+// ويطبّقها فوق ITEMS الحالية (مطابقة برمزنا) — بدون ما يلمس أي شي تاني (أسعار، أسماء، أو أي بيانات
+// أحدث انعملت بعد تاريخ هاي النسخة الاحتياطية).
+function restoreOrderingOnly(event){
+  const file = event.target.files[0];
+  event.target.value = '';
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e=>{
+    let backup;
+    try{ backup = JSON.parse(e.target.result); }
+    catch(err){ flash('restoreOrderMsg','ملف غير صالح — لازم يكون نفس ملف "نسخة احتياطية" الأصلي (JSON).', false); return; }
+    if(!Array.isArray(backup.ITEMS) || !backup.ITEMS.length){ flash('restoreOrderMsg','هاد الملف ما فيه بيانات أصناف (ITEMS) — تأكد إنه ملف النسخة الاحتياطية الصح.', false); return; }
+    const ORDER_FIELDS = ['ammanOrder','ammanInvoiceNo','aqabaAggOrder','aqabaAggInvoiceNo'];
+    const byOurCode = new Map(backup.ITEMS.map(it=>[String(it.ourCode||'').trim(), it]));
+    let matched = 0, updated = 0, hadAnyOrderInBackup = 0;
+    ITEMS.forEach(it=>{
+      const src = byOurCode.get(String(it.ourCode||'').trim());
+      if(!src) return;
+      matched++;
+      const hasOrder = ORDER_FIELDS.some(f=> src[f]!==undefined && src[f]!==null && src[f]!=='');
+      if(hasOrder) hadAnyOrderInBackup++;
+      let changed = false;
+      ORDER_FIELDS.forEach(f=>{
+        const v = src[f];
+        if(v!==undefined && v!==null && v!=='' && it[f]!==v){ it[f]=v; changed=true; }
+      });
+      if(changed) updated++;
+    });
+    saveState();
+    renderMappingTable();
+    flash('restoreOrderMsg', `✔ رجّعنا ترتيب الفواتير لـ${updated} صنف (من أصل ${matched} صنف تطابق رمزه بين النسخة الحالية والاحتياطية، منهم ${hadAnyOrderInBackup} كان فيه ترتيب بالنسخة القديمة). باقي كل بيانات الأصناف (أسعار، أسماء، إلخ) زي ما هي بدون أي تغيير.`, true);
+  };
+  reader.onerror = ()=> flash('restoreOrderMsg','تعذر قراءة الملف.', false);
+  reader.readAsText(file, 'UTF-8');
 }
 
 /* ==================== تصميم ترتيب الفواتير ==================== */
@@ -4124,8 +4172,9 @@ async function onSignedIn(user){
   document.getElementById('uRole').textContent = user.email + ' · ' + roleAr + (roleEdit ? '' : ' · 👁 مطالعة فقط');
   document.getElementById('userbox').style.display = 'flex';
   document.getElementById('loginView').style.display = 'none';
-  document.getElementById('appView').style.display = 'block';
+  // نسحب آخر نسخة من السيرفر المشترك *قبل* ما نكشف الشاشة — هيك ما ينعرض/ينتعدل عليه أي بيانات محلية قديمة/فاضية قبل ما نتأكد من آخر نسخة، وما ينفتح المجال لأي حفظ تلقائي يستبق السحب
   await pullStateFromCloud();
+  document.getElementById('appView').style.display = 'block';
 }
 (async function bootAuth(){
   if(!window.supabase){ flash('loginMsg','تعذر تحميل مكتبة الاتصال — تحقق من الإنترنت وحدّث الصفحة', false); return; }
