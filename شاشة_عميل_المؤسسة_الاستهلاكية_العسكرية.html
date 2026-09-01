@@ -387,7 +387,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
 
     <div class="input-panel" style="border-bottom:1px solid var(--line);">
       <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;"><span class="num">3</span><b style="font-size:13px;">مطابقة كميات الكشف مع سندات التحويل (011)</b></div>
-      <div class="hint">بيقارن <b>كميات الكشف (كمية عمان + كمية العقبة)</b> مقابل <b>صافي كميات مستودع 011</b> من السندات المستوردة بصفحة "سندات التحويل" (بوحدة المؤسسة/حبة). الصافي = الداخل لـ011 − المرتجع الحقيقي، والتحويلات بين 011 و007 حركة داخلية ما بتنحسب. أي صنف فيه فرق بيظهر بصف ملوّن، ومن زر "تفاصيل" بتشوف توزيع التوريد عالفروع وكل السندات بنوعها — ولو الفرق بيطابق سند معيّن بالظبط منأشّرلك عليه وعلى فرعه.</div>
+      <div class="hint">بيقارن <b>كمية كشف عمان فقط</b> مقابل <b>صافي كميات مستودع 011 بعد استبعاد الكمية يلي طبعنا فيها فاتورة عقبة فعلياً</b> (لأنه مسار العقبة: سند تحويل لـ011 ثم فاتورة — تلك الكمية تخصّ كشف العقبة لحالها، مش داخلة هون). الصافي الخام = الداخل لـ011 − المرتجع الحقيقي، والتحويلات بين 011 و007 حركة داخلية ما بتنحسب. أي صنف فيه فرق بيظهر بصف ملوّن، ومن زر "تفاصيل" بتشوف توزيع التوريد عالفروع وكل السندات بنوعها — ولو الفرق بيطابق سند معيّن بالظبط منأشّرلك عليه وعلى فرعه.</div>
       <div class="row-actions">
         <button class="btn-primary btn-sm" onclick="compareStatementTransfers()">🆚 مطابقة الكميات</button>
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="cmpOnlyDiff" checked onchange="compareStatementTransfers()"> عرض الأصناف يلي فيها فرق بس</label>
@@ -3771,14 +3771,27 @@ function renderStatementPage(){
 }
 
 /* ==================== مطابقة كميات الكشف مع سندات التحويل (011) ====================
-   المطابقة المطلوبة: كميات كشف المؤسسة (كمية عمان + كمية العقبة) مقابل صافي كميات مستودع 011.
-   صافي 011 = الداخل لـ011 (من مستودعاتنا) − المرتجع الحقيقي (الطالع من 011 لغير 007).
+   المطابقة المطلوبة: كمية كشف المؤسسة "عمان" فقط مقابل صافي كميات مستودع 011 بعد استبعاد
+   الكمية يلي طبعنا فيها فاتورة عقبة فعلياً (لأنه مسار العقبة: سند تحويل لـ011 ثم فاتورة —
+   تلك الكمية بتطلع من 011 وبتقابلها كشف العقبة لحالها، مش داخلة بمطابقة عمان هون).
+   صافي 011 (الخام) = الداخل لـ011 (من مستودعاتنا) − المرتجع الحقيقي (الطالع من 011 لغير 007).
    التحويلات بين 011 و007 حركة داخلية ضمن بضاعة المؤسسة — لا تنضاف ولا تنطرح، بس بتظهر بالتفاصيل. */
 function compareStatementTransfers(){
   const box = document.getElementById('cmpResultBox');
   const sumRow = document.getElementById('cmpSummaryRow');
   if(!STATEMENT.length){ flash('cmpMsg','استورد كشف المؤسسة أول (القسم 1 فوق).', false); return; }
   if(!TRANSFERS.length){ flash('cmpMsg','ما في سندات تحويل مستوردة — استوردها بصفحة "سندات التحويل (011)".', false); return; }
+
+  // كمية كل صنف اتطبعت فعلياً بفواتير العقبة (من سجل الفواتير المطبوعة) — هاي بتخرج من صافي 011 قبل المقارنة مع كشف عمان
+  const aqabaInvoicedByCode = new Map();
+  INVOICE_LOG.forEach(r=>{
+    if(!isAqabaGroup({name:r.groupName||''})) return;
+    (r.lines||[]).forEach(l=>{
+      const code = String(l.theirCode||'').trim();
+      if(!code) return;
+      aqabaInvoicedByCode.set(code, (aqabaInvoicedByCode.get(code)||0) + (l.qty||0));
+    });
+  });
 
   // صافي كمياتنا (بوحدة المؤسسة/حبة) لكل صنف من كل السندات المستوردة
   const byTheir = new Map();
@@ -3818,10 +3831,14 @@ function compareStatementTransfers(){
     const code = String(s.theirCode).trim();
     seen.add(code);
     const e = byTheir.get(code);
-    rows.push({theirCode:code, theirName:s.theirName||(e&&e.theirName)||'', stQty:(s.qtyAmman||0)+(s.qtyAqaba||0), trQty:e?e.net:0, e});
+    const trQty = (e?e.net:0) - (aqabaInvoicedByCode.get(code)||0);
+    rows.push({theirCode:code, theirName:s.theirName||(e&&e.theirName)||'', stQty:(s.qtyAmman||0), trQty, e});
   });
   byTheir.forEach((e,code)=>{
-    if(!seen.has(code)) rows.push({theirCode:code, theirName:e.theirName, stQty:0, trQty:e.net, e, notInStatement:true});
+    if(!seen.has(code)){
+      const trQty = e.net - (aqabaInvoicedByCode.get(code)||0);
+      rows.push({theirCode:code, theirName:e.theirName, stQty:0, trQty, e, notInStatement:true});
+    }
   });
   const EPS = 0.001;
   rows.forEach(r=>{ r.diff = r.trQty - r.stQty; r.hasDiff = Math.abs(r.diff) > EPS; });
@@ -3838,8 +3855,8 @@ function compareStatementTransfers(){
     <div class="card"><div class="lbl">أصناف مقارنة</div><div class="val">${rows.length}</div></div>
     <div class="card good"><div class="lbl">متطابقة</div><div class="val">${rows.length-diffCount}</div></div>
     <div class="card ${diffCount?'warn':'good'}"><div class="lbl">فيها فرق</div><div class="val">${diffCount}</div></div>
-    <div class="card"><div class="lbl">كمية الكشف (عمان + عقبة)</div><div class="val">${fmtNum(totalSt)}</div></div>
-    <div class="card"><div class="lbl">صافي كميات 011</div><div class="val">${fmtNum(totalTr)}</div></div>
+    <div class="card"><div class="lbl">كمية الكشف (عمان)</div><div class="val">${fmtNum(totalSt)}</div></div>
+    <div class="card"><div class="lbl">صافي كميات 011 (بعد استبعاد فواتير العقبة)</div><div class="val">${fmtNum(totalTr)}</div></div>
     <div class="card ${Math.abs(totalTr-totalSt)>EPS?'warn':'good'}"><div class="lbl">صافي الفرق (سندات - كشف)</div><div class="val">${fmtNum(totalTr-totalSt)}</div></div>
   `;
 
@@ -3857,7 +3874,7 @@ function compareStatementTransfers(){
   const TYPE_LABELS = {in:'توريد إلى 011', internal:'داخلي مع 007', return:'مرتجع من 011'};
   let html = warnHtml + `<div class="tbl-wrap" style="max-height:520px; padding:0;">
     <table class="grid">
-      <thead><tr><th>رقم المادة</th><th>اسم المادة</th><th>كمية الكشف (عمان + عقبة)</th><th>صافي كميات 011 (حبة)</th><th>الفرق (سندات - كشف)</th><th></th></tr></thead>
+      <thead><tr><th>رقم المادة</th><th>اسم المادة</th><th>كمية الكشف (عمان)</th><th>صافي كميات 011 بعد استبعاد فواتير العقبة</th><th>الفرق (سندات - كشف)</th><th></th></tr></thead>
       <tbody>`;
   shown.forEach((r,idx)=>{
     const detId = 'cmpDet_'+idx;
