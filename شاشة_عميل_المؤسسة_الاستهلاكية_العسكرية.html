@@ -3831,13 +3831,15 @@ function compareStatementTransfers(){
     const code = String(s.theirCode).trim();
     seen.add(code);
     const e = byTheir.get(code);
-    const trQty = (e?e.net:0) - (aqabaInvoicedByCode.get(code)||0);
-    rows.push({theirCode:code, theirName:s.theirName||(e&&e.theirName)||'', stQty:(s.qtyAmman||0), trQty, e});
+    const aqInv = aqabaInvoicedByCode.get(code)||0;
+    const trQty = (e?e.net:0) - aqInv;
+    rows.push({theirCode:code, theirName:s.theirName||(e&&e.theirName)||'', stQty:(s.qtyAmman||0), trQty, e, rawNet:e?e.net:0, aqInv});
   });
   byTheir.forEach((e,code)=>{
     if(!seen.has(code)){
-      const trQty = e.net - (aqabaInvoicedByCode.get(code)||0);
-      rows.push({theirCode:code, theirName:e.theirName, stQty:0, trQty, e, notInStatement:true});
+      const aqInv = aqabaInvoicedByCode.get(code)||0;
+      const trQty = e.net - aqInv;
+      rows.push({theirCode:code, theirName:e.theirName, stQty:0, trQty, e, notInStatement:true, rawNet:e.net, aqInv});
     }
   });
   const EPS = 0.001;
@@ -3916,6 +3918,7 @@ function compareStatementTransfers(){
         </tr>`;
       }).join('');
       html += `<tr id="${detId}" style="display:none;"><td colspan="6" style="background:var(--paper); padding:10px 14px;">
+        <div class="hint" style="margin-bottom:6px;">صافي 011 الخام: <b class="mono">${fmtNum(r.rawNet)}</b> − فواتير عقبة مطبوعة مستبعدة: <b class="mono">${fmtNum(r.aqInv)}</b> = الناتج: <b class="mono">${fmtNum(r.trQty)}</b></div>
         ${conclusion}
         <div style="margin-bottom:6px;"><b style="font-size:12px;">توزيع التوريد لـ011 بالفروع (حبة):</b> ${brHtml||'—'}</div>
         <table class="grid" style="max-width:680px;">
