@@ -565,17 +565,17 @@ ORDER BY T0."DocNum"</code>
 
     <div class="input-panel" style="border-bottom:1px solid var(--line);">
       <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;"><span class="num">4</span><b style="font-size:13px;">سجل فواتير الصرف الوهمي</b></div>
-      <div class="hint">سجّل رقم/تاريخ/فرع/مبلغ كل فاتورة صرف وهمي وصلتك (تقدر تضيف أكثر من فاتورة — 3 أو 4 أو أكثر)، وبعدين صدّرهم كشف Excel لأي فترة تختارها.</div>
+      <div class="hint">بتتعبّى تلقائياً من فواتير الصرف الوهمي يلي تعتمدها/تستوردها فوق (قسم 5) — رقم/تاريخ/سوق/قيمة/مستودع كل فاتورة. تقدر كمان تضيف أو تعدّل يدوياً، وبعدين تصدّرهم كشف Excel لأي فترة تختارها.</div>
       <div class="tbl-wrap" style="max-height:260px; padding:0; margin-top:6px;">
         <table class="grid" id="dummyInvTable">
-          <thead><tr><th>رقم الفاتورة</th><th>التاريخ</th><th>اسم الفرع</th><th>المبلغ</th><th></th></tr></thead>
+          <thead><tr><th>رقم الفاتورة</th><th>التاريخ</th><th>اسم الفرع</th><th>المبلغ</th><th>مستودع</th><th></th></tr></thead>
           <tbody id="dummyInvTbody"></tbody>
         </table>
       </div>
       <div class="row-actions">
-        <button class="btn-ghost btn-sm" onclick="addDummyInvoiceRow()">+ إضافة فاتورة</button>
+        <button class="btn-ghost btn-sm" onclick="addDummyInvoiceRow()">+ إضافة فاتورة يدوياً</button>
       </div>
-      <div class="hint" style="margin-top:10px;">تصدير كشف Excel (تسلسل / تاريخ / اسم الفرع / رقم الفاتورة / المبلغ) — اختياري لفترة معيّنة:</div>
+      <div class="hint" style="margin-top:10px;">تصدير كشف Excel (تسلسل / تاريخ / رقم الفاتورة / السوق / قيمة الفاتورة / مستودع) — اختياري لفترة معيّنة:</div>
       <div class="row-actions">
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;">من تاريخ <input type="date" id="dummyExportFrom"></label>
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;">إلى تاريخ <input type="date" id="dummyExportTo"></label>
@@ -2902,8 +2902,32 @@ function upsertDummyInvItems(newItems){
   DUMMY_INV_ITEMS = DUMMY_INV_ITEMS.filter(r=> !touchedInvNos.has(normDocNum(r.invoiceNo)));
   const replaced = before - DUMMY_INV_ITEMS.length;
   DUMMY_INV_ITEMS.push(...newItems);
+  syncDummyInvoiceHeaders(newItems);
   saveState();
   return replaced;
+}
+/* بيعبّي "سجل فواتير الصرف الوهمي" (قسم 4) تلقائياً من أصناف الفواتير المستوردة/المعتمدة —
+   رقم الفاتورة، التاريخ، السوق، والمبلغ (مجموع قيم أسطرها) — بدون ما تحتاج تكتبهم يدوياً.
+   لو الفاتورة موجودة أصلاً بالسجل (نفس رقمها) بيحدّثها بدل ما يكرّرها. */
+function syncDummyInvoiceHeaders(newItems){
+  const byInv = new Map();
+  newItems.forEach(r=>{
+    const key = normDocNum(r.invoiceNo);
+    if(!key) return;
+    if(!byInv.has(key)) byInv.set(key, {docNum:r.invoiceNo, date:r.date||'', branch:r.market||'', amount:0});
+    const g = byInv.get(key);
+    g.amount += (r.value!=null ? +r.value : (+r.qty||0)*(+r.price||0));
+    if(!g.date && r.date) g.date = r.date;
+    if(!g.branch && r.market) g.branch = r.market;
+  });
+  byInv.forEach((info, key)=>{
+    if(info.branch && !BRANCHES.includes(info.branch)) BRANCHES.push(info.branch);
+    const row = DUMMY_INVOICES.find(x=>normDocNum(x.docNum)===key);
+    const amount = Math.round(info.amount*1000)/1000;
+    if(row){ row.docNum = info.docNum; row.date = info.date||row.date; row.branch = info.branch||row.branch; row.amount = amount; }
+    else DUMMY_INVOICES.push({id:uid(), docNum:info.docNum, date:info.date, branch:info.branch, amount, warehouse:''});
+  });
+  renderDummyInvoices();
 }
 /* ==================== قراءة فواتير الصرف الوهمي بالذكاء الاصطناعي (Claude) + حفظ مشترك على Supabase ==================== */
 const DI_ANTH_MODEL = 'claude-sonnet-5';
@@ -2915,12 +2939,12 @@ const DUMMY_INV_PROMPT = `أنت خبير بقراءة "فاتورة الصرف 
 
 قواعد صارمة:
 1) لكل فاتورة منفصلة أضف عنصراً مستقلاً في مصفوفة invoices — لا تدمج فاتورتين مع بعض ولا تتجاوز أي فاتورة أو صفحة.
-2) لكل فاتورة استخرج: invoiceNo (رقم الفاتورة كما هو مطبوع، أرقام فقط)، date (تاريخ الفاتورة محوّلاً لصيغة YYYY-MM-DD)، market (اسم السوق أو الفرع كما هو مكتوب بالضبط).
+2) لكل فاتورة استخرج: invoiceNo (رقم الفاتورة كما هو مطبوع، أرقام فقط)، date (تاريخ الفاتورة محوّلاً لصيغة YYYY-MM-DD)، market (اسم السوق أو الفرع كما هو مكتوب بالضبط)، warehouse (رقم/كود المستودع لو مطبوع على الفاتورة — وإلا اتركه null، لا تخترعه).
 3) لكل صنف بالفاتورة استخرج: code (رمز المادة)، name (اسم المادة كما هو مكتوب)، qty (الكمية رقماً)، price (سعر الوحدة رقماً)، value (قيمة/إجمالي السطر رقماً).
 4) اقرأ كل رقم بدقة متناهية رقماً رقماً، وتحقق داخلياً أن qty × price ≈ value لكل سطر. أي رقم أو رمز غير واضح بالصورة أو لا يمكن حسم قراءته بثقة — ضعه null بدل التخمين. لا تخترع رقماً أو رمزاً أبداً.
 5) تجاهل صفوف المجاميع الفارغة التي لا تمثل صنفاً فعلياً.
 6) أجب بـ JSON فقط بدون أي نص أو markdown إضافي وبالضبط بهذا الشكل:
-{"invoices":[{"invoiceNo":"","date":"YYYY-MM-DD","market":"","items":[{"code":"","name":"","qty":0,"price":0,"value":0}]}]}`;
+{"invoices":[{"invoiceNo":"","date":"YYYY-MM-DD","market":"","warehouse":"","items":[{"code":"","name":"","qty":0,"price":0,"value":0}]}]}`;
 
 let DI_READ = {busy:false, invoices:[], fname:''};
 
@@ -3032,7 +3056,7 @@ async function diHandleFiles(evt){
       const {text, usage}=await diCallAPI(b64);
       const parsed=diSafeParse(text);
       const invs=(parsed.invoices||[]).map(inv=>({
-        invoiceNo: inv.invoiceNo||'', date: inv.date||'', market: inv.market||'',
+        invoiceNo: inv.invoiceNo||'', date: inv.date||'', market: inv.market||'', warehouse: inv.warehouse||'',
         items:(inv.items||[]).map(it=>diBackfillItem({code:it.code??null, name:it.name??null, qty:it.qty??null, price:it.price??null, value:it.value??null})),
         srcFile: files[i].name
       }));
@@ -3077,6 +3101,7 @@ function diRenderReview(){
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;">رقم الفاتورة <input type="text" data-di="${idx}" data-f="invoiceNo" value="${esc(inv.invoiceNo)}" style="width:150px; direction:ltr; text-align:left;" oninput="diEditField(this)"></label>
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;">التاريخ <input type="date" data-di="${idx}" data-f="date" value="${esc(inv.date)}" oninput="diEditField(this)"></label>
         <label style="font-size:12px; display:flex; align-items:center; gap:6px; flex:1;">السوق <input type="text" data-di="${idx}" data-f="market" value="${esc(inv.market)}" style="width:100%;" oninput="diEditField(this)"></label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">مستودع <input type="text" data-di="${idx}" data-f="warehouse" value="${esc(inv.warehouse||'')}" style="width:70px; direction:ltr; text-align:left;" oninput="diEditField(this)"></label>
         <span class="hint" style="direction:ltr;">${esc(inv.srcFile||'')}</span>
       </div>
       <table class="grid"><thead><tr><th style="width:110px;">رمز الصنف</th><th>اسم الصنف</th><th style="width:80px;">الكمية</th><th style="width:80px;">السعر</th><th style="width:90px;">القيمة</th></tr></thead>
@@ -3120,6 +3145,13 @@ function diInvoiceToItems(inv){
     qty: +it.qty||0, price: it.price==null?0:+it.price, value: it.value==null?(+it.qty*(it.price||0)):+it.value
   }));
 }
+// مستودع الفاتورة (لو الذكاء الاصطناعي قدر يقرأه) مو جزء من سطور DUMMY_INV_ITEMS نفسها،
+// فبنحطه مباشرة على صف "سجل فواتير الصرف الوهمي" بعد ما syncDummyInvoiceHeaders يبنيه/يحدّثه.
+function diSetInvoiceWarehouse(inv){
+  if(!inv.warehouse) return;
+  const row = DUMMY_INVOICES.find(x=>normDocNum(x.docNum)===normDocNum(inv.invoiceNo));
+  if(row){ row.warehouse = inv.warehouse; saveState(); renderDummyInvoices(); }
+}
 async function diApproveInvoice(idx){
   const inv=DI_READ.invoices[idx];
   const msgId='diInvMsg'+idx;
@@ -3127,6 +3159,7 @@ async function diApproveInvoice(idx){
   const newItems=diInvoiceToItems(inv);
   if(!newItems.length){ flash(msgId,'ما في صنف فيه رمز وكمية صالحين.', false); return; }
   upsertDummyInvItems(newItems);
+  diSetInvoiceWarehouse(inv);
   await diPushToCloud(newItems);
   DI_READ.invoices.splice(idx,1);
   diRenderReview();
@@ -3142,6 +3175,7 @@ async function diApproveAll(){
     const newItems=diInvoiceToItems(inv);
     if(!newItems.length){ remaining.push(inv); skipped++; continue; }
     upsertDummyInvItems(newItems);
+    diSetInvoiceWarehouse(inv);
     await diPushToCloud(newItems);
     ok++;
   }
@@ -3177,6 +3211,7 @@ async function diPullFromCloud(){
     const touched=new Set(cloudItems.map(r=>normDocNum(r.invoiceNo)));
     DUMMY_INV_ITEMS = DUMMY_INV_ITEMS.filter(r=>!touched.has(normDocNum(r.invoiceNo)));
     DUMMY_INV_ITEMS.push(...cloudItems);
+    syncDummyInvoiceHeaders(cloudItems);
     saveState();
     renderDailyInvoiceMatch();
     flash('diMsg', `تم تحميل ${cloudItems.length} سطر من السيرفر المشترك.`, true);
@@ -3465,7 +3500,7 @@ function renderDailyInvoiceMatch(){
 
 /* ==================== سجل فواتير الصرف الوهمي ==================== */
 function addDummyInvoiceRow(){
-  DUMMY_INVOICES.push({id: uid(), docNum:'', date:'', branch:'', amount:0});
+  DUMMY_INVOICES.push({id: uid(), docNum:'', date:'', branch:'', amount:0, warehouse:''});
   saveState();
   renderDummyInvoices();
 }
@@ -3492,8 +3527,9 @@ function renderDummyInvoices(){
       <option value="__new__">+ إضافة فرع جديد...</option>
     </select></td>
     <td><input type="number" step="any" value="${r.amount}" onchange="updateDummyInvoiceField('${r.id}','amount',this.value)" style="width:100px;"></td>
+    <td><input type="text" value="${esc(r.warehouse||'')}" onchange="updateDummyInvoiceField('${r.id}','warehouse',this.value)" style="width:60px; direction:ltr; text-align:left;"></td>
     <td><button class="btn-danger tiny-btn" onclick="deleteDummyInvoiceRow('${r.id}')">حذف</button></td>
-  </tr>`).join('') || '<tr><td colspan="5" class="muted" style="padding:10px;">ما في فواتير مسجلة بعد — اضغط "إضافة فاتورة".</td></tr>';
+  </tr>`).join('') || '<tr><td colspan="6" class="muted" style="padding:10px;">ما في فواتير مسجلة بعد — رح تتعبى تلقائياً لما تعتمد فواتير من قسم "مطابقة يومية" فوق، أو اضغط "إضافة فاتورة يدوياً".</td></tr>';
 }
 function handleBranchSelect(selectEl, id){
   if(selectEl.value === '__new__'){
@@ -3507,6 +3543,7 @@ function handleBranchSelect(selectEl, id){
   }
   updateDummyInvoiceField(id, 'branch', selectEl.value);
 }
+function ddmmyyyy(iso){ return iso ? iso.split('-').reverse().join('-') : ''; }
 function exportDummyInvoicesExcel(){
   if(!window.XLSX){ flash('dummyExportMsg','مكتبة تصدير Excel ما تحمّلت (تحتاج اتصال إنترنت أول مرة).', false); return; }
   const from = document.getElementById('dummyExportFrom').value;
@@ -3517,14 +3554,26 @@ function exportDummyInvoicesExcel(){
   rows = rows.slice().sort((a,b)=> a.date.localeCompare(b.date));
   if(!rows.length){ flash('dummyExportMsg','ما في فواتير بهاي الفترة (تأكد إنك عبّيت التاريخ لكل فاتورة).', false); return; }
 
-  const data = [['التسلسل','التاريخ','اسم الفرع','رقم الفاتورة','المبلغ']];
-  rows.forEach((r,idx)=> data.push([idx+1, r.date, r.branch, r.docNum, r.amount]));
+  const total = rows.reduce((s,r)=> s+(+r.amount||0), 0);
+  const monthSrc = to || from || rows[rows.length-1].date;
+  const [my, mm] = monthSrc.split('-');
+  const monthLabel = (+mm) + '-' + my;
+  const rangeFrom = ddmmyyyy(from || rows[0].date);
+  const rangeTo = ddmmyyyy(to || rows[rows.length-1].date);
+
+  const data = [
+    ['كشف خلاصة فواتير المؤسسة الاستهلاكية العسكرية لشهر', '', monthLabel, '', '', '', 'مجموع الحركة', fmt3(total)],
+    ['استلامات المؤسسة الاستهلاكية العسكرية من '+rangeFrom+' الى '+rangeTo],
+    [],
+    ['التسلسل','تاريخ','رقم الفاتورة','السوق','قيمة الفاتورة','مستودع']
+  ];
+  rows.forEach((r,idx)=> data.push([idx+1, ddmmyyyy(r.date), r.docNum, r.branch, r.amount, r.warehouse||'']));
 
   const ws = XLSX.utils.aoa_to_sheet(data);
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'كشف الفواتير');
   XLSX.writeFile(wb, `كشف_فواتير_الصرف_الوهمي.xlsx`);
-  flash('dummyExportMsg', `تم تصدير ${rows.length} فاتورة.`, true);
+  flash('dummyExportMsg', `تم تصدير ${rows.length} فاتورة — مجموع الحركة ${fmt3(total)}.`, true);
 }
 
 function getFilteredInvoiceLogRecords(){
