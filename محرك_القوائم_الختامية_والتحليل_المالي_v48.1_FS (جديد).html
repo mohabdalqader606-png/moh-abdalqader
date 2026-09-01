@@ -243,8 +243,10 @@ body.glass #tip{background:rgba(255,255,255,.95);backdrop-filter:blur(8px)}
  <div class="row" style="margin:8px 0;gap:8px">
   <button class="btn gold sm" onclick="exportJSON();toast('تم تنزيل النسخة الاحتياطية')" title="يحفظ كل بيانات هذا الملف الشركة الحالي بملف JSON على جهازك">💾 نسخة احتياطية</button>
   <label class="btn ghost sm" style="cursor:pointer" title="يستعيد بيانات من ملف نسخة احتياطية سابق">↩️ استعادة نسخة احتياطية<input type="file" id="fJsonQuick" accept=".json" style="display:none"></label>
+  <label class="btn ghost sm" style="cursor:pointer;color:var(--gold2,#B8860B);border-color:var(--gold2,#B8860B)" title="يدمج بس تصنيف الحسابات/البنوك أو القيود اليدوية من ملف تصدير جزئي، بدون ما يمسح أي بيانات ثانية">🩹 استيراد تصنيف/قيود فقط (دمج آمن)<input type="file" id="fPartial" accept=".json" style="display:none"></label>
   <button class="btn ghost sm" style="color:var(--coral,#c0392b);border-color:var(--coral,#c0392b)" onclick="clearAllQueries()" title="يمسح كل بيانات الكويريات المحمّلة (المبيعات، المشتريات، الربحية...) — الحسابات والإعدادات تبقى كما هي">🗑️ حذف كل الكويريات</button>
   <span class="hint">قبل أي حذف، خذ نسخة احتياطية أولاً — الاستعادة سهلة بملف واحد</span>
+  <span class="status-msg" id="partialImportMsg"></span>
  </div>
  <div class="row" style="margin:8px 0"><span id="dataCenterSum" class="badge ok" style="font-size:13px"></span><span class="hint">البنود الملوّنة أدناه ✓ محمّلة مسبقاً وتظهر مطوية — افتحها بالضغط لو حبيت تستبدل بياناتها</span></div>
  <div id="dataCenterCoverage"></div>
@@ -1726,6 +1728,29 @@ async function loadState(){await loadProfiles();let o=null;await loadBig();try{o
 function exportJSON(){saveState();const full={...packState()};BIGKEYS.forEach(k=>full[k]=S[k]);const b=new Blob([JSON.stringify(full)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='القوائم_الختامية_'+new Date().toISOString().slice(0,10)+'.json';a.click()}
 document.getElementById('fJson').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;readFileSmart(f,async txt=>{try{const o=JSON.parse(txt);S=unpackState(o);for(const k of BIGKEYS){if(S[k]!=null)await idbSet(LSK+':'+k,S[k])}await idbSet(LSK,packState());location.reload()}catch(x){alert('ملف غير صالح')}})});
 (function(){const el=document.getElementById('fJsonQuick');if(el)el.addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;readFileSmart(f,async txt=>{try{const o=JSON.parse(txt);S=unpackState(o);for(const k of BIGKEYS){if(S[k]!=null)await idbSet(LSK+':'+k,S[k])}await idbSet(LSK,packState());location.reload()}catch(x){alert('ملف غير صالح — تأكد إنه نسخة احتياطية صحيحة من هذه الأداة')}})})})();
+/* استيراد جزئي آمن: يدمج بس تصنيف الحسابات/البنوك (_kind:"classBank") أو القيود اليدوية (_kind:"adjOnly")
+   داخل S الحالي بدون ما يمسح أي بيانات ثانية (عكس fJson/fJsonQuick اللي بيستبدلوا S بالكامل). */
+function mergePartialImport(o){
+  let what='';
+  if(o.map || o.bank || o.banks || o.bankManual){
+    S.map = {...(S.map||{}), ...(o.map||{})};
+    S.bank = {...(S.bank||{}), ...(o.bank||{})};
+    S.banks = Array.from(new Set([...(S.banks||[]), ...(o.banks||[])]));
+    S.bankManual = {...(S.bankManual||{}), ...(o.bankManual||{})};
+    what += (what?' و':'')+'تصنيف الحسابات/البنوك';
+  }
+  if(Array.isArray(o.adj)){
+    const cur = S.adj||[];
+    const byId = new Map(cur.map(a=>[a.id,a]));
+    o.adj.forEach(a=>{ if(a && a.id) byId.set(a.id, a); });
+    S.adj = Array.from(byId.values());
+    what += (what?' و':'')+'القيود اليدوية';
+  }
+  if(!what) throw new Error('الملف ما فيه تصنيف حسابات/بنوك ولا قيود يدوية معروفة.');
+  saveState(); renderMap(); renderBankMap(); renderAdj(); adjClear();
+  return what;
+}
+(function(){const el=document.getElementById('fPartial');if(el)el.addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;e.target.value='';readFileSmart(f,txt=>{try{const o=JSON.parse(txt);const what=mergePartialImport(o);document.getElementById('partialImportMsg').textContent='✔ تم دمج: '+what+' — باقي البيانات (حسابات، أرصدة، مبيعات، إلخ) زي ما هي بدون أي تغيير.';document.getElementById('partialImportMsg').className='status-msg ok';toast('تم الدمج بنجاح')}catch(x){document.getElementById('partialImportMsg').textContent='✗ '+x.message;document.getElementById('partialImportMsg').className='status-msg err'}})})})();
 const FEED_CLEAR={
  '1':()=>{S.accounts={}},
  '2':()=>{S.opening={}},
