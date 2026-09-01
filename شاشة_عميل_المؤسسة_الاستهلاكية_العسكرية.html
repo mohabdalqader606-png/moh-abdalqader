@@ -211,7 +211,8 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       <b>الفكرة:</b> نربط رمزنا برمزهم مرة وحدة، ونحدد ترتيب كل صنف بكل فاتورة مرة وحدة — وبعدين كل شهر بس بنسقط الكميات على نفس القالب.
     </div>
     <div class="userbox" id="userbox" style="display:none;">
-      <div class="who"><b id="uName"></b><span id="uRole"></span></div>
+      <div class="who"><b id="uName"></b><span id="uRole"></span><span class="status-msg" id="cloudSyncMsg" style="margin-top:2px;"></span></div>
+      <button class="btn-ghost btn-sm" onclick="pullStateFromCloud()" title="تحميل آخر نسخة من السيرفر المشترك">🔄</button>
       <button class="btn-ghost btn-sm" onclick="doLogout()">خروج</button>
     </div>
   </div>
@@ -869,6 +870,50 @@ function ensureInvoiceDefaults(inv){
 function saveState(){
   try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, VOUCHER_META, DUMMY_INV_ITEMS, INVOICE_LOG, PRINT_ASSETS, BRANCHES, BRANCH_CODE_MAP})); }
   catch(e){ console.warn('تعذر الحفظ المحلي', e); }
+  queueCloudSave();
+}
+/* ==================== حفظ/تحميل الحالة الكاملة على سيرفر مشترك (Supabase) — نفس بيانات localStorage بالضبط ==================== */
+let cloudSaveTimer = null;
+function queueCloudSave(){
+  if(!sb || !curUser || !roleEdit) return; // بدون تسجيل دخول بصلاحية تعديل: يضل الحفظ محلي بس
+  clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = setTimeout(pushStateToCloud, 1500);
+}
+async function pushStateToCloud(){
+  if(!sb || !curUser || !roleEdit) return;
+  try{
+    const data = {ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, VOUCHER_META, DUMMY_INV_ITEMS, INVOICE_LOG, PRINT_ASSETS, BRANCHES, BRANCH_CODE_MAP};
+    await sb.from('mil_app_state').upsert({id:'main', data, updated_by:curUser.id, updated_at:new Date().toISOString()});
+    const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ محفوظ على السيرفر المشترك · '+new Date().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}); el.className='status-msg ok'; }
+  }catch(e){
+    const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '⚠ تعذر الحفظ على السيرفر المشترك — البيانات محفوظة محلياً بس'; el.className='status-msg err'; }
+  }
+}
+async function pullStateFromCloud(){
+  if(!sb || !curUser) return;
+  try{
+    const {data, error} = await sb.from('mil_app_state').select('data, updated_at').eq('id','main').maybeSingle();
+    if(error || !data || !data.data) return;
+    const d = data.data;
+    if(Array.isArray(d.ITEMS)) ITEMS = d.ITEMS;
+    if(Array.isArray(d.GROUPS) && d.GROUPS.length) GROUPS = d.GROUPS;
+    if(Array.isArray(d.TRANSFERS)) TRANSFERS = d.TRANSFERS;
+    if(Array.isArray(d.STATEMENT)) STATEMENT = d.STATEMENT;
+    if(Array.isArray(d.DUMMY_INVOICES)) DUMMY_INVOICES = d.DUMMY_INVOICES;
+    if(d.VOUCHER_META && typeof d.VOUCHER_META==='object') VOUCHER_META = d.VOUCHER_META;
+    if(Array.isArray(d.DUMMY_INV_ITEMS)) DUMMY_INV_ITEMS = d.DUMMY_INV_ITEMS;
+    if(Array.isArray(d.INVOICE_LOG)){ INVOICE_LOG = d.INVOICE_LOG; INVOICE_LOG.forEach(r=>{ if(!r.id) r.id = uid(); }); }
+    if(d.PRINT_ASSETS && typeof d.PRINT_ASSETS==='object') PRINT_ASSETS = {headerImg:d.PRINT_ASSETS.headerImg||DEFAULT_PRINT_ASSETS.headerImg, footerImg:d.PRINT_ASSETS.footerImg||DEFAULT_PRINT_ASSETS.footerImg};
+    if(Array.isArray(d.BRANCHES) && d.BRANCHES.length) BRANCHES = d.BRANCHES;
+    if(d.BRANCH_CODE_MAP && typeof d.BRANCH_CODE_MAP==='object') BRANCH_CODE_MAP = d.BRANCH_CODE_MAP;
+    backfillAqabaPrices();
+    GROUPS.forEach(g=>{ ensureGroupDefaults(g); (g.invoices||[]).forEach(ensureInvoiceDefaults); });
+    rebuildAutoInvoices();
+    if(!GROUPS.find(g=>g.id===currentGroupId)) currentGroupId = GROUPS[0] ? GROUPS[0].id : null;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, VOUCHER_META, DUMMY_INV_ITEMS, INVOICE_LOG, PRINT_ASSETS, BRANCHES, BRANCH_CODE_MAP}));
+    switchPage(currentPage||'mapping');
+    const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ تم تحميل آخر نسخة من السيرفر المشترك'; el.className='status-msg ok'; }
+  }catch(e){ console.warn('تعذر التحميل من السيرفر المشترك', e); }
 }
 
 /* ==================== تنقّل الصفحات ==================== */
@@ -3961,6 +4006,7 @@ async function onSignedIn(user){
   document.getElementById('userbox').style.display = 'flex';
   document.getElementById('loginView').style.display = 'none';
   document.getElementById('appView').style.display = 'block';
+  await pullStateFromCloud();
 }
 (async function bootAuth(){
   if(!window.supabase){ flash('loginMsg','تعذر تحميل مكتبة الاتصال — تحقق من الإنترنت وحدّث الصفحة', false); return; }
