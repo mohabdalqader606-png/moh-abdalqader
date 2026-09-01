@@ -390,9 +390,12 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
       <div class="hint">بيقارن <b>كمية كشف عمان فقط</b> مقابل <b>صافي كميات مستودع 011 بعد استبعاد كمية فرع "العقبة"</b> (مسجّلة بسند التحويل نفسه — لأنه مسار العقبة: سند تحويل لـ011 بفرع العقبة، وفاتورتها تُطبع مباشرة بساب، تخصّ كشف العقبة لحالها ومش داخلة هون). الصافي الخام = الداخل لـ011 − المرتجع الحقيقي، والتحويلات بين 011 و007 حركة داخلية ما بتنحسب. أي صنف فيه فرق بيظهر بصف ملوّن، ومن زر "تفاصيل" بتشوف توزيع التوريد عالفروع وكل السندات بنوعها — ولو الفرق بيطابق سند معيّن بالظبط منأشّرلك عليه وعلى فرعه.</div>
       <div class="row-actions">
         <button class="btn-primary btn-sm" onclick="compareStatementTransfers()">🆚 مطابقة الكميات</button>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">سندات من تاريخ <input type="date" id="cmpFrom" onchange="compareStatementTransfers()"></label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">إلى تاريخ <input type="date" id="cmpTo" onchange="compareStatementTransfers()"></label>
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="cmpOnlyDiff" checked onchange="compareStatementTransfers()"> عرض الأصناف يلي فيها فرق بس</label>
         <span class="status-msg" id="cmpMsg"></span>
       </div>
+      <div class="hint" style="margin-top:2px;">حدد "من تاريخ / إلى تاريخ" عشان تحصر المطابقة بسندات نفس شهر الكشف الحالي بدون ما تحتاج تمسح سندات الشهور السابقة — سندات التحويل تتراكم بالشاشة، وهاي الفلترة بس تختار الفترة المناسبة وقت المطابقة.</div>
       <div class="summary" id="cmpSummaryRow" style="display:none; margin-top:8px;"></div>
       <div id="cmpResultBox" style="margin-top:8px;"></div>
     </div>
@@ -942,6 +945,49 @@ function flash(elId, msg, ok){
   const el = document.getElementById(elId);
   el.textContent = msg; el.className = 'status-msg ' + (ok?'ok':'err');
   setTimeout(()=>{ if(el.textContent===msg) el.textContent=''; }, 4000);
+}
+
+/* ==================== تصدير Excel وطباعة عامة — لأي جدول بأي صفحة ====================
+   exportTableToExcel(tableId, filename, sheetName): يقرأ جدول HTML موجود فعلياً ويصدّره xlsx
+   مباشرة (نفس الأرقام والنصوص الظاهرة بالجدول). لا يحتاج تجهيز بيانات خاصة لكل جدول.
+   printSection(elId, title): يفتح نافذة طباعة نظيفة لنفس المحتوى (بدون أزرار/عناصر تحكم). */
+function exportTableToExcel(tableId, filename, sheetName){
+  const tableEl = typeof tableId === 'string' ? document.getElementById(tableId) : tableId;
+  if(!tableEl || !tableEl.querySelector('tr')){ alert('ما في بيانات بالجدول للتصدير — اعمل العملية/البحث أول.'); return; }
+  if(!window.XLSX){ alert('مكتبة تصدير Excel ما تحمّلت — تحقق من الإنترنت وحدّث الصفحة.'); return; }
+  const ws = XLSX.utils.table_to_sheet(tableEl, {raw:false});
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, (sheetName||'بيانات').slice(0,31));
+  XLSX.writeFile(wb, (filename||'تصدير').replace(/\.xlsx$/,'') + '.xlsx');
+}
+function printSection(elId, title){
+  const el = typeof elId === 'string' ? document.getElementById(elId) : elId;
+  if(!el){ alert('ما في محتوى للطباعة.'); return; }
+  const w = window.open('', '_blank');
+  if(!w){ alert('المتصفح منع فتح نافذة الطباعة — اسمح بالنوافذ المنبثقة لهذا الموقع.'); return; }
+  w.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>${esc(title||'طباعة')}</title>
+    <style>
+      *{box-sizing:border-box;}
+      body{font-family:'Segoe UI',Tahoma,sans-serif; padding:24px; color:#1B2536; margin:0;}
+      h1{font-size:16px; color:#152A4A; margin:0 0 14px;}
+      table{width:100%; border-collapse:collapse; font-size:11.5px;}
+      th,td{border:1px solid #ccc; padding:5px 8px; text-align:right;}
+      th{background:#EEF2F8;}
+      button,.btn-primary,.btn-ghost,.btn-danger,.status-msg,input[type=file]{display:none !important;}
+      @page{margin:14mm;}
+    </style></head><body>
+    <h1>${esc(title||'')} <span style="font-size:11px; color:#5B667A; font-weight:400;">— ${new Date().toLocaleDateString('ar-EG')}</span></h1>
+    ${el.outerHTML}
+    <script>window.onload=function(){ setTimeout(function(){ window.print(); }, 200); };<\/script>
+    </body></html>`);
+  w.document.close();
+}
+/* شريط أزرار جاهز: يُدرج داخل أي حاوية بس تعطيه معرّف الجدول والعنوان */
+function exportPrintBar(tableId, title, filenamePrefix){
+  return `<div class="row-actions" style="margin:6px 0;">
+    <button class="btn-ghost btn-sm" onclick="exportTableToExcel('${tableId}','${filenamePrefix||title}','${title}')">⬇ تصدير Excel</button>
+    <button class="btn-ghost btn-sm" onclick="printSection('${tableId}','${esc(title)}')">🖨️ طباعة</button>
+  </div>`;
 }
 
 /* ==================== ربط الأصناف ==================== */
@@ -3782,17 +3828,28 @@ function compareStatementTransfers(){
   if(!STATEMENT.length){ flash('cmpMsg','استورد كشف المؤسسة أول (القسم 1 فوق).', false); return; }
   if(!TRANSFERS.length){ flash('cmpMsg','ما في سندات تحويل مستوردة — استوردها بصفحة "سندات التحويل (011)".', false); return; }
 
-  // صافي كمياتنا (بوحدة المؤسسة/حبة) لكل صنف من كل السندات المستوردة
+  // فلترة سندات التحويل بفترة تاريخ اختيارية — عشان تحصر المطابقة بشهر الكشف الحالي بدون ما تمسح سندات شهور سابقة
+  const cmpFrom = document.getElementById('cmpFrom').value;
+  const cmpTo = document.getElementById('cmpTo').value;
+  const inRange = t=>{
+    if(!cmpFrom && !cmpTo) return true;
+    const iso = normDateToISO(t.docDate);
+    if(!iso) return true; // تاريخ غير مفهوم: ما نستبعده تلقائياً
+    if(cmpFrom && iso < cmpFrom) return false;
+    if(cmpTo && iso > cmpTo) return false;
+    return true;
+  };
+  // صافي كمياتنا (بوحدة المؤسسة/حبة) لكل صنف من كل السندات المستوردة (بحدود الفترة المحددة إن وجدت)
   const byTheir = new Map();
   const unmappedCodes = new Set();
-  TRANSFERS.forEach(t=>{
+  TRANSFERS.filter(inRange).forEach(t=>{
     const it = ITEMS.find(x=>x.ourCode===t.ourCode);
     if(!it){ unmappedCodes.add(t.ourCode); return; }
     const from011 = isWhs011(t.fromWhs), to011 = isWhs011(t.toWhs);
     if(from011 === to011) return; // مو حركة على 011
     const theirQty = t.qty * (it.factor||1);
     const code = String(it.theirCode).trim();
-    if(!byTheir.has(code)) byTheir.set(code, {theirCode:code, theirName:it.theirName||'', net:0, byBranch:new Map(), byVoucher:new Map()});
+    if(!byTheir.has(code)) byTheir.set(code, {theirCode:code, theirName:it.theirName||'', ourCode:it.ourCode||'', ourName:it.ourName||'', factor:it.factor||1, net:0, byBranch:new Map(), byVoucher:new Map()});
     const e = byTheir.get(code);
     let type, signedQty;
     if(to011 && isWhs007(t.fromWhs)){
@@ -3818,19 +3875,22 @@ function compareStatementTransfers(){
   const seen = new Set();
   // كمية فرع "العقبة" من توريد صنف معيّن — مسجّلة على سند التحويل نفسه (توريد لـ011 بفرع العقبة)، مش معتمدة على تسجيل طباعة فاتورة بالشاشة
   const aqabaBranchQty = e => { if(!e) return 0; let s=0; e.byBranch.forEach((q,br)=>{ if(/عقبة/.test(br)) s+=q; }); return s; };
+  // رمزنا/اسمنا لصنف ما إله سطر بالسندات المفلترة حالياً (نرجع لجدول ربط الأصناف)
+  const ourInfoByTheirCode = code => { const it = ITEMS.find(x=>String(x.theirCode).trim()===code); return it ? {ourCode:it.ourCode||'', ourName:it.ourName||'', factor:it.factor||1} : {ourCode:'', ourName:'', factor:1}; };
   STATEMENT.forEach(s=>{
     const code = String(s.theirCode).trim();
     seen.add(code);
     const e = byTheir.get(code);
     const aqInv = aqabaBranchQty(e);
     const trQty = (e?e.net:0) - aqInv;
-    rows.push({theirCode:code, theirName:s.theirName||(e&&e.theirName)||'', stQty:(s.qtyAmman||0), trQty, e, rawNet:e?e.net:0, aqInv});
+    const ourInfo = e ? {ourCode:e.ourCode, ourName:e.ourName, factor:e.factor} : ourInfoByTheirCode(code);
+    rows.push({theirCode:code, theirName:s.theirName||(e&&e.theirName)||'', stQty:(s.qtyAmman||0), trQty, e, rawNet:e?e.net:0, aqInv, ourCode:ourInfo.ourCode, ourName:ourInfo.ourName, ourQty: trQty/(ourInfo.factor||1)});
   });
   byTheir.forEach((e,code)=>{
     if(!seen.has(code)){
       const aqInv = aqabaBranchQty(e);
       const trQty = e.net - aqInv;
-      rows.push({theirCode:code, theirName:e.theirName, stQty:0, trQty, e, notInStatement:true, rawNet:e.net, aqInv});
+      rows.push({theirCode:code, theirName:e.theirName, stQty:0, trQty, e, notInStatement:true, rawNet:e.net, aqInv, ourCode:e.ourCode, ourName:e.ourName, ourQty: trQty/(e.factor||1)});
     }
   });
   const EPS = 0.001;
@@ -3865,9 +3925,9 @@ function compareStatementTransfers(){
   }
 
   const TYPE_LABELS = {in:'توريد إلى 011', internal:'داخلي مع 007', return:'مرتجع من 011'};
-  let html = warnHtml + `<div class="tbl-wrap" style="max-height:520px; padding:0;">
-    <table class="grid">
-      <thead><tr><th>رقم المادة</th><th>اسم المادة</th><th>كمية الكشف (عمان)</th><th>صافي كميات 011 بعد استبعاد كمية فرع العقبة</th><th>الفرق (سندات - كشف)</th><th></th></tr></thead>
+  let html = warnHtml + exportPrintBar('cmpTable','مطابقة كميات الكشف مع سندات التحويل','مطابقة_الكشف') + `<div class="tbl-wrap" style="max-height:520px; padding:0;">
+    <table class="grid" id="cmpTable">
+      <thead><tr><th>رقم المادة</th><th>اسم المادة</th><th>رمزنا</th><th>اسمنا</th><th>كمية الكشف (عمان)</th><th>صافي كميات 011 بعد استبعاد كمية فرع العقبة</th><th>الفرق (سندات - كشف)</th><th>صافي كمية 011 (بوحدتنا)</th><th></th></tr></thead>
       <tbody>`;
   shown.forEach((r,idx)=>{
     const detId = 'cmpDet_'+idx;
@@ -3875,9 +3935,12 @@ function compareStatementTransfers(){
     html += `<tr${rowStyle}>
       <td class="mono">${esc(r.theirCode)}</td>
       <td>${esc(r.theirName)}${r.notInStatement?' <b style="color:var(--crimson); font-size:11px;">(مش موجود بالكشف)</b>':''}</td>
+      <td class="mono">${esc(r.ourCode)}</td>
+      <td>${esc(r.ourName)}</td>
       <td class="mono">${fmtNum(r.stQty)}</td>
       <td class="mono">${fmtNum(r.trQty)}</td>
       <td class="mono" style="font-weight:700; color:${r.hasDiff?'var(--crimson)':'var(--teal)'};">${fmtNum(r.diff)}</td>
+      <td class="mono">${fmtNum(r.ourQty)}</td>
       <td>${r.hasDiff && r.e ? `<button class="btn-ghost btn-sm" onclick="toggleCmpDetail('${detId}', this)">تفاصيل ▾</button>` : ''}</td>
     </tr>`;
     if(r.hasDiff && r.e){
@@ -3908,7 +3971,7 @@ function compareStatementTransfers(){
           <td class="mono">${fmtNum(v.qty)}</td>
         </tr>`;
       }).join('');
-      html += `<tr id="${detId}" style="display:none;"><td colspan="6" style="background:var(--paper); padding:10px 14px;">
+      html += `<tr id="${detId}" style="display:none;"><td colspan="9" style="background:var(--paper); padding:10px 14px;">
         <div class="hint" style="margin-bottom:6px;">صافي 011 الخام: <b class="mono">${fmtNum(r.rawNet)}</b> − كمية فرع العقبة المستبعدة: <b class="mono">${fmtNum(r.aqInv)}</b> = الناتج: <b class="mono">${fmtNum(r.trQty)}</b></div>
         ${conclusion}
         <div style="margin-bottom:6px;"><b style="font-size:12px;">توزيع التوريد لـ011 بالفروع (حبة):</b> ${brHtml||'—'}</div>
