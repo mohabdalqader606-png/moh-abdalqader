@@ -607,6 +607,7 @@ ORDER BY T0."DocNum"</code>
           </label>
           <span class="status-msg" id="diMsg"></span>
         </div>
+        <div id="diErrorBox"></div>
         <div id="diCostBox"></div>
         <div id="diKeyAskBox"></div>
         <div id="diReviewBox" style="margin-top:10px;"></div>
@@ -3022,6 +3023,8 @@ async function diHandleFiles(evt){
   if(DI_READ.busy){ alert('قراءة قيد التنفيذ — انتظر انتهاءها.'); return; }
   DI_READ.busy=true;
   let lastCostLine = '';
+  const errors = [];
+  let zeroInvoiceFiles = 0;
   for(let i=0;i<files.length;i++){
     flash('diMsg', `⏳ جارِ قراءة ${files[i].name} (${i+1}/${files.length})... (رح ياخذ عادة نص دقيقة لدقيقة لكل ملف)`, true);
     try{
@@ -3033,18 +3036,32 @@ async function diHandleFiles(evt){
         items:(inv.items||[]).map(it=>diBackfillItem({code:it.code??null, name:it.name??null, qty:it.qty??null, price:it.price??null, value:it.value??null})),
         srcFile: files[i].name
       }));
+      if(!invs.length) zeroInvoiceFiles++;
       DI_READ.invoices.push(...invs);
       const cost = diCostUSD(usage);
       if(cost!=null){ diAddToTotals(cost); lastCostLine = ` — تكلفة هاي القراءة: $${cost.toFixed(4)}`; }
       flash('diMsg', `✔ ${files[i].name}: ${invs.length} فاتورة${lastCostLine}`, true);
     }catch(e){
+      errors.push(`${files[i].name}: ${e.message}`);
       flash('diMsg', `✗ تعذرت قراءة ${files[i].name}: ${e.message}`, false);
     }
     diRenderCostBox();
   }
   DI_READ.busy=false;
   diRenderReview();
-  flash('diMsg', `تم — ${DI_READ.invoices.length} فاتورة جاهزة للمراجعة أسفل.`, true);
+  const errBox = document.getElementById('diErrorBox');
+  if(errBox){
+    errBox.innerHTML = errors.length
+      ? `<div class="status-msg err" style="margin-top:6px; white-space:pre-line;">✗ فشلت قراءة ${errors.length} من ${files.length} ملف:\n${esc(errors.join('\n'))}\n\nراجع: هل مفتاح الـ API صحيح ولسا فعّال؟ هل في اتصال إنترنت؟ هل الملف PDF سليم (مو صورة تالفة أو محمي بكلمة سر)؟</div>`
+      : '';
+  }
+  if(errors.length && !DI_READ.invoices.length){
+    flash('diMsg', `✗ ما قُرأت ولا فاتورة — كل الملفات فشلت (${errors.length}). شوف تفاصيل الخطأ فوق.`, false);
+  }else if(zeroInvoiceFiles && !errors.length){
+    flash('diMsg', `⚠ القراءة خلصت بدون أخطاء بس ما لقى الذكاء الاصطناعي ولا فاتورة بـ${zeroInvoiceFiles} من الملفات — تأكد إنه الملف فعلاً فيه فاتورة صرف وهمي واضحة (مو صفحة فاضية أو مسح رديء الجودة).`, false);
+  }else{
+    flash('diMsg', `تم — ${DI_READ.invoices.length} فاتورة جاهزة للمراجعة أسفل.${errors.length?` (فشل ${errors.length} ملف — شوف فوق)`:''}`, true);
+  }
 }
 function diRenderReview(){
   const box=document.getElementById('diReviewBox');
