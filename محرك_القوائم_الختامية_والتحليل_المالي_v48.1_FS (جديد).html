@@ -178,6 +178,8 @@ body.glass #tip{background:rgba(255,255,255,.95);backdrop-filter:blur(8px)}
   <div class="hdr-ctrl">
     <div class="userbox" id="userbox" style="display:none;">
       <div class="who"><b id="uName"></b><span id="uRole"></span></div>
+      <span class="status-msg" id="cloudSyncMsgFin" style="margin:0 6px;"></span>
+      <button class="btn ghost sm" onclick="pullStateFromCloudFin().then(()=>{refreshUIFromState();toast('تم التحديث من السيرفر المشترك')})" title="سحب آخر نسخة من السيرفر المشترك يدوياً">🔄</button>
       <button class="btn ghost sm" onclick="doLogout()">خروج</button>
     </div>
     <label>الشركة</label><select id="profSel" onchange="switchProfile(this.value)"></select><button class="btn ghost sm" onclick="newProfile()" title="ملف شركة جديد">+</button>
@@ -1715,16 +1717,19 @@ function packState(){const mv={};Object.entries(S.moves).forEach(([k,m])=>{mv[k]
 function unpackState(o){if(o&&o._packed){const mv={};Object.entries(o.moves||{}).forEach(([k,m])=>{mv[k]={};Object.entries(m).forEach(([c,v])=>{mv[k][c]={d:v[0],c:v[1]}})});o={...o,moves:mv};delete o._packed}return o}
 let _saveTimer=null,_saveNoteShown=false;
 function saveState(){S.settings.co=document.getElementById('setCo').value;S.settings.cur=document.getElementById('setCur').value;S.settings.tax=+document.getElementById('setTax').value;S.settings.int=+document.getElementById('setInt').value;S.settings.wacc=+document.getElementById('setWacc').value;S.settings.scale=+document.getElementById('setScale').value;S.settings.openYear=+document.getElementById('openYear').value;S.settings.openMonth=+document.getElementById('openMonth').value;S.bench=BENCH;
- clearTimeout(_saveTimer);_saveTimer=setTimeout(async()=>{const packed=packState();const ok=await idbSet(LSK,packed);if(!ok){try{localStorage.setItem(LSK,JSON.stringify(packed))}catch(e){if(!_saveNoteShown){_saveNoteShown=true;alert('تعذر الحفظ المحلي (المتصفح لا يدعم IndexedDB وحجم البيانات تجاوز حد localStorage). البيانات موجودة في الجلسة الحالية — استخدم "تصدير نسخة JSON" للاحتفاظ بها.')}}}else{try{localStorage.removeItem(LSK)}catch(e){}}await saveBigDirty()},250)}
+ clearTimeout(_saveTimer);_saveTimer=setTimeout(async()=>{const packed=packState();const ok=await idbSet(LSK,packed);if(!ok){try{localStorage.setItem(LSK,JSON.stringify(packed))}catch(e){if(!_saveNoteShown){_saveNoteShown=true;alert('تعذر الحفظ المحلي (المتصفح لا يدعم IndexedDB وحجم البيانات تجاوز حد localStorage). البيانات موجودة في الجلسة الحالية — استخدم "تصدير نسخة JSON" للاحتفاظ بها.')}}}else{try{localStorage.removeItem(LSK)}catch(e){}}await saveBigDirty();queueCloudSaveFin()},250)}
 async function clearAll(){for(const k of BIGKEYS)await idbDel(LSK+':'+k);await idbDel(LSK);try{localStorage.removeItem(LSK)}catch(e){}location.reload()}
-async function loadState(){await loadProfiles();let o=null;await loadBig();try{o=await idbGet(LSK)}catch(e){}if(!o){try{const j=localStorage.getItem(LSK);if(j)o=JSON.parse(j)}catch(e){}}
- if(o){o=unpackState(o);S={...S,...o};S.settings={...S.settings,...(o.settings||{})};if(o.bench)Object.assign(BENCH,o.bench)}
+function refreshUIFromState(){
  document.getElementById('setCo').value=S.settings.co;document.getElementById('setCur').value=S.settings.cur;document.getElementById('setTax').value=S.settings.tax;document.getElementById('setInt').value=S.settings.int;document.getElementById('setWacc').value=S.settings.wacc||12;document.getElementById('setScale').value=S.settings.scale;document.getElementById('openYear').value=S.settings.openYear;document.getElementById('openMonth').value=S.settings.openMonth;
  document.getElementById('coName').textContent=S.settings.co+' — القوائم المالية والتحليل وفق IFRS';
  (function(){const t=S.settings.theme||'classic';if(t==='glass'){document.body.classList.add('glass');document.body.dataset.theme='classic'}else{document.body.dataset.theme=t}applyPalette();const sel=document.getElementById('themeSel');if(sel)sel.value=t})();
  const na=Object.keys(S.accounts).length;if(na){document.getElementById('mAcct').textContent=na+' حساب';document.getElementById('mAcct').className='badge ok'}
  const no=Object.keys(S.opening).length;if(no){document.getElementById('mOpen').textContent=no+' رصيد';document.getElementById('mOpen').className='badge ok'}
- ensureBPAccounts();refreshMonths();renderMap();renderAdj();adjClear();renderBankMap();renderBPList();renderTiming();if(Object.keys(S.bp||{}).length){document.getElementById('mBP').textContent=Object.keys(S.bp).length+' شريك';document.getElementById('mBP').className='badge ok'}}
+ ensureBPAccounts();refreshMonths();renderMap();renderAdj();adjClear();renderBankMap();renderBPList();renderTiming();if(Object.keys(S.bp||{}).length){document.getElementById('mBP').textContent=Object.keys(S.bp).length+' شريك';document.getElementById('mBP').className='badge ok'}
+}
+async function loadState(){await loadProfiles();let o=null;await loadBig();try{o=await idbGet(LSK)}catch(e){}if(!o){try{const j=localStorage.getItem(LSK);if(j)o=JSON.parse(j)}catch(e){}}
+ if(o){o=unpackState(o);S={...S,...o};S.settings={...S.settings,...(o.settings||{})};if(o.bench)Object.assign(BENCH,o.bench)}
+ refreshUIFromState();}
 function exportJSON(){saveState();const full={...packState()};BIGKEYS.forEach(k=>full[k]=S[k]);const b=new Blob([JSON.stringify(full)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='القوائم_الختامية_'+new Date().toISOString().slice(0,10)+'.json';a.click()}
 document.getElementById('fJson').addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;readFileSmart(f,async txt=>{try{const o=JSON.parse(txt);S=unpackState(o);for(const k of BIGKEYS){if(S[k]!=null)await idbSet(LSK+':'+k,S[k])}await idbSet(LSK,packState());location.reload()}catch(x){alert('ملف غير صالح')}})});
 (function(){const el=document.getElementById('fJsonQuick');if(el)el.addEventListener('change',e=>{const f=e.target.files[0];if(!f)return;readFileSmart(f,async txt=>{try{const o=JSON.parse(txt);S=unpackState(o);for(const k of BIGKEYS){if(S[k]!=null)await idbSet(LSK+':'+k,S[k])}await idbSet(LSK,packState());location.reload()}catch(x){alert('ملف غير صالح — تأكد إنه نسخة احتياطية صحيحة من هذه الأداة')}})})})();
@@ -3222,7 +3227,49 @@ async function onSignedIn(user){
   document.getElementById('uRole').textContent = user.email + ' · ' + roleAr;
   document.getElementById('userbox').style.display = 'flex';
   document.getElementById('loginView').style.display = 'none';
+  // نسحب آخر نسخة من السيرفر المشترك *قبل* ما نكشف الشاشة (نفس منطق شاشة المؤسسة العسكرية)
+  await pullStateFromCloudFin();
+  refreshUIFromState();
   document.getElementById('appView').style.display = 'block';
+}
+/* ================= مزامنة سحابية (الجزء الأساسي: تصنيف، حسابات، أرصدة، قيود يدوية، إعدادات —
+   الكويريات الكبيرة زي المبيعات/المشتريات/الرواتب تضل محلية بس حالياً، BIGKEYS مستبعدة أصلاً من packState) =================
+   حماية أساسية ضد فقدان بيانات: ما نسمح بأي رفع (push) للسيرفر قبل ما نكون سحبنا (pull) آخر نسخة موجودة أول —
+   هيك جهاز جديد فاضي ما يقدر يستبدل بيانات حقيقية موجودة بالسيرفر بنسخة فاضية قبل ما يشوفها أصلاً. */
+let cloudSaveTimerFin=null, cloudSyncedFin=false;
+function queueCloudSaveFin(){
+  if(!sb || !curUser || !roleEdit) return;
+  if(!cloudSyncedFin) return;
+  clearTimeout(cloudSaveTimerFin);
+  cloudSaveTimerFin=setTimeout(pushStateToCloudFin, 1500);
+}
+async function pushStateToCloudFin(){
+  if(!sb || !curUser || !roleEdit || !cloudSyncedFin) return;
+  if(!Object.keys(S.accounts||{}).length && !Object.keys(S.map||{}).length) return; // حماية: ما نرفع نسخة فاضية بالغلط
+  try{
+    const packed=packState();
+    await sb.from('financials_app_state').upsert({id:'main', data:packed, updated_by:curUser.id, updated_at:new Date().toISOString()});
+    const el=document.getElementById('cloudSyncMsgFin'); if(el){ el.textContent='✔ محفوظ على السيرفر المشترك · '+new Date().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}); el.className='status-msg ok'; }
+  }catch(e){
+    const el=document.getElementById('cloudSyncMsgFin'); if(el){ el.textContent='⚠ تعذر الحفظ على السيرفر المشترك — البيانات محفوظة محلياً بس'; el.className='status-msg err'; }
+  }
+}
+async function pullStateFromCloudFin(){
+  if(!sb || !curUser) return;
+  try{
+    const {data, error}=await sb.from('financials_app_state').select('data, updated_at').eq('id','main').maybeSingle();
+    if(error || !data || !data.data){ cloudSyncedFin=true; return; }
+    let o=unpackState(data.data);
+    S={...S,...o};
+    S.settings={...S.settings,...(o.settings||{})};
+    if(o.bench) Object.assign(BENCH, o.bench);
+    await idbSet(LSK, packState());
+    cloudSyncedFin=true;
+    const el=document.getElementById('cloudSyncMsgFin'); if(el){ el.textContent='✔ تم تحميل آخر نسخة من السيرفر المشترك'; el.className='status-msg ok'; }
+  }catch(e){
+    cloudSyncedFin=true;
+    const el=document.getElementById('cloudSyncMsgFin'); if(el){ el.textContent='⚠ تعذر التحميل من السيرفر المشترك — هذي آخر نسخة محلية عندك'; el.className='status-msg err'; }
+  }
 }
 (async function bootAuth(){
   if(!window.supabase){ authMsg('تعذر تحميل مكتبة الاتصال — تحقق من الإنترنت وحدّث الصفحة', false); return; }
