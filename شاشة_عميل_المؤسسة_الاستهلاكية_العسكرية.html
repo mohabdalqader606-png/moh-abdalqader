@@ -344,6 +344,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
         <button class="btn-primary btn-sm" id="addInvoiceBtn" onclick="addInvoice()">+ فاتورة جديدة بهاي المجموعة</button>
         <button class="btn-ghost btn-sm" onclick="renameGroupPrompt()">✏️ إعادة تسمية المجموعة</button>
         <button class="btn-ghost btn-sm" onclick="addGroupPrompt()">+ مجموعة فواتير جديدة</button>
+        <button class="btn-ghost btn-sm" id="autoFillAqabaAggBtn" style="display:none; border-color:var(--gold); color:var(--gold);" onclick="autoFillAqabaAggRest()">🧮 رتّب باقي أصناف كشف تجميعي العقبة تلقائياً (10 لكل كشف)</button>
         <span class="status-msg" id="invStatusMsg"></span>
       </div>
       <div class="hint" style="margin-top:8px;" id="autoInvoiceNote"></div>
@@ -1159,6 +1160,29 @@ function rebuildGroupCategory(groupId, docType, orderField, invField){
   g.invoices.sort((a,b)=> (a.docType===docType && b.docType===docType) ? (a.slot||0)-(b.slot||0) : 0);
 }
 
+/* بترتب تلقائياً (10 أصناف بكل كشف) الأصناف يلي عندها كمية عقبة بالكشف الشهري المستورد
+   وما إلها رقم كشف تجميعي عقبة مضبوط يدوياً بعد — وبتحافظ على أي كشوف رتّبها المستخدم يدوياً
+   (تبلش الترقيم بعد آخر رقم كشف مستخدم فعلاً، وما تلمس أصناف مرتّبة أصلاً). */
+function autoFillAqabaAggRest(){
+  if(!STATEMENT.length){ flash('invStatusMsg','استورد كشف المؤسسة الشهري أول (صفحة "كشف المؤسسة الشهري") عشان نعرف أي أصناف إلها كمية عقبة.', false); return; }
+  const eligibleTheirCodes = new Set(STATEMENT.filter(r=>r.qtyAqaba).map(r=>r.theirCode));
+  const hasSlot = it => it.aqabaAggInvoiceNo!==undefined && it.aqabaAggInvoiceNo!==null && it.aqabaAggInvoiceNo!=='';
+  let maxSlot = ITEMS.reduce((m,it)=> hasSlot(it) ? Math.max(m, parseInt(it.aqabaAggInvoiceNo,10)||0) : m, 0);
+  const stmtOrder = new Map(STATEMENT.map((r,i)=>[r.theirCode,i]));
+  const rest = ITEMS.filter(it=> eligibleTheirCodes.has(it.theirCode) && !hasSlot(it));
+  rest.sort((a,b)=> (stmtOrder.get(a.theirCode) ?? 1e9) - (stmtOrder.get(b.theirCode) ?? 1e9));
+  if(!rest.length){ flash('invStatusMsg','كل أصناف كشف تجميعي العقبة مرتّبة أصلاً — ما في أصناف باقية.', true); return; }
+  rest.forEach((it,idx)=>{
+    it.aqabaAggInvoiceNo = maxSlot + Math.floor(idx/10) + 1;
+    it.aqabaAggOrder = (idx % 10) + 1;
+  });
+  rebuildAutoInvoices();
+  saveState();
+  renderInvoicesPage();
+  renderMappingTable();
+  flash('invStatusMsg', `تم ترتيب ${rest.length} صنف تلقائياً على ${Math.ceil(rest.length/10)} كشف تجميعي جديد (10 أصناف لكل كشف)، بعد آخر رقم كشف كان مستخدم (${maxSlot}). الكشوف الأربعة (أو أكثر) يلي رتّبتها يدوياً ما انلمست.`, true);
+}
+
 function editItemField(key, field, value){
   const it = findItem(key);
   if(!it) return;
@@ -1406,9 +1430,11 @@ function renderInvoicesPage(){
   const addBtn = document.getElementById('addInvoiceBtn');
   const autoNote = document.getElementById('autoInvoiceNote');
   const manualNote = document.getElementById('manualInvoiceNote');
+  const autoFillBtn = document.getElementById('autoFillAqabaAggBtn');
   if(addBtn) addBtn.style.display = isAutoManagedGroup(g) ? 'none' : '';
   if(autoNote) autoNote.style.display = isAutoManagedGroup(g) ? '' : 'none';
   if(manualNote) manualNote.style.display = isAutoManagedGroup(g) ? 'none' : '';
+  if(autoFillBtn) autoFillBtn.style.display = (g && g.id==='aqaba') ? '' : 'none';
   if(autoNote && g){
     autoNote.textContent = g.id==='amman'
       ? 'الترتيب هون محسوب تلقائياً من عمودي "ترتيب - عمان" و"رقم فاتورة - عمان" بصفحة "ربط الأصناف" — عدّل من هناك.'
