@@ -3017,9 +3017,10 @@ function diLineMismatch(it){
   if(isNaN(q)||isNaN(p)||isNaN(v)) return false;
   return Math.abs(q*p - v) > Math.max(0.02, v*0.01);
 }
-function diRenderKeyAsk(msg){
+function diRenderKeyAsk(msg, forceEdit){
   const box=document.getElementById('diKeyAskBox');
-  if(!anthKey()){
+  const key = anthKey();
+  if(!key || forceEdit){
     box.innerHTML=`<div class="duebox" style="margin-top:8px;">
       ${msg?`<div style="color:var(--crimson); font-weight:700; margin-bottom:6px;">${esc(msg)}</div>`:''}
       <b>🔑 مفتاح Anthropic API مطلوب لقراءة الـPDF بالذكاء الاصطناعي</b> — يُحفظ على هذا الجهاز فقط ولا يُرسل لأي سيرفر عندنا.<br>
@@ -3027,9 +3028,12 @@ function diRenderKeyAsk(msg){
       <div class="row-actions" style="margin-top:8px;">
         <input type="password" id="diKeyInp" placeholder="sk-ant-..." style="width:280px; direction:ltr; text-align:left;">
         <button class="btn-teal btn-sm" onclick="diSaveKey()">حفظ المفتاح والمتابعة</button>
+        ${key?`<button class="btn-ghost btn-sm" onclick="diRenderKeyAsk()">إلغاء</button>`:''}
       </div></div>`;
   } else {
-    box.innerHTML='';
+    box.innerHTML=`<div class="hint" style="margin-top:4px;">🔑 مفتاح API محفوظ (...${esc(key.slice(-6))}) —
+      <a href="#" onclick="diRenderKeyAsk(null,true); return false;">✏️ تغيير المفتاح</a> ·
+      <a href="#" onclick="if(confirm('مسح المفتاح المحفوظ؟')){ setAnthKey(''); diRenderKeyAsk(); } return false;">🗑️ مسح</a></div>`;
   }
 }
 function diSaveKey(){
@@ -4326,6 +4330,7 @@ function restoreBackup(evt){
 loadState();
 switchPage('mapping');
 diRenderCostBox();
+diRenderKeyAsk();
 
 /* ================= تسجيل الدخول (Supabase — مشترك مع باقي شاشات المؤسسة) ================= */
 const SUPABASE_URL = 'https://fxjdmqqmcgccocfbgopm.supabase.co';
