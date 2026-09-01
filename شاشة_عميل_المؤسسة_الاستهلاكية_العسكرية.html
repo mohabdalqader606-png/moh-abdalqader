@@ -3947,7 +3947,12 @@ async function doLogout(){ await sb.auth.signOut(); location.reload(); }
 async function onSignedIn(user){
   curUser = user;
   const {data:prof} = await sb.from('profiles').select('*').eq('id', user.id).single();
-  curProfile = prof || {full_name:user.email, role:'viewer'};
+  curProfile = prof || {full_name:user.email, role:'viewer', allowed_apps:[]};
+  if(!(curProfile.allowed_apps||[]).includes('mil')){
+    await sb.auth.signOut();
+    flash('loginMsg','هذا الحساب ما إله صلاحية الدخول على هاي الشاشة — تواصل مع المدير.', false);
+    return;
+  }
   roleEdit = ['admin','editor'].includes(curProfile.role);
   isAdmin = curProfile.role === 'admin';
   const roleAr = {admin:'مدير', editor:'مدخل بيانات', viewer:'مطالع'}[curProfile.role] || curProfile.role;
