@@ -842,6 +842,7 @@ function saveNewAccount(){
  toast('تم إضافة الحساب '+code);
  closeModal();
  if(window._newAcctLink){const tr=window._newAcctLink.closest('tr');if(tr){const inp=tr.querySelector('input[list="acctList"]');if(inp)adjName(inp)}}
+ if(document.getElementById('integrity'))renderIntegrity();
 }
 function adjLinesRead(){return [...document.querySelectorAll('#adjLines tbody tr')].map(tr=>{const i=tr.querySelectorAll('input');return {code:i[0].value.trim(),d:+i[1].value||0,c:+i[2].value||0}}).filter(l=>l.code&&(l.d||l.c))}
 function adjBalance(){const ls=adjLinesRead();const d=ls.reduce((a,l)=>a+l.d,0),c=ls.reduce((a,l)=>a+l.c,0);const el=document.getElementById('adjBal');el.textContent=`مدين ${fmt(d)} | دائن ${fmt(c)} | فرق ${fmt(d-c)}`;el.className='badge '+(Math.abs(d-c)<0.005&&ls.length?'ok':'bad')}
@@ -1936,7 +1937,9 @@ function recalcAll(){const f=document.getElementById('pFrom').value,t=document.g
  const cur=(document.querySelector('nav button.active')||{}).dataset;if(cur&&cur.t)lazyRender(cur.t);toast('تم الاحتساب: '+R.per.length+' شهر')}
 function renderIntegrity(){const o=Object.values(S.opening).reduce((a,b)=>a+b,0);const un=R.codes.filter(c=>effLine(c)==='UNMAP');const noAcc=R.codes.filter(c=>!S.accounts[c]);
  let mvUnbal=[];R.per.forEach(k=>{const s=Object.values(MV[k]||{}).reduce((a,v)=>a+v.d-v.c,0);if(Math.abs(s)>1)mvUnbal.push(k+': '+fmt(s))});
- const rows=[['ميزان الأرصدة الافتتاحية (يجب = صفر)',fmt(o),Math.abs(o)<1],['توازن حركات كل شهر (مدين = دائن)',mvUnbal.length?mvUnbal.join(' | '):'متوازن',!mvUnbal.length],['حسابات لها أرصدة/حركات وغير موجودة في الدليل',noAcc.length?noAcc.slice(0,15).join(', ')+(noAcc.length>15?'…':''):'لا يوجد',!noAcc.length],['حسابات غير مصنفة (تؤثر على القوائم)',un.length?un.length+' حساب — راجع تبويب التصنيف':'لا يوجد',!un.length],['توازن المركز المالي الختامي (الأصول − الالتزامات − حقوق الملكية)',fmt(R.BSc.TA-R.BSc.TLE),Math.abs(R.BSc.TA-R.BSc.TLE)<1],['تسوية التدفقات النقدية (فرق غير مفسر)',fmt(R.CF.UNEXPL),Math.abs(R.CF.UNEXPL)<1]];
+ const noAccCell=noAcc.length?noAcc.slice(0,15).map(c=>`<a href="#" onclick="openNewAccountModal('${c}',null);return false" title="إضافة هذا الحساب للدليل" style="text-decoration:underline">${c}</a>`).join(', ')+(noAcc.length>15?'… (<a href="#" onclick="goTab(\'data\');return false" style="text-decoration:underline">مركز البيانات</a>)':''):'لا يوجد';
+ const unCell=un.length?un.slice(0,15).join(', ')+(un.length>15?'…':'')+` — <a href="#" onclick="goTab('map');return false" style="text-decoration:underline">افتح تبويب التصنيف</a>`:'لا يوجد';
+ const rows=[['ميزان الأرصدة الافتتاحية (يجب = صفر)',fmt(o),Math.abs(o)<1],['توازن حركات كل شهر (مدين = دائن)',mvUnbal.length?mvUnbal.join(' | '):'متوازن',!mvUnbal.length],['حسابات لها أرصدة/حركات وغير موجودة في الدليل',noAccCell,!noAcc.length],['حسابات غير مصنفة (تؤثر على القوائم)',unCell,!un.length],['توازن المركز المالي الختامي (الأصول − الالتزامات − حقوق الملكية)',fmt(R.BSc.TA-R.BSc.TLE),Math.abs(R.BSc.TA-R.BSc.TLE)<1],['تسوية التدفقات النقدية (فرق غير مفسر)',fmt(R.CF.UNEXPL),Math.abs(R.CF.UNEXPL)<1]];
  document.getElementById('integrity').innerHTML='<table>'+rows.map(r=>`<tr><td>${r[0]}</td><td class="num">${r[1]}</td><td><span class="badge ${r[2]?'ok':'bad'}">${r[2]?'سليم':'يحتاج مراجعة'}</span></td></tr>`).join('')+'</table>';
  document.getElementById('dataStatus').innerHTML=`<p class="hint">الفترة: ${R.per[0]} → ${R.per[R.per.length-1]} (${R.per.length} شهر) | حسابات: ${R.codes.length} | مقارنة: ${R.CMP?R.CMP.label:'غير متاحة'}</p>`}
 const KIC={'الإيرادات':'📈','صافي المبيعات':'📈','مجمل الربح':'💰','صافي الربح':'🏆','التدفق التشغيلي':'💧','التدفق النقدي التشغيلي':'💧','الذمم المدينة':'👥','صافي البنوك/الدين':'🏦','EBITDA':'📊','ROE سنوي':'🎯'};
