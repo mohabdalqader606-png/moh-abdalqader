@@ -122,6 +122,40 @@
   .userbox{display:flex; align-items:center; gap:10px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.16); border-radius:10px; padding:8px 14px; font-size:12px;}
   .userbox .who b{display:block; font-size:12.5px;}
   .userbox .who span{color:#9FB0CC; font-size:11px;}
+
+  /* مودال الكويريات الكاملة */
+  .modal-overlay{position:fixed; inset:0; background:rgba(14,30,54,.55); z-index:50; display:flex; align-items:center; justify-content:center; padding:24px;}
+  .modal-box{background:#fff; border-radius:14px; width:100%; max-width:980px; max-height:88vh; display:flex; flex-direction:column; box-shadow:0 30px 70px -20px rgba(0,0,0,.4);}
+  .modal-head{display:flex; align-items:center; justify-content:space-between; padding:16px 22px; border-bottom:1px solid var(--line);}
+  .modal-head h3{margin:0; font-size:15px; color:var(--navy);}
+  .modal-hint{padding:10px 22px; font-size:11.5px; color:var(--ink-soft); line-height:1.7; border-bottom:1px solid var(--line); background:#FAFBFD;}
+  .qtabs{display:flex; gap:6px; padding:10px 22px 0; flex-wrap:wrap; border-bottom:1px solid var(--line);}
+  .qtab-btn{background:#fff; color:var(--ink-soft); border:1.5px solid var(--line); border-bottom:none; border-radius:8px 8px 0 0; padding:7px 13px; font-size:12px; font-weight:600; cursor:pointer;}
+  .qtab-btn.active{background:var(--navy); color:#fff; border-color:var(--navy);}
+  .modal-body{overflow-y:auto; padding:16px 22px 22px;}
+  .qblock{border:1px solid var(--line); border-radius:10px; margin-bottom:14px; overflow:hidden;}
+  .qblock-head{display:flex; align-items:center; justify-content:space-between; background:#EEF2F8; padding:8px 12px;}
+  .qblock-head b{font-size:12.5px; color:var(--navy);}
+  .qhint{font-size:11px; color:var(--ink-soft); padding:6px 12px 0;}
+  .qblock pre{direction:ltr; text-align:left; margin:8px 12px 12px; background:#F4F6F9; border-radius:8px; padding:10px 12px; font-family:var(--mono); font-size:10.5px; line-height:1.6; white-space:pre-wrap; word-break:break-word; max-height:340px; overflow-y:auto;}
+
+  .upload-row{display:flex; align-items:center; gap:8px; margin-top:8px; flex-wrap:wrap;}
+  .upload-row .file-label{background:#fff; color:var(--navy); border:1.5px dashed var(--line); border-radius:8px; padding:6px 12px; font-size:11.5px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:5px;}
+  .upload-row .file-label:hover{border-color:var(--navy);}
+  .upload-row .upload-msg{font-size:11px; color:var(--ink-soft);}
+  .upload-row .upload-msg.ok{color:var(--teal);} .upload-row .upload-msg.err{color:var(--crimson);}
+
+  .load-more-row{text-align:center; padding:16px;}
+  .load-more-row button{background:#fff; color:var(--navy); border:1.5px solid var(--line); border-radius:9px; padding:9px 22px; font-size:12.5px; font-weight:600;}
+  .load-more-row button:hover{border-color:var(--navy);}
+  .load-more-row .cnt{font-size:11px; color:var(--ink-soft); margin-top:6px;}
+
+  .progress-overlay{position:fixed; inset:0; background:rgba(14,30,54,.5); z-index:60; display:flex; align-items:center; justify-content:center;}
+  .progress-box{background:#fff; border-radius:14px; padding:26px 34px; text-align:center; min-width:280px; box-shadow:0 30px 70px -20px rgba(0,0,0,.4);}
+  .progress-box .ptitle{font-size:13px; font-weight:700; color:var(--navy); margin-bottom:12px;}
+  .progress-track{background:#EEF2F8; border-radius:20px; height:10px; overflow:hidden;}
+  .progress-fill{background:var(--navy); height:100%; width:0%; transition:width .12s;}
+  .progress-box .psub{font-size:11px; color:var(--ink-soft); margin-top:8px;}
 </style>
 </head>
 <body>
@@ -157,6 +191,598 @@
   </div>
 </header>
 
+<div id="queriesModal" class="modal-overlay" style="display:none;" onclick="if(event.target===this) closeQueriesModal();">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3>📑 كل كويريات SAP Query Manager المستخدمة بهذه الشاشة</h3>
+      <button class="btn-ghost btn-sm" onclick="closeQueriesModal()">✖ إغلاق</button>
+    </div>
+    <div class="modal-hint">شغّل الكويري المطلوب بـ SAP Query Manager، انسخ نتيجته كاملة (بما فيها سطر العناوين)، وألصقها أو ارفعها كملف بالتبويب المطابق. أي كويري فيه [%0]/[%1] لازم سطر التلميح بالسطر الأول تماماً متل ما هو موجود هون.</div>
+    <div class="qtabs"><button class="qtab-btn active" id="qtabbtn_approvals" onclick="switchQueriesTab('approvals')">📋 مراجعة موافقات الفواتير</button><button class="qtab-btn" id="qtabbtn_aging" onclick="switchQueriesTab('aging')">📊 عمر الذمة الحالي — كل العملاء</button><button class="qtab-btn" id="qtabbtn_single" onclick="switchQueriesTab('single')">🔍 فحص عميل واحد بالتفصيل</button><button class="qtab-btn" id="qtabbtn_daily" onclick="switchQueriesTab('daily')">💰 التحصيل اليومي</button><button class="qtab-btn" id="qtabbtn_verify" onclick="switchQueriesTab('verify')">✅ كويري تحقق عام (اختياري)</button></div>
+    <div class="modal-body"><div class="qtab-panel" id="qtab_approvals" style="display:block;">
+        <div class="qblock">
+          <div class="qblock-head">
+            <b>كويري ١ — الفواتير الأساسي</b>
+            <button class="btn-ghost btn-sm" onclick="copyQueryBlock(this)">📋 نسخ</button>
+          </div>
+          <div class="qhint">مربع أول بتبويب مراجعة موافقات الفواتير (إلزامي)</div>
+          <pre id="qsql_1">/* SELECT T0."CreateDate" FROM OWDD T0 WHERE T0."CreateDate" BETWEEN [%0] AND [%1] */
+SELECT
+    T0."WddCode"                       AS "رقم طلب الموافقة",
+    T0."CreateDate"                    AS "تاريخ طلب الموافقة",
+    I."DocDate"                        AS "تاريخ الفاتورة",
+    I."DocNum"                         AS "رقم الفاتورة",
+    I."CardCode"                       AS "رمز العميل",
+    I."CardName"                       AS "اسم العميل",
+    I."DocTotal"                       AS "قيمة الفاتورة",
+    IFNULL(I."ExtraDays", IFNULL(TG."ExtraDays", 0)) AS "أيام السماح",
+    C."CreditLine"                     AS "السقف الائتماني",
+
+    IFNULL((
+        SELECT SUM(J1."Debit" - J1."Credit")
+        FROM JDT1 J1 INNER JOIN OJDT J0 ON J1."TransId" = J0."TransId"
+        WHERE J1."ShortName" = I."CardCode" AND J1."ShortName" &lt;&gt; J1."Account"
+          AND J0."RefDate" &lt;= I."DocDate" AND J1."TransId" &lt;&gt; I."TransId"
+    ), 0)                               AS "الرصيد قبل الفاتورة",
+
+    IFNULL((
+        SELECT SUM(K."CheckSum")
+        FROM RCT1 K INNER JOIN ORCT R ON K."DocNum" = R."DocEntry"
+        WHERE R."Canceled" = 'N' AND R."CardCode" = I."CardCode"
+          AND R."DocDate" &lt; I."DocDate" AND K."DueDate" &gt;= I."DocDate"
+    ), 0)                               AS "الشيكات المؤجلة",
+
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-0
+    ), 0)                                AS "M0 الشهر الحالي (حتى يوم قبل الفاتورة)",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-1
+    ), 0)                                AS "M1 شهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-2
+    ), 0)                                AS "M2 شهرين قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-3
+    ), 0)                                AS "M3 3 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-4
+    ), 0)                                AS "M4 4 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-5
+    ), 0)                                AS "M5 5 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-6
+    ), 0)                                AS "M6 6 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-7
+    ), 0)                                AS "M7 7 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-8
+    ), 0)                                AS "M8 8 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") &lt;= YEAR(I."DocDate")*12+MONTH(I."DocDate")-9
+    ), 0)                                AS "M9plus أقدم من 9 أشهر",
+
+    CASE T0."Status" WHEN 'Y' THEN 'Approved' WHEN 'N' THEN 'Rejected' WHEN 'W' THEN 'Waiting' ELSE T0."Status" END AS "حالة الموافقة"
+
+FROM "OWDD" T0
+LEFT JOIN "OINV" I  ON T0."DocEntry" = I."DocEntry" AND T0."IsDraft" = 'N'
+LEFT JOIN "OCRD" C  ON I."CardCode" = C."CardCode"
+LEFT JOIN "OCTG" TG ON I."GroupNum" = TG."GroupNum"
+WHERE T0."WtmCode" = 14   -- Aging Overdue2
+  AND T0."CreateDate" BETWEEN '[%0]' AND '[%1]'
+ORDER BY I."CardCode", I."DocDate"</pre>
+        </div>
+        <div class="qblock">
+          <div class="qblock-head">
+            <b>كويري ٣ — كل الفواتير بغض النظر عن الموافقة (بديل لكويري ١)</b>
+            <button class="btn-ghost btn-sm" onclick="copyQueryBlock(this)">📋 نسخ</button>
+          </div>
+          <div class="qhint">نفس مربع كويري ١ — يكشف الفواتير المخالفة التي لم تذهب للموافقة أصلاً</div>
+          <pre id="qsql_2">/* SELECT I."DocDate" FROM OINV I WHERE I."DocDate" BETWEEN [%0] AND [%1] */
+SELECT
+    I."DocNum"                         AS "رقم الفاتورة",
+    I."DocDate"                        AS "تاريخ الفاتورة",
+    I."CardCode"                       AS "رمز العميل",
+    I."CardName"                       AS "اسم العميل",
+    I."DocTotal"                       AS "قيمة الفاتورة",
+    IFNULL(I."ExtraDays", IFNULL(TG."ExtraDays", 0)) AS "أيام السماح",
+    C."CreditLine"                     AS "السقف الائتماني",
+
+    IFNULL((
+        SELECT SUM(J1."Debit" - J1."Credit")
+        FROM JDT1 J1 INNER JOIN OJDT J0 ON J1."TransId" = J0."TransId"
+        WHERE J1."ShortName" = I."CardCode" AND J1."ShortName" &lt;&gt; J1."Account"
+          AND J0."RefDate" &lt;= I."DocDate" AND J1."TransId" &lt;&gt; I."TransId"
+    ), 0)                               AS "الرصيد قبل الفاتورة",
+
+    IFNULL((
+        SELECT SUM(K."CheckSum")
+        FROM RCT1 K INNER JOIN ORCT R ON K."DocNum" = R."DocEntry"
+        WHERE R."Canceled" = 'N' AND R."CardCode" = I."CardCode"
+          AND R."DocDate" &lt; I."DocDate" AND K."DueDate" &gt;= I."DocDate"
+    ), 0)                               AS "الشيكات المؤجلة",
+
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-0
+    ), 0)                                AS "M0 الشهر الحالي (حتى يوم قبل الفاتورة)",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-1
+    ), 0)                                AS "M1 شهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-2
+    ), 0)                                AS "M2 شهرين قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-3
+    ), 0)                                AS "M3 3 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-4
+    ), 0)                                AS "M4 4 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-5
+    ), 0)                                AS "M5 5 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-6
+    ), 0)                                AS "M6 6 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-7
+    ), 0)                                AS "M7 7 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-8
+    ), 0)                                AS "M8 8 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") &lt;= YEAR(I."DocDate")*12+MONTH(I."DocDate")-9
+    ), 0)                                AS "M9plus أقدم من 9 أشهر",
+
+    CASE
+        WHEN W."WddCode" IS NULL THEN 'لم تذهب للموافقة'
+        ELSE CASE W."Status"
+                WHEN 'Y' THEN 'Approved'
+                WHEN 'N' THEN 'Rejected'
+                WHEN 'W' THEN 'Waiting'
+                ELSE W."Status"
+             END
+    END                                 AS "حالة الموافقة"
+
+FROM "OINV" I
+LEFT JOIN "OCRD" C  ON I."CardCode" = C."CardCode"
+LEFT JOIN "OCTG" TG ON I."GroupNum" = TG."GroupNum"
+LEFT JOIN "OWDD" W  ON W."DocEntry" = I."DocEntry" AND W."ObjType" = '13'
+                    AND W."IsDraft" = 'N' AND W."WtmCode" = 14
+WHERE I."CANCELED" = 'N'
+  AND I."DocDate" BETWEEN '[%0]' AND '[%1]'
+ORDER BY I."CardCode", I."DocDate"</pre>
+        </div>
+        <div class="qblock">
+          <div class="qblock-head">
+            <b>كويري ٢ — الشيكات التفصيلي</b>
+            <button class="btn-ghost btn-sm" onclick="copyQueryBlock(this)">📋 نسخ</button>
+          </div>
+          <div class="qhint">مربع اختياري تحت &#x27;➕&#x27; بتبويبي الموافقات وعمر الذمة</div>
+          <pre id="qsql_3">/* ============================================================
+   الكويري ٢ — الشيكات التفصيلي (اختياري لكن موصى به للدقة)
+   نتيجته تُلصق بالمربع الاختياري تحت "➕" بالشاشة
+   ============================================================ */
+
+SELECT
+    R."CardCode" AS "رمز العميل",
+    R."DocNum"   AS "رقم السند",
+    R."DocDate"  AS "تاريخ تسجيل السند",
+    K."DueDate"  AS "تاريخ الاستحقاق",
+    K."CheckSum" AS "قيمة الشيك",
+    K."BankCode" AS "البنك"
+FROM RCT1 K
+INNER JOIN ORCT R ON K."DocNum" = R."DocEntry"
+WHERE R."Canceled" = 'N'
+ORDER BY R."CardCode", K."DueDate"</pre>
+        </div></div><div class="qtab-panel" id="qtab_aging" style="display:none;">
+        <div class="qblock">
+          <div class="qblock-head">
+            <b>كويري ٨ — عمر الذمة المبسّط والموثوق</b>
+            <button class="btn-ghost btn-sm" onclick="copyQueryBlock(this)">📋 نسخ</button>
+          </div>
+          <div class="qhint">مربع أول بتبويب عمر الذمة الحالي (إلزامي)</div>
+          <pre id="qsql_4">/* SELECT C."CardCode" FROM OCRD C WHERE C."CreateDate" &lt; [%0] */
+SELECT
+    C."CardCode"                       AS "رمز العميل",
+    C."CardName"                       AS "اسم العميل",
+    S."SlpName"                        AS "المندوب",
+    C."Phone1"                         AS "رقم الهاتف",
+    C."E_Mail"                         AS "البريد الإلكتروني",
+    C."CreditLine"                     AS "السقف الائتماني",
+    IFNULL(TG."ExtraDays", 0)          AS "أيام السماح",
+
+    IFNULL((
+        SELECT SUM(J1."Debit" - J1."Credit")
+        FROM JDT1 J1
+        WHERE J1."ShortName" = C."CardCode" AND J1."ShortName" &lt;&gt; J1."Account"
+          AND J1."RefDate" &lt;= '[%0]'
+    ), 0)                               AS "الرصيد حتى تاريخ اللقطة",
+
+    IFNULL((
+        SELECT SUM(K."CheckSum")
+        FROM RCT1 K INNER JOIN ORCT R ON K."DocNum" = R."DocEntry"
+        WHERE R."Canceled" = 'N' AND R."CardCode" = C."CardCode"
+          AND R."DocDate" &lt;= '[%0]' AND K."DueDate" &gt; '[%0]'
+    ), 0)                               AS "الشيكات المؤجلة",
+
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-0
+    ), 0)                                AS "M0 الشهر الحالي (حتى تاريخ اللقطة)",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-1
+    ), 0)                                AS "M1 شهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-2
+    ), 0)                                AS "M2 شهرين قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-3
+    ), 0)                                AS "M3 3 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-4
+    ), 0)                                AS "M4 4 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-5
+    ), 0)                                AS "M5 5 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-6
+    ), 0)                                AS "M6 6 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-7
+    ), 0)                                AS "M7 7 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-8
+    ), 0)                                AS "M8 8 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-9
+    ), 0)                                AS "M9 9 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-10
+    ), 0)                                AS "M10 10 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-11
+    ), 0)                                AS "M11 11 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") &lt;= YEAR('[%0]')*12+MONTH('[%0]')-12
+    ), 0)                                AS "M12plus أقدم من 12 شهر"
+
+FROM "OCRD" C
+LEFT JOIN "OSLP" S  ON C."SlpCode" = S."SlpCode"
+LEFT JOIN "OCTG" TG ON C."GroupNum" = TG."GroupNum"
+WHERE C."CardType" = 'C'
+ORDER BY C."CardName"</pre>
+        </div>
+        <div class="qblock">
+          <div class="qblock-head">
+            <b>كويري ٢ — الشيكات التفصيلي</b>
+            <button class="btn-ghost btn-sm" onclick="copyQueryBlock(this)">📋 نسخ</button>
+          </div>
+          <div class="qhint">مربع اختياري تحت &#x27;➕&#x27; بتبويبي الموافقات وعمر الذمة</div>
+          <pre id="qsql_5">/* ============================================================
+   الكويري ٢ — الشيكات التفصيلي (اختياري لكن موصى به للدقة)
+   نتيجته تُلصق بالمربع الاختياري تحت "➕" بالشاشة
+   ============================================================ */
+
+SELECT
+    R."CardCode" AS "رمز العميل",
+    R."DocNum"   AS "رقم السند",
+    R."DocDate"  AS "تاريخ تسجيل السند",
+    K."DueDate"  AS "تاريخ الاستحقاق",
+    K."CheckSum" AS "قيمة الشيك",
+    K."BankCode" AS "البنك"
+FROM RCT1 K
+INNER JOIN ORCT R ON K."DocNum" = R."DocEntry"
+WHERE R."Canceled" = 'N'
+ORDER BY R."CardCode", K."DueDate"</pre>
+        </div></div><div class="qtab-panel" id="qtab_single" style="display:none;">
+        <div class="qblock">
+          <div class="qblock-head">
+            <b>كويري ٩ — تحقق دقيق لعميل واحد</b>
+            <button class="btn-ghost btn-sm" onclick="copyQueryBlock(this)">📋 نسخ</button>
+          </div>
+          <div class="qhint">تبويب فحص عميل واحد — بدّل رمز العميل بالمكانين ⬅⬅⬅ داخل الكويري</div>
+          <pre id="qsql_6">/* SELECT T0."RefDate" FROM JDT1 T0 WHERE T0."RefDate" BETWEEN [%0] AND [%1] */
+-- كويري تحقق دقيق لعميل واحد فقط (بديل استخدام: غيّر رمز العميل بالسطر المعلّم أدناه)
+-- ياخذ القيود اليدوية والشيكات بعين الاعتبار فعلياً حسب ترتيبها الزمني الحقيقي
+SELECT
+    W."رقم القيد",
+    W."تاريخ الحركة",
+    W."نوع الحركة",
+    W."تصنيف الحركة",
+    W."الحساب المقابل",
+    W."مبلغ الحركة الكامل",
+    W."شهر الفواتير المخصص له",
+    W."المبلغ المخصص لهذا الشهر",
+    W."تاريخ نهاية شهر الفواتير",
+    W."تاريخ استحقاق الحركة (خام)",
+    DAYS_BETWEEN(W."تاريخ نهاية شهر الفواتير", W."تاريخ_للاحتساب") AS "عدد أيام التحصيل"
+FROM (
+    SELECT
+        PMT."TransId"        AS "رقم القيد",
+        PMT."RefDate"        AS "تاريخ الحركة",
+        PMT."TransType"      AS "نوع الحركة",
+        CASE
+            WHEN PMT."TransType" = '24' THEN 'قبض (نقد/شيك)'
+            WHEN PMT."ContraAct" LIKE 'V%' THEN 'مقاصة مع مورد'
+            ELSE 'تسوية / تعديل'
+        END AS "تصنيف الحركة",
+        PMT."ContraAct"      AS "الحساب المقابل",
+        PMT."Amount"         AS "مبلغ الحركة الكامل",
+        TO_VARCHAR(SM."SalesMonth", 'YYYY-MM') AS "شهر الفواتير المخصص له",
+        (CASE WHEN PMT."Amount" &gt;= 0 THEN 1 ELSE -1 END) *
+        GREATEST(
+            LEAST(GREATEST(PMT."PrevCumPayment", PMT."CumPayment"), SM."CumSales")
+            - GREATEST(LEAST(PMT."PrevCumPayment", PMT."CumPayment"), SM."PrevCumSales"),
+            0
+        ) AS "المبلغ المخصص لهذا الشهر",
+        LAST_DAY(SM."SalesMonth") AS "تاريخ نهاية شهر الفواتير",
+        PMT."DueDate" AS "تاريخ استحقاق الحركة (خام)",
+        CASE
+            WHEN PMT."TransType" = '24' AND PMT."DueDate" IS NOT NULL AND PMT."DueDate" &gt;= PMT."RefDate" THEN PMT."DueDate"
+            WHEN PMT."TransType" = '24' THEN PMT."RefDate"
+            ELSE NULL
+        END AS "تاريخ_للاحتساب"
+    FROM (
+        SELECT
+            X."TransId", X."Line_ID", X."RefDate", X."DueDate", X."TransType", X."ContraAct", X."Amount",
+            SUM(X."Amount") OVER (ORDER BY X."RefDate", X."TransId", X."Line_ID" ROWS UNBOUNDED PRECEDING) AS "CumPayment",
+            SUM(X."Amount") OVER (ORDER BY X."RefDate", X."TransId", X."Line_ID" ROWS UNBOUNDED PRECEDING) - X."Amount" AS "PrevCumPayment"
+        FROM (
+            SELECT T0."TransId", T0."Line_ID", T0."RefDate", T0."DueDate", T0."TransType", T0."ContraAct",
+                   (T0."Credit" - T0."Debit") AS "Amount"
+            FROM "KAYLANI_LIVE"."JDT1" T0
+            WHERE T0."ShortName" = 'C0001456'   -- ⬅⬅⬅ غيّر رمز العميل هون
+              AND T0."TransType" NOT IN ('13','14')
+        ) X
+    ) PMT
+    INNER JOIN (
+        SELECT
+            Y."SalesMonth", Y."NetSales",
+            SUM(Y."NetSales") OVER (ORDER BY Y."SalesMonth" ROWS UNBOUNDED PRECEDING) AS "CumSales",
+            SUM(Y."NetSales") OVER (ORDER BY Y."SalesMonth" ROWS UNBOUNDED PRECEDING) - Y."NetSales" AS "PrevCumSales"
+        FROM (
+            SELECT
+                TO_DATE(TO_VARCHAR(T0."RefDate", 'YYYY-MM') || '-01', 'YYYY-MM-DD') AS "SalesMonth",
+                SUM(T0."Debit" - T0."Credit") AS "NetSales"
+            FROM "KAYLANI_LIVE"."JDT1" T0
+            WHERE T0."ShortName" = 'C0001456'   -- ⬅⬅⬅ ونفس رمز العميل هون كمان
+              AND T0."TransType" IN ('13','14')
+            GROUP BY TO_DATE(TO_VARCHAR(T0."RefDate", 'YYYY-MM') || '-01', 'YYYY-MM-DD')
+        ) Y
+    ) SM
+    ON LEAST(PMT."PrevCumPayment", PMT."CumPayment") &lt; SM."CumSales"
+    AND GREATEST(PMT."PrevCumPayment", PMT."CumPayment") &gt; SM."PrevCumSales"
+) W
+WHERE W."المبلغ المخصص لهذا الشهر" &lt;&gt; 0
+ORDER BY W."تاريخ الحركة", W."شهر الفواتير المخصص له"</pre>
+        </div></div><div class="qtab-panel" id="qtab_daily" style="display:none;">
+        <div class="qblock">
+          <div class="qblock-head">
+            <b>كويري ١٠ — التحصيل اليومي</b>
+            <button class="btn-ghost btn-sm" onclick="copyQueryBlock(this)">📋 نسخ</button>
+          </div>
+          <div class="qhint">تبويب التحصيل اليومي</div>
+          <pre id="qsql_7">/* SELECT T0."RefDate" FROM JDT1 T0 WHERE T0."RefDate" BETWEEN [%0] AND [%1] */
+SELECT
+    T0."TransId"                       AS "رقم القيد",
+    T0."RefDate"                       AS "تاريخ التحصيل",
+    T0."DueDate"                       AS "تاريخ استحقاق الشيك (إن وجد)",
+    T0."ShortName"                     AS "رمز العميل",
+    C."CardName"                       AS "اسم العميل",
+    S."SlpName"                        AS "المندوب",
+    (T0."Credit" - T0."Debit")         AS "قيمة التحصيل",
+    IFNULL(TG."ExtraDays", 0)          AS "أيام السماح",
+
+    IFNULL((
+        SELECT SUM(J1."Debit" - J1."Credit")
+        FROM JDT1 J1
+        WHERE J1."ShortName" = T0."ShortName" AND J1."ShortName" &lt;&gt; J1."Account"
+          AND J1."RefDate" &lt;= T0."RefDate" AND J1."TransId" &lt;&gt; T0."TransId"
+    ), 0)                               AS "الرصيد قبل هذا التحصيل",
+
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-0
+    ), 0)                                AS "M0 الشهر الحالي (حتى يوم قبل التحصيل)",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-1
+    ), 0)                                AS "M1 شهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-2
+    ), 0)                                AS "M2 شهرين قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-3
+    ), 0)                                AS "M3 3 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-4
+    ), 0)                                AS "M4 4 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-5
+    ), 0)                                AS "M5 5 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-6
+    ), 0)                                AS "M6 6 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-7
+    ), 0)                                AS "M7 7 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-8
+    ), 0)                                AS "M8 8 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-9
+    ), 0)                                AS "M9 9 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-10
+    ), 0)                                AS "M10 10 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-11
+    ), 0)                                AS "M11 11 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") &lt;= YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-12
+    ), 0)                                AS "M12plus أقدم من 12 شهر"
+
+FROM "JDT1" T0
+INNER JOIN "OCRD" C ON T0."ShortName" = C."CardCode" AND C."CardType"='C'
+LEFT JOIN "OSLP" S ON C."SlpCode" = S."SlpCode"
+LEFT JOIN "OCTG" TG ON C."GroupNum" = TG."GroupNum"
+WHERE T0."TransType" = '24'
+  AND T0."RefDate" BETWEEN '[%0]' AND '[%1]'
+ORDER BY T0."ShortName", T0."RefDate"</pre>
+        </div></div><div class="qtab-panel" id="qtab_verify" style="display:none;">
+        <div class="qblock">
+          <div class="qblock-head">
+            <b>كويري تحقق — تحقق اختياري لإجمالي الرصيد</b>
+            <button class="btn-ghost btn-sm" onclick="copyQueryBlock(this)">📋 نسخ</button>
+          </div>
+          <div class="qhint">لمقارنة الأرقام عند الشك بأي تبويب — بدون تواريخ</div>
+          <pre id="qsql_8">-- كويري تحقق مستقل: إجمالي رصيد كل العملاء الفعلي من دفتر الأستاذ مباشرة
+-- (نفس الطريقة المثبتة والمستخدمة بكويري 1 و3 من أول المحادثة)
+SELECT
+    SUM(J1."Debit" - J1."Credit") AS "إجمالي رصيد كل العملاء (الحقيقي)"
+FROM "KAYLANI_LIVE"."JDT1" J1
+INNER JOIN "KAYLANI_LIVE"."OCRD" C ON J1."ShortName" = C."CardCode" AND C."CardType"='C'
+WHERE J1."ShortName" &lt;&gt; J1."Account"</pre>
+        </div></div></div>
+  </div>
+</div>
+
 <main>
   <div style="display:flex; gap:8px; margin:16px 0 -4px; position:relative; z-index:3; align-items:center; flex-wrap:wrap;">
     <button class="btn-primary" id="pageTabApprovals" onclick="switchPage('approvals')" style="border-radius:9px 9px 0 0;">📋 مراجعة موافقات الفواتير</button>
@@ -164,6 +790,7 @@
     <button class="btn-ghost" id="pageTabSingle" onclick="switchPage('single')" style="border-radius:9px 9px 0 0;">🔍 فحص عميل واحد بالتفصيل</button>
     <button class="btn-ghost" id="pageTabDaily" onclick="switchPage('daily')" style="border-radius:9px 9px 0 0;">💰 التحصيل اليومي</button>
     <span style="flex:1;"></span>
+    <button class="btn-ghost btn-sm" style="border-radius:9px 9px 0 0;" onclick="openQueriesModal()">📑 كل الكويريات</button>
     <button class="btn-ghost btn-sm" style="border-color:var(--teal); color:var(--teal); border-radius:9px 9px 0 0;" onclick="downloadBackup()">💾 نسخة احتياطية من كل الشاشة</button>
     <label class="btn-ghost btn-sm" style="border-color:var(--navy); color:var(--navy); border-radius:9px 9px 0 0; cursor:pointer; display:inline-flex; align-items:center;">
       📂 استرجاع نسخة احتياطية
@@ -182,6 +809,12 @@
         <summary><span class="num" style="display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:6px;background:var(--navy);color:#fff;font-size:11.5px;font-family:var(--mono);margin-inline-end:4px;">1</span> كويري الفواتير + الأشهر (إلزامي)</summary>
         <div class="hint" style="margin-top:8px;">الصق نتيجة الكويري الرئيسي (فاتورة، رصيد قبلها، سقف ائتماني، وأعمدة M0..M9plus).</div>
         <textarea id="pasteArea" placeholder="الصق هنا نتيجة الكويري الرئيسي..."></textarea>
+        <div class="upload-row">
+          <label class="file-label">📁 رفع ملف (TXT / CSV / Excel / PDF) بدل اللصق
+            <input type="file" accept=".txt,.csv,.tsv,.xlsx,.xls,.pdf" style="display:none;" onchange="handleFileUpload(event,'pasteArea','pasteUploadMsg','كويري الفواتير')">
+          </label>
+          <span class="upload-msg" id="pasteUploadMsg"></span>
+        </div>
       </details>
 
       <details class="opt">
@@ -195,10 +828,16 @@ WHERE R."Canceled"='N'
 ORDER BY R."CardCode", K."DueDate"</code>
         </div>
         <textarea id="checksArea" style="min-height:80px;" placeholder="الصق هنا نتيجة كويري الشيكات التفصيلي..."></textarea>
+        <div class="upload-row">
+          <label class="file-label">📁 رفع ملف بدل اللصق
+            <input type="file" accept=".txt,.csv,.tsv,.xlsx,.xls,.pdf" style="display:none;" onchange="handleFileUpload(event,'checksArea','checksUploadMsg','كويري الشيكات')">
+          </label>
+          <span class="upload-msg" id="checksUploadMsg"></span>
+        </div>
       </details>
 
       <div class="row-actions">
-        <button class="btn-primary" onclick="processData(); scheduleAutoSave();">تحليل البيانات</button>
+        <button class="btn-primary" onclick="processData()">تحليل البيانات</button>
         <button class="btn-ghost" onclick="clearAll()">تفريغ</button>
         <span class="status-msg" id="statusMsg"></span>
       </div>
@@ -221,12 +860,12 @@ ORDER BY R."CardCode", K."DueDate"</code>
         <button data-f="immaterial" onclick="setFilter('immaterial')">غير مؤثر مادياً ◌</button>
         <button data-f="ok" onclick="setFilter('ok')">طبيعي ✓</button>
       </div>
-      <input type="text" class="search" id="searchBox" placeholder="بحث برمز/اسم العميل..." oninput="renderList()">
+      <input type="text" class="search" id="searchBox" placeholder="بحث برمز/اسم العميل..." oninput="listPageLimit=PAGE_SIZE; renderList();">
       <div class="spacer"></div>
       <label style="display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--ink-soft); cursor:pointer;">
-        <input type="checkbox" id="showHiddenChk" onchange="renderList()"> إظهار المخفي (<span id="hiddenCount">0</span>)
+        <input type="checkbox" id="showHiddenChk" onchange="listPageLimit=PAGE_SIZE; renderList();"> إظهار المخفي (<span id="hiddenCount">0</span>)
       </label>
-      <button class="print-btn" onclick="window.print()">🖨️ طباعة</button>
+      <button class="print-btn" onclick="printList()">🖨️ طباعة</button>
       <button class="btn-ghost btn-sm" style="border-color:var(--crimson); color:var(--crimson);" onclick="toggleViolationReport()">📄 تقرير مخالفات للإرسال</button>
       <button class="btn-ghost btn-sm" onclick="exportCsv()">تصدير CSV</button>
       <button class="btn-ghost btn-sm" onclick="expandAll()">فتح الكل</button>
@@ -246,6 +885,12 @@ ORDER BY R."CardCode", K."DueDate"</code>
         <summary><span class="num" style="display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:6px;background:var(--navy);color:#fff;font-size:11.5px;font-family:var(--mono);margin-inline-end:4px;">8</span> كويري عمر الذمة (رصيد JDT1 موثوق + آخر 12 شهر)</summary>
         <div class="hint" style="margin-top:8px;">الرصيد ياخذ مباشرة من دفتر الأستاذ (نفس الطريقة المؤكدة رياضياً)، والشهر المستهدف يُحدَّد باستهلاك تنازلي بسيط على آخر ١٢ شهر — نفس منطق تبويب "مراجعة الموافقات" تماماً، بس على مستوى العميل الحالي كامل مو فاتورة لحالها.</div>
         <textarea id="agingPasteArea" placeholder="الصق هنا نتيجة كويري ٨..."></textarea>
+        <div class="upload-row">
+          <label class="file-label">📁 رفع ملف (TXT / CSV / Excel / PDF) بدل اللصق
+            <input type="file" accept=".txt,.csv,.tsv,.xlsx,.xls,.pdf" style="display:none;" onchange="handleFileUpload(event,'agingPasteArea','agingUploadMsg','كويري عمر الذمة')">
+          </label>
+          <span class="upload-msg" id="agingUploadMsg"></span>
+        </div>
       </details>
       <details class="opt">
         <summary>➕ كويري الشيكات التفصيلي (اختياري — لتقييم هل الشيكات نفسها متأخرة أم لا، منفصل عن الرصيد)</summary>
@@ -258,11 +903,17 @@ WHERE R."Canceled"='N'
 ORDER BY R."CardCode", K."DueDate"</code>
         </div>
         <textarea id="agingChecksPasteArea" style="min-height:80px;" placeholder="الصق هنا نتيجة كويري الشيكات التفصيلي (اختياري)..."></textarea>
+        <div class="upload-row">
+          <label class="file-label">📁 رفع ملف بدل اللصق
+            <input type="file" accept=".txt,.csv,.tsv,.xlsx,.xls,.pdf" style="display:none;" onchange="handleFileUpload(event,'agingChecksPasteArea','agingChecksUploadMsg','كويري الشيكات')">
+          </label>
+          <span class="upload-msg" id="agingChecksUploadMsg"></span>
+        </div>
       </details>
       <div class="row-actions">
         <label style="font-size:12px; color:var(--ink-soft);">تاريخ اللقطة (نفس [%0] يلي استخدمته بالكويري):</label>
         <input type="date" id="snapshotDate" style="border:1.5px solid var(--line); border-radius:8px; padding:7px 10px; font-size:12.5px;">
-        <button class="btn-primary" onclick="processAging(); scheduleAutoSave();">تحليل عمر الذمة</button>
+        <button class="btn-primary" onclick="processAging()">تحليل عمر الذمة</button>
         <button class="btn-ghost" onclick="clearAging()">تفريغ</button>
         <span class="status-msg" id="agingStatusMsg"></span>
       </div>
@@ -279,12 +930,12 @@ ORDER BY R."CardCode", K."DueDate"</code>
         <button data-f="immaterial" onclick="setAgingFilter('immaterial')">◌ غير مؤثر مادياً</button>
         <button data-f="ok" onclick="setAgingFilter('ok')">🟢 ضمن المهلة</button>
       </div>
-      <select class="sortsel" id="agingSortSel" onchange="renderAging()">
+      <select class="sortsel" id="agingSortSel" onchange="agingPageLimit=PAGE_SIZE; renderAging();">
         <option value="overdue">ترتيب حسب: الأكثر تأخيراً</option>
         <option value="exposure">ترتيب حسب: أعلى تعرض</option>
         <option value="name">ترتيب حسب: اسم العميل</option>
       </select>
-      <input type="text" class="search" id="agingSearchBox" placeholder="بحث برمز/اسم العميل أو المندوب..." oninput="renderAging()">
+      <input type="text" class="search" id="agingSearchBox" placeholder="بحث برمز/اسم العميل أو المندوب..." oninput="agingPageLimit=PAGE_SIZE; renderAging();">
       <div class="spacer"></div>
       <button class="btn-primary btn-sm" onclick="generateReminders()">✉️ توليد رسائل تذكير للمحددين</button>
       <div style="display:flex; gap:4px;">
@@ -318,11 +969,17 @@ ORDER BY R."CardCode", K."DueDate"</code>
         <summary><span class="num" style="display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:6px;background:var(--navy);color:#fff;font-size:11.5px;font-family:var(--mono);margin-inline-end:4px;">9</span> كويري التحقق الدقيق لعميل واحد</summary>
         <div class="hint" style="margin-top:8px;">شغّل كويري ٩ بعد ما تغيّر رمز العميل بالمكانين المعلّمين ⬅⬅⬅ داخل الكويري، والصق نتيجته هون. بيوريك كل حركة قبض/شيك/قيد يدوي وأي شهر مبيعات سدّدته بالضبط.</div>
         <textarea id="singlePasteArea" placeholder="الصق هنا نتيجة كويري ٩ لعميل واحد..."></textarea>
+        <div class="upload-row">
+          <label class="file-label">📁 رفع ملف (TXT / CSV / Excel / PDF) بدل اللصق
+            <input type="file" accept=".txt,.csv,.tsv,.xlsx,.xls,.pdf" style="display:none;" onchange="handleFileUpload(event,'singlePasteArea','singleUploadMsg','كويري ٩')">
+          </label>
+          <span class="upload-msg" id="singleUploadMsg"></span>
+        </div>
       </details>
       <div class="row-actions">
         <label style="font-size:12px; color:var(--ink-soft);">أيام السماح لهذا العميل:</label>
         <input type="number" id="singleExtraDays" placeholder="مثلاً 90" style="width:90px; border:1.5px solid var(--line); border-radius:8px; padding:7px 10px; font-size:12.5px;">
-        <button class="btn-primary" onclick="processSingle(); scheduleAutoSave();">تحليل</button>
+        <button class="btn-primary" onclick="processSingle()">تحليل</button>
         <button class="btn-ghost" onclick="clearSingle()">تفريغ</button>
         <span class="status-msg" id="singleStatusMsg"></span>
       </div>
@@ -344,9 +1001,15 @@ ORDER BY R."CardCode", K."DueDate"</code>
         <summary><span class="num" style="display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:6px;background:var(--navy);color:#fff;font-size:11.5px;font-family:var(--mono);margin-inline-end:4px;">10</span> كويري التحصيل اليومي</summary>
         <div class="hint" style="margin-top:8px;">لكل تحصيل (قبض نقدي/شيك) بفترة معينة، بيوريك رصيد العميل والأشهر قبل هالتحصيل، وبتحسب الشاشة هل انسدد <b>مبكر</b>، <b>حسب التعريف</b>، أو <b>متأخر</b> (وكم يوم).</div>
         <textarea id="dailyPasteArea" placeholder="الصق هنا نتيجة كويري ١٠..."></textarea>
+        <div class="upload-row">
+          <label class="file-label">📁 رفع ملف (TXT / CSV / Excel / PDF) بدل اللصق
+            <input type="file" accept=".txt,.csv,.tsv,.xlsx,.xls,.pdf" style="display:none;" onchange="handleFileUpload(event,'dailyPasteArea','dailyUploadMsg','كويري ١٠')">
+          </label>
+          <span class="upload-msg" id="dailyUploadMsg"></span>
+        </div>
       </details>
       <div class="row-actions">
-        <button class="btn-primary" onclick="processDaily(); scheduleAutoSave();">تحليل التحصيل</button>
+        <button class="btn-primary" onclick="processDaily()">تحليل التحصيل</button>
         <button class="btn-ghost" onclick="clearDaily()">تفريغ</button>
         <span class="status-msg" id="dailyStatusMsg"></span>
       </div>
@@ -361,7 +1024,7 @@ ORDER BY R."CardCode", K."DueDate"</code>
         <button data-f="onTime" onclick="setDailyFilter('onTime')">🟢 حسب التعريف</button>
         <button data-f="early" onclick="setDailyFilter('early')">🔵 مبكر</button>
       </div>
-      <input type="text" class="search" id="dailySearchBox" placeholder="بحث برمز/اسم العميل أو المندوب..." oninput="renderDaily()">
+      <input type="text" class="search" id="dailySearchBox" placeholder="بحث برمز/اسم العميل أو المندوب..." oninput="dailyPageLimit=PAGE_SIZE; renderDaily();">
       <div class="spacer"></div>
       <div style="display:flex; gap:4px;">
         <button class="print-btn" onclick="printFilteredDaily('all','كل التحصيلات')">🖨️ الكل</button>
@@ -448,7 +1111,229 @@ ORDER BY R."CardCode", K."DueDate"</code>
 </style>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.min.js"></script>
 <script>
+if(window.pdfjsLib){ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/build/pdf.worker.min.js'; }
+
+/* ============================================================
+   مودال الكويريات الكاملة
+   ============================================================ */
+function openQueriesModal(){ document.getElementById('queriesModal').style.display='flex'; }
+function closeQueriesModal(){ document.getElementById('queriesModal').style.display='none'; }
+function switchQueriesTab(key){
+  document.querySelectorAll('.qtab-panel').forEach(p=>{ p.style.display = (p.id==='qtab_'+key) ? 'block' : 'none'; });
+  document.querySelectorAll('.qtab-btn').forEach(b=>{ b.classList.toggle('active', b.id==='qtabbtn_'+key); });
+}
+function copyQueryBlock(btn){
+  const pre = btn.closest('.qblock').querySelector('pre');
+  const text = pre.textContent;
+  const done = ()=>{ const old=btn.textContent; btn.textContent='✓ تم النسخ'; setTimeout(()=>{btn.textContent=old;}, 1500); };
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(done).catch(()=>fallbackCopy(text, done));
+  } else fallbackCopy(text, done);
+}
+function fallbackCopy(text, done){
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+  document.body.appendChild(ta); ta.select();
+  try{ document.execCommand('copy'); done(); }catch(e){ alert('تعذر النسخ التلقائي — انسخ يدوياً من الصندوق.'); }
+  document.body.removeChild(ta);
+}
+
+/* ============================================================
+   تحميل بيانات كبيرة بدون تهنيج + رفع ملفات (TXT/CSV/Excel/PDF)
+   ============================================================ */
+const LARGE_TEXT_THRESHOLD = 250000; // حرف تقريباً (~250 كيلوبايت) — فوق هيك ما نعرض النص كامل بصندوق اللصق مباشرة
+const PENDING_RAW = {}; // نص خام كبير محفوظ بالذاكرة بدل الـ textarea لتفادي تهنيج المتصفح
+
+function setFieldRawText(textareaId, text, label){
+  const ta = document.getElementById(textareaId);
+  text = text || '';
+  const lineCount = text.split(/\r?\n/).filter(l=>l.trim()).length;
+  if(text.length > LARGE_TEXT_THRESHOLD){
+    PENDING_RAW[textareaId] = text;
+    ta.value = `📎 ${label||'بيانات محمّلة'}\n(${lineCount.toLocaleString('en-US')} سطر تقريباً، ${(text.length/1024).toFixed(0)} كيلوبايت)\n\nتم الاحتفاظ بالنص بالذاكرة بدل عرضه هون بالكامل لتفادي تهنيج المتصفح على الأجهزة الأضعف أو مع بيانات كبيرة جداً.\nاضغط زر "تحليل" مباشرة، أو اضغط داخل هالصندوق لعرض/تعديل النص يدوياً لو بدك.`;
+    ta.readOnly = true; ta.style.cursor='pointer'; ta.title='اضغط لعرض/تعديل النص الكامل يدوياً';
+    ta.onclick = function(){
+      if(PENDING_RAW[textareaId]!=null){
+        ta.value = PENDING_RAW[textareaId];
+        delete PENDING_RAW[textareaId];
+        ta.readOnly=false; ta.style.cursor=''; ta.title=''; ta.onclick=null;
+      }
+    };
+  } else {
+    delete PENDING_RAW[textareaId];
+    ta.value = text;
+    ta.readOnly = false; ta.style.cursor=''; ta.title=''; ta.onclick=null;
+  }
+}
+function getRawValue(textareaId){
+  return (PENDING_RAW[textareaId]!=null) ? PENDING_RAW[textareaId] : document.getElementById(textareaId).value;
+}
+function clearFieldRaw(textareaId){
+  delete PENDING_RAW[textareaId];
+  const ta = document.getElementById(textareaId);
+  if(ta){ ta.value=''; ta.readOnly=false; ta.style.cursor=''; ta.title=''; ta.onclick=null; }
+}
+
+// تحويل CSV (مفصول بفواصل، مع دعم الاقتباس "..") إلى نص مفصول بـ Tab (نفس صيغة لصق SAP Query Manager)
+function csvToTsv(text){
+  const lines = text.split(/\r?\n/);
+  const out = [];
+  for(const line of lines){
+    if(line==='') { out.push(''); continue; }
+    const cells = []; let cur=''; let inQ=false;
+    for(let i=0;i<line.length;i++){
+      const ch = line[i];
+      if(inQ){
+        if(ch==='"'){ if(line[i+1]==='"'){ cur+='"'; i++; } else inQ=false; }
+        else cur+=ch;
+      } else {
+        if(ch==='"') inQ=true;
+        else if(ch===','){ cells.push(cur); cur=''; }
+        else cur+=ch;
+      }
+    }
+    cells.push(cur);
+    out.push(cells.join('\t'));
+  }
+  return out.join('\n');
+}
+
+async function fileToTsvText(file){
+  const name = (file.name||'').toLowerCase();
+  if(name.endsWith('.xlsx') || name.endsWith('.xls')){
+    if(!window.XLSX) throw new Error('مكتبة قراءة Excel ما تحمّلت — تأكد من الإنترنت وحدّث الصفحة');
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, {type:'array', cellDates:true, cellText:false});
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    return XLSX.utils.sheet_to_csv(sheet, {FS:'\t', blankrows:false});
+  }
+  if(name.endsWith('.pdf')){
+    if(!window.pdfjsLib) throw new Error('مكتبة قراءة PDF ما تحمّلت — تأكد من الإنترنت وحدّث الصفحة');
+    const buf = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({data:buf}).promise;
+    const lines = [];
+    for(let p=1; p<=pdf.numPages; p++){
+      const page = await pdf.getPage(p);
+      const content = await page.getTextContent();
+      const rows = {}; // y مقرَّب -> [{x, str}]
+      content.items.forEach(it=>{
+        const y = Math.round(it.transform[5]/2)*2; // تقريب لتجميع نفس السطر
+        const x = it.transform[4];
+        if(!rows[y]) rows[y]=[];
+        rows[y].push({x, str: it.str});
+      });
+      const ys = Object.keys(rows).map(Number).sort((a,b)=>b-a);
+      ys.forEach(y=>{
+        const items = rows[y].sort((a,b)=>a.x-b.x);
+        // فجوة أفقية واضحة بين عنصرين = فاصل عمود (Tab)، غير هيك مسافة عادية
+        let line=''; let lastEnd=null;
+        items.forEach(it=>{
+          if(lastEnd!=null && (it.x - lastEnd) > 8) line += '\t';
+          else if(line) line += ' ';
+          line += it.str;
+          lastEnd = it.x + it.str.length*4;
+        });
+        if(line.trim()) lines.push(line);
+      });
+    }
+    return lines.join('\n');
+  }
+  // txt / csv / tsv وأي نص عادي
+  const text = await file.text();
+  const firstLine = (text.split(/\r?\n/)[0]||'');
+  const tabs = (firstLine.match(/\t/g)||[]).length;
+  const commas = (firstLine.match(/,/g)||[]).length;
+  if(name.endsWith('.csv') || (tabs===0 && commas>0)) return csvToTsv(text);
+  return text;
+}
+
+async function handleFileUpload(event, textareaId, statusElId, label){
+  const file = event.target.files[0];
+  if(!file) return;
+  const statusEl = document.getElementById(statusElId);
+  if(statusEl){ statusEl.textContent = '⏳ جارِ قراءة '+file.name+'...'; statusEl.className='upload-msg'; }
+  try{
+    const tsv = await fileToTsvText(file);
+    setFieldRawText(textareaId, tsv, label);
+    const lineCount = tsv.split(/\r?\n/).filter(l=>l.trim()).length;
+    if(statusEl){ statusEl.textContent = `✓ ${file.name} — ${lineCount.toLocaleString('en-US')} سطر جاهز`; statusEl.className='upload-msg ok'; }
+  }catch(err){
+    console.error(err);
+    if(statusEl){ statusEl.textContent = '✗ تعذرت قراءة الملف: '+(err.message||err); statusEl.className='upload-msg err'; }
+  }
+  event.target.value = '';
+}
+
+/* ============================================================
+   دمج/تحديث الصفوف الجديدة على المخزون الحالي بمفتاح طبيعي (Upsert)
+   بدل استبدال البيانات المحفوظة بالكامل بكل مرة لصق/رفع
+   ============================================================ */
+function mergeByKey(existingArr, newArr, keyFn){
+  const map = new Map();
+  (existingArr||[]).forEach(it=>{ const k=keyFn(it); if(k) map.set(k, it); });
+  let added=0, updated=0;
+  (newArr||[]).forEach(it=>{
+    const k=keyFn(it); if(!k) return;
+    if(map.has(k)) updated++; else added++;
+    map.set(k, it);
+  });
+  return {rows: Array.from(map.values()), added, updated};
+}
+
+/* ============================================================
+   معالجة على دفعات (Chunked) لتفادي تجميد المتصفح مع بيانات كبيرة
+   ============================================================ */
+const CHUNK_SIZE = 800;
+function showProgress(title){
+  let ov = document.getElementById('progressOverlay');
+  if(!ov){
+    ov = document.createElement('div');
+    ov.id='progressOverlay'; ov.className='progress-overlay';
+    ov.innerHTML = `<div class="progress-box"><div class="ptitle" id="progressTitle"></div>
+      <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+      <div class="psub" id="progressSub"></div></div>`;
+    document.body.appendChild(ov);
+  }
+  document.getElementById('progressTitle').textContent = title;
+  document.getElementById('progressFill').style.width='0%';
+  document.getElementById('progressSub').textContent='';
+  ov.style.display='flex';
+}
+function updateProgress(done, total){
+  const pct = total>0 ? Math.round((done/total)*100) : 100;
+  document.getElementById('progressFill').style.width = pct+'%';
+  document.getElementById('progressSub').textContent = `${done.toLocaleString('en-US')} / ${total.toLocaleString('en-US')}`;
+}
+function hideProgress(){
+  const ov = document.getElementById('progressOverlay');
+  if(ov) ov.style.display='none';
+}
+// يشغّل mapFn على كل عناصر arr على دفعات (مع يلد للمتصفح بينهم)، ويرجع Promise بمصفوفة النتائج
+function mapInChunks(arr, mapFn, progressTitle){
+  return new Promise(resolve=>{
+    const out = new Array(arr.length);
+    let i = 0;
+    if(arr.length <= CHUNK_SIZE){
+      for(i=0;i<arr.length;i++) out[i]=mapFn(arr[i],i);
+      resolve(out); return;
+    }
+    if(progressTitle) showProgress(progressTitle);
+    function step(){
+      const end = Math.min(i+CHUNK_SIZE, arr.length);
+      for(;i<end;i++) out[i]=mapFn(arr[i],i);
+      if(progressTitle) updateProgress(i, arr.length);
+      if(i<arr.length) setTimeout(step, 0);
+      else { if(progressTitle) hideProgress(); resolve(out); }
+    }
+    step();
+  });
+}
+
+const PAGE_SIZE = 150;
+
 function toggleInputPanel(){
   const panel = document.getElementById('inputPanel');
   const collapsed = document.getElementById('inputPanelCollapsed');
@@ -462,6 +1347,9 @@ let CUSTOMERS = [];
 let CHECKS_BY_CUSTOMER = {};
 let currentFilter = 'all';
 let HIDDEN = new Set(); // رموز عملاء أو "cardCode|docNum" لفواتير مخفية
+let RAW_INVOICE_ROWS = []; // صفوف خام مدمجة (upsert) من كل عمليات اللصق/الرفع المتتالية
+let RAW_CHECK_ROWS = [];   // نفس الشي لصفوف الشيكات (تبويب الموافقات)
+let listPageLimit = PAGE_SIZE;
 const N_MONTHS = 10; // M0..M9plus
 
 function parseNum(v){ if(v==null) return 0; v=String(v).trim().replace(/,/g,''); if(v===''||v==='-') return 0; const n=parseFloat(v); return isNaN(n)?0:n; }
@@ -506,35 +1394,57 @@ function genericParse(raw, map){
   return out;
 }
 
-function processData(){
-  const raw = document.getElementById('pasteArea').value;
+async function processData(){
+  const raw = getRawValue('pasteArea');
   const msg = document.getElementById('statusMsg');
-  if(!raw.trim()){ msg.textContent='ما في بيانات ملصوقة.'; msg.className='status-msg err'; return; }
-  const parsed = genericParse(raw, HEADER_MAP).filter(r=>r.docNum||r.cardCode);
-  if(parsed.length===0){ msg.textContent='ما قدرت أتعرف على أي صف صالح — تأكد من سطر العناوين.'; msg.className='status-msg err'; return; }
+  if(!raw.trim() && RAW_INVOICE_ROWS.length===0){ msg.textContent='ما في بيانات ملصوقة أو مرفوعة بعد.'; msg.className='status-msg err'; return; }
 
-  CHECKS_BY_CUSTOMER = {};
-  const checksRaw = document.getElementById('checksArea').value;
-  if(checksRaw.trim()){
-    genericParse(checksRaw, CHECK_HEADER_MAP).forEach(c=>{
-      const code=c.cardCode; if(!code) return;
-      if(!CHECKS_BY_CUSTOMER[code]) CHECKS_BY_CUSTOMER[code]=[];
-      CHECKS_BY_CUSTOMER[code].push({docNum:c.docNum, regDate:parseSapDate(c.regDate), dueDate:parseSapDate(c.dueDate), sum:parseNum(c.sum), bank:c.bank||''});
-    });
+  let addedInv=0, updatedInv=0;
+  if(raw.trim()){
+    const parsed = genericParse(raw, HEADER_MAP).filter(r=>r.docNum||r.cardCode);
+    if(parsed.length===0){ msg.textContent='ما قدرت أتعرف على أي صف صالح — تأكد من سطر العناوين.'; msg.className='status-msg err'; return; }
+    const merged = mergeByKey(RAW_INVOICE_ROWS, parsed, r=>(r.cardCode||'—')+'|'+(r.docNum||''));
+    RAW_INVOICE_ROWS = merged.rows; addedInv=merged.added; updatedInv=merged.updated;
   }
 
-  INVOICES = parsed.map(computeInvoice);
+  // بيانات الشيكات تُدمَج تراكمياً هي كمان — لو ما في نص جديد بهالمرة، منكمل نستخدم آخر نسخة مدمجة محفوظة
+  const checksRaw = getRawValue('checksArea');
+  let addedChk=0, updatedChk=0;
+  if(checksRaw.trim()){
+    const parsedChecks = genericParse(checksRaw, CHECK_HEADER_MAP).filter(c=>c.cardCode);
+    const merged = mergeByKey(RAW_CHECK_ROWS, parsedChecks, c=>(c.cardCode||'')+'|'+(c.docNum||''));
+    RAW_CHECK_ROWS = merged.rows; addedChk=merged.added; updatedChk=merged.updated;
+  }
+  CHECKS_BY_CUSTOMER = {};
+  RAW_CHECK_ROWS.forEach(c=>{
+    const code=c.cardCode; if(!code) return;
+    if(!CHECKS_BY_CUSTOMER[code]) CHECKS_BY_CUSTOMER[code]=[];
+    CHECKS_BY_CUSTOMER[code].push({docNum:c.docNum, regDate:parseSapDate(c.regDate), dueDate:parseSapDate(c.dueDate), sum:parseNum(c.sum), bank:c.bank||''});
+  });
+
+  INVOICES = await mapInChunks(RAW_INVOICE_ROWS, computeInvoice, RAW_INVOICE_ROWS.length>CHUNK_SIZE ? 'جارِ حساب الفواتير...' : null);
   groupByCustomer();
-  msg.textContent = `تم تحليل ${INVOICES.length} فاتورة ضمن ${CUSTOMERS.length} عميل.`;
+
+  // البيانات الجديدة انضمّت للمخزون المحفوظ — نفرّغ صناديق اللصق تحضيراً للدفعة الجاية
+  clearFieldRaw('pasteArea'); clearFieldRaw('checksArea');
+  const puMsg=document.getElementById('pasteUploadMsg'), cuMsg=document.getElementById('checksUploadMsg');
+  if(puMsg) puMsg.textContent=''; if(cuMsg) cuMsg.textContent='';
+
+  const parts=[];
+  if(addedInv||updatedInv) parts.push(`فواتير: ${addedInv} جديدة${updatedInv?` + ${updatedInv} محدَّثة`:''}`);
+  if(addedChk||updatedChk) parts.push(`شيكات: ${addedChk} جديد${updatedChk?` + ${updatedChk} محدَّث`:''}`);
+  msg.textContent = (parts.length?parts.join(' · ')+' — ':'')+`الإجمالي الآن: ${INVOICES.length} فاتورة ضمن ${CUSTOMERS.length} عميل.`;
   msg.className='status-msg ok';
   renderSummary();
   document.getElementById('toolbar').style.display='flex';
+  listPageLimit = PAGE_SIZE;
   renderList();
 
   // طي قسم الإدخال تلقائياً بعد نجاح التحليل لتوفير المساحة
   document.getElementById('inputPanel').style.display='none';
   document.getElementById('inputPanelCollapsed').style.display='flex';
   document.getElementById('collapseInputBtn').style.display='inline-block';
+  scheduleAutoSave();
 }
 
 function monthLabel(idx){
@@ -729,7 +1639,7 @@ function renderSummary(){
   ]);
 }
 
-function setFilter(f){ currentFilter=f; document.querySelectorAll('#filterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===f)); renderList(); }
+function setFilter(f){ currentFilter=f; listPageLimit=PAGE_SIZE; document.querySelectorAll('#filterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===f)); renderList(); }
 
 function chunksTableHtml(r){
   if(r.chunkResults.length===0) return '<div style="font-size:11.5px;color:var(--ink-soft);padding:8px 0;">ما في تفاصيل استهلاك (تحقق من وجود بيانات الأشهر أو الرصيد=0).</div>';
@@ -784,7 +1694,10 @@ function renderList(){
 
   if(list.length===0){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🔍</div>ما في نتائج مطابقة</div>`; return; }
 
-  wrap.innerHTML = list.map((c,ci)=>{
+  const totalMatched = list.length;
+  const pageList = list.slice(0, listPageLimit);
+
+  wrap.innerHTML = pageList.map((c,ci)=>{
     const cid = 'c_'+ci;
     const custHidden = HIDDEN.has('cust:'+c.cardCode);
     const gapBadge = c.gapCount>0 ? `<span class="pill" style="background:var(--crimson);color:#fff;">🚨 ${c.gapCount} ثغرة</span>` : '';
@@ -845,7 +1758,17 @@ function renderList(){
       </div>
       <div class="cust-body">${invBlocks || '<div style="font-size:12px;color:var(--ink-soft);">كل فواتير هذا العميل مخفية.</div>'}</div>
     </div>`;
-  }).join('');
+  }).join('') + (totalMatched>listPageLimit ? `<div class="load-more-row">
+      <button onclick="listPageLimit+=PAGE_SIZE; renderList();">⬇️ تحميل المزيد</button>
+      <div class="cnt">عرض ${pageList.length} من ${totalMatched} عميل مطابق</div>
+    </div>` : '');
+}
+
+function printList(){
+  const prevLimit = listPageLimit;
+  listPageLimit = Infinity; renderList();
+  window.print();
+  setTimeout(()=>{ listPageLimit = prevLimit; renderList(); }, 300);
 }
 
 function toggleHide(key){
@@ -860,17 +1783,20 @@ function expandAll(){ document.querySelectorAll('.cust').forEach(c=>c.classList.
 function collapseAll(){ document.querySelectorAll('.cust').forEach(c=>c.classList.remove('open')); document.querySelectorAll('.inv-block').forEach(c=>c.classList.remove('open')); }
 
 function clearAll(){
-  document.getElementById('pasteArea').value='';
-  document.getElementById('checksArea').value='';
+  clearFieldRaw('pasteArea'); clearFieldRaw('checksArea');
+  document.getElementById('pasteUploadMsg').textContent='';
+  document.getElementById('checksUploadMsg').textContent='';
   document.getElementById('statusMsg').textContent='';
   document.getElementById('summaryRow').style.display='none';
   document.getElementById('summaryPctRow').style.display='none';
   document.getElementById('toolbar').style.display='none';
   document.getElementById('listWrap').innerHTML = `<div class="empty-state"><div class="ic">📋</div>لسا ما في بيانات — الصق الكويريين فوق واضغط "تحليل البيانات"</div>`;
   document.getElementById('inputPanel').style.display='block';
+  RAW_INVOICE_ROWS=[]; RAW_CHECK_ROWS=[]; listPageLimit=PAGE_SIZE;
   document.getElementById('inputPanelCollapsed').style.display='none';
   document.getElementById('collapseInputBtn').style.display='none';
   INVOICES=[]; CUSTOMERS=[]; CHECKS_BY_CUSTOMER={}; HIDDEN=new Set();
+  scheduleAutoSave();
 }
 
 let violationReportOpen = false;
@@ -986,6 +1912,9 @@ function switchPage(page){
 })();
 
 let AGING_ROWS = [];
+let RAW_AGING_ROWS = [];       // صفوف خام مدمجة (upsert بمفتاح رمز العميل) — كل صف يحمل تاريخ لقطته الخاص _snapshotDate
+let RAW_AGING_CHECK_ROWS = []; // شيكات مدمجة لتبويب عمر الذمة
+let agingPageLimit = PAGE_SIZE;
 let agingFilter = 'all';
 
 // ===== كويري ٥ — الاستهلاك الدقيق (يحل محل كويري ٤ بالكامل) =====
@@ -1010,33 +1939,54 @@ function requiredDueDateFromMonthEnd(monthEnd, extraDays){
   return addDays(monthEnd, extraDays);
 }
 
-function processAging(){
-  const raw = document.getElementById('agingPasteArea').value;
-  const rawChecks = document.getElementById('agingChecksPasteArea').value;
+async function processAging(){
+  const raw = getRawValue('agingPasteArea');
+  const rawChecks = getRawValue('agingChecksPasteArea');
   const snapVal = document.getElementById('snapshotDate').value;
   const msg = document.getElementById('agingStatusMsg');
-  if(!raw.trim()){ msg.textContent='ما في بيانات ملصوقة.'; msg.className='status-msg err'; return; }
-  if(!snapVal){ msg.textContent='لازم تحدد تاريخ اللقطة أول.'; msg.className='status-msg err'; return; }
-  const snapshotDate = new Date(snapVal+'T00:00:00');
+  if(!raw.trim() && RAW_AGING_ROWS.length===0){ msg.textContent='ما في بيانات ملصوقة أو مرفوعة بعد.'; msg.className='status-msg err'; return; }
 
-  const parsed = genericParse(raw, AGING_HEADER_MAP).filter(r=>r.cardCode);
-  if(parsed.length===0){ msg.textContent='ما قدرت أتعرف على أي صف صالح — تأكد من سطر العناوين (كويري ٨).'; msg.className='status-msg err'; return; }
-
-  const checksByCustomer = {};
-  if(rawChecks.trim()){
-    genericParse(rawChecks, CHECK_HEADER_MAP).forEach(c=>{
-      const code = c.cardCode; if(!code) return;
-      if(!checksByCustomer[code]) checksByCustomer[code]=[];
-      checksByCustomer[code].push({docNum:c.docNum, dueDate:parseSapDate(c.dueDate), sum:parseNum(c.sum), bank:c.bank||''});
-    });
+  let addedAg=0, updatedAg=0;
+  if(raw.trim()){
+    if(!snapVal){ msg.textContent='لازم تحدد تاريخ اللقطة أول.'; msg.className='status-msg err'; return; }
+    const parsed = genericParse(raw, AGING_HEADER_MAP).filter(r=>r.cardCode);
+    if(parsed.length===0){ msg.textContent='ما قدرت أتعرف على أي صف صالح — تأكد من سطر العناوين (كويري ٨).'; msg.className='status-msg err'; return; }
+    parsed.forEach(r=>{ r._snapshotDate = snapVal; }); // كل صف يحمل تاريخ اللقطة يلي انلصق فيه (يسمح بدمج لقطات بتواريخ مختلفة لعملاء مختلفين)
+    const merged = mergeByKey(RAW_AGING_ROWS, parsed, r=>r.cardCode);
+    RAW_AGING_ROWS = merged.rows; addedAg=merged.added; updatedAg=merged.updated;
   }
 
-  AGING_ROWS = parsed.map(r => computeAgingRow(r, snapshotDate, checksByCustomer[r.cardCode]||[]));
-  msg.textContent = `تم تحليل ${AGING_ROWS.length} عميل بتاريخ اللقطة ${fmtDate(snapshotDate)}.`;
+  let addedChk=0, updatedChk=0;
+  if(rawChecks.trim()){
+    const parsedChecks = genericParse(rawChecks, CHECK_HEADER_MAP).filter(c=>c.cardCode);
+    const merged = mergeByKey(RAW_AGING_CHECK_ROWS, parsedChecks, c=>(c.cardCode||'')+'|'+(c.docNum||''));
+    RAW_AGING_CHECK_ROWS = merged.rows; addedChk=merged.added; updatedChk=merged.updated;
+  }
+  const checksByCustomer = {};
+  RAW_AGING_CHECK_ROWS.forEach(c=>{
+    const code = c.cardCode; if(!code) return;
+    if(!checksByCustomer[code]) checksByCustomer[code]=[];
+    checksByCustomer[code].push({docNum:c.docNum, dueDate:parseSapDate(c.dueDate), sum:parseNum(c.sum), bank:c.bank||''});
+  });
+
+  AGING_ROWS = await mapInChunks(RAW_AGING_ROWS,
+    r => computeAgingRow(r, new Date((r._snapshotDate||snapVal)+'T00:00:00'), checksByCustomer[r.cardCode]||[]),
+    RAW_AGING_ROWS.length>CHUNK_SIZE ? 'جارِ حساب عمر الذمة...' : null);
+
+  clearFieldRaw('agingPasteArea'); clearFieldRaw('agingChecksPasteArea');
+  const puMsg=document.getElementById('agingUploadMsg'), cuMsg=document.getElementById('agingChecksUploadMsg');
+  if(puMsg) puMsg.textContent=''; if(cuMsg) cuMsg.textContent='';
+
+  const parts=[];
+  if(addedAg||updatedAg) parts.push(`عملاء: ${addedAg} جديد${updatedAg?` + ${updatedAg} محدَّث`:''}`);
+  if(addedChk||updatedChk) parts.push(`شيكات: ${addedChk} جديد${updatedChk?` + ${updatedChk} محدَّث`:''}`);
+  msg.textContent = (parts.length?parts.join(' · ')+' — ':'')+`الإجمالي الآن: ${AGING_ROWS.length} عميل.`;
   msg.className='status-msg ok';
   renderAgingSummary();
   document.getElementById('agingToolbar').style.display='flex';
+  agingPageLimit = PAGE_SIZE;
   renderAging();
+  scheduleAutoSave();
 }
 
 const N_MONTHS_AGING = 13; // M0..M12plus
@@ -1157,7 +2107,7 @@ function renderAgingSummary(){
 }
 
 function setAgingFilter(f){
-  agingFilter = f;
+  agingFilter = f; agingPageLimit=PAGE_SIZE;
   document.querySelectorAll('#agingFilterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===f));
   renderAging();
 }
@@ -1228,6 +2178,9 @@ function renderAging(){
 
   if(rows.length===0){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🔍</div>ما في نتائج مطابقة</div>`; return; }
 
+  const totalMatched = rows.length;
+  rows = rows.slice(0, agingPageLimit);
+
   let html = `<table class="aging-tbl"><thead><tr>`;
   AGING_COLS.forEach(c=>{
     if(!c.sortable){ html += `<th><input type="checkbox" onclick="toggleAllAgingCheck(this)" title="تحديد الكل"></th>`; return; }
@@ -1269,6 +2222,10 @@ function renderAging(){
     </td></tr>`;
   });
   html += '</tbody></table>';
+  if(totalMatched>agingPageLimit) html += `<div class="load-more-row">
+      <button onclick="agingPageLimit+=PAGE_SIZE; renderAging();">⬇️ تحميل المزيد</button>
+      <div class="cnt">عرض ${rows.length} من ${totalMatched} عميل مطابق</div>
+    </div>`;
   wrap.innerHTML = html;
 }
 
@@ -1279,19 +2236,22 @@ function toggleAgingDetail(id){
 }
 
 function clearAging(){
-  document.getElementById('agingPasteArea').value='';
-  document.getElementById('agingChecksPasteArea').value='';
+  clearFieldRaw('agingPasteArea'); clearFieldRaw('agingChecksPasteArea');
+  document.getElementById('agingUploadMsg').textContent='';
+  document.getElementById('agingChecksUploadMsg').textContent='';
   document.getElementById('agingStatusMsg').textContent='';
   document.getElementById('agingSummaryRow').style.display='none';
   document.getElementById('agingPctRow').style.display='none';
   document.getElementById('agingToolbar').style.display='none';
   document.getElementById('agingTableWrap').innerHTML = `<div class="empty-state"><div class="ic">📊</div>لسا ما في بيانات — الصق كويري ٨ فوق واختر تاريخ اللقطة واضغط "تحليل عمر الذمة"</div>`;
-  AGING_ROWS=[];
+  AGING_ROWS=[]; RAW_AGING_ROWS=[]; RAW_AGING_CHECK_ROWS=[]; agingPageLimit=PAGE_SIZE;
+  scheduleAutoSave();
 }
 
 function printFilteredAging(status, label){
   const prevFilter = agingFilter;
-  agingFilter = status;
+  const prevLimit = agingPageLimit;
+  agingFilter = status; agingPageLimit = Infinity;
   document.querySelectorAll('#agingFilterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===status));
   renderAging();
 
@@ -1309,7 +2269,7 @@ function printFilteredAging(status, label){
 
   window.print();
   setTimeout(()=>{
-    agingFilter = prevFilter;
+    agingFilter = prevFilter; agingPageLimit = prevLimit;
     document.querySelectorAll('#agingFilterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===prevFilter));
     renderAging();
     header.style.display='none';
@@ -1464,33 +2424,47 @@ const SINGLE_HEADER_MAP = {
   'عدد أيام التحصيل':'daysToCollect'
 };
 let SINGLE_ROWS = [];
+let RAW_SINGLE_ROWS = []; // صفوف خام مدمجة (upsert بمفتاح رقم القيد+الشهر المخصص) — كل صف يحمل أيام السماح المستخدمة وقت لصقه
 
-function processSingle(){
-  const raw = document.getElementById('singlePasteArea').value;
+function computeSingleRow(r){
+  const extraDays = (r._extraDays!=null) ? r._extraDays : 0;
+  const refDate = parseSapDate(r.refDate);
+  const monthEnd = parseSapDate(r.monthEnd);
+  const rawDueDate = parseSapDate(r.rawDueDate);
+  const actualDate = rawDueDate || refDate;
+  const allocated = parseNum(r.allocated);
+  const reqDue = requiredDueDateFromMonthEnd(monthEnd, extraDays);
+  let violation=false, delayDays=0;
+  if(reqDue && actualDate && actualDate > reqDue){ violation=true; delayDays = daysBetween(actualDate, reqDue); }
+  return {...r, extraDays, refDate, monthEnd, rawDueDate, actualDate, allocated, reqDue, violation, delayDays};
+}
+
+async function processSingle(){
+  const raw = getRawValue('singlePasteArea');
   const extraDaysVal = document.getElementById('singleExtraDays').value;
   const msg = document.getElementById('singleStatusMsg');
-  if(!raw.trim()){ msg.textContent='ما في بيانات ملصوقة.'; msg.className='status-msg err'; return; }
-  if(!extraDaysVal){ msg.textContent='لازم تحدد أيام السماح لهذا العميل أول.'; msg.className='status-msg err'; return; }
-  const extraDays = parseNum(extraDaysVal);
+  if(!raw.trim() && RAW_SINGLE_ROWS.length===0){ msg.textContent='ما في بيانات ملصوقة أو مرفوعة بعد.'; msg.className='status-msg err'; return; }
 
-  const parsed = genericParse(raw, SINGLE_HEADER_MAP).filter(r=>r.transId);
-  if(parsed.length===0){ msg.textContent='ما قدرت أتعرف على أي صف صالح — تأكد من سطر العناوين (كويري ٩).'; msg.className='status-msg err'; return; }
+  let added=0, updated=0;
+  if(raw.trim()){
+    if(!extraDaysVal){ msg.textContent='لازم تحدد أيام السماح لهذا العميل أول.'; msg.className='status-msg err'; return; }
+    const extraDays = parseNum(extraDaysVal);
+    const parsed = genericParse(raw, SINGLE_HEADER_MAP).filter(r=>r.transId);
+    if(parsed.length===0){ msg.textContent='ما قدرت أتعرف على أي صف صالح — تأكد من سطر العناوين (كويري ٩).'; msg.className='status-msg err'; return; }
+    parsed.forEach(r=>{ r._extraDays = extraDays; });
+    const merged = mergeByKey(RAW_SINGLE_ROWS, parsed, r=>(r.transId||'')+'|'+(r.salesMonth||''));
+    RAW_SINGLE_ROWS = merged.rows; added=merged.added; updated=merged.updated;
+  }
 
-  SINGLE_ROWS = parsed.map(r=>{
-    const refDate = parseSapDate(r.refDate);
-    const monthEnd = parseSapDate(r.monthEnd);
-    const rawDueDate = parseSapDate(r.rawDueDate);
-    const actualDate = rawDueDate || refDate;
-    const allocated = parseNum(r.allocated);
-    const reqDue = requiredDueDateFromMonthEnd(monthEnd, extraDays);
-    let violation=false, delayDays=0;
-    if(reqDue && actualDate && actualDate > reqDue){ violation=true; delayDays = daysBetween(actualDate, reqDue); }
-    return {...r, refDate, monthEnd, rawDueDate, actualDate, allocated, reqDue, violation, delayDays};
-  });
+  SINGLE_ROWS = await mapInChunks(RAW_SINGLE_ROWS, computeSingleRow, RAW_SINGLE_ROWS.length>CHUNK_SIZE ? 'جارِ حساب الحركات...' : null);
 
-  msg.textContent = `تم تحليل ${SINGLE_ROWS.length} حركة تسديد.`;
+  clearFieldRaw('singlePasteArea');
+  const suMsg = document.getElementById('singleUploadMsg'); if(suMsg) suMsg.textContent='';
+
+  msg.textContent = (added||updated ? `حركات: ${added} جديدة${updated?` + ${updated} محدَّثة`:''} — `:'')+`الإجمالي الآن: ${SINGLE_ROWS.length} حركة تسديد.`;
   msg.className='status-msg ok';
   renderSingle();
+  scheduleAutoSave();
 }
 
 let singleSortKey = 'refDate';
@@ -1565,14 +2539,16 @@ function renderSingle(){
 }
 
 function clearSingle(){
-  document.getElementById('singlePasteArea').value='';
+  clearFieldRaw('singlePasteArea');
+  document.getElementById('singleUploadMsg').textContent='';
   document.getElementById('singleExtraDays').value='';
   document.getElementById('singleStatusMsg').textContent='';
   document.getElementById('singleSummaryRow').style.display='none';
   document.getElementById('singlePctRow').style.display='none';
   document.getElementById('singleToolbar').style.display='none';
   document.getElementById('singleTableWrap').innerHTML = `<div class="empty-state"><div class="ic">🔍</div>الصق نتيجة كويري ٩ وحدّد أيام السماح واضغط "تحليل"</div>`;
-  SINGLE_ROWS=[];
+  SINGLE_ROWS=[]; RAW_SINGLE_ROWS=[];
+  scheduleAutoSave();
 }
 // ============================================================
 // صفحة التحصيل اليومي (كويري ١٠)
@@ -1586,22 +2562,36 @@ for(let i=0;i<12;i++) DAILY_HEADER_MAP[`M${i} `+['الشهر الحالي (حت�
 DAILY_HEADER_MAP['M12plus أقدم من 12 شهر'] = 'm12';
 
 let DAILY_ROWS = [];
+let RAW_DAILY_ROWS = []; // صفوف خام مدمجة (upsert بمفتاح رقم القيد)
+let dailyPageLimit = PAGE_SIZE;
 let dailyFilter = 'all';
 const DAILY_GRACE = 5;
 
-function processDaily(){
-  const raw = document.getElementById('dailyPasteArea').value;
+async function processDaily(){
+  const raw = getRawValue('dailyPasteArea');
   const msg = document.getElementById('dailyStatusMsg');
-  if(!raw.trim()){ msg.textContent='ما في بيانات ملصوقة.'; msg.className='status-msg err'; return; }
-  const parsed = genericParse(raw, DAILY_HEADER_MAP).filter(r=>r.cardCode);
-  if(parsed.length===0){ msg.textContent='ما قدرت أتعرف على أي صف صالح — تأكد من سطر العناوين (كويري ١٠).'; msg.className='status-msg err'; return; }
+  if(!raw.trim() && RAW_DAILY_ROWS.length===0){ msg.textContent='ما في بيانات ملصوقة أو مرفوعة بعد.'; msg.className='status-msg err'; return; }
 
-  DAILY_ROWS = parsed.map(computeDailyRow);
-  msg.textContent = `تم تحليل ${DAILY_ROWS.length} تحصيل.`;
+  let added=0, updated=0;
+  if(raw.trim()){
+    const parsed = genericParse(raw, DAILY_HEADER_MAP).filter(r=>r.cardCode);
+    if(parsed.length===0){ msg.textContent='ما قدرت أتعرف على أي صف صالح — تأكد من سطر العناوين (كويري ١٠).'; msg.className='status-msg err'; return; }
+    const merged = mergeByKey(RAW_DAILY_ROWS, parsed, r=>r.transId||((r.cardCode||'')+'|'+(r.collectDate||'')+'|'+(r.amount||'')));
+    RAW_DAILY_ROWS = merged.rows; added=merged.added; updated=merged.updated;
+  }
+
+  DAILY_ROWS = await mapInChunks(RAW_DAILY_ROWS, computeDailyRow, RAW_DAILY_ROWS.length>CHUNK_SIZE ? 'جارِ حساب التحصيلات...' : null);
+
+  clearFieldRaw('dailyPasteArea');
+  const duMsg = document.getElementById('dailyUploadMsg'); if(duMsg) duMsg.textContent='';
+
+  msg.textContent = (added||updated ? `تحصيلات: ${added} جديد${updated?` + ${updated} محدَّث`:''} — `:'')+`الإجمالي الآن: ${DAILY_ROWS.length} تحصيل.`;
   msg.className='status-msg ok';
   renderDailySummary();
   document.getElementById('dailyToolbar').style.display='flex';
+  dailyPageLimit = PAGE_SIZE;
   renderDaily();
+  scheduleAutoSave();
 }
 
 function computeDailyRow(r){
@@ -1679,7 +2669,7 @@ function renderDailySummary(){
 }
 
 function setDailyFilter(f){
-  dailyFilter = f;
+  dailyFilter = f; dailyPageLimit=PAGE_SIZE;
   document.querySelectorAll('#dailyFilterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===f));
   renderDaily();
 }
@@ -1733,6 +2723,9 @@ function renderDaily(){
 
   if(rows.length===0){ wrap.innerHTML = `<div class="empty-state"><div class="ic">🔍</div>ما في نتائج مطابقة</div>`; return; }
 
+  const totalMatched = rows.length;
+  rows = rows.slice(0, dailyPageLimit);
+
   let html = `<table class="aging-tbl"><thead><tr>`;
   DAILY_COLS.forEach(c=>{
     const arrow = dailySortKey===c.key ? (dailySortDir==='asc'?' ▲':' ▼') : '';
@@ -1767,6 +2760,10 @@ function renderDaily(){
     </td></tr>`;
   });
   html += '</tbody></table>';
+  if(totalMatched>dailyPageLimit) html += `<div class="load-more-row">
+      <button onclick="dailyPageLimit+=PAGE_SIZE; renderDaily();">⬇️ تحميل المزيد</button>
+      <div class="cnt">عرض ${rows.length} من ${totalMatched} تحصيل مطابق</div>
+    </div>`;
   wrap.innerHTML = html;
 }
 
@@ -1777,18 +2774,21 @@ function toggleDailyDetail(id){
 }
 
 function clearDaily(){
-  document.getElementById('dailyPasteArea').value='';
+  clearFieldRaw('dailyPasteArea');
+  document.getElementById('dailyUploadMsg').textContent='';
   document.getElementById('dailyStatusMsg').textContent='';
   document.getElementById('dailySummaryRow').style.display='none';
   document.getElementById('dailyPctRow').style.display='none';
   document.getElementById('dailyToolbar').style.display='none';
   document.getElementById('dailyTableWrap').innerHTML = `<div class="empty-state"><div class="ic">💰</div>الصق نتيجة كويري ١٠ واضغط "تحليل التحصيل"</div>`;
-  DAILY_ROWS=[];
+  DAILY_ROWS=[]; RAW_DAILY_ROWS=[]; dailyPageLimit=PAGE_SIZE;
+  scheduleAutoSave();
 }
 
 function printFilteredDaily(status, label){
   const prevFilter = dailyFilter;
-  dailyFilter = status;
+  const prevLimit = dailyPageLimit;
+  dailyFilter = status; dailyPageLimit = Infinity;
   document.querySelectorAll('#dailyFilterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===status));
   renderDaily();
 
@@ -1806,7 +2806,7 @@ function printFilteredDaily(status, label){
 
   window.print();
   setTimeout(()=>{
-    dailyFilter = prevFilter;
+    dailyFilter = prevFilter; dailyPageLimit = prevLimit;
     document.querySelectorAll('#dailyFilterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===prevFilter));
     renderDaily();
     header.style.display='none';
@@ -1830,22 +2830,22 @@ function exportDailyCsv(){
 // ============================================================
 function buildBackupObject(){
   return {
-    _meta: { app: 'شاشة تحليل مخالفات عمر الذمة', savedAt: new Date().toISOString(), version:'v36' },
+    _meta: { app: 'شاشة تحليل مخالفات عمر الذمة', savedAt: new Date().toISOString(), version:'v37', storageFormat:2 },
     approvals: {
-      pasteArea: document.getElementById('pasteArea').value,
-      checksArea: document.getElementById('checksArea').value
+      rawInvoiceRows: RAW_INVOICE_ROWS,
+      rawCheckRows: RAW_CHECK_ROWS
     },
     aging: {
-      agingPasteArea: document.getElementById('agingPasteArea').value,
-      agingChecksPasteArea: document.getElementById('agingChecksPasteArea').value,
+      rawAgingRows: RAW_AGING_ROWS,
+      rawAgingCheckRows: RAW_AGING_CHECK_ROWS,
       snapshotDate: document.getElementById('snapshotDate').value
     },
     single: {
-      singlePasteArea: document.getElementById('singlePasteArea').value,
+      rawSingleRows: RAW_SINGLE_ROWS,
       singleExtraDays: document.getElementById('singleExtraDays').value
     },
     daily: {
-      dailyPasteArea: document.getElementById('dailyPasteArea').value
+      rawDailyRows: RAW_DAILY_ROWS
     },
     hidden: Array.from(HIDDEN||[]),
     testManagers: (typeof TEST_MANAGERS!=='undefined') ? TEST_MANAGERS : []
@@ -1865,27 +2865,50 @@ function downloadBackup(){
   setTimeout(()=>{msg.textContent='';}, 4000);
 }
 
-// يطبّق كائن نسخة احتياطية (من ملف أو من السيرفر المشترك) على الشاشة، ويعيد تشغيل التحليل لكل تبويب فيه بيانات ملصوقة
-function applyBackup(backup){
+// يطبّق كائن نسخة احتياطية (من ملف أو من السيرفر المشترك) على الشاشة، ويعيد تشغيل التحليل لكل تبويب فيه بيانات محفوظة
+// يدعم الصيغة الجديدة (صفوف خام مدمجة — v37) والصيغة القديمة (نص لصق كامل — v36 فما قبل) للتوافق الرجعي
+async function applyBackup(backup){
   if(backup.approvals){
-    document.getElementById('pasteArea').value = backup.approvals.pasteArea||'';
-    document.getElementById('checksArea').value = backup.approvals.checksArea||'';
-    if(backup.approvals.pasteArea && backup.approvals.pasteArea.trim()) processData();
+    if(Array.isArray(backup.approvals.rawInvoiceRows)){
+      RAW_INVOICE_ROWS = backup.approvals.rawInvoiceRows||[];
+      RAW_CHECK_ROWS = backup.approvals.rawCheckRows||[];
+      if(RAW_INVOICE_ROWS.length) await processData();
+    } else if(backup.approvals.pasteArea && backup.approvals.pasteArea.trim()){
+      setFieldRawText('pasteArea', backup.approvals.pasteArea, 'نسخة احتياطية قديمة (تبويب الموافقات)');
+      setFieldRawText('checksArea', backup.approvals.checksArea||'', 'نسخة احتياطية قديمة (شيكات)');
+      await processData();
+    }
   }
   if(backup.aging){
-    document.getElementById('agingPasteArea').value = backup.aging.agingPasteArea||'';
-    document.getElementById('agingChecksPasteArea').value = backup.aging.agingChecksPasteArea||'';
     if(backup.aging.snapshotDate) document.getElementById('snapshotDate').value = backup.aging.snapshotDate;
-    if(backup.aging.agingPasteArea && backup.aging.agingPasteArea.trim()) processAging();
+    if(Array.isArray(backup.aging.rawAgingRows)){
+      RAW_AGING_ROWS = backup.aging.rawAgingRows||[];
+      RAW_AGING_CHECK_ROWS = backup.aging.rawAgingCheckRows||[];
+      if(RAW_AGING_ROWS.length) await processAging();
+    } else if(backup.aging.agingPasteArea && backup.aging.agingPasteArea.trim()){
+      setFieldRawText('agingPasteArea', backup.aging.agingPasteArea, 'نسخة احتياطية قديمة (عمر الذمة)');
+      setFieldRawText('agingChecksPasteArea', backup.aging.agingChecksPasteArea||'', 'نسخة احتياطية قديمة (شيكات)');
+      await processAging();
+    }
   }
   if(backup.single){
-    document.getElementById('singlePasteArea').value = backup.single.singlePasteArea||'';
-    document.getElementById('singleExtraDays').value = backup.single.singleExtraDays||'';
-    if(backup.single.singlePasteArea && backup.single.singlePasteArea.trim()) processSingle();
+    if(backup.single.singleExtraDays) document.getElementById('singleExtraDays').value = backup.single.singleExtraDays;
+    if(Array.isArray(backup.single.rawSingleRows)){
+      RAW_SINGLE_ROWS = backup.single.rawSingleRows||[];
+      if(RAW_SINGLE_ROWS.length) await processSingle();
+    } else if(backup.single.singlePasteArea && backup.single.singlePasteArea.trim()){
+      setFieldRawText('singlePasteArea', backup.single.singlePasteArea, 'نسخة احتياطية قديمة (عميل واحد)');
+      await processSingle();
+    }
   }
   if(backup.daily){
-    document.getElementById('dailyPasteArea').value = backup.daily.dailyPasteArea||'';
-    if(backup.daily.dailyPasteArea && backup.daily.dailyPasteArea.trim()) processDaily();
+    if(Array.isArray(backup.daily.rawDailyRows)){
+      RAW_DAILY_ROWS = backup.daily.rawDailyRows||[];
+      if(RAW_DAILY_ROWS.length) await processDaily();
+    } else if(backup.daily.dailyPasteArea && backup.daily.dailyPasteArea.trim()){
+      setFieldRawText('dailyPasteArea', backup.daily.dailyPasteArea, 'نسخة احتياطية قديمة (التحصيل اليومي)');
+      await processDaily();
+    }
   }
   if(backup.hidden && Array.isArray(backup.hidden)){
     HIDDEN = new Set(backup.hidden);
@@ -1901,7 +2924,7 @@ function restoreBackup(event){
   const msg = document.getElementById('backupStatusMsg');
   if(!file) return;
   const reader = new FileReader();
-  reader.onload = e => {
+  reader.onload = async e => {
     let backup;
     try{
       let text = e.target.result;
@@ -1911,7 +2934,7 @@ function restoreBackup(event){
       msg.textContent = '✗ الملف غير صالح (مش JSON نسخة احتياطية سليمة)'; msg.className='status-msg err';
       return;
     }
-    applyBackup(backup);
+    await applyBackup(backup);
     const savedAt = backup._meta && backup._meta.savedAt ? new Date(backup._meta.savedAt).toLocaleString('ar-EG') : 'غير معروف';
     msg.textContent = `✓ تم استرجاع النسخة الاحتياطية (محفوظة بتاريخ: ${savedAt})`;
     msg.className='status-msg ok';
@@ -1959,7 +2982,7 @@ async function pullStateFromCloud(){
   try{
     const {data, error} = await sb.from('debtaging_app_state').select('data, updated_at').eq('id','main').maybeSingle();
     if(error || !data || !data.data) return;
-    applyBackup(data.data);
+    await applyBackup(data.data);
     localStorage.setItem(DEBTAGING_STORAGE_KEY, JSON.stringify(data.data));
     const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ تم تحميل آخر نسخة من السيرفر المشترك'; el.className='status-msg ok'; }
   }catch(e){ console.warn('تعذر التحميل من السيرفر المشترك', e); }
