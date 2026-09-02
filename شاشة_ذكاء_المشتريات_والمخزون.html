@@ -276,6 +276,14 @@ WHERE T0."validFor"='Y'</code>
     <div class="input-panel" id="paramsPanel" style="display:none;">
       <h2 style="margin-bottom:6px;">بارامترات الشراء لكل صنف <span style="font-weight:400;color:var(--ink-soft);font-size:11.5px;">(مصدرها خارج SAP غالباً — أدخلها يدوياً مرة واحدة، تُحفَظ سحابياً)</span></h2>
       <div class="hint">أي حقل فارغ يجعل توصية الصنف تظهر بحالة "بيانات ناقصة" بدل قرار شراء تلقائي — لا افتراضات مخفية.</div>
+      <div class="row-actions" style="background:var(--gold-bg); border:1px dashed var(--gold); border-radius:10px; padding:10px 14px; margin-bottom:12px;">
+        <span style="font-size:11.5px; color:var(--gold); font-weight:700;">⚠ تعبئة سريعة بقيمة افتراضية (للأصناف الفاضية بس — ما بتلمس أي قيمة مُدخَلة):</span>
+        <label style="font-size:11.5px; display:flex; align-items:center; gap:5px;">Lead Time <input id="defLT" type="number" style="width:56px; font-family:var(--mono); border:1px solid var(--line); border-radius:6px; padding:3px 6px;"></label>
+        <label style="font-size:11.5px; display:flex; align-items:center; gap:5px;">MOQ <input id="defMOQ" type="number" style="width:56px; font-family:var(--mono); border:1px solid var(--line); border-radius:6px; padding:3px 6px;"></label>
+        <label style="font-size:11.5px; display:flex; align-items:center; gap:5px;">مضاعف <input id="defMult" type="number" value="1" style="width:56px; font-family:var(--mono); border:1px solid var(--line); border-radius:6px; padding:3px 6px;"></label>
+        <button class="btn-ghost btn-sm" style="border-color:var(--gold); color:var(--gold);" onclick="applyDefaults()">تطبيق على الفاضي بس</button>
+        <span class="status-msg" id="defaultsMsg"></span>
+      </div>
       <div style="overflow-x:auto;">
         <table class="paramtbl" id="paramsTable">
           <thead><tr>
@@ -390,7 +398,7 @@ function processAllDataHeavy(){
     rows.forEach(r=>{
       const code = r[iCode]; if(!code) return;
       state.itemsRaw[code] = { code, name: iName>=0 ? (r[iName]||code) : code };
-      if(!state.params[code]) state.params[code] = { supplier:'', leadTimeDays:'', moq:'', orderMultiple:1, shelfLifeDays:'', minRemainShelfLife:'', unitCost:'', serviceLevel:95, criticality:'Medium' };
+      if(!state.params[code]) state.params[code] = { supplier:'', leadTimeDays:'', moq:'', orderMultiple:1, shelfLifeDays:'', minRemainShelfLife:'', unitCost:'', serviceLevel:95, criticality:'Medium', leadTimeIsDefault:false, moqIsDefault:false };
     });
   }
 
@@ -453,11 +461,11 @@ function processAllDataHeavy(){
       const critMap = {'عالية':'High','متوسطة':'Medium','منخفضة':'Low',high:'High',medium:'Medium',low:'Low'};
       rows.forEach(r=>{
         const code = r[iCode]; if(!code) return;
-        if(!state.params[code]) state.params[code] = { supplier:'', leadTimeDays:'', moq:'', orderMultiple:1, shelfLifeDays:'', minRemainShelfLife:'', unitCost:'', serviceLevel:95, criticality:'Medium' };
+        if(!state.params[code]) state.params[code] = { supplier:'', leadTimeDays:'', moq:'', orderMultiple:1, shelfLifeDays:'', minRemainShelfLife:'', unitCost:'', serviceLevel:95, criticality:'Medium', leadTimeIsDefault:false, moqIsDefault:false };
         const p = state.params[code];
         if(iSupplier>=0 && r[iSupplier]) p.supplier = r[iSupplier];
-        if(iLT>=0 && r[iLT]!=='' && !isNaN(toNum(r[iLT]))) p.leadTimeDays = toNum(r[iLT]);
-        if(iMOQ>=0 && r[iMOQ]!=='' && !isNaN(toNum(r[iMOQ]))) p.moq = toNum(r[iMOQ]);
+        if(iLT>=0 && r[iLT]!=='' && !isNaN(toNum(r[iLT]))){ p.leadTimeDays = toNum(r[iLT]); p.leadTimeIsDefault=false; }
+        if(iMOQ>=0 && r[iMOQ]!=='' && !isNaN(toNum(r[iMOQ]))){ p.moq = toNum(r[iMOQ]); p.moqIsDefault=false; }
         if(iMult>=0 && r[iMult]!=='' && !isNaN(toNum(r[iMult]))) p.orderMultiple = toNum(r[iMult]);
         if(iShelf>=0 && r[iShelf]!=='' && !isNaN(toNum(r[iShelf]))) p.shelfLifeDays = toNum(r[iShelf]);
         if(iMinShelf>=0 && r[iMinShelf]!=='' && !isNaN(toNum(r[iMinShelf]))) p.minRemainShelfLife = toNum(r[iMinShelf]);
@@ -501,8 +509,8 @@ function renderParamsTable(){
     return '<tr>'
       + '<td><b>'+esc(it.name)+'</b><br><span class="item-code">'+esc(code)+'</span></td>'
       + '<td><input value="'+esc(p.supplier||'')+'" onchange="updateParam(\''+code+'\',\'supplier\',this.value)"></td>'
-      + '<td><input type="number" value="'+(p.leadTimeDays??'')+'" onchange="updateParam(\''+code+'\',\'leadTimeDays\',this.value)"></td>'
-      + '<td><input type="number" value="'+(p.moq??'')+'" onchange="updateParam(\''+code+'\',\'moq\',this.value)"></td>'
+      + '<td><input type="number" value="'+(p.leadTimeDays??'')+'" title="'+(p.leadTimeIsDefault?'قيمة افتراضية عامة — غير مؤكَّدة':'')+'" style="'+(p.leadTimeIsDefault?'border-color:var(--gold);background:var(--gold-bg);':'')+'" onchange="updateParam(\''+code+'\',\'leadTimeDays\',this.value)"></td>'
+      + '<td><input type="number" value="'+(p.moq??'')+'" title="'+(p.moqIsDefault?'قيمة افتراضية عامة — غير مؤكَّدة':'')+'" style="'+(p.moqIsDefault?'border-color:var(--gold);background:var(--gold-bg);':'')+'" onchange="updateParam(\''+code+'\',\'moq\',this.value)"></td>'
       + '<td><input type="number" value="'+(p.orderMultiple??1)+'" onchange="updateParam(\''+code+'\',\'orderMultiple\',this.value)"></td>'
       + '<td><input type="number" value="'+(p.shelfLifeDays??'')+'" onchange="updateParam(\''+code+'\',\'shelfLifeDays\',this.value)"></td>'
       + '<td><input type="number" value="'+(p.minRemainShelfLife??'')+'" onchange="updateParam(\''+code+'\',\'minRemainShelfLife\',this.value)"></td>'
@@ -519,6 +527,29 @@ function renderParamsTable(){
 function updateParam(code, field, value){
   if(!state.params[code]) state.params[code] = {};
   state.params[code][field] = (field==='supplier'||field==='criticality') ? value : (value===''? '' : parseFloat(value));
+  if(field==='leadTimeDays') state.params[code].leadTimeIsDefault = false;
+  if(field==='moq') state.params[code].moqIsDefault = false;
+  runEngine();
+  renderTower();
+  scheduleCloudSave();
+}
+function applyDefaults(){
+  const defLT = toNum(document.getElementById('defLT').value);
+  const defMOQ = toNum(document.getElementById('defMOQ').value);
+  const defMult = toNum(document.getElementById('defMult').value);
+  let count = 0;
+  Object.keys(state.params).forEach(code=>{
+    const p = state.params[code];
+    let touched = false;
+    if(!isNaN(defLT) && (p.leadTimeDays===''||p.leadTimeDays==null)){ p.leadTimeDays = defLT; p.leadTimeIsDefault = true; touched=true; }
+    if(!isNaN(defMOQ) && (p.moq===''||p.moq==null)){ p.moq = defMOQ; p.moqIsDefault = true; touched=true; }
+    if(!isNaN(defMult) && defMult>0 && (p.orderMultiple===''||p.orderMultiple==null)){ p.orderMultiple = defMult; touched=true; }
+    if(touched) count++;
+  });
+  const el = document.getElementById('defaultsMsg');
+  el.textContent = '✔ تعبئة الأصناف الفاضية بس — ' + count + ' صنف';
+  el.className = 'status-msg ok';
+  renderParamsTable();
   runEngine();
   renderTower();
   scheduleCloudSave();
@@ -620,7 +651,9 @@ function runEngine(){
     if(ltActual && ltActual.length>=3){
       ltAvg = mean(ltActual); ltStd = stdev(ltActual); ltSource='فعلي من تاريخ الشراء';
     } else if(!isNaN(toNum(p.leadTimeDays))){
-      ltAvg = toNum(p.leadTimeDays); ltStd = ltAvg*0.20; ltSource='تعاقدي يدوي + افتراض تذبذب 20٪';
+      ltAvg = toNum(p.leadTimeDays);
+      if(p.leadTimeIsDefault){ ltStd = ltAvg*0.40; ltSource='⚠ افتراضي عام — غير مرتبط بمورد فعلي، يحتاج تأكيد'; }
+      else { ltStd = ltAvg*0.20; ltSource='تعاقدي يدوي + افتراض تذبذب 20٪'; }
     } else {
       ltAvg = null; ltStd = null; ltSource='غير متوفر';
     }
@@ -650,7 +683,8 @@ function runEngine(){
       const mult = toNum(p.orderMultiple) || 1;
       let qty = mult>0 ? Math.ceil(base/mult)*mult : base;
       const moq = toNum(p.moq);
-      if(qty>0 && qty<moq){ qty = moq; qtyNotes.push('رُفعت للحد الأدنى للمورد (MOQ='+moq+')'); }
+      if(qty>0 && qty<moq){ qty = moq; qtyNotes.push('رُفعت للحد الأدنى للمورد (MOQ='+moq+(p.moqIsDefault?' — افتراضي غير مؤكَّد':'')+')'); }
+      else if(p.moqIsDefault){ qtyNotes.push('⚠ MOQ افتراضي عام — لم يُؤكَّد من المورد الفعلي'); }
       // سقف الصلاحية: لا تشترِ أكثر مما يمكن استهلاكه قبل الانتهاء
       if(qty>0 && !isNaN(toNum(p.shelfLifeDays)) && dAvg>0){
         const maxByShelfLife = dAvg * toNum(p.shelfLifeDays);
@@ -691,6 +725,8 @@ function runEngine(){
     let confidence = 100 - missing.length*30;
     if(daysWithSalesData < 30) confidence -= 15;
     if(!ltActual || ltActual.length<3) confidence -= 10;
+    if(p.leadTimeIsDefault) confidence -= 20;
+    if(p.moqIsDefault) confidence -= 10;
     confidence = Math.max(5, Math.min(100, confidence));
 
     return {
