@@ -896,8 +896,15 @@ function ensureInvoiceDefaults(inv){
   if(inv.qrImg===undefined) inv.qrImg=''; // صورة QR خاصة بهاي الفاتورة (كل فاتورة إلها QR مختلف)
   if(!inv.qty) inv.qty={};
 }
+const SAVED_AT_KEY = STORAGE_KEY + '_savedAt';
 function saveState(){
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, VOUCHER_META, DUMMY_INV_ITEMS, INVOICE_LOG, PRINT_ASSETS, BRANCHES, BRANCH_CODE_MAP})); }
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, VOUCHER_META, DUMMY_INV_ITEMS, INVOICE_LOG, PRINT_ASSETS, BRANCHES, BRANCH_CODE_MAP}));
+    // بنسجل وقت آخر حفظ محلي (يضل موجود حتى لو صار ريفريش قبل ما يوصل الرفع السحابي المؤجّل) —
+    // عشان لو صار سحب (pull) من السيرفر وهاد التوقيت أحدث من آخر تحديث بالسيرفر، منعرف الجهاز هذا عنده
+    // تعديلات محلية أحدث لسا ما وصلت السيرفر، فما نمسحها بالغلط بنسخة سيرفر أقدم.
+    localStorage.setItem(SAVED_AT_KEY, new Date().toISOString());
+  }
   catch(e){ console.warn('تعذر الحفظ المحلي', e); }
   queueCloudSave();
 }
@@ -929,6 +936,17 @@ async function pullStateFromCloud(){
   try{
     const {data, error} = await sb.from('mil_app_state').select('data, updated_at').eq('id','main').maybeSingle();
     if(error || !data || !data.data){ cloudSynced = true; return; }
+    // حماية إضافية: لو هالجهاز عنده تعديلات محلية أحدث من آخر نسخة بالسيرفر (مثلاً استوردت سندات
+    // ثم عملت ريفريش بسرعة قبل ما يوصل الرفع المؤجّل — 1.5 ثانية)، ما نمسحها بسحب نسخة سيرفر أقدم —
+    // نحافظ على المحلي ونرفعه فوراً بدل ما نستبدله.
+    let localSavedAt = null;
+    try{ localSavedAt = localStorage.getItem(SAVED_AT_KEY); }catch(e){}
+    if(localSavedAt && data.updated_at && new Date(localSavedAt) > new Date(data.updated_at)){
+      cloudSynced = true;
+      queueCloudSave();
+      const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ عندك تعديلات محلية أحدث من السيرفر — رح تترفع بدل ما تنمسح'; el.className='status-msg ok'; }
+      return;
+    }
     const d = data.data;
     if(Array.isArray(d.ITEMS)) ITEMS = d.ITEMS;
     if(Array.isArray(d.GROUPS) && d.GROUPS.length) GROUPS = d.GROUPS;
