@@ -3461,11 +3461,16 @@ function renderDailyInvoiceMatch(){
   // ---- تجميع جهة السندات ----
   const buckets = new Map(); // key -> {label, kind, dates:Set, trItems:Map(theirCode->qty), invItems:Map(theirCode->qty), invValue:Map(theirCode->value), invNos:Set, docNums:Set, unmappedOurCodes:Set}
   function getBucket(key, label, kind){
-    if(!buckets.has(key)) buckets.set(key, {label, kind, dates:new Set(), trItems:new Map(), invItems:new Map(), invValue:new Map(), invNos:new Set(), docNums:new Set(), unmappedOurCodes:new Set()});
+    if(!buckets.has(key)) buckets.set(key, {label, kind, isAqaba:false, dates:new Set(), trItems:new Map(), invItems:new Map(), invValue:new Map(), invNos:new Set(), docNums:new Set(), unmappedOurCodes:new Set()});
     return buckets.get(key);
   }
-  const priceByTheirCode = new Map(ITEMS.filter(it=>it.theirCode).map(it=>[it.theirCode, it.salePricePiece||0]));
   const itemByTheirCode = new Map(ITEMS.filter(it=>it.theirCode).map(it=>[it.theirCode, it]));
+  // السعر المتوقع حسب سند التحويل: سعر مستودع/حبة العادي، أو سعر بيع المؤسسة-العقبة لو السوق/الفرع عقبة (نفس منطق باقي الشاشة)
+  function expectedPriceForItem(item, bucketIsAqaba){
+    if(!item) return null;
+    if(bucketIsAqaba) return item.aqabaWhsPricePiece || item.whsPricePiece || 0;
+    return item.whsPricePiece || 0;
+  }
   const theirNameByCode = new Map();
   DUMMY_INV_ITEMS.forEach(r=>{ if(r.theirCode && r.theirName && !theirNameByCode.has(r.theirCode)) theirNameByCode.set(r.theirCode, r.theirName); });
   const unmappedOurCodesGlobal = new Set();
@@ -3499,6 +3504,7 @@ function renderDailyInvoiceMatch(){
       else{ key = 'MKT:'+dk+'|'+mk; label = 'حسب اسم السوق: '+mk; kind = 'market'; }
     }
     const b = getBucket(key, label, kind);
+    if(t.branch && t.branch.includes('العقبة')) b.isAqaba = true;
     b.dates.add(normDateToISO(t.docDate));
     b.docNums.add(t.docNum);
     b.trItems.set(it.theirCode, (b.trItems.get(it.theirCode)||0) + theirQty);
@@ -3519,6 +3525,7 @@ function renderDailyInvoiceMatch(){
       else{ key = 'MKT:'+dk+'|'+mk; label = 'حسب اسم السوق: '+mk; kind = 'market'; }
     }
     const b = getBucket(key, label, kind);
+    if(r.market && r.market.includes('العقبة')) b.isAqaba = true;
     b.dates.add(normDateToISO(r.date));
     b.invNos.add(r.invoiceNo);
     b.invItems.set(r.theirCode, (b.invItems.get(r.theirCode)||0) + r.qty);
@@ -3539,14 +3546,14 @@ function renderDailyInvoiceMatch(){
     let hasDiff = false, trTotal=0, invTotal=0, ourTrTotal=0, ourInvTotal=0, expectedValueTotal=0, invoicedValueTotal=0;
     const rows = Array.from(codes).map(c=>{
       const t=b.trItems.get(c)||0, i=b.invItems.get(c)||0, diff=t-i;
-      const ourPrice = priceByTheirCode.has(c) ? priceByTheirCode.get(c) : null;
+      const item = itemByTheirCode.get(c);
+      const ourPrice = expectedPriceForItem(item, b.isAqaba);
       const invValueForCode = b.invValue.get(c)||0;
       const invPrice = i ? invValueForCode/i : null;
       const priceDiff = (ourPrice!=null && invPrice!=null) ? (invPrice-ourPrice) : null;
       const priceMismatch = priceDiff!=null && Math.abs(priceDiff)>PRICE_EPS;
       if(Math.abs(diff)>EPS || priceMismatch) hasDiff = true;
       trTotal+=t; invTotal+=i;
-      const item = itemByTheirCode.get(c);
       const factor = (item && item.factor) || 1;
       const ourTr = t/factor, ourInv = i/factor;
       ourTrTotal += ourTr; ourInvTotal += ourInv;
