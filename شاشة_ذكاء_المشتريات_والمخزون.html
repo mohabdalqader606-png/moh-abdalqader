@@ -267,6 +267,7 @@ WHERE T0."DocDate" >= ADD_YEARS(CURRENT_DATE, -1)</code>
           <tbody id="paramsTbody"></tbody>
         </table>
       </div>
+      <div id="paramsPager" style="display:flex; align-items:center; gap:10px; justify-content:center; padding-top:12px;"></div>
     </div>
   </section>
 
@@ -283,7 +284,7 @@ WHERE T0."DocDate" >= ADD_YEARS(CURRENT_DATE, -1)</code>
         <button data-f="EXCESS" onclick="setFilter('EXCESS')">📦 فائض</button>
         <button data-f="REVIEW" onclick="setFilter('REVIEW')">⚪ بيانات ناقصة</button>
       </div>
-      <input type="text" class="search" id="searchBox" placeholder="بحث برمز/اسم الصنف..." oninput="renderTower()">
+      <input type="text" class="search" id="searchBox" placeholder="بحث برمز/اسم الصنف..." oninput="towerPageNum=0; renderTower()">
       <div class="spacer"></div>
       <button class="print-btn btn-ghost btn-sm" onclick="window.print()">🖨️ طباعة</button>
       <button class="btn-ghost btn-sm" onclick="exportCsv()">تصدير CSV</button>
@@ -292,6 +293,7 @@ WHERE T0."DocDate" >= ADD_YEARS(CURRENT_DATE, -1)</code>
     <div class="list" id="towerList">
       <div class="empty-state"><div class="ic">🗼</div>لسا ما في بيانات محلَّلة — روح لتبويب "البيانات" وألصق الكويريات.</div>
     </div>
+    <div id="towerPager" style="display:flex; align-items:center; gap:10px; justify-content:center; padding:6px 24px 22px;"></div>
   </section>
 </main>
 </div>
@@ -345,9 +347,18 @@ function parseDateFlexible(s){
   return isNaN(d.getTime()) ? null : d;
 }
 function daysBetween(a,b){ return Math.round((b-a)/86400000); }
+function dateKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
 
 /* ================= تحليل الكويريات الملصوقة ================= */
 function processAllData(){
+  const msg = document.getElementById('dataStatusMsg');
+  msg.textContent = 'جارٍ التحليل... (قد تاخذ لحظات مع كميات بيانات كبيرة)';
+  msg.className = 'status-msg ok';
+  document.getElementById('paramsPanel').style.display = 'none';
+  // نأجّل العمل الثقيل تيك واحد حتى يرسم المتصفح رسالة "جارٍ التحليل" قبل ما يشتغل
+  setTimeout(processAllDataHeavy, 20);
+}
+function processAllDataHeavy(){
   const msg = document.getElementById('dataStatusMsg');
   state.demandWindowDays = toNum(document.getElementById('demandWindowDays').value) || 90;
 
@@ -418,9 +429,15 @@ function clearAllPasted(){
 }
 
 /* ================= جدول بارامترات الأصناف ================= */
+const PAGE_SIZE = 150;
+let paramsPageNum = 0;
 function renderParamsTable(){
   const tbody = document.getElementById('paramsTbody');
-  const codes = Object.keys(state.itemsRaw).sort();
+  const allCodes = Object.keys(state.itemsRaw).sort();
+  const pageCount = Math.max(1, Math.ceil(allCodes.length / PAGE_SIZE));
+  if(paramsPageNum >= pageCount) paramsPageNum = pageCount - 1;
+  const codes = allCodes.slice(paramsPageNum*PAGE_SIZE, paramsPageNum*PAGE_SIZE + PAGE_SIZE);
+  renderPager('paramsPager', allCodes.length, paramsPageNum, pageCount, (p)=>{ paramsPageNum=p; renderParamsTable(); });
   tbody.innerHTML = codes.map(code=>{
     const it = state.itemsRaw[code];
     const p = state.params[code] || {};
@@ -450,6 +467,17 @@ function updateParam(code, field, value){
   scheduleCloudSave();
 }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function renderPager(elId, total, pageNum, pageCount, onGo){
+  const el = document.getElementById(elId);
+  if(!el) return;
+  if(total<=PAGE_SIZE){ el.innerHTML=''; return; }
+  const from = pageNum*PAGE_SIZE+1, to = Math.min(total, (pageNum+1)*PAGE_SIZE);
+  el.innerHTML = ''
+    + '<button class="btn-ghost btn-sm" '+(pageNum<=0?'disabled':'')+' data-go="'+(pageNum-1)+'">▸ السابق</button>'
+    + '<span style="font-size:11.5px;color:var(--ink-soft);">'+from+'–'+to+' من '+total+' (صفحة '+(pageNum+1)+'/'+pageCount+')</span>'
+    + '<button class="btn-ghost btn-sm" '+(pageNum>=pageCount-1?'disabled':'')+' data-go="'+(pageNum+1)+'">التالي ◂</button>';
+  el.querySelectorAll('button[data-go]').forEach(b=>b.addEventListener('click', ()=>onGo(parseInt(b.dataset.go,10))));
+}
 
 /* ================= محرك الحساب ================= */
 const Z_TABLE = {90:1.28, 95:1.65, 97:1.88, 98:2.05, 99:2.33};
@@ -523,7 +551,7 @@ function runEngine(){
 
     // متوسط وتذبذب الطلب اليومي (تجميع يومي بسيط من نقاط البيع الملصوقة)
     const dailyMap = {};
-    (salesByItem[code]||[]).forEach(x=>{ const k=x.date.toISOString().slice(0,10); dailyMap[k]=(dailyMap[k]||0)+x.qty; });
+    (salesByItem[code]||[]).forEach(x=>{ const k=dateKey(x.date); dailyMap[k]=(dailyMap[k]||0)+x.qty; });
     const observedDays = Math.max(1, Math.min(windowDays, daysBetween(windowStart, now)));
     const dailyVals = Object.values(dailyMap);
     const dAvg = dailyVals.length ? (dailyVals.reduce((a,b)=>a+b,0) / observedDays) : 0;
@@ -640,6 +668,7 @@ function switchTab(tab){
 }
 function setFilter(f){
   curFilter = f;
+  towerPageNum = 0;
   document.querySelectorAll('#filterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===f));
   renderTower();
 }
@@ -670,16 +699,22 @@ function renderKpis(){
   ).join('');
 }
 
+let towerPageNum = 0;
 function renderTower(){
   if(!state.computed.length){ return; }
   renderKpis();
   const q = (document.getElementById('searchBox').value||'').trim().toLowerCase();
-  let list = state.computed;
-  if(curFilter!=='all') list = list.filter(r=>r.decision===curFilter);
-  if(q) list = list.filter(r=> r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
+  let fullList = state.computed;
+  if(curFilter!=='all') fullList = fullList.filter(r=>r.decision===curFilter);
+  if(q) fullList = fullList.filter(r=> r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
 
   const wrap = document.getElementById('towerList');
-  if(!list.length){ wrap.innerHTML = '<div class="empty-state"><div class="ic">🗼</div>لا توجد أصناف مطابقة للفلتر الحالي.</div>'; return; }
+  if(!fullList.length){ wrap.innerHTML = '<div class="empty-state"><div class="ic">🗼</div>لا توجد أصناف مطابقة للفلتر الحالي.</div>'; document.getElementById('towerPager').innerHTML=''; return; }
+
+  const pageCount = Math.max(1, Math.ceil(fullList.length / PAGE_SIZE));
+  if(towerPageNum >= pageCount) towerPageNum = pageCount - 1;
+  const list = fullList.slice(towerPageNum*PAGE_SIZE, towerPageNum*PAGE_SIZE + PAGE_SIZE);
+  renderPager('towerPager', fullList.length, towerPageNum, pageCount, (p)=>{ towerPageNum=p; renderTower(); });
 
   const badgeClass = {BUY_NOW:'crit', BUY_SOON:'warn', WAIT:'ok', EXCESS:'info', REVIEW:'gray'};
   wrap.innerHTML = list.map((r,idx)=>{
