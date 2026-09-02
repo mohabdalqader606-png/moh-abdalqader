@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>نظام ذكاء المشتريات والمخزون — مركز التحكم | الكيلاني للأغذية</title>
+<!--
+  إعداد Supabase (مرّة واحدة فقط، من مالك الحساب):
+  1) جدول حالة السحابة (نفس نمط باقي شاشات المستودع):
+     create table if not exists procurement_app_state (
+       id text primary key,
+       data jsonb,
+       updated_at timestamptz default now()
+     );
+     alter table procurement_app_state enable row level security;
+     -- مطابقة لنفس سياسة RLS المستخدمة على جداول *_app_state لباقي الشاشات
+     create policy "allow authenticated read/write" on procurement_app_state
+       for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+
+  2) منح صلاحية الدخول لهذه الشاشة لحساب واحد فقط (بدون مشاركتها مع باقي الموظفين):
+     update profiles set allowed_apps = coalesce(allowed_apps, '{}') || '{procurement-intelligence}'
+       where id = (select id from auth.users where email = 'mohabdalqader606@gmail.com');
+-->
+<style>
+  :root{
+    --navy:#152A4A; --navy-deep:#0E1E36; --paper:#F4F6F9; --card:#FFFFFF; --line:#E1E6EE;
+    --ink:#1B2536; --ink-soft:#5B667A;
+    --gold:#8A6416; --gold-bg:#FCEFD6;
+    --teal:#1F7A6C; --teal-bg:#E7F5F1;
+    --crimson:#B23A34; --crimson-bg:#FCEBEA;
+    --mono:'IBM Plex Mono','Consolas',monospace; --disp:'Segoe UI',Tahoma,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--disp);}
+  body{padding-bottom:60px;}
+  header.topbar{background:linear-gradient(135deg,var(--navy-deep),var(--navy) 70%); color:#fff; padding:22px 28px 26px; position:relative; overflow:hidden;}
+  header.topbar::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(90deg, rgba(255,255,255,.035) 0 1px, transparent 1px 46px); pointer-events:none;}
+  .topbar-inner{position:relative; display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:14px;}
+  .eyebrow{font-size:12px; letter-spacing:.06em; color:#9FB0CC; margin-bottom:6px; font-weight:600;}
+  h1{margin:0; font-size:22px; font-weight:700;}
+  .sub{color:#B8C4DA; font-size:12.5px; margin-top:6px; max-width:640px; line-height:1.7;}
+  .rule-chip{background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.16); border-radius:10px; padding:12px 16px; font-size:11.5px; color:#DCE4F2; line-height:1.85; max-width:320px;}
+  .rule-chip b{color:#fff;}
+
+  main{max-width:1440px; margin:0 auto; padding:0 24px;}
+  section.panel{background:var(--card); border:1px solid var(--line); border-radius:14px; margin-top:-18px; box-shadow:0 10px 30px -18px rgba(21,42,74,.25); position:relative; z-index:2;}
+
+  .input-panel{padding:20px 24px 18px; border-bottom:1px solid var(--line);}
+  .input-panel h2{font-size:14px; margin:0 0 4px; display:flex; align-items:center; gap:8px;}
+  .hint{font-size:11.5px; color:var(--ink-soft); margin:2px 0 10px; line-height:1.7;}
+  textarea{width:100%; min-height:100px; resize:vertical; border:1.5px dashed #C4CEDD; border-radius:10px; background:#FAFBFD; padding:12px; font-family:var(--mono); font-size:11.5px; color:var(--ink); direction:ltr; text-align:left;}
+  textarea:focus{outline:none; border-color:var(--navy); background:#fff;}
+  .row-actions{display:flex; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap;}
+  button{font-family:var(--disp); font-size:13px; font-weight:600; cursor:pointer; border-radius:9px; padding:9px 16px; border:none; transition:.15s;}
+  .btn-primary{background:var(--navy); color:#fff;}
+  .btn-primary:hover{background:var(--navy-deep);}
+  .btn-ghost{background:#fff; color:var(--navy); border:1.5px solid var(--line);}
+  .btn-ghost:hover{border-color:var(--navy);}
+  .btn-sm{padding:5px 11px; font-size:11.5px; border-radius:7px;}
+  .status-msg{font-size:12px; margin-inline-start:auto; color:var(--ink-soft);}
+  .status-msg.err{color:var(--crimson);} .status-msg.ok{color:var(--teal);}
+  details.opt summary{cursor:pointer; font-size:12.5px; color:var(--navy); font-weight:600; padding:4px 0; display:flex; align-items:center; gap:6px;}
+  details.opt{margin-bottom:12px;}
+  code.block{direction:ltr;display:block;background:#F4F6F9;padding:8px 10px;border-radius:6px;margin-top:6px;font-size:10.5px; white-space:pre-wrap;}
+  .num-badge{display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:6px;background:var(--navy);color:#fff;font-size:11.5px;font-family:var(--mono);}
+  .num-badge.opt{background:#8B97AC;}
+
+  .tabbar{display:flex; gap:8px; margin:16px 0 -4px; position:relative; z-index:3; align-items:center; flex-wrap:wrap;}
+  .tabbar button{border-radius:9px 9px 0 0;}
+
+  .kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; padding:18px 24px; border-bottom:1px solid var(--line);}
+  .kpi{background:#FAFBFD; border:1px solid var(--line); border-radius:12px; padding:13px 16px;}
+  .kpi .lbl{font-size:11px; color:var(--ink-soft); margin-bottom:6px;}
+  .kpi .val{font-family:var(--mono); font-size:22px; font-weight:700; color:var(--navy);}
+  .kpi.crit .val{color:var(--crimson);} .kpi.warn .val{color:var(--gold);} .kpi.ok .val{color:var(--teal);}
+
+  .toolbar{display:flex; align-items:center; gap:10px; padding:12px 24px; border-bottom:1px solid var(--line); flex-wrap:wrap;}
+  .seg{display:flex; border:1.5px solid var(--line); border-radius:9px; overflow:hidden;}
+  .seg button{background:#fff; color:var(--ink-soft); border-radius:0; padding:7px 13px; font-size:12px; border-inline-end:1px solid var(--line);}
+  .seg button:last-child{border-inline-end:none;}
+  .seg button.active{background:var(--navy); color:#fff;}
+  .search{border:1.5px solid var(--line); border-radius:9px; padding:7px 13px; font-size:12px; width:220px; font-family:var(--disp);}
+  .toolbar .spacer{flex:1;}
+
+  .list{padding:14px 24px 24px; display:flex; flex-direction:column; gap:9px;}
+  .rowc{border:1px solid var(--line); border-radius:12px; overflow:hidden; background:#fff;}
+  .rowc-head{display:grid; grid-template-columns:26px 1.6fr 90px 90px 90px 90px 1.4fr 90px 18px; gap:10px; align-items:center; padding:11px 14px; cursor:pointer; font-size:12px;}
+  .rowc-head:hover{background:#FAFBFD;}
+  .rowc.open .chev{transform:rotate(90deg);}
+  .chev{width:14px;height:14px;transition:transform .15s; color:var(--ink-soft); flex-shrink:0;}
+  .item-name{font-weight:700; font-size:12.5px;}
+  .item-code{font-family:var(--mono); font-size:10.5px; color:var(--ink-soft);}
+  .num{font-family:var(--mono); text-align:left; direction:ltr;}
+  .rowc-body{display:none; border-top:1px dashed var(--line); padding:14px 18px; background:#FCFDFE;}
+  .rowc.open .rowc-body{display:block;}
+
+  .badge{display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:20px; font-size:10.5px; font-weight:700; white-space:nowrap;}
+  .badge.ok{background:var(--teal-bg); color:var(--teal);}
+  .badge.crit{background:var(--crimson-bg); color:var(--crimson);}
+  .badge.warn{background:var(--gold-bg); color:var(--gold);}
+  .badge.gray{background:#EFEFEF; color:#777;}
+  .badge.info{background:#E7EEF7; color:#2C5C8F;}
+
+  .reason-list{list-style:none; margin:8px 0 0; padding:0; display:flex; flex-direction:column; gap:6px;}
+  .reason-list li{background:#fff; border:1px solid var(--line); border-radius:8px; padding:8px 12px; font-size:11.5px; display:flex; justify-content:space-between; gap:10px;}
+  .reason-list li b{color:var(--navy);}
+  .reason-list li span{font-family:var(--mono); direction:ltr;}
+  .chain{display:flex; flex-wrap:wrap; gap:0; margin:10px 0; direction:ltr; font-size:10.5px;}
+  .chain span.node{background:#EEF2F8; border:1px solid var(--line); border-radius:7px; padding:5px 9px; white-space:nowrap;}
+  .chain span.arrow{color:var(--ink-soft); padding:0 5px; align-self:center;}
+
+  table.paramtbl{width:100%; border-collapse:collapse; font-size:11px;}
+  table.paramtbl th{background:#EEF2F8; color:var(--navy); text-align:right; padding:6px 7px; font-weight:700; font-size:10px; white-space:nowrap; border-bottom:1.5px solid var(--line);}
+  table.paramtbl td{padding:3px 5px; border-bottom:1px solid var(--line);}
+  table.paramtbl input, table.paramtbl select{width:100%; border:1px solid var(--line); border-radius:6px; padding:4px 6px; font-size:11px; font-family:var(--disp);}
+  table.paramtbl input[type=number]{font-family:var(--mono); direction:ltr; text-align:left;}
+
+  .empty-state{text-align:center; padding:60px 20px; color:var(--ink-soft);}
+  .empty-state .ic{font-size:34px; margin-bottom:10px;}
+  footer{max-width:1440px; margin:14px auto 0; padding:0 24px; font-size:11.5px; color:var(--ink-soft); text-align:center;}
+
+  #loginView, #resetView{max-width:440px; margin:60px auto; background:#fff; border:1px solid var(--line); border-radius:16px; padding:34px 32px; box-shadow:0 18px 44px -20px rgba(21,42,74,.35);}
+  #loginView h2, #resetView h2{margin:0 0 4px; font-size:19px; color:var(--navy);}
+  #loginView .hint, #resetView .hint{font-size:12px; color:var(--ink-soft); margin-bottom:18px; line-height:1.7;}
+  #loginView label, #resetView label{display:block; font-size:12.5px; font-weight:600; margin:12px 0 5px;}
+  #loginView input, #resetView input{width:100%; font-family:var(--disp); font-size:13px; border:1.5px solid var(--line); border-radius:8px; padding:7px 10px;}
+  #loginView button, #resetView button{width:100%; margin-top:18px; padding:11px;}
+  .userbox{display:flex; align-items:center; gap:10px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.16); border-radius:10px; padding:8px 14px; font-size:12px;}
+  .userbox .who b{display:block; font-size:12.5px;}
+  .userbox .who span{color:#9FB0CC; font-size:11px;}
+
+  @media print{ .tabbar, .toolbar, header.topbar, .input-panel{display:none !important;} }
+  @media (max-width:900px){ .rowc-head{grid-template-columns:20px 1fr 70px 70px; }
+    .rowc-head > span:nth-child(5), .rowc-head > span:nth-child(6), .rowc-head > span:nth-child(7){display:none;} }
+</style>
+</head>
+<body>
+
+<div id="loginView">
+  <h2>تسجيل الدخول</h2>
+  <div class="hint">نظام ذكاء المشتريات والمخزون — مركز الكيلاني للأغذية. الدخول مقيَّد بحساب واحد فقط؛ راجع المدير لصلاحية الدخول على هذه الشاشة تحديداً.</div>
+  <label>البريد الإلكتروني</label>
+  <input type="text" id="loginEmail" autocomplete="username" style="direction:ltr; text-align:left;">
+  <label>كلمة السر</label>
+  <input type="password" id="loginPass" autocomplete="current-password" onkeydown="if(event.key==='Enter') doLogin()">
+  <button class="btn-primary" id="loginBtn" onclick="doLogin()">دخول</button>
+  <div class="status-msg" id="loginMsg" style="margin-top:10px;"></div>
+</div>
+
+<div id="resetView" style="display:none;">
+  <h2>تعيين كلمة سر جديدة</h2>
+  <div class="hint">وصلت من رابط استعادة كلمة السر. حدّد كلمة سر جديدة لحسابك، وبعدها رح تدخل مباشرة على الشاشة — ولاحقاً بتقدر تسجّل دخول بنفس البريد وهاي الكلمة الجديدة.</div>
+  <label>كلمة السر الجديدة (6 أحرف على الأقل)</label>
+  <input type="password" id="newPass1" autocomplete="new-password">
+  <label>تأكيد كلمة السر</label>
+  <input type="password" id="newPass2" autocomplete="new-password" onkeydown="if(event.key==='Enter') doSetNewPassword()">
+  <button class="btn-primary" onclick="doSetNewPassword()">حفظ والدخول</button>
+  <div class="status-msg" id="resetMsg" style="margin-top:10px;"></div>
+</div>
+
+<div id="appView" style="display:none;">
+<header class="topbar">
+  <div class="topbar-inner">
+    <div>
+      <div class="eyebrow">مركز الكيلاني للأغذية · المشتريات والمخزون</div>
+      <h1>نظام ذكاء المشتريات والمخزون — مركز التحكم</h1>
+      <div class="sub">يحلل المبيعات والمخزون الحالي (من كويريات SAP الملصوقة يدوياً) ويقترح لكل صنف: هل يُشترى الآن، كم الكمية، ومتى — مع شرح كامل لكل توصية.</div>
+    </div>
+    <div class="rule-chip">
+      <b>القاعدة:</b> Reorder Point = (متوسط الطلب اليومي × مدة التوريد) + مخزون الأمان<br>
+      <b>الكمية المقترحة:</b> الاحتياج بعد تصحيح المخزون القادم، مقيّدة بـ MOQ ومضاعف الطلب والصلاحية
+    </div>
+    <div class="userbox" id="userbox" style="display:none;">
+      <div class="who"><b id="uName"></b><span id="uRole"></span><span class="status-msg" id="cloudSyncMsg" style="margin-top:2px;"></span></div>
+      <button class="btn-ghost btn-sm" onclick="pullStateFromCloud()" title="تحميل آخر نسخة من السيرفر المشترك">🔄</button>
+      <button class="btn-ghost btn-sm" onclick="doLogout()">خروج</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="tabbar">
+    <button class="btn-primary" id="tabBtn-data" onclick="switchTab('data')">🗂️ البيانات وبارامترات الأصناف</button>
+    <button class="btn-ghost" id="tabBtn-tower" onclick="switchTab('tower')">🗼 مركز التحكم</button>
+    <span style="flex:1;"></span>
+    <button class="btn-ghost btn-sm" style="border-color:var(--teal); color:var(--teal); border-radius:9px 9px 0 0;" onclick="downloadBackup()">💾 نسخة احتياطية</button>
+    <label class="btn-ghost btn-sm" style="border-color:var(--navy); color:var(--navy); border-radius:9px 9px 0 0; cursor:pointer; display:inline-flex; align-items:center;">
+      📂 استرجاع نسخة
+      <input type="file" id="restoreFileInput" accept=".json" style="display:none;" onchange="restoreBackup(event)">
+    </label>
+    <span class="status-msg" id="backupStatusMsg" style="margin-inline-start:6px;"></span>
+  </div>
+
+  <!-- ===================== تبويب البيانات ===================== -->
+  <section class="panel" id="dataPage">
+    <div class="input-panel">
+      <details class="opt" open>
+        <summary><span class="num-badge">1</span> كويري الأصناف (إلزامي)</summary>
+        <div class="hint">
+          الصق نتيجة كويري الأصناف (رمز الصنف + الاسم إلزاميان). يُنشئ صفاً تلقائياً لكل صنف في جدول البارامترات أسفل الصفحة.
+          <code class="block">SELECT T0."ItemCode" AS "رمز الصنف", T0."ItemName" AS "اسم الصنف"
+FROM OITM T0
+WHERE T0."validFor"='Y'</code>
+        </div>
+        <textarea id="pasteItems" placeholder="الصق هنا: رمز الصنف / اسم الصنف ..."></textarea>
+      </details>
+
+      <details class="opt" open>
+        <summary><span class="num-badge">2</span> كويري المبيعات التاريخية (إلزامي)</summary>
+        <div class="hint">
+          كل ما زاد المدى الزمني كل ما كان التوقع أدق. عمود المستودع اختياري.
+          <code class="block">SELECT T1."ItemCode" AS "رمز الصنف", T0."DocDate" AS "التاريخ",
+       T1."Quantity" AS "الكمية", T1."WhsCode" AS "المستودع"
+FROM OINV T0 INNER JOIN INV1 T1 ON T0."DocEntry"=T1."DocEntry"
+WHERE T0."DocDate" >= ADD_YEARS(CURRENT_DATE, -1)
+ORDER BY T1."ItemCode", T0."DocDate"</code>
+        </div>
+        <textarea id="pasteSales" placeholder="الصق هنا: رمز الصنف / التاريخ / الكمية / المستودع(اختياري) ..."></textarea>
+      </details>
+
+      <details class="opt" open>
+        <summary><span class="num-badge">3</span> كويري المخزون الحالي (إلزامي)</summary>
+        <div class="hint">
+          الرصيد الحالي إلزامي. الوارد/تحت الطلب اختياري (لولا وجوده، يُفترض صفر).
+          <code class="block">SELECT "ItemCode" AS "رمز الصنف", "WhsCode" AS "المستودع",
+       "OnHand" AS "الرصيد الحالي", "OnOrder" AS "تحت الطلب"
+FROM OITW</code>
+        </div>
+        <textarea id="pasteInventory" placeholder="الصق هنا: رمز الصنف / المستودع(اختياري) / الرصيد الحالي / تحت الطلب(اختياري) ..."></textarea>
+      </details>
+
+      <details class="opt">
+        <summary><span class="num-badge opt">4</span> تاريخ الطلب والاستلام الفعلي (اختياري — لحساب مدة التوريد الحقيقية)</summary>
+        <div class="hint">
+          بدون هذا الكويري، تُستخدم مدة التوريد التعاقدية اليدوية (بجدول البارامترات) مع افتراض تذبذب 20٪ حوله.
+          <code class="block">SELECT T1."ItemCode" AS "رمز الصنف", T0."DocDate" AS "تاريخ الطلب",
+       T2."DocDate" AS "تاريخ الاستلام"
+FROM OPOR T0
+INNER JOIN POR1 T1 ON T0."DocEntry"=T1."DocEntry"
+INNER JOIN PDN1 T3 ON T3."BaseEntry"=T0."DocEntry" AND T3."BaseType"=22
+INNER JOIN OPDN T2 ON T2."DocEntry"=T3."DocEntry"
+WHERE T0."DocDate" >= ADD_YEARS(CURRENT_DATE, -1)</code>
+        </div>
+        <textarea id="pasteLeadTime" placeholder="الصق هنا: رمز الصنف / تاريخ الطلب / تاريخ الاستلام ..."></textarea>
+      </details>
+
+      <div class="row-actions">
+        <button class="btn-primary" onclick="processAllData()">تحليل البيانات</button>
+        <button class="btn-ghost" onclick="clearAllPasted()">تفريغ الكويريات</button>
+        <label style="font-size:11.5px; color:var(--ink-soft); display:flex; align-items:center; gap:6px;">
+          نافذة تحليل الطلب (يوم):
+          <input type="number" id="demandWindowDays" value="90" min="14" max="365" style="width:64px; font-family:var(--mono); border:1px solid var(--line); border-radius:6px; padding:3px 6px;">
+        </label>
+        <span class="status-msg" id="dataStatusMsg"></span>
+      </div>
+    </div>
+
+    <div class="input-panel" id="paramsPanel" style="display:none;">
+      <h2 style="margin-bottom:6px;">بارامترات الشراء لكل صنف <span style="font-weight:400;color:var(--ink-soft);font-size:11.5px;">(مصدرها خارج SAP غالباً — أدخلها يدوياً مرة واحدة، تُحفَظ سحابياً)</span></h2>
+      <div class="hint">أي حقل فارغ يجعل توصية الصنف تظهر بحالة "بيانات ناقصة" بدل قرار شراء تلقائي — لا افتراضات مخفية.</div>
+      <div style="overflow-x:auto;">
+        <table class="paramtbl" id="paramsTable">
+          <thead><tr>
+            <th>الصنف</th><th>المورد</th><th>Lead Time تعاقدي (يوم)</th><th>MOQ</th><th>مضاعف الطلب</th>
+            <th>الصلاحية (يوم)</th><th>حد أدنى صلاحية عند الاستلام (يوم)</th><th>تكلفة الوحدة</th><th>مستوى الخدمة</th><th>الأهمية</th>
+          </tr></thead>
+          <tbody id="paramsTbody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== تبويب مركز التحكم ===================== -->
+  <section class="panel" id="towerPage" style="display:none;">
+    <div class="kpis" id="kpiRow"></div>
+
+    <div class="toolbar">
+      <div class="seg" id="filterSeg">
+        <button data-f="all" class="active" onclick="setFilter('all')">الكل</button>
+        <button data-f="BUY_NOW" onclick="setFilter('BUY_NOW')">🔴 اطلب الآن</button>
+        <button data-f="BUY_SOON" onclick="setFilter('BUY_SOON')">🟠 اطلب قريباً</button>
+        <button data-f="WAIT" onclick="setFilter('WAIT')">🟢 انتظر</button>
+        <button data-f="EXCESS" onclick="setFilter('EXCESS')">📦 فائض</button>
+        <button data-f="REVIEW" onclick="setFilter('REVIEW')">⚪ بيانات ناقصة</button>
+      </div>
+      <input type="text" class="search" id="searchBox" placeholder="بحث برمز/اسم الصنف..." oninput="renderTower()">
+      <div class="spacer"></div>
+      <button class="print-btn btn-ghost btn-sm" onclick="window.print()">🖨️ طباعة</button>
+      <button class="btn-ghost btn-sm" onclick="exportCsv()">تصدير CSV</button>
+    </div>
+
+    <div class="list" id="towerList">
+      <div class="empty-state"><div class="ic">🗼</div>لسا ما في بيانات محلَّلة — روح لتبويب "البيانات" وألصق الكويريات.</div>
+    </div>
+  </section>
+</main>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+/* ================= الحالة العامة ================= */
+const STORAGE_KEY = 'procint_state_v1';
+let state = {
+  itemsRaw:{}, salesRaw:[], invRaw:[], leadTimeRaw:[],
+  params:{}, // itemCode -> {supplier, leadTimeDays, moq, orderMultiple, shelfLifeDays, minRemainShelfLife, unitCost, serviceLevel, criticality}
+  computed:[], demandWindowDays:90
+};
+let curFilter='all';
+
+function loadStateLocal(){
+  try{ const raw = localStorage.getItem(STORAGE_KEY); if(raw){ const s = JSON.parse(raw); Object.assign(state, s); } }catch(e){ console.warn('تعذر تحميل الحالة المحلية', e); }
+}
+function saveStateLocal(){
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){ console.warn('تعذر الحفظ محلياً', e); }
+}
+let cloudSaveTimer=null;
+function scheduleCloudSave(){
+  saveStateLocal();
+  clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = setTimeout(pushStateToCloud, 1200);
+}
+
+/* ================= أدوات تحليل النص الملصوق ================= */
+function splitPasted(text){
+  const lines = text.split(/\r?\n/).filter(l=>l.trim()!=='');
+  if(!lines.length) return {headers:[], rows:[]};
+  const delim = lines[0].includes('\t') ? '\t' : ',';
+  const headers = lines[0].split(delim).map(h=>h.replace(/^"|"$/g,'').trim());
+  const rows = lines.slice(1).map(l=>l.split(delim).map(c=>c.replace(/^"|"$/g,'').trim()));
+  return {headers, rows};
+}
+function colIndex(headers, names){
+  for(const n of names){ const i = headers.findIndex(h=>h===n); if(i>=0) return i; }
+  for(const n of names){ const i = headers.findIndex(h=>h.indexOf(n)>=0); if(i>=0) return i; }
+  return -1;
+}
+function toNum(v){ if(v===undefined||v===null||v==='') return NaN; const n = parseFloat(String(v).replace(/,/g,'').trim()); return isNaN(n)?NaN:n; }
+function parseDateFlexible(s){
+  if(!s) return null; s = String(s).trim(); if(!s) return null;
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m) return new Date(+m[1], +m[2]-1, +m[3]);
+  m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/);
+  if(m) return new Date(+m[3], +m[2]-1, +m[1]);
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+function daysBetween(a,b){ return Math.round((b-a)/86400000); }
+
+/* ================= تحليل الكويريات الملصوقة ================= */
+function processAllData(){
+  const msg = document.getElementById('dataStatusMsg');
+  state.demandWindowDays = toNum(document.getElementById('demandWindowDays').value) || 90;
+
+  // 1) الأصناف
+  const itemsTxt = document.getElementById('pasteItems').value;
+  if(itemsTxt.trim()){
+    const {headers, rows} = splitPasted(itemsTxt);
+    const iCode = colIndex(headers, ['رمز الصنف','ItemCode']);
+    const iName = colIndex(headers, ['اسم الصنف','ItemName']);
+    if(iCode<0){ msg.textContent='تعذر إيجاد عمود "رمز الصنف" بكويري الأصناف'; msg.className='status-msg err'; return; }
+    rows.forEach(r=>{
+      const code = r[iCode]; if(!code) return;
+      state.itemsRaw[code] = { code, name: iName>=0 ? (r[iName]||code) : code };
+      if(!state.params[code]) state.params[code] = { supplier:'', leadTimeDays:'', moq:'', orderMultiple:1, shelfLifeDays:'', minRemainShelfLife:'', unitCost:'', serviceLevel:95, criticality:'Medium' };
+    });
+  }
+
+  // 2) المبيعات
+  const salesTxt = document.getElementById('pasteSales').value;
+  if(salesTxt.trim()){
+    const {headers, rows} = splitPasted(salesTxt);
+    const iCode = colIndex(headers, ['رمز الصنف','ItemCode']);
+    const iDate = colIndex(headers, ['التاريخ','DocDate']);
+    const iQty = colIndex(headers, ['الكمية','Quantity']);
+    const iWhs = colIndex(headers, ['المستودع','WhsCode']);
+    if(iCode<0 || iDate<0 || iQty<0){ msg.textContent='تعذر إيجاد أعمدة كويري المبيعات (رمز الصنف/التاريخ/الكمية)'; msg.className='status-msg err'; return; }
+    state.salesRaw = rows.map(r=>({
+      code:r[iCode], date:r[iDate], qty:toNum(r[iQty]), whs: iWhs>=0 ? r[iWhs] : ''
+    })).filter(r=>r.code && !isNaN(r.qty));
+  }
+
+  // 3) المخزون الحالي
+  const invTxt = document.getElementById('pasteInventory').value;
+  if(invTxt.trim()){
+    const {headers, rows} = splitPasted(invTxt);
+    const iCode = colIndex(headers, ['رمز الصنف','ItemCode']);
+    const iOnHand = colIndex(headers, ['الرصيد الحالي','OnHand']);
+    const iOnOrder = colIndex(headers, ['تحت الطلب','الوارد','OnOrder']);
+    const iWhs = colIndex(headers, ['المستودع','WhsCode']);
+    if(iCode<0 || iOnHand<0){ msg.textContent='تعذر إيجاد أعمدة كويري المخزون (رمز الصنف/الرصيد الحالي)'; msg.className='status-msg err'; return; }
+    state.invRaw = rows.map(r=>({
+      code:r[iCode], onHand:toNum(r[iOnHand])||0, onOrder: iOnOrder>=0 ? (toNum(r[iOnOrder])||0) : 0, whs: iWhs>=0 ? r[iWhs] : ''
+    })).filter(r=>r.code);
+  }
+
+  // 4) مدة التوريد الفعلية (اختياري)
+  const ltTxt = document.getElementById('pasteLeadTime').value;
+  if(ltTxt.trim()){
+    const {headers, rows} = splitPasted(ltTxt);
+    const iCode = colIndex(headers, ['رمز الصنف','ItemCode']);
+    const iOrder = colIndex(headers, ['تاريخ الطلب']);
+    const iRecv = colIndex(headers, ['تاريخ الاستلام']);
+    if(iCode>=0 && iOrder>=0 && iRecv>=0){
+      state.leadTimeRaw = rows.map(r=>({code:r[iCode], orderDate:r[iOrder], recvDate:r[iRecv]})).filter(r=>r.code);
+    }
+  }
+
+  renderParamsTable();
+  runEngine();
+  document.getElementById('paramsPanel').style.display='block';
+  msg.textContent = '✔ تم التحليل — ' + Object.keys(state.itemsRaw).length + ' صنف';
+  msg.className='status-msg ok';
+  switchTab('tower');
+  scheduleCloudSave();
+}
+function clearAllPasted(){
+  ['pasteItems','pasteSales','pasteInventory','pasteLeadTime'].forEach(id=>document.getElementById(id).value='');
+}
+
+/* ================= جدول بارامترات الأصناف ================= */
+function renderParamsTable(){
+  const tbody = document.getElementById('paramsTbody');
+  const codes = Object.keys(state.itemsRaw).sort();
+  tbody.innerHTML = codes.map(code=>{
+    const it = state.itemsRaw[code];
+    const p = state.params[code] || {};
+    return '<tr>'
+      + '<td><b>'+esc(it.name)+'</b><br><span class="item-code">'+esc(code)+'</span></td>'
+      + '<td><input value="'+esc(p.supplier||'')+'" onchange="updateParam(\''+code+'\',\'supplier\',this.value)"></td>'
+      + '<td><input type="number" value="'+(p.leadTimeDays??'')+'" onchange="updateParam(\''+code+'\',\'leadTimeDays\',this.value)"></td>'
+      + '<td><input type="number" value="'+(p.moq??'')+'" onchange="updateParam(\''+code+'\',\'moq\',this.value)"></td>'
+      + '<td><input type="number" value="'+(p.orderMultiple??1)+'" onchange="updateParam(\''+code+'\',\'orderMultiple\',this.value)"></td>'
+      + '<td><input type="number" value="'+(p.shelfLifeDays??'')+'" onchange="updateParam(\''+code+'\',\'shelfLifeDays\',this.value)"></td>'
+      + '<td><input type="number" value="'+(p.minRemainShelfLife??'')+'" onchange="updateParam(\''+code+'\',\'minRemainShelfLife\',this.value)"></td>'
+      + '<td><input type="number" value="'+(p.unitCost??'')+'" onchange="updateParam(\''+code+'\',\'unitCost\',this.value)"></td>'
+      + '<td><select onchange="updateParam(\''+code+'\',\'serviceLevel\',this.value)">'
+        + [90,95,97,98,99].map(v=>'<option value="'+v+'" '+((p.serviceLevel==v||(!p.serviceLevel&&v==95))?'selected':'')+'>'+v+'٪</option>').join('')
+        + '</select></td>'
+      + '<td><select onchange="updateParam(\''+code+'\',\'criticality\',this.value)">'
+        + ['High','Medium','Low'].map(v=>'<option value="'+v+'" '+((p.criticality||'Medium')==v?'selected':'')+'>'+({High:'عالية',Medium:'متوسطة',Low:'منخفضة'}[v])+'</option>').join('')
+        + '</select></td>'
+      + '</tr>';
+  }).join('');
+}
+function updateParam(code, field, value){
+  if(!state.params[code]) state.params[code] = {};
+  state.params[code][field] = (field==='supplier'||field==='criticality') ? value : (value===''? '' : parseFloat(value));
+  runEngine();
+  renderTower();
+  scheduleCloudSave();
+}
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+/* ================= محرك الحساب ================= */
+const Z_TABLE = {90:1.28, 95:1.65, 97:1.88, 98:2.05, 99:2.33};
+
+function mean(arr){ return arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0; }
+function stdev(arr){
+  if(arr.length<2) return 0;
+  const m = mean(arr);
+  return Math.sqrt(arr.reduce((a,b)=>a+(b-m)*(b-m),0)/(arr.length-1));
+}
+// تقريب دالة التوزيع التراكمي الطبيعي القياسي (Zelen & Severo)
+function normCdf(x){
+  const t = 1/(1+0.2316419*Math.abs(x));
+  const d = 0.3989423*Math.exp(-x*x/2);
+  let p = d*t*(0.3193815+t*(-0.3565638+t*(1.781478+t*(-1.821256+t*1.330274))));
+  if(x>0) p = 1-p;
+  return p;
+}
+
+function runEngine(){
+  const now = new Date(); now.setHours(0,0,0,0);
+  const windowDays = state.demandWindowDays || 90;
+  const windowStart = new Date(now.getTime() - windowDays*86400000);
+
+  // تجميع المبيعات لكل صنف
+  const salesByItem = {};
+  state.salesRaw.forEach(r=>{
+    const d = parseDateFlexible(r.date);
+    if(!d || d < windowStart || isNaN(r.qty)) return;
+    (salesByItem[r.code] = salesByItem[r.code] || []).push({date:d, qty:r.qty});
+  });
+
+  // تجميع المخزون لكل صنف (قد يكون بأكثر من مستودع)
+  const invByItem = {};
+  state.invRaw.forEach(r=>{
+    const cur = invByItem[r.code] || {onHand:0, onOrder:0, warehouses:[]};
+    cur.onHand += r.onHand||0; cur.onOrder += r.onOrder||0;
+    cur.warehouses.push({whs:r.whs||'-', onHand:r.onHand||0});
+    invByItem[r.code] = cur;
+  });
+
+  // Lead Time الفعلي لكل صنف (إن وُجد)
+  const ltByItem = {};
+  state.leadTimeRaw.forEach(r=>{
+    const od = parseDateFlexible(r.orderDate), rd = parseDateFlexible(r.recvDate);
+    if(!od || !rd) return;
+    const d = daysBetween(od, rd); if(d<=0 || d>365) return;
+    (ltByItem[r.code] = ltByItem[r.code] || []).push(d);
+  });
+
+  const salesValueByItem = {}; // لتصنيف ABC
+  Object.keys(state.itemsRaw).forEach(code=>{
+    const s = salesByItem[code] || [];
+    const totalQty = s.reduce((a,b)=>a+b.qty,0);
+    const p = state.params[code] || {};
+    salesValueByItem[code] = totalQty * (toNum(p.unitCost) || 0);
+  });
+  const totalSalesValue = Object.values(salesValueByItem).reduce((a,b)=>a+b,0) || 1;
+
+  const results = Object.keys(state.itemsRaw).map(code=>{
+    const it = state.itemsRaw[code];
+    const p = state.params[code] || {};
+    const s = (salesByItem[code]||[]).map(x=>x.qty);
+    const inv = invByItem[code] || {onHand:0, onOrder:0, warehouses:[]};
+    const daysWithSalesData = (salesByItem[code]||[]).length;
+
+    const missing = [];
+    if(p.leadTimeDays==='' || p.leadTimeDays==null || isNaN(p.leadTimeDays)) missing.push('Lead Time');
+    if(p.moq==='' || p.moq==null || isNaN(p.moq)) missing.push('MOQ');
+    if(daysWithSalesData < 5) missing.push('تاريخ مبيعات كافٍ');
+
+    // متوسط وتذبذب الطلب اليومي (تجميع يومي بسيط من نقاط البيع الملصوقة)
+    const dailyMap = {};
+    (salesByItem[code]||[]).forEach(x=>{ const k=x.date.toISOString().slice(0,10); dailyMap[k]=(dailyMap[k]||0)+x.qty; });
+    const observedDays = Math.max(1, Math.min(windowDays, daysBetween(windowStart, now)));
+    const dailyVals = Object.values(dailyMap);
+    const dAvg = dailyVals.length ? (dailyVals.reduce((a,b)=>a+b,0) / observedDays) : 0;
+    const dStd = stdev(dailyVals.length ? dailyVals.concat(Array(Math.max(0,observedDays-dailyVals.length)).fill(0)) : [0]);
+
+    // مدة التوريد
+    const ltActual = ltByItem[code];
+    let ltAvg, ltStd, ltSource;
+    if(ltActual && ltActual.length>=3){
+      ltAvg = mean(ltActual); ltStd = stdev(ltActual); ltSource='فعلي من تاريخ الشراء';
+    } else if(!isNaN(toNum(p.leadTimeDays))){
+      ltAvg = toNum(p.leadTimeDays); ltStd = ltAvg*0.20; ltSource='تعاقدي يدوي + افتراض تذبذب 20٪';
+    } else {
+      ltAvg = null; ltStd = null; ltSource='غير متوفر';
+    }
+
+    const z = Z_TABLE[p.serviceLevel] || Z_TABLE[95];
+    const criticalityBoost = {High:1.15, Medium:1.0, Low:0.9}[p.criticality||'Medium'];
+    let safetyStock = null, rop = null, daysCover = null, stockoutDate = null, stockoutProb = null;
+    if(ltAvg!=null){
+      safetyStock = z * Math.sqrt(Math.max(0,ltAvg)*dStd*dStd + dAvg*dAvg*ltStd*ltStd) * criticalityBoost;
+      rop = dAvg*ltAvg + safetyStock;
+      daysCover = dAvg>0 ? (inv.onHand / dAvg) : (inv.onHand>0 ? Infinity : 0);
+      if(dAvg>0){
+        const daysToZero = Math.floor(inv.onHand / dAvg);
+        stockoutDate = new Date(now.getTime() + daysToZero*86400000);
+      }
+      const denom = Math.sqrt(Math.max(0,ltAvg)*dStd*dStd + dAvg*dAvg*ltStd*ltStd) || 1;
+      const zProb = (inv.onHand + inv.onOrder - dAvg*ltAvg) / denom;
+      stockoutProb = Math.round((1-normCdf(zProb))*1000)/10;
+    }
+
+    // كمية الشراء المقترحة
+    let recommendedQty = null, qtyNotes = [];
+    if(ltAvg!=null && !isNaN(toNum(p.moq))){
+      const reviewPeriod = 7;
+      let base = dAvg*(ltAvg+reviewPeriod) + (safetyStock||0) - (inv.onHand + inv.onOrder);
+      base = Math.max(0, base);
+      const mult = toNum(p.orderMultiple) || 1;
+      let qty = mult>0 ? Math.ceil(base/mult)*mult : base;
+      const moq = toNum(p.moq);
+      if(qty>0 && qty<moq){ qty = moq; qtyNotes.push('رُفعت للحد الأدنى للمورد (MOQ='+moq+')'); }
+      // سقف الصلاحية: لا تشترِ أكثر مما يمكن استهلاكه قبل الانتهاء
+      if(qty>0 && !isNaN(toNum(p.shelfLifeDays)) && dAvg>0){
+        const maxByShelfLife = dAvg * toNum(p.shelfLifeDays);
+        if(qty > maxByShelfLife){ qtyNotes.push('⚠ الكمية بعد MOQ تتجاوز ما يُستهلك قبل انتهاء الصلاحية'); }
+      }
+      recommendedQty = Math.round(qty);
+    }
+
+    // تصنيف ABC/XYZ
+    const cumShare = salesValueByItem[code] / totalSalesValue;
+    const abc = cumShare >= 0.02 ? 'A' : (cumShare >= 0.005 ? 'B' : 'C');
+    const cv = dAvg>0 ? dStd/dAvg : 0;
+    const xyz = cv<=0.5 ? 'X' : (cv<=1.0 ? 'Y' : 'Z');
+
+    // Excess
+    const isExcess = (daysCover!=null && isFinite(daysCover) && ltAvg!=null && daysCover > (ltAvg+30)*2 && inv.onHand>0);
+
+    // القرار
+    let decision='REVIEW', decisionLabel='بيانات ناقصة', decisionReason='لا يمكن اتخاذ قرار آلي دون: '+missing.join('، ');
+    if(missing.length===0){
+      if(isExcess){ decision='EXCESS'; decisionLabel='فائض — أوقف الشراء'; decisionReason='التغطية الحالية '+Math.round(daysCover)+' يوم تتجاوز حاجتك الفعلية بكثير.'; }
+      else if(daysCover!=null && isFinite(daysCover) && ltAvg!=null && daysCover <= ltAvg){ decision='BUY_NOW'; decisionLabel='🔴 اطلب الآن'; decisionReason='التغطية الحالية ('+Math.round(daysCover)+' يوم) أقل من أو تساوي مدة التوريد ('+Math.round(ltAvg)+' يوم) — خطر انقطاع حقيقي.'; }
+      else if(daysCover===0 && dAvg===0 && inv.onHand<= (rop||0)){ decision='BUY_SOON'; decisionLabel='🟠 اطلب قريباً'; decisionReason='المخزون عند/تحت نقطة إعادة الطلب.'; }
+      else if(daysCover!=null && isFinite(daysCover) && ltAvg!=null && daysCover <= ltAvg*1.3){ decision='BUY_SOON'; decisionLabel='🟠 اطلب قريباً'; decisionReason='التغطية الحالية ('+Math.round(daysCover)+' يوم) تقترب من مدة التوريد ('+Math.round(ltAvg)+' يوم).'; }
+      else { decision='WAIT'; decisionLabel='🟢 انتظر'; decisionReason='التغطية الحالية كافية حالياً ('+(isFinite(daysCover)?Math.round(daysCover):'∞')+' يوم).'; }
+    }
+
+    // Priority Score (0-100)، فقط للأصناف التي فيها قرار شراء
+    let priorityScore = 0;
+    if(decision==='BUY_NOW' || decision==='BUY_SOON'){
+      const stockoutRiskScore = decision==='BUY_NOW' ? 100 : Math.max(0, 100-(daysCover&&isFinite(daysCover)?daysCover:0));
+      const valueScore = Math.min(100, cumShare*2000);
+      const criticalityScore = {High:100, Medium:60, Low:30}[p.criticality||'Medium'];
+      priorityScore = Math.round(0.45*stockoutRiskScore + 0.25*valueScore + 0.30*criticalityScore);
+    }
+
+    // Confidence
+    let confidence = 100 - missing.length*30;
+    if(daysWithSalesData < 30) confidence -= 15;
+    if(!ltActual || ltActual.length<3) confidence -= 10;
+    confidence = Math.max(5, Math.min(100, confidence));
+
+    return {
+      code, name: it.name, supplier: p.supplier||'—',
+      onHand: inv.onHand, onOrder: inv.onOrder, warehouses: inv.warehouses,
+      dAvg: Math.round(dAvg*100)/100, dStd: Math.round(dStd*100)/100,
+      ltAvg, ltStd, ltSource,
+      safetyStock: safetyStock!=null ? Math.round(safetyStock) : null,
+      rop: rop!=null ? Math.round(rop) : null,
+      daysCover: daysCover!=null ? (isFinite(daysCover)? Math.round(daysCover*10)/10 : Infinity) : null,
+      stockoutDate, stockoutProb,
+      recommendedQty, qtyNotes,
+      abc, xyz, missing,
+      decision, decisionLabel, decisionReason,
+      priorityScore, confidence,
+      unitCost: toNum(p.unitCost)||0, criticality: p.criticality||'Medium',
+      moq: toNum(p.moq), orderMultiple: toNum(p.orderMultiple)||1, shelfLifeDays: toNum(p.shelfLifeDays)
+    };
+  });
+
+  results.sort((a,b)=> b.priorityScore - a.priorityScore);
+  state.computed = results;
+}
+
+/* ================= واجهة مركز التحكم ================= */
+function switchTab(tab){
+  document.getElementById('dataPage').style.display = tab==='data' ? 'block' : 'none';
+  document.getElementById('towerPage').style.display = tab==='tower' ? 'block' : 'none';
+  document.getElementById('tabBtn-data').className = tab==='data' ? 'btn-primary' : 'btn-ghost';
+  document.getElementById('tabBtn-tower').className = tab==='tower' ? 'btn-primary' : 'btn-ghost';
+  if(tab==='tower') renderTower();
+}
+function setFilter(f){
+  curFilter = f;
+  document.querySelectorAll('#filterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===f));
+  renderTower();
+}
+function fmtDate(d){ if(!d) return '—'; return d.toLocaleDateString('en-GB'); }
+
+function renderKpis(){
+  const list = state.computed;
+  const buyNow = list.filter(r=>r.decision==='BUY_NOW').length;
+  const buySoon = list.filter(r=>r.decision==='BUY_SOON').length;
+  const safe = list.filter(r=>r.decision==='WAIT').length;
+  const excess = list.filter(r=>r.decision==='EXCESS');
+  const review = list.filter(r=>r.decision==='REVIEW').length;
+  const buyValue = list.filter(r=>(r.decision==='BUY_NOW'||r.decision==='BUY_SOON') && r.recommendedQty)
+    .reduce((a,r)=>a+r.recommendedQty*r.unitCost,0);
+  const excessValue = excess.reduce((a,r)=>a+(r.onHand*r.unitCost),0);
+
+  const kpis = [
+    {cls:'crit', lbl:'🔴 يجب الطلب الآن', val: buyNow},
+    {cls:'warn', lbl:'🟠 يجب الطلب قريباً', val: buySoon},
+    {cls:'ok', lbl:'🟢 آمن حالياً', val: safe},
+    {cls:'', lbl:'📦 أصناف فائضة', val: excess.length},
+    {cls:'', lbl:'⚪ بيانات ناقصة', val: review},
+    {cls:'', lbl:'💰 قيمة الشراء المقترحة', val: Math.round(buyValue).toLocaleString('en-US')},
+    {cls:'', lbl:'📦 قيمة المخزون الفائض', val: Math.round(excessValue).toLocaleString('en-US')},
+  ];
+  document.getElementById('kpiRow').innerHTML = kpis.map(k=>
+    '<div class="kpi '+k.cls+'"><div class="lbl">'+k.lbl+'</div><div class="val">'+k.val+'</div></div>'
+  ).join('');
+}
+
+function renderTower(){
+  if(!state.computed.length){ return; }
+  renderKpis();
+  const q = (document.getElementById('searchBox').value||'').trim().toLowerCase();
+  let list = state.computed;
+  if(curFilter!=='all') list = list.filter(r=>r.decision===curFilter);
+  if(q) list = list.filter(r=> r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
+
+  const wrap = document.getElementById('towerList');
+  if(!list.length){ wrap.innerHTML = '<div class="empty-state"><div class="ic">🗼</div>لا توجد أصناف مطابقة للفلتر الحالي.</div>'; return; }
+
+  const badgeClass = {BUY_NOW:'crit', BUY_SOON:'warn', WAIT:'ok', EXCESS:'info', REVIEW:'gray'};
+  wrap.innerHTML = list.map((r,idx)=>{
+    const chain = [];
+    chain.push('Demand '+r.dAvg+'/يوم');
+    chain.push('Stock '+r.onHand+(r.onOrder?(' +وارد '+r.onOrder):''));
+    if(r.ltAvg!=null) chain.push('Lead Time '+Math.round(r.ltAvg)+'يوم');
+    if(r.safetyStock!=null) chain.push('SS '+r.safetyStock);
+    if(r.rop!=null) chain.push('ROP '+r.rop);
+    if(r.moq) chain.push('MOQ '+r.moq);
+    chain.push(r.decisionLabel);
+
+    const reasons = [];
+    reasons.push(['تغطية المخزون الحالي', (r.daysCover!=null?(isFinite(r.daysCover)?r.daysCover+' يوم':'∞'):'—')]);
+    reasons.push(['مدة التوريد ('+(r.ltSource||'—')+')', r.ltAvg!=null? Math.round(r.ltAvg)+' يوم':'—']);
+    reasons.push(['تاريخ الانقطاع المتوقع', fmtDate(r.stockoutDate)]);
+    reasons.push(['احتمال الانقطاع قبل وصول الطلب', r.stockoutProb!=null? r.stockoutProb+'٪':'—']);
+    reasons.push(['مخزون الأمان / نقطة إعادة الطلب', (r.safetyStock??'—')+' / '+(r.rop??'—')]);
+    reasons.push(['تصنيف ABC/XYZ', r.abc+r.xyz]);
+    reasons.push(['مستوى الثقة بالتوصية', r.confidence+'٪']);
+    if(r.qtyNotes.length) reasons.push(['ملاحظات على الكمية', r.qtyNotes.join(' · ')]);
+    if(r.missing.length) reasons.push(['بيانات ناقصة', r.missing.join('، ')]);
+
+    return '<div class="rowc" id="row-'+idx+'">'
+      + '<div class="rowc-head" onclick="toggleRow('+idx+')">'
+        + '<svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M9 6l6 6-6 6"/></svg>'
+        + '<div><div class="item-name">'+esc(r.name)+'</div><div class="item-code">'+esc(r.code)+' · '+esc(r.supplier)+'</div></div>'
+        + '<div class="num">'+r.onHand+'<br><span style="color:var(--ink-soft);font-size:9.5px;">رصيد</span></div>'
+        + '<div class="num">'+(r.daysCover!=null?(isFinite(r.daysCover)?r.daysCover:'∞'):'—')+'<br><span style="color:var(--ink-soft);font-size:9.5px;">تغطية(يوم)</span></div>'
+        + '<div class="num">'+fmtDate(r.stockoutDate)+'<br><span style="color:var(--ink-soft);font-size:9.5px;">انقطاع متوقع</span></div>'
+        + '<div class="num">'+(r.recommendedQty??'—')+'<br><span style="color:var(--ink-soft);font-size:9.5px;">كمية مقترحة</span></div>'
+        + '<div>'+(r.priorityScore?('أولوية '+r.priorityScore):'')+'</div>'
+        + '<div><span class="badge '+(badgeClass[r.decision]||'gray')+'">'+r.decisionLabel+'</span></div>'
+        + '<span></span>'
+      + '</div>'
+      + '<div class="rowc-body">'
+        + '<div style="font-size:12px;margin-bottom:6px;"><b>لماذا؟</b> '+esc(r.decisionReason)+'</div>'
+        + '<div class="chain">'+chain.map((c,i)=>'<span class="node">'+esc(c)+'</span>'+(i<chain.length-1?'<span class="arrow">→</span>':'')).join('')+'</div>'
+        + '<ul class="reason-list">'+reasons.map(x=>'<li><b>'+esc(x[0])+'</b><span>'+esc(x[1])+'</span></li>').join('')+'</ul>'
+      + '</div>'
+    + '</div>';
+  }).join('');
+}
+function toggleRow(idx){ document.getElementById('row-'+idx).classList.toggle('open'); }
+
+function exportCsv(){
+  const rows = [['رمز الصنف','اسم الصنف','المورد','الرصيد الحالي','تغطية(يوم)','تاريخ الانقطاع المتوقع','الكمية المقترحة','القرار','الأولوية','الثقة٪']];
+  state.computed.forEach(r=>rows.push([r.code,r.name,r.supplier,r.onHand,(r.daysCover!=null?(isFinite(r.daysCover)?r.daysCover:''):''),fmtDate(r.stockoutDate),r.recommendedQty??'',r.decisionLabel,r.priorityScore,r.confidence]));
+  const csv = rows.map(row=>row.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(',')).join('\r\n');
+  const blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download='توصيات_المشتريات.csv'; a.click();
+}
+
+/* ================= نسخ احتياطي محلي ================= */
+function downloadBackup(){
+  const blob = new Blob([JSON.stringify(state,null,2)], {type:'application/json'});
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download='procurement_backup_'+new Date().toISOString().slice(0,10)+'.json'; a.click();
+}
+function restoreBackup(evt){
+  const file = evt.target.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = function(){
+    try{
+      const s = JSON.parse(reader.result);
+      Object.assign(state, s);
+      renderParamsTable();
+      runEngine();
+      document.getElementById('paramsPanel').style.display='block';
+      renderTower();
+      const el = document.getElementById('backupStatusMsg'); el.textContent='✔ تم الاسترجاع'; el.className='status-msg ok';
+      scheduleCloudSave();
+    }catch(e){
+      const el = document.getElementById('backupStatusMsg'); el.textContent='ملف غير صالح'; el.className='status-msg err';
+    }
+  };
+  reader.readAsText(file);
+}
+
+/* ================= تسجيل الدخول والمزامنة السحابية (Supabase — مشترك مع باقي شاشات المؤسسة) ================= */
+const SUPABASE_URL = 'https://fxjdmqqmcgccocfbgopm.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_NGtGX9SN8hXSoq-JRidGcQ_NfAyYCP5'; // مفتاح عام — الحماية عبر RLS
+const APP_ID = 'procurement-intelligence';
+let sb = null, curUser = null, curProfile = null;
+
+function authMsg(txt, ok){ const el=document.getElementById('loginMsg'); el.textContent=txt; el.className='status-msg '+(ok?'ok':'err'); }
+async function doLogin(){
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass = document.getElementById('loginPass').value;
+  if(!email || !pass){ authMsg('أدخل البريد وكلمة السر', false); return; }
+  document.getElementById('loginBtn').disabled = true;
+  authMsg('جارٍ الدخول...', true);
+  const {data, error} = await sb.auth.signInWithPassword({email, password: pass});
+  document.getElementById('loginBtn').disabled = false;
+  if(error){ authMsg('فشل الدخول: تحقق من البريد وكلمة السر', false); return; }
+  await onSignedIn(data.user);
+}
+async function doLogout(){ await sb.auth.signOut(); location.reload(); }
+function resetMsg(txt, ok){ const el=document.getElementById('resetMsg'); el.textContent=txt; el.className='status-msg '+(ok?'ok':'err'); }
+async function doSetNewPassword(){
+  const p1 = document.getElementById('newPass1').value;
+  const p2 = document.getElementById('newPass2').value;
+  if(!p1 || p1.length<6){ resetMsg('كلمة السر لازم تكون 6 أحرف على الأقل', false); return; }
+  if(p1!==p2){ resetMsg('كلمتا السر مش متطابقتين', false); return; }
+  resetMsg('جارٍ الحفظ...', true);
+  const {data, error} = await sb.auth.updateUser({password:p1});
+  if(error){ resetMsg('تعذر الحفظ: '+error.message, false); return; }
+  document.getElementById('resetView').style.display='none';
+  await onSignedIn(data.user);
+}
+async function onSignedIn(user){
+  curUser = user;
+  const {data:prof} = await sb.from('profiles').select('*').eq('id', user.id).single();
+  curProfile = prof || {full_name:user.email, role:'viewer', allowed_apps:[]};
+  if(!(curProfile.allowed_apps||[]).includes(APP_ID)){
+    await sb.auth.signOut();
+    authMsg('هذا الحساب ما إله صلاحية الدخول على هاي الشاشة — تواصل مع المدير.', false);
+    return;
+  }
+  const roleAr = {admin:'مدير', editor:'مدخل بيانات', viewer:'مطالع'}[curProfile.role] || curProfile.role;
+  document.getElementById('uName').textContent = curProfile.full_name || user.email;
+  document.getElementById('uRole').textContent = user.email + ' · ' + roleAr;
+  document.getElementById('userbox').style.display = 'flex';
+  document.getElementById('loginView').style.display = 'none';
+  document.getElementById('appView').style.display = 'block';
+  await pullStateFromCloud();
+}
+async function pullStateFromCloud(){
+  if(!sb || !curUser) return;
+  try{
+    const {data, error} = await sb.from('procurement_app_state').select('data, updated_at').eq('id','main').maybeSingle();
+    if(error || !data || !data.data) return;
+    Object.assign(state, data.data);
+    saveStateLocal();
+    if(Object.keys(state.itemsRaw||{}).length){
+      renderParamsTable(); runEngine(); document.getElementById('paramsPanel').style.display='block'; renderTower();
+    }
+    const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ تم تحميل آخر نسخة من السيرفر'; el.className='status-msg ok'; }
+  }catch(e){ console.warn('تعذر التحميل من السيرفر', e); }
+}
+async function pushStateToCloud(){
+  if(!sb || !curUser) return;
+  try{
+    await sb.from('procurement_app_state').upsert({id:'main', data: state, updated_at: new Date().toISOString()});
+    const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ محفوظ سحابياً'; el.className='status-msg ok'; }
+  }catch(e){ console.warn('تعذر الحفظ على السيرفر', e); }
+}
+(async function bootAuth(){
+  loadStateLocal();
+  if(!window.supabase){ authMsg('تعذر تحميل مكتبة الاتصال — تحقق من الإنترنت وحدّث الصفحة', false); return; }
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  const isRecoveryLink = location.hash.indexOf('type=recovery') >= 0;
+  sb.auth.onAuthStateChange((event)=>{
+    if(event==='PASSWORD_RECOVERY'){
+      document.getElementById('loginView').style.display='none';
+      document.getElementById('resetView').style.display='block';
+    }
+  });
+  if(isRecoveryLink) return; // بانتظار حدث PASSWORD_RECOVERY أعلاه فقط — لا تدخل تلقائياً بجلسة الاستعادة
+  const {data:{session}} = await sb.auth.getSession();
+  if(session && session.user) await onSignedIn(session.user);
+})();
+</script>
+</body>
+</html>
