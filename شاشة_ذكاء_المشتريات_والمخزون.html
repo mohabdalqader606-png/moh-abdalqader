@@ -244,6 +244,24 @@ WHERE T0."DocDate" >= ADD_YEARS(CURRENT_DATE, -1)</code>
         <textarea id="pasteLeadTime" placeholder="الصق هنا: رمز الصنف / تاريخ الطلب / تاريخ الاستلام ..."></textarea>
       </details>
 
+      <details class="opt">
+        <summary><span class="num-badge opt">5</span> كويري بارامترات الشراء — Lead Time / MOQ / مضاعف الطلب (اختياري — بديل التعبئة اليدوية)</summary>
+        <div class="hint">
+          هاي الحقول عادةً <b>مش قياسية بـ SAP</b> — تكون محفوظة كحقول مخصّصة (User-Defined Fields تبدأ بـ <span class="mono" style="direction:ltr;display:inline-block">U_</span>) على بطاقة الصنف أو جدول مورّدين مخصّص عندكم.
+          الكويري تحت <b>نموذج فقط</b> — بدّل أسماء الحقول (<span class="mono" style="direction:ltr;display:inline-block">U_LeadTime, U_MOQ, U_OrderMultiple...</span>) بأسمائها الفعلية عندكم (تشوفها من Tools ← Customization Tools ← User-Defined Fields - Management، أو اسأل مسؤول SAP عندكم). أي عمود مش موجود بالكويري بيضل فاضي وتقدر تعبيه يدوياً بعدين — أي عمود موجود بيعبّي الجدول تلقائياً ولا يمسح قيمة مُدخَلة يدوياً لعمود تاني غير موجود بالكويري.
+          <code class="block">SELECT T0."ItemCode" AS "رمز الصنف",
+       T0."CardCode" AS "المورد",
+       T0."U_LeadTime" AS "Lead Time تعاقدي (يوم)",
+       T0."U_MOQ" AS "MOQ",
+       T0."U_OrderMultiple" AS "مضاعف الطلب",
+       T0."U_ShelfLife" AS "الصلاحية (يوم)",
+       T0."U_MinShelfLife" AS "حد أدنى صلاحية عند الاستلام (يوم)"
+FROM OITM T0
+WHERE T0."validFor"='Y'</code>
+        </div>
+        <textarea id="pasteParams" placeholder="الصق هنا: رمز الصنف + أي أعمدة بارامترات متوفرة عندك ..."></textarea>
+      </details>
+
       <div class="row-actions">
         <button class="btn-primary" onclick="processAllData()">تحليل البيانات</button>
         <button class="btn-ghost" onclick="clearAllPasted()">تفريغ الكويريات</button>
@@ -416,16 +434,55 @@ function processAllDataHeavy(){
     }
   }
 
+  // 5) بارامترات الشراء بالجملة (اختياري — Lead Time/MOQ/مضاعف الطلب...)
+  let paramsUpdatedCount = 0;
+  const paramsTxt = document.getElementById('pasteParams').value;
+  if(paramsTxt.trim()){
+    const {headers, rows} = splitPasted(paramsTxt);
+    const iCode = colIndex(headers, ['رمز الصنف','ItemCode']);
+    if(iCode>=0){
+      const iSupplier = colIndex(headers, ['المورد','CardCode','Supplier']);
+      const iLT = colIndex(headers, ['Lead Time تعاقدي (يوم)','Lead Time','LeadTime']);
+      const iMOQ = colIndex(headers, ['MOQ']);
+      const iMult = colIndex(headers, ['مضاعف الطلب','OrderMultiple']);
+      const iShelf = colIndex(headers, ['الصلاحية (يوم)','ShelfLife']);
+      const iMinShelf = colIndex(headers, ['حد أدنى صلاحية عند الاستلام (يوم)','MinShelfLife']);
+      const iCost = colIndex(headers, ['تكلفة الوحدة','UnitCost']);
+      const iService = colIndex(headers, ['مستوى الخدمة','ServiceLevel']);
+      const iCrit = colIndex(headers, ['الأهمية','Criticality']);
+      const critMap = {'عالية':'High','متوسطة':'Medium','منخفضة':'Low',high:'High',medium:'Medium',low:'Low'};
+      rows.forEach(r=>{
+        const code = r[iCode]; if(!code) return;
+        if(!state.params[code]) state.params[code] = { supplier:'', leadTimeDays:'', moq:'', orderMultiple:1, shelfLifeDays:'', minRemainShelfLife:'', unitCost:'', serviceLevel:95, criticality:'Medium' };
+        const p = state.params[code];
+        if(iSupplier>=0 && r[iSupplier]) p.supplier = r[iSupplier];
+        if(iLT>=0 && r[iLT]!=='' && !isNaN(toNum(r[iLT]))) p.leadTimeDays = toNum(r[iLT]);
+        if(iMOQ>=0 && r[iMOQ]!=='' && !isNaN(toNum(r[iMOQ]))) p.moq = toNum(r[iMOQ]);
+        if(iMult>=0 && r[iMult]!=='' && !isNaN(toNum(r[iMult]))) p.orderMultiple = toNum(r[iMult]);
+        if(iShelf>=0 && r[iShelf]!=='' && !isNaN(toNum(r[iShelf]))) p.shelfLifeDays = toNum(r[iShelf]);
+        if(iMinShelf>=0 && r[iMinShelf]!=='' && !isNaN(toNum(r[iMinShelf]))) p.minRemainShelfLife = toNum(r[iMinShelf]);
+        if(iCost>=0 && r[iCost]!=='' && !isNaN(toNum(r[iCost]))) p.unitCost = toNum(r[iCost]);
+        if(iService>=0 && r[iService]!=='' && !isNaN(toNum(r[iService]))) p.serviceLevel = toNum(r[iService]);
+        if(iCrit>=0 && r[iCrit] && critMap[r[iCrit]]) p.criticality = critMap[r[iCrit]];
+        paramsUpdatedCount++;
+      });
+    } else {
+      msg.textContent = 'تعذر إيجاد عمود "رمز الصنف" بكويري البارامترات — تجاهلته';
+      msg.className='status-msg err';
+    }
+  }
+
   renderParamsTable();
   runEngine();
   document.getElementById('paramsPanel').style.display='block';
-  msg.textContent = '✔ تم التحليل — ' + Object.keys(state.itemsRaw).length + ' صنف';
+  msg.textContent = '✔ تم التحليل — ' + Object.keys(state.itemsRaw).length + ' صنف'
+    + (paramsUpdatedCount ? (' · تحديث بارامترات ' + paramsUpdatedCount + ' صنف من الكويري') : '');
   msg.className='status-msg ok';
   switchTab('tower');
   scheduleCloudSave();
 }
 function clearAllPasted(){
-  ['pasteItems','pasteSales','pasteInventory','pasteLeadTime'].forEach(id=>document.getElementById(id).value='');
+  ['pasteItems','pasteSales','pasteInventory','pasteLeadTime','pasteParams'].forEach(id=>document.getElementById(id).value='');
 }
 
 /* ================= جدول بارامترات الأصناف ================= */
