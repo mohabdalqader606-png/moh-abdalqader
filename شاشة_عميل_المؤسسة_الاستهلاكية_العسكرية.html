@@ -212,6 +212,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     </div>
     <div class="userbox" id="userbox" style="display:none;">
       <div class="who"><b id="uName"></b><span id="uRole"></span><span class="status-msg" id="cloudSyncMsg" style="margin-top:2px;"></span></div>
+      <label style="font-size:12px; display:flex; align-items:center; gap:4px;" title="كشف المؤسسة الشهري وكميات الفواتير تتغيّر حسب الشهر المفتوح هون — الترتيب/الربط مشترك دايماً بكل الشهور">🗓️ شهر العمل <input type="month" id="workMonthPicker" onchange="switchWorkMonth(this.value)" style="width:130px;"></label>
       <button class="btn-ghost btn-sm" onclick="pullStateFromCloud()" title="تحميل آخر نسخة من السيرفر المشترك">🔄</button>
       <button class="btn-ghost btn-sm" onclick="doLogout()">خروج</button>
     </div>
@@ -818,7 +819,10 @@ let currentPage = 'mapping';
 let openPicker = null; // invoiceId currently showing item picker
 let openBulkAssign = null; // invoiceId currently showing تعبئة سريعة حسب نسبة الضريبة
 let TRANSFERS = []; // {docNum, docDate, fromWhs, toWhs, ourCode, ourName, qty, uom}
-let STATEMENT = []; // {theirCode, theirName, agreementNo, amanat, ghairMawrid, price, qtyDispatch, qtyAmman, qtyAqaba, totalValue}
+let STATEMENT = []; // {theirCode, theirName, agreementNo, amanat, ghairMawrid, price, qtyDispatch, qtyAmman, qtyAqaba, totalValue} — النسخة الحية لشهر العمل الحالي فقط
+// أرشيف كل شهر لحاله: الكشف المستورد + كميات كل صنف بكل فاتورة، حتى التبديل بين الشهور ما يمحي ولا يخلط بيانات شهر بشهر — الترتيب/الربط (ITEMS، itemKeys) يضل مشترك بين كل الشهور عن قصد
+let MONTHLY_DATA = {}; // {'YYYY-MM': {STATEMENT:[...], qty:{invId:{itemKey:num}}}}
+let CURRENT_MONTH = ''; // 'YYYY-MM' — شهر العمل المفتوح حالياً
 let DUMMY_INVOICES = []; // {id, docNum, date, branch, amount}
 let VOUCHER_META = {}; // {normDocNum: {invNo, done}} — حالة كل سند تحويل: رقم فاتورة الصرف المرتبطة فيه، وهل انطبعت فواتيره (تم)
 let DUMMY_INV_ITEMS = []; // {invoiceNo, date, market, theirCode, theirName, qty, price, value} — أصناف فواتير الصرف الوهمي (مستوردة من الفاتورة الأصلية) للمطابقة اليومية مع سندات التحويل
@@ -857,6 +861,8 @@ function loadState(){
       if(d.PRINT_ASSETS && typeof d.PRINT_ASSETS==='object') PRINT_ASSETS = {headerImg:d.PRINT_ASSETS.headerImg||DEFAULT_PRINT_ASSETS.headerImg, footerImg:d.PRINT_ASSETS.footerImg||DEFAULT_PRINT_ASSETS.footerImg};
       if(Array.isArray(d.BRANCHES) && d.BRANCHES.length) BRANCHES = d.BRANCHES;
       if(d.BRANCH_CODE_MAP && typeof d.BRANCH_CODE_MAP==='object') BRANCH_CODE_MAP = d.BRANCH_CODE_MAP;
+      if(d.MONTHLY_DATA && typeof d.MONTHLY_DATA==='object') MONTHLY_DATA = d.MONTHLY_DATA;
+      if(d.CURRENT_MONTH) CURRENT_MONTH = d.CURRENT_MONTH;
     }
   }catch(e){ console.warn('تعذر تحميل البيانات المحفوظة', e); }
   if(!localStorage.getItem(STORAGE_KEY)){
@@ -875,6 +881,37 @@ function loadState(){
   GROUPS.forEach(g=>{ ensureGroupDefaults(g); (g.invoices||[]).forEach(ensureInvoiceDefaults); });
   rebuildAutoInvoices();
   currentGroupId = GROUPS[0].id;
+  // أول مرة بعد إضافة نظام "شهر العمل" (ما في CURRENT_MONTH محفوظ لهاد الجهاز/الحساب بعد): نعتبر كل الكميات والكشف الحالي تابعين للشهر الحالي تلقائياً — بدون ما نمسح أو نغيّر أي شي ظاهر للمستخدم
+  if(!CURRENT_MONTH){
+    CURRENT_MONTH = monthKeyNow();
+    snapshotCurrentMonthData();
+  }
+}
+function monthKeyNow(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+// يحفظ نسخة من كميات كل فواتير الشهر الحالي (GROUPS[].invoices[].qty) + الكشف المستورد الحالي (STATEMENT) بأرشيف الشهر — بدون ما يمسحهم من مكانهم الحي
+function snapshotCurrentMonthData(){
+  if(!CURRENT_MONTH) return;
+  const qty = {};
+  GROUPS.forEach(g=> (g.invoices||[]).forEach(inv=>{ if(inv.qty && Object.keys(inv.qty).length) qty[inv.id] = {...inv.qty}; }));
+  MONTHLY_DATA[CURRENT_MONTH] = { STATEMENT: STATEMENT.map(r=>({...r})), qty };
+}
+// يرجع كميات وكشف شهر معيّن من الأرشيف (أو نسخة فاضية لو أول مرة يُفتح هاد الشهر) للمكان الحي (GROUPS + STATEMENT)
+function restoreMonthData(mk){
+  const bucket = MONTHLY_DATA[mk] || {STATEMENT:[], qty:{}};
+  STATEMENT = (bucket.STATEMENT||[]).map(r=>({...r}));
+  GROUPS.forEach(g=> (g.invoices||[]).forEach(inv=>{ inv.qty = (bucket.qty && bucket.qty[inv.id]) ? {...bucket.qty[inv.id]} : {}; }));
+}
+// تبديل شهر العمل: يحفظ شغل الشهر الحالي بأرشيفه أول، وبعدين يرجّع كميات/كشف الشهر الجديد — الترتيب (أي صنف بأي فاتورة) ما بيتأثر، هو مشترك بكل الشهور
+function switchWorkMonth(mk){
+  if(!mk || mk===CURRENT_MONTH) return;
+  snapshotCurrentMonthData();
+  CURRENT_MONTH = mk;
+  restoreMonthData(mk);
+  saveState();
+  renderStatementPage();
+  renderPrintPage();
+  const picker = document.getElementById('workMonthPicker'); if(picker) picker.value = mk;
+  flash('stStatusMsg', `تم التبديل لشهر ${mk} — كشف وكميات شهرك القديم محفوظين، رح تلاقيهم زي ما تركتهم لو رجعت لشهرهم.`, true);
 }
 // تعبئة "سعر بيع المؤسسة - العقبة" تلقائياً من أسعار مستودعات العقبة المدمجة بالبرنامج، للأصناف يلي سعرها لسا فاضي (بدون ما نلمس أي سعر معبّى يدوياً)
 function backfillAqabaPrices(){
@@ -901,7 +938,7 @@ function ensureInvoiceDefaults(inv){
 const SAVED_AT_KEY = STORAGE_KEY + '_savedAt';
 function saveState(){
   try{
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, VOUCHER_META, DUMMY_INV_ITEMS, INVOICE_LOG, PRINT_ASSETS, BRANCHES, BRANCH_CODE_MAP}));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, VOUCHER_META, DUMMY_INV_ITEMS, INVOICE_LOG, PRINT_ASSETS, BRANCHES, BRANCH_CODE_MAP, MONTHLY_DATA, CURRENT_MONTH}));
     // بنسجل وقت آخر حفظ محلي (يضل موجود حتى لو صار ريفريش قبل ما يوصل الرفع السحابي المؤجّل) —
     // عشان لو صار سحب (pull) من السيرفر وهاد التوقيت أحدث من آخر تحديث بالسيرفر، منعرف الجهاز هذا عنده
     // تعديلات محلية أحدث لسا ما وصلت السيرفر، فما نمسحها بالغلط بنسخة سيرفر أقدم.
@@ -926,7 +963,7 @@ async function pushStateToCloud(){
   if(!sb || !curUser || !roleEdit || !cloudSynced) return;
   if(!ITEMS.length){ return; } // حماية: ما نرفع أبداً لو صار ITEMS فاضي بالغلط (بدل ما يمسح نسخة السيرفر)
   try{
-    const data = {ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, VOUCHER_META, DUMMY_INV_ITEMS, INVOICE_LOG, PRINT_ASSETS, BRANCHES, BRANCH_CODE_MAP};
+    const data = {ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, VOUCHER_META, DUMMY_INV_ITEMS, INVOICE_LOG, PRINT_ASSETS, BRANCHES, BRANCH_CODE_MAP, MONTHLY_DATA, CURRENT_MONTH};
     await sb.from('mil_app_state').upsert({id:'main', data, updated_by:curUser.id, updated_at:new Date().toISOString()});
     const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ محفوظ على السيرفر المشترك · '+new Date().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}); el.className='status-msg ok'; }
   }catch(e){
@@ -961,11 +998,15 @@ async function pullStateFromCloud(){
     if(d.PRINT_ASSETS && typeof d.PRINT_ASSETS==='object') PRINT_ASSETS = {headerImg:d.PRINT_ASSETS.headerImg||DEFAULT_PRINT_ASSETS.headerImg, footerImg:d.PRINT_ASSETS.footerImg||DEFAULT_PRINT_ASSETS.footerImg};
     if(Array.isArray(d.BRANCHES) && d.BRANCHES.length) BRANCHES = d.BRANCHES;
     if(d.BRANCH_CODE_MAP && typeof d.BRANCH_CODE_MAP==='object') BRANCH_CODE_MAP = d.BRANCH_CODE_MAP;
+    if(d.MONTHLY_DATA && typeof d.MONTHLY_DATA==='object') MONTHLY_DATA = d.MONTHLY_DATA;
+    if(d.CURRENT_MONTH) CURRENT_MONTH = d.CURRENT_MONTH;
+    if(!CURRENT_MONTH){ CURRENT_MONTH = monthKeyNow(); snapshotCurrentMonthData(); }
     backfillAqabaPrices();
     GROUPS.forEach(g=>{ ensureGroupDefaults(g); (g.invoices||[]).forEach(ensureInvoiceDefaults); });
     rebuildAutoInvoices();
     if(!GROUPS.find(g=>g.id===currentGroupId)) currentGroupId = GROUPS[0] ? GROUPS[0].id : null;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, VOUCHER_META, DUMMY_INV_ITEMS, INVOICE_LOG, PRINT_ASSETS, BRANCHES, BRANCH_CODE_MAP}));
+    { const picker = document.getElementById('workMonthPicker'); if(picker) picker.value = CURRENT_MONTH; }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, VOUCHER_META, DUMMY_INV_ITEMS, INVOICE_LOG, PRINT_ASSETS, BRANCHES, BRANCH_CODE_MAP, MONTHLY_DATA, CURRENT_MONTH}));
     switchPage(currentPage||'mapping');
     cloudSynced = true;
     const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ تم تحميل آخر نسخة من السيرفر المشترك'; el.className='status-msg ok'; }
@@ -4498,7 +4539,8 @@ function toggleCmpDetail(id, btn){
 
 /* ==================== نسخ احتياطي ==================== */
 function downloadBackup(){
-  const data = {version:1, exportedAt: new Date().toISOString(), ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, VOUCHER_META, DUMMY_INV_ITEMS, INVOICE_LOG, PRINT_ASSETS, BRANCHES, BRANCH_CODE_MAP};
+  snapshotCurrentMonthData(); // نحدّث أرشيف الشهر الحالي بأحدث كميات/كشف قبل التصدير
+  const data = {version:1, exportedAt: new Date().toISOString(), ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, VOUCHER_META, DUMMY_INV_ITEMS, INVOICE_LOG, PRINT_ASSETS, BRANCHES, BRANCH_CODE_MAP, MONTHLY_DATA, CURRENT_MONTH};
   const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
@@ -4527,10 +4569,14 @@ function restoreBackup(evt){
       if(d.PRINT_ASSETS && typeof d.PRINT_ASSETS==='object') PRINT_ASSETS = {headerImg:d.PRINT_ASSETS.headerImg||DEFAULT_PRINT_ASSETS.headerImg, footerImg:d.PRINT_ASSETS.footerImg||DEFAULT_PRINT_ASSETS.footerImg};
       if(Array.isArray(d.BRANCHES) && d.BRANCHES.length) BRANCHES = d.BRANCHES;
       if(d.BRANCH_CODE_MAP && typeof d.BRANCH_CODE_MAP==='object') BRANCH_CODE_MAP = d.BRANCH_CODE_MAP;
+      MONTHLY_DATA = (d.MONTHLY_DATA && typeof d.MONTHLY_DATA==='object') ? d.MONTHLY_DATA : {};
+      CURRENT_MONTH = d.CURRENT_MONTH || '';
       backfillAqabaPrices();
       GROUPS.forEach(g=>{ ensureGroupDefaults(g); (g.invoices||[]).forEach(ensureInvoiceDefaults); });
       rebuildAutoInvoices();
       currentGroupId = GROUPS[0] ? GROUPS[0].id : null;
+      // نسخة احتياطية قديمة (قبل ميزة "شهر العمل") ما فيها MONTHLY_DATA/CURRENT_MONTH — نعتبر بياناتها تابعة للشهر الحالي، زي أول تشغيل بعد التحديث
+      if(!CURRENT_MONTH){ CURRENT_MONTH = monthKeyNow(); snapshotCurrentMonthData(); }
       IS_FRESH_LOAD = false;
       saveState();
       renderMappingTable();
@@ -4551,6 +4597,7 @@ diRenderCostBox();
 diRenderKeyAsk();
 diLoadReviewState();
 diRenderReview();
+{ const picker = document.getElementById('workMonthPicker'); if(picker) picker.value = CURRENT_MONTH; }
 
 /* ================= تسجيل الدخول (Supabase — مشترك مع باقي شاشات المؤسسة) ================= */
 const SUPABASE_URL = 'https://fxjdmqqmcgccocfbgopm.supabase.co';
