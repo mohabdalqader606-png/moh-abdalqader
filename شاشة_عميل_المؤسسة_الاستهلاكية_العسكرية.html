@@ -213,6 +213,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     <div class="userbox" id="userbox" style="display:none;">
       <div class="who"><b id="uName"></b><span id="uRole"></span><span class="status-msg" id="cloudSyncMsg" style="margin-top:2px;"></span></div>
       <label style="font-size:12px; display:flex; align-items:center; gap:4px;" title="كشف المؤسسة الشهري وكميات الفواتير تتغيّر حسب الشهر المفتوح هون — الترتيب/الربط مشترك دايماً بكل الشهور">🗓️ شهر العمل <input type="month" id="workMonthPicker" onchange="switchWorkMonth(this.value)" style="width:130px;"></label>
+      <a href="#" style="font-size:11px;" title="لو الشهر الحالي مسمّى غلط (مثلاً بيانات آب انحطت تحت اسم أيلول)، صحّحه من هون بدون ما تفقد أي بيانات" onclick="const m=prompt('اكتب اسم الشهر الصح بصيغة YYYY-MM (مثال: 2026-08):', CURRENT_MONTH); if(m) renameCurrentMonth(m.trim()); return false;">✏️ تصحيح اسم الشهر</a>
       <button class="btn-ghost btn-sm" onclick="pullStateFromCloud()" title="تحميل آخر نسخة من السيرفر المشترك">🔄</button>
       <button class="btn-ghost btn-sm" onclick="doLogout()">خروج</button>
     </div>
@@ -881,19 +882,47 @@ function loadState(){
   GROUPS.forEach(g=>{ ensureGroupDefaults(g); (g.invoices||[]).forEach(ensureInvoiceDefaults); });
   rebuildAutoInvoices();
   currentGroupId = GROUPS[0].id;
-  // أول مرة بعد إضافة نظام "شهر العمل" (ما في CURRENT_MONTH محفوظ لهاد الجهاز/الحساب بعد): نعتبر كل الكميات والكشف الحالي تابعين للشهر الحالي تلقائياً — بدون ما نمسح أو نغيّر أي شي ظاهر للمستخدم
+  // أول مرة بعد إضافة نظام "شهر العمل" (ما في CURRENT_MONTH محفوظ لهاد الجهاز/الحساب بعد): نعتبر كل الكميات والكشف الحالي تابعين لشهر بياناتها الفعلي تلقائياً — بدون ما نمسح أو نغيّر أي شي ظاهر للمستخدم
   if(!CURRENT_MONTH){
-    CURRENT_MONTH = monthKeyNow();
+    CURRENT_MONTH = guessDataMonth();
     snapshotCurrentMonthData();
   }
 }
 function monthKeyNow(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+// عند الترحيل الأول لنظام "شهر العمل"، نخمّن شهر البيانات الموجودة من تاريخ فواتيرها الفعلي (أكثر شهر متكرر بين تواريخ الفواتير) بدل الافتراض الأعمى إنها "شهر اليوم" — لو ما لقينا ولا تاريخ فاتورة، نرجع لشهر اليوم كحل أخير
+function guessDataMonth(){
+  const counts = {};
+  GROUPS.forEach(g=> (g.invoices||[]).forEach(inv=>{
+    if(inv.docDate && /^\d{4}-\d{2}/.test(inv.docDate)){
+      const mk = inv.docDate.slice(0,7);
+      counts[mk] = (counts[mk]||0) + 1;
+    }
+  }));
+  let best = null, bestCount = 0;
+  Object.entries(counts).forEach(([mk,c])=>{ if(c>bestCount){ best=mk; bestCount=c; } });
+  return best || monthKeyNow();
+}
 // يحفظ نسخة من كميات كل فواتير الشهر الحالي (GROUPS[].invoices[].qty) + الكشف المستورد الحالي (STATEMENT) بأرشيف الشهر — بدون ما يمسحهم من مكانهم الحي
 function snapshotCurrentMonthData(){
   if(!CURRENT_MONTH) return;
   const qty = {};
   GROUPS.forEach(g=> (g.invoices||[]).forEach(inv=>{ if(inv.qty && Object.keys(inv.qty).length) qty[inv.id] = {...inv.qty}; }));
   MONTHLY_DATA[CURRENT_MONTH] = { STATEMENT: STATEMENT.map(r=>({...r})), qty };
+}
+// إصلاح تصنيف شهر العمل الحالي (مثلاً لو الترحيل الأول خمّن شهر غلط) — بينقل كل أرشيف الشهر الحالي لاسم جديد بدون ما يفقد أي بيانات
+function renameCurrentMonth(newKey){
+  if(!newKey) return;
+  if(newKey===CURRENT_MONTH){ flash('stStatusMsg','هاد أصلاً اسم الشهر الحالي.', false); return; }
+  snapshotCurrentMonthData();
+  if(MONTHLY_DATA[newKey] && (Object.keys((MONTHLY_DATA[newKey].qty)||{}).length || (MONTHLY_DATA[newKey].STATEMENT||[]).length)){
+    if(!confirm(`تنبيه: شهر ${newKey} فيه بيانات محفوظة أصلاً — إعادة التسمية رح تكتب فوقها. متابعة؟`)) return;
+  }
+  MONTHLY_DATA[newKey] = MONTHLY_DATA[CURRENT_MONTH];
+  delete MONTHLY_DATA[CURRENT_MONTH];
+  CURRENT_MONTH = newKey;
+  saveState();
+  const picker = document.getElementById('workMonthPicker'); if(picker) picker.value = CURRENT_MONTH;
+  flash('stStatusMsg', `تم تغيير تسمية الشهر الحالي لـ ${newKey} — كل بياناته انتقلت معه.`, true);
 }
 // يرجع كميات وكشف شهر معيّن من الأرشيف (أو نسخة فاضية لو أول مرة يُفتح هاد الشهر) للمكان الحي (GROUPS + STATEMENT)
 function restoreMonthData(mk){
@@ -1000,7 +1029,7 @@ async function pullStateFromCloud(){
     if(d.BRANCH_CODE_MAP && typeof d.BRANCH_CODE_MAP==='object') BRANCH_CODE_MAP = d.BRANCH_CODE_MAP;
     if(d.MONTHLY_DATA && typeof d.MONTHLY_DATA==='object') MONTHLY_DATA = d.MONTHLY_DATA;
     if(d.CURRENT_MONTH) CURRENT_MONTH = d.CURRENT_MONTH;
-    if(!CURRENT_MONTH){ CURRENT_MONTH = monthKeyNow(); snapshotCurrentMonthData(); }
+    if(!CURRENT_MONTH){ CURRENT_MONTH = guessDataMonth(); snapshotCurrentMonthData(); }
     backfillAqabaPrices();
     GROUPS.forEach(g=>{ ensureGroupDefaults(g); (g.invoices||[]).forEach(ensureInvoiceDefaults); });
     rebuildAutoInvoices();
@@ -4576,7 +4605,7 @@ function restoreBackup(evt){
       rebuildAutoInvoices();
       currentGroupId = GROUPS[0] ? GROUPS[0].id : null;
       // نسخة احتياطية قديمة (قبل ميزة "شهر العمل") ما فيها MONTHLY_DATA/CURRENT_MONTH — نعتبر بياناتها تابعة للشهر الحالي، زي أول تشغيل بعد التحديث
-      if(!CURRENT_MONTH){ CURRENT_MONTH = monthKeyNow(); snapshotCurrentMonthData(); }
+      if(!CURRENT_MONTH){ CURRENT_MONTH = guessDataMonth(); snapshotCurrentMonthData(); }
       IS_FRESH_LOAD = false;
       saveState();
       renderMappingTable();
