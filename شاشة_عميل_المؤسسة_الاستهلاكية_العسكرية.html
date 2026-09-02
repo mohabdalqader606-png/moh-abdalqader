@@ -3413,6 +3413,9 @@ function renderDailyInvoiceMatch(){
     return buckets.get(key);
   }
   const priceByTheirCode = new Map(ITEMS.filter(it=>it.theirCode).map(it=>[it.theirCode, it.salePricePiece||0]));
+  const itemByTheirCode = new Map(ITEMS.filter(it=>it.theirCode).map(it=>[it.theirCode, it]));
+  const theirNameByCode = new Map();
+  DUMMY_INV_ITEMS.forEach(r=>{ if(r.theirCode && r.theirName && !theirNameByCode.has(r.theirCode)) theirNameByCode.set(r.theirCode, r.theirName); });
   const unmappedOurCodesGlobal = new Set();
   TRANSFERS.forEach(t=>{
     const from011 = isWhs011(t.fromWhs), to011 = isWhs011(t.toWhs);
@@ -3480,7 +3483,7 @@ function renderDailyInvoiceMatch(){
     // سند إله حركة بس ما وصلته فاتورة مرفوعة بعد لهاي المجموعة (سوق/تاريخ) — مو فرق حقيقي، بس بانتظار الفاتورة
     const awaitingInvoice = b.kind==='market' && b.invItems.size===0 && b.trItems.size>0;
     const codes = new Set([...b.trItems.keys(), ...b.invItems.keys()]);
-    let hasDiff = false, trTotal=0, invTotal=0;
+    let hasDiff = false, trTotal=0, invTotal=0, ourTrTotal=0, ourInvTotal=0;
     const rows = Array.from(codes).map(c=>{
       const t=b.trItems.get(c)||0, i=b.invItems.get(c)||0, diff=t-i;
       const ourPrice = priceByTheirCode.has(c) ? priceByTheirCode.get(c) : null;
@@ -3489,9 +3492,16 @@ function renderDailyInvoiceMatch(){
       const priceMismatch = priceDiff!=null && Math.abs(priceDiff)>PRICE_EPS;
       if(Math.abs(diff)>EPS || priceMismatch) hasDiff = true;
       trTotal+=t; invTotal+=i;
-      return {code:c, tr:t, inv:i, diff, ourPrice, invPrice, priceDiff, priceMismatch};
+      const item = itemByTheirCode.get(c);
+      const factor = (item && item.factor) || 1;
+      const ourTr = t/factor, ourInv = i/factor;
+      ourTrTotal += ourTr; ourInvTotal += ourInv;
+      return {code:c, tr:t, inv:i, diff, ourPrice, invPrice, priceDiff, priceMismatch,
+        ourCode: item ? item.ourCode : '', ourName: item ? item.ourName : '',
+        theirName: (item && item.theirName) || theirNameByCode.get(c) || '',
+        ourTr, ourInv, ourDiff: ourTr-ourInv};
     }).sort((a,b2)=>String(a.code).localeCompare(String(b2.code),'ar'));
-    return {key, label:b.label, kind:b.kind, awaitingInvoice, dates:Array.from(b.dates).filter(Boolean).sort(), invNos:Array.from(b.invNos), docNums:Array.from(b.docNums).filter(Boolean), rows, hasDiff: hasDiff && !awaitingInvoice, trTotal, invTotal};
+    return {key, label:b.label, kind:b.kind, awaitingInvoice, dates:Array.from(b.dates).filter(Boolean).sort(), invNos:Array.from(b.invNos), docNums:Array.from(b.docNums).filter(Boolean), rows, hasDiff: hasDiff && !awaitingInvoice, trTotal, invTotal, ourTrTotal, ourInvTotal};
   });
 
   if(from||to){
@@ -3532,20 +3542,27 @@ function renderDailyInvoiceMatch(){
         <div><b>${esc(g.label)}</b> ${badge}</div>
         <div style="font-size:12px; color:var(--ink-soft);">التاريخ: ${esc(dateStr)}${g.docNums.length?' · رقم/أرقام سند التحويل: '+esc(g.docNums.join('، ')):''}${g.invNos.length?' · فواتير: '+esc(g.invNos.join('، ')):''}</div>
       </div>
-      <table class="grid" style="max-width:820px;">
-        <thead><tr><th>رقم المادة</th><th>الكمية حسب سند التحويل</th><th>الكمية حسب الفاتورة</th><th>فرق الكمية</th><th>السعر حسب سند التحويل (المتوقع)</th><th>السعر حسب الفاتورة</th><th>فرق السعر</th></tr></thead>
+      <div style="overflow-x:auto;">
+      <table class="grid" style="min-width:1080px;">
+        <thead><tr><th>رقم المادة</th><th>رمزنا</th><th>اسم الصنف عندهم</th><th>الكمية حسب سند التحويل</th><th>الكمية حسب الفاتورة</th><th>فرق الكمية</th><th>الكمية حسب سند التحويل (بوحدتنا)</th><th>الكمية حسب الفاتورة (بوحدتنا)</th><th>فرق الكمية (بوحدتنا)</th><th>السعر حسب سند التحويل (المتوقع)</th><th>السعر حسب الفاتورة</th><th>فرق السعر</th></tr></thead>
         <tbody>${g.rows.map(r=>`<tr${(Math.abs(r.diff)>EPS||r.priceMismatch)?' style="background:#FDECEC;"':''}>
           <td class="mono">${esc(r.code)}</td>
+          <td class="mono">${esc(r.ourCode)||'—'}</td>
+          <td>${esc(r.theirName)||'—'}</td>
           <td class="mono">${fmtNum(r.tr)}</td>
           <td class="mono">${fmtNum(r.inv)}</td>
           <td class="mono" style="font-weight:700; color:${Math.abs(r.diff)>EPS?'var(--crimson)':'var(--teal)'};">${fmtNum(r.diff)}</td>
+          <td class="mono">${fmtNum(r.ourTr)}</td>
+          <td class="mono">${fmtNum(r.ourInv)}</td>
+          <td class="mono" style="font-weight:700; color:${Math.abs(r.ourDiff)>EPS?'var(--crimson)':'var(--teal)'};">${fmtNum(r.ourDiff)}</td>
           <td class="mono">${r.ourPrice==null?'—':fmt4(r.ourPrice)}</td>
           <td class="mono">${r.invPrice==null?'—':fmt4(r.invPrice)}</td>
           <td class="mono" style="font-weight:700; color:${r.priceMismatch?'var(--crimson)':(r.priceDiff==null?'var(--ink-soft)':'var(--teal)')};">${r.priceDiff==null?'—':fmt4(r.priceDiff)}</td>
         </tr>`).join('')}
-        <tr style="font-weight:700; background:var(--paper);"><td>الإجمالي</td><td class="mono">${fmtNum(g.trTotal)}</td><td class="mono">${fmtNum(g.invTotal)}</td><td class="mono">${fmtNum(g.trTotal-g.invTotal)}</td><td colspan="3"></td></tr>
+        <tr style="font-weight:700; background:var(--paper);"><td colspan="3">الإجمالي</td><td class="mono">${fmtNum(g.trTotal)}</td><td class="mono">${fmtNum(g.invTotal)}</td><td class="mono">${fmtNum(g.trTotal-g.invTotal)}</td><td class="mono">${fmtNum(g.ourTrTotal)}</td><td class="mono">${fmtNum(g.ourInvTotal)}</td><td class="mono">${fmtNum(g.ourTrTotal-g.ourInvTotal)}</td><td colspan="3"></td></tr>
         </tbody>
       </table>
+      </div>
     </div>`;
   });
   box.innerHTML = html;
