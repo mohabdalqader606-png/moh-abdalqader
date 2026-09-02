@@ -485,12 +485,13 @@ T1."FromWhsCod" AS "من مستودع", T1."WhsCode" AS "الى مستودع",
 T1."ItemCode" AS "رمزنا", T1."Dscription" AS "اسمنا",
 T1."Quantity" AS "الكمية", T1."UomCode" AS "الوحدة",
 T0."U_Branch" AS "اسم الفرع",
-T0."U_ST_Remarks" AS "رقم فاتورة الصرف"
+T0."U_ST_Remarks" AS "رقم فاتورة الصرف",
+T0."Comments" AS "ريمارك 2"
 FROM OWTR T0 INNER JOIN WTR1 T1 ON T0."DocEntry" = T1."DocEntry"
 WHERE (T1."FromWhsCod" = '011' OR T1."WhsCode" = '011')
 AND T0."DocDate" BETWEEN [%0] AND [%1]
 ORDER BY T0."DocNum"</code>
-          عمود "رقم فاتورة الصرف" بيقرأ من حقل <b>Remarks</b> (UDF عام، Alphanumeric 100) بسند التحويل — اسمه التقني عندكم <code style="direction:ltr; display:inline-block;">U_ST_Remarks</code>. اكتب فيه أرقام فواتير الصرف (وممكن مع اسم الفرع أو أي ملاحظة) مفصولين بمسافة أو فاصلة أو / — الكويري بيلقط بس الأجزاء يلي فيها أرقام ويتجاهل أي كلمة نصّية زي اسم الفرع تلقائياً. لو رجّع خطأ إنه العمود مش موجود، تأكد من الاسم التقني: <code class="block">SELECT "AliasID" FROM CUFD WHERE "TableID"='OWTR' AND "Descr" LIKE '%Remarks%'</code> لو رجّع خطأ عمود ثاني (مثلاً "UomCode" مو موجود عندكم)، احذف السطر المسبب للخطأ من الـ SELECT وابعتلي رسالة الخطأ بالضبط لأصلّحها فوراً. بديل: الصق مباشرة من كشف "Stock Transfer" الورقي بنفس ترتيب الأعمدة (Item No. / Description / From / To / UoM / Quantity) بدون كويري أصلاً — بس وقتها ما رح يظهر اسم الفرع.
+          عمود "رقم فاتورة الصرف" بيقرأ من حقل <b>Remarks</b> (UDF عام، Alphanumeric 100) بسند التحويل — اسمه التقني عندكم <code style="direction:ltr; display:inline-block;">U_ST_Remarks</code>. اكتب فيه أرقام فواتير الصرف (وممكن مع اسم الفرع أو أي ملاحظة) مفصولين بمسافة أو فاصلة أو / — الكويري بيلقط بس الأجزاء يلي فيها أرقام ويتجاهل أي كلمة نصّية زي اسم الفرع تلقائياً. عمود "ريمارك 2" بيقرأ من حقل <b>Comments</b> الأصلي بسند التحويل (مو UDF، حقل عادي بكل مستندات SAP) — إذا كتبت رقم فاتورة الصرف هون بدل الحقل الأول، بينقرأ منه كمان (الاثنين بيتفحصوا مع بعض). لو رجّع خطأ إنه العمود مش موجود، تأكد من الاسم التقني: <code class="block">SELECT "AliasID" FROM CUFD WHERE "TableID"='OWTR' AND "Descr" LIKE '%Remarks%'</code> لو رجّع خطأ عمود ثاني (مثلاً "UomCode" مو موجود عندكم)، احذف السطر المسبب للخطأ من الـ SELECT وابعتلي رسالة الخطأ بالضبط لأصلّحها فوراً. بديل: الصق مباشرة من كشف "Stock Transfer" الورقي بنفس ترتيب الأعمدة (Item No. / Description / From / To / UoM / Quantity) بدون كويري أصلاً — بس وقتها ما رح يظهر اسم الفرع.
           <details style="margin-top:8px;">
             <summary style="cursor:pointer; font-size:11.5px; color:var(--navy);">لو احتجت مستقبلاً تلاقي اسم عمود حقل مستخدم إضافي (UDF) ثاني</summary>
             <div style="margin-top:6px;">شغّل: <code class="block">SELECT "TableID", "AliasID", "Descr" FROM CUFD WHERE "Descr" LIKE N'%كلمة من اسم الحقل%'</code>عمود AliasID هو الاسم التقني — اسم عمود الحقل الفعلي بالجدول = <code style="direction:ltr; display:inline-block;">U_</code> + AliasID.</div>
@@ -2395,7 +2396,8 @@ const TR_HEADER_ALIASES = {
   'رمزنا':'ourCode', 'اسمنا':'ourName',
   'الكمية':'qty', 'الوحدة':'uom',
   'اسم الفرع':'branch',
-  'رقم فاتورة الصرف':'invNo', 'Bill of Lading':'invNo'
+  'رقم فاتورة الصرف':'invNo', 'Bill of Lading':'invNo',
+  'ريمارك 2':'invNo2', 'Comments':'invNo2'
 };
 
 function importTransfers(){
@@ -2428,10 +2430,10 @@ function importTransfers(){
   TRANSFERS = TRANSFERS.filter(t=> !touchedDocNums.has(normDocNum(t.docNum)));
   const replaced = before - TRANSFERS.length;
   TRANSFERS.push(...newRecords);
-  // لو الكويري جايب "رقم فاتورة الصرف" (حقل Bill of Lading بسند التحويل) — منعبيه تلقائياً بسجل السندات
+  // لو الكويري جايب "رقم فاتورة الصرف" (حقل Bill of Lading) و/أو "ريمارك 2" (حقل Comments) بسند التحويل — منعبيهم مع بعض تلقائياً بسجل السندات
   const invNosFilled = new Set();
   newRecords.forEach(r=>{
-    const inv = String(r.invNo||'').trim();
+    const inv = [String(r.invNo||'').trim(), String(r.invNo2||'').trim()].filter(Boolean).join(' ');
     if(!inv) return;
     const n = normDocNum(r.docNum);
     getVoucherMeta(n).invNo = inv;
