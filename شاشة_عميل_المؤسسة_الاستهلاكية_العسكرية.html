@@ -2961,12 +2961,12 @@ const DUMMY_INV_PROMPT = `أنت خبير بقراءة "فاتورة الصرف 
 
 قواعد صارمة:
 1) لكل فاتورة منفصلة أضف عنصراً مستقلاً في مصفوفة invoices — لا تدمج فاتورتين مع بعض ولا تتجاوز أي فاتورة أو صفحة.
-2) لكل فاتورة استخرج: invoiceNo (رقم الفاتورة كما هو مطبوع، أرقام فقط)، date (تاريخ الفاتورة محوّلاً لصيغة YYYY-MM-DD)، market (اسم السوق أو الفرع كما هو مكتوب بالضبط)، warehouse (رقم/كود المستودع لو مطبوع على الفاتورة — وإلا اتركه null، لا تخترعه).
-3) لكل صنف بالفاتورة استخرج: code (رمز المادة)، name (اسم المادة كما هو مكتوب)، qty (الكمية رقماً)، price (سعر الوحدة رقماً)، value (قيمة/إجمالي السطر رقماً).
-4) اقرأ كل رقم بدقة متناهية رقماً رقماً، وتحقق داخلياً أن qty × price ≈ value لكل سطر. أي رقم أو رمز غير واضح بالصورة أو لا يمكن حسم قراءته بثقة — ضعه null بدل التخمين. لا تخترع رقماً أو رمزاً أبداً.
+2) لكل فاتورة استخرج: invoiceNo (رقم الفاتورة كما هو مطبوع، أرقام فقط)، date (تاريخ الفاتورة محوّلاً لصيغة YYYY-MM-DD)، market (اسم السوق أو الفرع كما هو مكتوب بالضبط)، warehouse (رقم/كود المستودع لو مطبوع على الفاتورة — وإلا اتركه null، لا تخترعه)، totalAmount (المبلغ الإجمالي المطبوع بآخر الفاتورة كرقم — انسخه كما هو مطبوع، لا تحسبه بنفسك من الأسطر).
+3) لكل صنف بالفاتورة استخرج: code (رمز المادة كما هو مطبوع بالضبط، أرقام)، qty (الكمية رقماً)، price (سعر الوحدة رقماً)، value (قيمة/إجمالي السطر رقماً). لا تستخرج اسم الصنف إطلاقاً وما تضيف حقل name — اسم كل صنف بيتحدد لاحقاً تلقائياً من جدول ربط أصناف داخلي حسب رمزه، فتركيزك الكامل ينحصر بدقة قراءة الرمز والأرقام بس.
+4) اقرأ كل رقم بدقة متناهية رقماً رقماً، وتحقق داخلياً أن qty × price ≈ value لكل سطر. أي رقم غير واضح بالصورة أو لا يمكن حسم قراءته بثقة — ضعه null بدل التخمين. لا تخترع رقماً أبداً.
 5) تجاهل صفوف المجاميع الفارغة التي لا تمثل صنفاً فعلياً.
 6) أجب بـ JSON فقط بدون أي نص أو markdown إضافي وبالضبط بهذا الشكل:
-{"invoices":[{"invoiceNo":"","date":"YYYY-MM-DD","market":"","warehouse":"","items":[{"code":"","name":"","qty":0,"price":0,"value":0}]}]}`;
+{"invoices":[{"invoiceNo":"","date":"YYYY-MM-DD","market":"","warehouse":"","totalAmount":0,"items":[{"code":"","qty":0,"price":0,"value":0}]}]}`;
 
 let DI_READ = {busy:false, invoices:[], fname:''};
 // قائمة المراجعة (فواتير مقروءة بالذكاء الاصطناعي بس لسا ما اتعمدت) لازم تنحفظ محلياً — غير هيك أي ريفريش أو إغلاق تبويب قبل الاعتماد بيضيعها بصمت وبيضيع تكلفة القراءة معها
@@ -3122,8 +3122,9 @@ async function diHandleFiles(evt){
       const {text, usage}=await diCallAPI(b64, files[i].size);
       const parsed=diSafeParse(text);
       const invs=(parsed.invoices||[]).map(inv=>({
-        invoiceNo: inv.invoiceNo||'', date: inv.date||'', market: inv.market||'', warehouse: inv.warehouse||'',
-        items:(inv.items||[]).map(it=>diBackfillItem({code:it.code??null, name:it.name??null, qty:it.qty??null, price:it.price??null, value:it.value??null})),
+        invoiceNo: inv.invoiceNo||'', date: inv.date||'', market: inv.market||'', warehouse: inv.warehouse||'', totalAmount: inv.totalAmount??null,
+        // الاسم ما منطلبه من الذكاء الاصطناعي أبداً — منجيبه من جدول ربط الأصناف حسب الرمز يلي قراه، عشان ما يخترع اسم غلط
+        items:(inv.items||[]).map(it=>diBackfillItem({code:it.code??null, name:diKnownNameForCode(it.code)||null, qty:it.qty??null, price:it.price??null, value:it.value??null})),
         srcFile: files[i].name
       }));
       if(!invs.length) zeroInvoiceFiles++;
@@ -3189,6 +3190,7 @@ function diRenderReview(){
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;">التاريخ <input type="date" data-di="${idx}" data-f="date" value="${esc(inv.date)}" oninput="diEditField(this)"></label>
         <label style="font-size:12px; display:flex; align-items:center; gap:6px; flex:1;">السوق <input type="text" data-di="${idx}" data-f="market" value="${esc(inv.market)}" style="width:100%;" oninput="diEditField(this)"></label>
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;">مستودع <input type="text" data-di="${idx}" data-f="warehouse" value="${esc(inv.warehouse||'')}" style="width:70px; direction:ltr; text-align:left;" oninput="diEditField(this)"></label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">المبلغ الإجمالي <input type="number" step="any" data-di="${idx}" data-f="totalAmount" value="${inv.totalAmount==null?'':inv.totalAmount}" style="width:90px; direction:ltr; text-align:left;" oninput="diEditField(this)"></label>
         <span class="hint" style="direction:ltr;">${esc(inv.srcFile||'')}</span>
       </div>
       <table class="grid"><thead><tr><th style="width:110px;">رمز الصنف</th><th>اسم الصنف</th><th style="width:80px;">الكمية</th><th style="width:80px;">السعر</th><th style="width:90px;">القيمة</th></tr></thead>
@@ -3224,7 +3226,7 @@ function diRenderReview(){
 }
 function diEditField(el){
   const idx=+el.dataset.di, f=el.dataset.f;
-  DI_READ.invoices[idx][f]=el.value;
+  DI_READ.invoices[idx][f]= f==='totalAmount' ? (el.value===''?null:parseNum(el.value)) : el.value;
   diSaveReviewState();
 }
 function diEditItem(el){
@@ -3240,12 +3242,18 @@ function diInvoiceToItems(inv){
     qty: +it.qty||0, price: it.price==null?0:+it.price, value: it.value==null?(+it.qty*(it.price||0)):+it.value
   }));
 }
-// مستودع الفاتورة (لو الذكاء الاصطناعي قدر يقرأه) مو جزء من سطور DUMMY_INV_ITEMS نفسها،
-// فبنحطه مباشرة على صف "سجل فواتير الصرف الوهمي" بعد ما syncDummyInvoiceHeaders يبنيه/يحدّثه.
+// مستودع الفاتورة والمبلغ الإجمالي المطبوع (لو الذكاء الاصطناعي قدر يقرأهم) مو جزء من سطور DUMMY_INV_ITEMS نفسها،
+// فبنحطهم مباشرة على صف "سجل فواتير الصرف الوهمي" بعد ما syncDummyInvoiceHeaders يبنيه/يحدّثه.
 function diSetInvoiceWarehouse(inv){
   if(!inv.warehouse) return;
   const row = DUMMY_INVOICES.find(x=>normDocNum(x.docNum)===normDocNum(inv.invoiceNo));
   if(row){ row.warehouse = inv.warehouse; saveState(); renderDummyInvoices(); }
+}
+// نستخدم المبلغ المطبوع بآخر الفاتورة (لو انقرأ) بدل حساب مجموع الأسطر — أدق وما يتأثر لو سطر ناقص أو رقمه غلط
+function diSetInvoiceTotalAmount(inv){
+  if(inv.totalAmount==null || inv.totalAmount==='') return;
+  const row = DUMMY_INVOICES.find(x=>normDocNum(x.docNum)===normDocNum(inv.invoiceNo));
+  if(row){ row.amount = +inv.totalAmount; saveState(); renderDummyInvoices(); }
 }
 async function diApproveInvoice(idx){
   const inv=DI_READ.invoices[idx];
@@ -3255,6 +3263,7 @@ async function diApproveInvoice(idx){
   if(!newItems.length){ flash(msgId,'ما في صنف فيه رمز وكمية صالحين.', false); return; }
   upsertDummyInvItems(newItems);
   diSetInvoiceWarehouse(inv);
+  diSetInvoiceTotalAmount(inv);
   await diPushToCloud(newItems);
   DI_READ.invoices.splice(idx,1);
   diRenderReview();
@@ -3265,12 +3274,13 @@ async function diApproveAll(){
   let ok=0, skipped=0;
   const remaining=[];
   for(const inv of DI_READ.invoices){
-    const flags = !inv.invoiceNo || inv.items.some(it=>it.code==null||it.qty==null||it.price==null||it.value==null||diLineMismatch(it));
+    const flags = !inv.invoiceNo || inv.items.some(it=>it.code==null||it.name==null||it.qty==null||it.price==null||it.value==null||diLineMismatch(it));
     if(flags){ remaining.push(inv); skipped++; continue; }
     const newItems=diInvoiceToItems(inv);
     if(!newItems.length){ remaining.push(inv); skipped++; continue; }
     upsertDummyInvItems(newItems);
     diSetInvoiceWarehouse(inv);
+    diSetInvoiceTotalAmount(inv);
     await diPushToCloud(newItems);
     ok++;
   }
