@@ -2968,6 +2968,17 @@ const DUMMY_INV_PROMPT = `أنت خبير بقراءة "فاتورة الصرف 
 {"invoices":[{"invoiceNo":"","date":"YYYY-MM-DD","market":"","warehouse":"","items":[{"code":"","name":"","qty":0,"price":0,"value":0}]}]}`;
 
 let DI_READ = {busy:false, invoices:[], fname:''};
+// قائمة المراجعة (فواتير مقروءة بالذكاء الاصطناعي بس لسا ما اتعمدت) لازم تنحفظ محلياً — غير هيك أي ريفريش أو إغلاق تبويب قبل الاعتماد بيضيعها بصمت وبيضيع تكلفة القراءة معها
+const DI_REVIEW_KEY = STORAGE_KEY + '_diReview';
+function diSaveReviewState(){
+  try{ localStorage.setItem(DI_REVIEW_KEY, JSON.stringify(DI_READ.invoices)); }catch(e){}
+}
+function diLoadReviewState(){
+  try{
+    const raw = localStorage.getItem(DI_REVIEW_KEY);
+    if(raw){ const arr = JSON.parse(raw); if(Array.isArray(arr)) DI_READ.invoices = arr; }
+  }catch(e){}
+}
 
 function diB64(file){ return new Promise((res,rej)=>{ const rd=new FileReader(); rd.onload=()=>res(rd.result.split(',')[1]); rd.onerror=()=>rej(new Error('تعذرت قراءة الملف')); rd.readAsDataURL(file); }); }
 
@@ -3143,6 +3154,7 @@ async function diHandleFiles(evt){
   }
 }
 function diRenderReview(){
+  diSaveReviewState();
   const box=document.getElementById('diReviewBox');
   if(!DI_READ.invoices.length){ box.innerHTML=''; return; }
   let h=`<div class="row-actions" style="margin-bottom:8px;">
@@ -3187,11 +3199,13 @@ function diRenderReview(){
 function diEditField(el){
   const idx=+el.dataset.di, f=el.dataset.f;
   DI_READ.invoices[idx][f]=el.value;
+  diSaveReviewState();
 }
 function diEditItem(el){
   const idx=+el.dataset.di, iidx=+el.dataset.item, f=el.dataset.f;
   const it=DI_READ.invoices[idx].items[iidx];
   it[f] = (f==='code'||f==='name') ? (el.value.trim()||null) : (el.value===''?null:parseNum(el.value));
+  diSaveReviewState();
 }
 function diInvoiceToItems(inv){
   return inv.items.filter(it=>it.code && it.qty!=null).map(it=>({
@@ -4436,6 +4450,8 @@ loadState();
 switchPage('mapping');
 diRenderCostBox();
 diRenderKeyAsk();
+diLoadReviewState();
+diRenderReview();
 
 /* ================= تسجيل الدخول (Supabase — مشترك مع باقي شاشات المؤسسة) ================= */
 const SUPABASE_URL = 'https://fxjdmqqmcgccocfbgopm.supabase.co';
