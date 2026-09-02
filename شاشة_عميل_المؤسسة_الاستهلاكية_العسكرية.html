@@ -607,6 +607,7 @@ ORDER BY T0."DocNum"</code>
           </label>
           <span class="status-msg" id="diMsg"></span>
         </div>
+        <div id="diProgressBox"></div>
         <div id="diErrorBox"></div>
         <div id="diCostBox"></div>
         <div id="diKeyAskBox"></div>
@@ -2955,10 +2956,13 @@ async function diCallAPI(b64){
     'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'};
   if(anthWsid()) hdrs['anthropic-workspace-id']=anthWsid();
   const controller=new AbortController();
-  const tid=setTimeout(()=>controller.abort(),180000);
+  const tid=setTimeout(()=>controller.abort(),300000);
   try{
+    // max_tokens أعلى (64000) و"effort" منخفض: بالملفات الكبيرة (كثير صفحات ممسوحة ضوئياً) الموديل
+    // بيصرف جزء من الـmax_tokens على تفكير داخلي غير ظاهر (Sonnet 5 بيفكّر تلقائياً حتى بدون طلب صريح) —
+    // لو الرقم قليل بيصرف كل الحصة على التفكير ويرجع رد فاضي بدون أي نص ظاهر أبداً.
     const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:hdrs,signal:controller.signal,
-      body:JSON.stringify({model:DI_ANTH_MODEL, max_tokens:16000, system:DUMMY_INV_PROMPT,
+      body:JSON.stringify({model:DI_ANTH_MODEL, max_tokens:64000, system:DUMMY_INV_PROMPT, output_config:{effort:'low'},
         messages:[{role:'user',content:[
           {type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},
           {type:'text',text:'استخرج كل الفواتير وكل الأصناف من كل صفحات هذا الملف بدون أي حد أقصى للعدد. أجب بـ JSON فقط.'}
@@ -2967,7 +2971,10 @@ async function diCallAPI(b64){
     if(!resp.ok){ const ej=await resp.json().catch(()=>({})); throw new Error((ej.error&&ej.error.message)||('خطأ '+resp.status)); }
     const j=await resp.json();
     const text=(j.content||[]).map(c=>c.text||'').join('');
-    if(!text.trim()) throw new Error('وصل ردّ فارغ من القارئ — أعد المحاولة');
+    if(!text.trim()){
+      if(j.stop_reason==='max_tokens') throw new Error('الملف كبير جداً (كثير صفحات) وما لحق يطلع أي نتيجة قبل ما توصل حدّ الرد الأقصى — جرب تقسم الملف لدفعات أصغر (مثلاً 20-30 صفحة بكل مرة).');
+      throw new Error('وصل ردّ فارغ من القارئ — أعد المحاولة');
+    }
     return {text, usage:j.usage||null};
   } finally { clearTimeout(tid); }
 }
@@ -2986,6 +2993,25 @@ function diAddToTotals(cost){
   t.costUSD = (t.costUSD||0)+(cost||0);
   diSaveTotals(t);
   return t;
+}
+/* شريط تقدم ثابت لقراءة PDF بالذكاء الاصطناعي — عكس flash() يلي بيختفي بعد 4 ثواني بس،
+   هاد يضل ظاهر طول القراءة (يلي ممكن تاخذ نص دقيقة لدقيقة لكل ملف) عشان تعرف وين وصلت وكم كلفتها لحد هلأ. */
+function diRenderProgress(state){
+  const box = document.getElementById('diProgressBox');
+  if(!box) return;
+  if(!state){ box.innerHTML=''; return; }
+  const {i, total, fileName, done, batchCost, batchInvoices, batchErrors} = state;
+  const pct = total ? Math.round(((done?total:i)/total)*100) : 0;
+  const barColor = batchErrors ? 'var(--crimson)' : 'var(--teal)';
+  box.innerHTML = `<div style="border:1px solid var(--line); border-radius:8px; padding:8px 12px; margin:6px 0; background:#fff;">
+    <div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;">
+      <span>${done ? '✅ خلصت الدفعة' : '⏳ جارِ القراءة'}: ملف ${Math.min(i+(done?0:1),total)} من ${total}${!done?' — '+esc(fileName||''):''}</span>
+      <span>فواتير هالدفعة: <b>${batchInvoices||0}</b> · تكلفة هالدفعة: <b>$${(batchCost||0).toFixed(4)}</b>${batchErrors?` · ⚠ ${batchErrors} فشل`:''}</span>
+    </div>
+    <div style="height:6px; background:var(--paper); border-radius:4px; overflow:hidden;">
+      <div style="height:100%; width:${pct}%; background:${barColor}; transition:width .3s;"></div>
+    </div>
+  </div>`;
 }
 function diRenderCostBox(){
   const box = document.getElementById('diCostBox');
@@ -3053,7 +3079,9 @@ async function diHandleFiles(evt){
   let lastCostLine = '';
   const errors = [];
   let zeroInvoiceFiles = 0;
+  let batchCost = 0, batchInvoices = 0;
   for(let i=0;i<files.length;i++){
+    diRenderProgress({i, total:files.length, fileName:files[i].name, batchCost, batchInvoices, batchErrors:errors.length});
     flash('diMsg', `⏳ جارِ قراءة ${files[i].name} (${i+1}/${files.length})... (رح ياخذ عادة نص دقيقة لدقيقة لكل ملف)`, true);
     try{
       const b64=await diB64(files[i]);
@@ -3066,16 +3094,19 @@ async function diHandleFiles(evt){
       }));
       if(!invs.length) zeroInvoiceFiles++;
       DI_READ.invoices.push(...invs);
+      batchInvoices += invs.length;
       const cost = diCostUSD(usage);
-      if(cost!=null){ diAddToTotals(cost); lastCostLine = ` — تكلفة هاي القراءة: $${cost.toFixed(4)}`; }
+      if(cost!=null){ diAddToTotals(cost); batchCost += cost; lastCostLine = ` — تكلفة هاي القراءة: $${cost.toFixed(4)}`; }
       flash('diMsg', `✔ ${files[i].name}: ${invs.length} فاتورة${lastCostLine}`, true);
     }catch(e){
       errors.push(`${files[i].name}: ${e.message}`);
       flash('diMsg', `✗ تعذرت قراءة ${files[i].name}: ${e.message}`, false);
     }
     diRenderCostBox();
+    diRenderProgress({i, total:files.length, fileName:files[i].name, batchCost, batchInvoices, batchErrors:errors.length});
   }
   DI_READ.busy=false;
+  diRenderProgress({i:files.length, total:files.length, done:true, batchCost, batchInvoices, batchErrors:errors.length});
   diRenderReview();
   const errBox = document.getElementById('diErrorBox');
   if(errBox){
