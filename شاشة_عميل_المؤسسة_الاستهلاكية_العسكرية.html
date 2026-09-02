@@ -569,13 +569,14 @@ ORDER BY T0."DocNum"</code>
       <div class="hint">بتتعبّى تلقائياً من فواتير الصرف الوهمي يلي تعتمدها/تستوردها فوق (قسم 5) — رقم/تاريخ/سوق/قيمة/مستودع كل فاتورة. تقدر كمان تضيف أو تعدّل يدوياً، وبعدين تصدّرهم كشف Excel لأي فترة تختارها.</div>
       <div class="tbl-wrap" style="max-height:260px; padding:0; margin-top:6px;">
         <table class="grid" id="dummyInvTable">
-          <thead><tr><th>رقم الفاتورة</th><th>التاريخ</th><th>اسم الفرع</th><th>المبلغ</th><th>مستودع</th><th></th></tr></thead>
+          <thead><tr><th>رقم الفاتورة</th><th>التاريخ</th><th>اسم الفرع</th><th>المبلغ</th><th>مستودع</th><th></th><th></th></tr></thead>
           <tbody id="dummyInvTbody"></tbody>
         </table>
       </div>
       <div class="row-actions">
         <button class="btn-ghost btn-sm" onclick="addDummyInvoiceRow()">+ إضافة فاتورة يدوياً</button>
       </div>
+      <div id="dummyInvItemsDetailBox"></div>
       <div class="hint" style="margin-top:10px;">تصدير كشف Excel (تسلسل / تاريخ / رقم الفاتورة / السوق / قيمة الفاتورة / مستودع) — اختياري لفترة معيّنة:</div>
       <div class="row-actions">
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;">من تاريخ <input type="date" id="dummyExportFrom"></label>
@@ -3651,8 +3652,50 @@ function renderDummyInvoices(){
     </select></td>
     <td><input type="number" step="any" value="${r.amount}" onchange="updateDummyInvoiceField('${r.id}','amount',this.value)" style="width:100px;"></td>
     <td><input type="text" value="${esc(r.warehouse||'')}" onchange="updateDummyInvoiceField('${r.id}','warehouse',this.value)" style="width:60px; direction:ltr; text-align:left;"></td>
+    <td><button class="btn-ghost tiny-btn" onclick="diShowInvoiceItems('${esc(r.docNum)}')">🔍 الأصناف</button></td>
     <td><button class="btn-danger tiny-btn" onclick="deleteDummyInvoiceRow('${r.id}')">حذف</button></td>
-  </tr>`).join('') || '<tr><td colspan="6" class="muted" style="padding:10px;">ما في فواتير مسجلة بعد — رح تتعبى تلقائياً لما تعتمد فواتير من قسم "مطابقة يومية" فوق، أو اضغط "إضافة فاتورة يدوياً".</td></tr>';
+  </tr>`).join('') || '<tr><td colspan="7" class="muted" style="padding:10px;">ما في فواتير مسجلة بعد — رح تتعبى تلقائياً لما تعتمد فواتير من قسم "مطابقة يومية" فوق، أو اضغط "إضافة فاتورة يدوياً".</td></tr>';
+}
+// عرض أصناف فاتورة صرف وهمي معتمدة (خام، سطر سطر) مع إمكانية حذف سطر غلط (مثلاً صنف قرأه الذكاء الاصطناعي خطأ) — الحذف بيحدّث السيرفر المشترك كمان لو مسجل دخول، حتى ما يرجع السطر لما حد يسحب من السيرفر
+function diShowInvoiceItems(docNum){
+  const box = document.getElementById('dummyInvItemsDetailBox');
+  const n = normDocNum(docNum);
+  const rows = DUMMY_INV_ITEMS.map((r,i)=>({...r, _i:i})).filter(r=>normDocNum(r.invoiceNo)===n);
+  if(!rows.length){ box.innerHTML = `<div class="hint" style="margin-top:6px;">ما في أصناف مسجلة لفاتورة <b>${esc(docNum)}</b>.</div>`; return; }
+  box.innerHTML = `<div class="card" style="margin-top:8px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+      <b>أصناف فاتورة ${esc(docNum)} (${rows.length} سطر) — إذا في صنف غلط (قراءة خاطئة من الذكاء الاصطناعي)، احذفه من هون</b>
+      <button class="btn-ghost btn-sm" onclick="document.getElementById('dummyInvItemsDetailBox').innerHTML=''">✕ إغلاق</button>
+    </div>
+    <table class="grid"><thead><tr><th>رمزهم</th><th>اسم الصنف عندهم</th><th>الكمية</th><th>السعر</th><th>القيمة</th><th></th></tr></thead>
+    <tbody>${rows.map(r=>`<tr>
+      <td class="mono">${esc(r.theirCode)}</td>
+      <td>${esc(r.theirName||'')}</td>
+      <td class="mono">${fmtNum(r.qty)}</td>
+      <td class="mono">${fmt4(r.price)}</td>
+      <td class="mono">${fmtNum(r.value)}</td>
+      <td><button class="btn-danger tiny-btn" onclick="diDeleteInvItemLine(${r._i}, '${esc(docNum)}')">🗑 حذف</button></td>
+    </tr>`).join('')}</tbody></table>
+  </div>`;
+}
+async function diDeleteInvItemLine(idx, docNum){
+  const item = DUMMY_INV_ITEMS[idx];
+  if(!item) return;
+  if(!confirm('تأكيد حذف هالسطر: '+(item.theirName||item.theirCode)+'؟')) return;
+  const invoiceNoRaw = item.invoiceNo;
+  DUMMY_INV_ITEMS.splice(idx, 1);
+  saveState();
+  const n = normDocNum(invoiceNoRaw);
+  const remaining = DUMMY_INV_ITEMS.filter(r=>normDocNum(r.invoiceNo)===n);
+  if(sb && curUser && roleEdit){
+    try{
+      if(remaining.length) await diPushToCloud(remaining);
+      else await sb.from('mil_dummy_invoice_items').delete().eq('invoice_no', invoiceNoRaw);
+    }catch(e){ flash('dummyInvItemsMsg','تم الحذف محلياً بس تعذّر تحديث السيرفر المشترك: '+e.message, false); }
+  }
+  diShowInvoiceItems(docNum);
+  renderDailyInvoiceMatch();
+  flash('dummyInvItemsMsg','تم حذف السطر.', true);
 }
 function handleBranchSelect(selectEl, id){
   if(selectEl.value === '__new__'){
