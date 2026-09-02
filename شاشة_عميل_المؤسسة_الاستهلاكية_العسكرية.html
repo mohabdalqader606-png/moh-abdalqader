@@ -3670,10 +3670,24 @@ function updateDummyInvoiceField(id, field, value){
   row[field] = (field==='amount') ? parseNum(value) : value;
   saveState();
 }
-function deleteDummyInvoiceRow(id){
+// حذف فاتورة صرف وهمي بالكامل: الصف بالسجل (قسم 4) + كل أصنافها بـDUMMY_INV_ITEMS (يلي هو المصدر الحقيقي للمطابقة اليومية) + نسخة السيرفر المشترك —
+// قبل هيك كان الحذف يشيل الصف من السجل بس ويسيب الأصناف، فتضل الفاتورة "معتمدة" فعلياً وتدخل بالمطابقة رغم إنها ظاهرة كأنها انحذفت.
+async function deleteDummyInvoiceRow(id){
+  if(!confirm('تأكيد حذف هاي الفاتورة بكل أصنافها نهائياً؟ (تقدر تعيد قراءتها واعتمادها من جديد بعدين)')) return;
+  const row = DUMMY_INVOICES.find(r=>r.id===id);
   DUMMY_INVOICES = DUMMY_INVOICES.filter(r=>r.id!==id);
+  if(row && row.docNum){
+    const n = normDocNum(row.docNum);
+    DUMMY_INV_ITEMS = DUMMY_INV_ITEMS.filter(r=>normDocNum(r.invoiceNo)!==n);
+    if(sb && curUser && roleEdit){
+      try{ await sb.from('mil_dummy_invoice_items').delete().eq('invoice_no', row.docNum); }
+      catch(e){ flash('dummyInvItemsMsg','تم الحذف محلياً بس تعذّر تحديث السيرفر المشترك: '+e.message, false); }
+    }
+  }
   saveState();
   renderDummyInvoices();
+  renderDailyInvoiceMatch();
+  document.getElementById('dummyInvItemsDetailBox').innerHTML = '';
 }
 function renderDummyInvoices(){
   const tbody = document.getElementById('dummyInvTbody');
