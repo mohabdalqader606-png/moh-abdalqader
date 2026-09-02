@@ -3395,7 +3395,7 @@ function marketKeyFromMarketName(m){
   return String(m||'').split(/\s+/).filter(w=> w && !MARKET_STOPWORDS.has(w)).join(' ').trim();
 }
 function marketKeyFromRemarksText(v){
-  return String(v||'').split(/[،,;\/\s]+/).filter(w=> w && !/\d/.test(w)).join(' ').trim();
+  return String(v||'').split(/[،,;\/\s]+/).filter(w=> w && !/\d/.test(w) && !MARKET_STOPWORDS.has(w)).join(' ').trim();
 }
 function renderDailyInvoiceMatch(){
   const box = document.getElementById('dailyMatchBox');
@@ -3533,15 +3533,33 @@ function renderDailyInvoiceMatch(){
 
   const awaitingGroups = groups.filter(g=>g.awaitingInvoice);
   if(awaitingGroups.length){
+    // لكل سند سوق بانتظار، دوّر إذا في أصلاً فاتورة لنفس اسم السوق بس بتاريخ مختلف — هاد أشيع سبب "ما بيطلعوا" رغم إنه الفاتورة مرفوعة فعلاً (خطأ بالتاريخ)
+    const invoiceDatesByMarket = new Map();
+    DUMMY_INV_ITEMS.forEach(r=>{
+      const mk = marketKeyFromMarketName(r.market);
+      if(!mk) return;
+      const dk = normDateToISO(r.date);
+      if(!invoiceDatesByMarket.has(mk)) invoiceDatesByMarket.set(mk, new Set());
+      invoiceDatesByMarket.get(mk).add(dk);
+    });
     warnHtml += `<details style="margin:6px 0 14px; border:1px solid var(--line); border-radius:8px; padding:6px 12px;">
       <summary style="cursor:pointer; color:var(--ink-soft); font-size:13px;">📦 عرض تفاصيل الـ${awaitingGroups.length} سند بانتظار رفع فاتورتها (سوق/تاريخ ما وصلته فاتورة مقروءة بعد)</summary>
       <table class="grid" style="margin-top:8px;">
-        <thead><tr><th>اسم السوق</th><th>التاريخ</th><th>رقم/أرقام سند التحويل</th></tr></thead>
-        <tbody>${awaitingGroups.map(g=>`<tr>
+        <thead><tr><th>اسم السوق</th><th>التاريخ</th><th>رقم/أرقام سند التحويل</th><th>ملاحظة</th></tr></thead>
+        <tbody>${awaitingGroups.map(g=>{
+          const mk = g.kind==='market' ? g.label.replace('حسب اسم السوق: ','') : '';
+          const otherDates = mk && invoiceDatesByMarket.has(mk)
+            ? Array.from(invoiceDatesByMarket.get(mk)).filter(d=>!g.dates.includes(d))
+            : [];
+          const note = otherDates.length
+            ? `<span style="color:var(--crimson); font-weight:700;">⚠ في فاتورة لنفس السوق بتاريخ مختلف: ${esc(otherDates.map(d=>d.split('-').reverse().join('/')).join('، '))} — تأكد من تاريخ السند أو الفاتورة</span>`
+            : '<span style="color:var(--ink-soft);">ما في فاتورة مرفوعة لهاد السوق أصلاً بعد</span>';
+          return `<tr>
           <td>${esc(g.label.replace('حسب اسم السوق: ',''))}</td>
           <td>${esc(g.dates.map(d=>d.split('-').reverse().join('/')).join('، ')) || '—'}</td>
           <td class="mono">${esc(g.docNums.join('، ')) || '—'}</td>
-        </tr>`).join('')}</tbody>
+          <td>${note}</td>
+        </tr>`;}).join('')}</tbody>
       </table>
     </details>`;
   }
