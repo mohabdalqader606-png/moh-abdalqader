@@ -260,6 +260,20 @@ WHERE T0."validFor"='Y'</code>
         <textarea id="pasteParams" placeholder="الصق هنا: رمز الصنف + أي أعمدة بارامترات متوفرة عندك ..."></textarea>
       </details>
 
+      <details class="opt">
+        <summary><span class="num-badge opt">6</span> تاريخ فواتير الشراء (AP Invoice) — لتحليل حمولة الشحنة المعتادة لكل مورد (اختياري)</summary>
+        <div class="hint">
+          كل ما زاد المدى الزمني (سنتين-ثلاثة) كل ما كان تحليل "حمولة الشحنة المعتادة" أدق. رقم الفاتورة إلزامي — هو اللي بيربط الأصناف يلي انطلبت سوا بنفس الشحنة تاريخياً.
+          <code class="block">SELECT T1."ItemCode" AS "رمز الصنف", T0."CardCode" AS "المورد",
+       T0."DocEntry" AS "رقم الفاتورة", T0."DocDate" AS "تاريخ الفاتورة",
+       T1."Quantity" AS "الكمية"
+FROM OPCH T0 INNER JOIN PCH1 T1 ON T0."DocEntry"=T1."DocEntry"
+WHERE T0."DocDate" >= ADD_YEARS(CURRENT_DATE, -3)
+ORDER BY T0."CardCode", T0."DocEntry"</code>
+        </div>
+        <textarea id="pasteApInvoices" placeholder="الصق هنا: رمز الصنف / المورد / رقم الفاتورة / تاريخ الفاتورة / الكمية ..."></textarea>
+      </details>
+
       <div class="row-actions">
         <button class="btn-primary" onclick="processAllData()">تحليل البيانات</button>
         <button class="btn-ghost" onclick="clearAllPasted()">تفريغ الكويريات</button>
@@ -327,7 +341,7 @@ WHERE T0."validFor"='Y'</code>
 /* ================= الحالة العامة ================= */
 const STORAGE_KEY = 'procint_state_v1';
 let state = {
-  itemsRaw:{}, salesRaw:[], invRaw:[], leadTimeRaw:[],
+  itemsRaw:{}, salesRaw:[], invRaw:[], leadTimeRaw:[], apInvoiceRaw:[],
   params:{}, // itemCode -> {supplier, leadTimeDays, moq, orderMultiple, shelfLifeDays, minRemainShelfLife, unitCost, serviceLevel, criticality}
   computed:[], demandWindowDays:90
 };
@@ -478,6 +492,19 @@ function processAllDataHeavy(){
     }
   }
 
+  // 6) تاريخ فواتير الشراء (اختياري — لتحليل حمولة الشحنة المعتادة لكل مورد)
+  const apTxt = document.getElementById('pasteApInvoices').value;
+  if(apTxt.trim()){
+    const {headers, rows} = splitPasted(apTxt);
+    const iCode = colIndex(headers, ['رمز الصنف','ItemCode']);
+    const iSupplier = colIndex(headers, ['المورد','CardCode']);
+    const iDoc = colIndex(headers, ['رقم الفاتورة','DocEntry','DocNum']);
+    const iQty = colIndex(headers, ['الكمية','Quantity']);
+    if(iCode>=0 && iSupplier>=0 && iDoc>=0 && iQty>=0){
+      state.apInvoiceRaw = rows.map(r=>({code:r[iCode], supplier:r[iSupplier], docEntry:r[iDoc], qty:toNum(r[iQty])})).filter(r=>r.code && r.supplier && r.docEntry);
+    }
+  }
+
   renderParamsTable();
   runEngine();
   document.getElementById('paramsPanel').style.display='block';
@@ -488,7 +515,7 @@ function processAllDataHeavy(){
   scheduleCloudSave();
 }
 function clearAllPasted(){
-  ['pasteItems','pasteSales','pasteInventory','pasteLeadTime','pasteParams'].forEach(id=>document.getElementById(id).value='');
+  ['pasteItems','pasteSales','pasteInventory','pasteLeadTime','pasteParams','pasteApInvoices'].forEach(id=>document.getElementById(id).value='');
 }
 
 /* ================= جدول بارامترات الأصناف ================= */
@@ -569,6 +596,67 @@ function renderPager(elId, total, pageNum, pageCount, onGo){
 const Z_TABLE = {90:1.28, 95:1.65, 97:1.88, 98:2.05, 99:2.33};
 
 function mean(arr){ return arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : 0; }
+function median(arr){
+  if(!arr.length) return 0;
+  const s = arr.slice().sort((a,b)=>a-b);
+  const mid = Math.floor(s.length/2);
+  return s.length%2 ? s[mid] : (s[mid-1]+s[mid])/2;
+}
+/* تحليل حمولة الشحنة المعتادة لكل مورد من تاريخ فواتير الشراء الفعلية، لمعرفة
+   هل يُطلَب الصنف لحاله أو يُجمَّع مع أصناف تانية جاهزة من نفس المورد */
+function computeConsolidation(results){
+  if(!state.apInvoiceRaw.length) return;
+  const resultByCode = {};
+  results.forEach(r=>{ resultByCode[r.code]=r; });
+
+  const shipMap = {}; // supplier|docEntry -> {supplier, items:Set, value}
+  state.apInvoiceRaw.forEach(r=>{
+    const key = r.supplier+'|'+r.docEntry;
+    const s = shipMap[key] = shipMap[key] || {supplier:r.supplier, items:new Set(), value:0};
+    s.items.add(r.code);
+    const cost = toNum((state.params[r.code]||{}).unitCost);
+    if(!isNaN(cost)) s.value += (r.qty||0) * cost;
+  });
+  const shipments = {}; // supplier -> [shipment,...]
+  Object.values(shipMap).forEach(s=>{ (shipments[s.supplier] = shipments[s.supplier] || []).push(s); });
+
+  const supplierTypical = {};
+  Object.keys(shipments).forEach(sup=>{
+    const list = shipments[sup];
+    supplierTypical[sup] = { typicalValue: median(list.map(s=>s.value).filter(v=>v>0)), shipmentCount: list.length };
+  });
+
+  const itemSupplierFreq = {};
+  state.apInvoiceRaw.forEach(r=>{
+    itemSupplierFreq[r.code] = itemSupplierFreq[r.code] || {};
+    itemSupplierFreq[r.code][r.supplier] = (itemSupplierFreq[r.code][r.supplier]||0)+1;
+  });
+  const itemSupplier = {}, supplierItems = {};
+  Object.keys(itemSupplierFreq).forEach(code=>{
+    const freq = itemSupplierFreq[code];
+    const sup = Object.keys(freq).sort((a,b)=>freq[b]-freq[a])[0];
+    itemSupplier[code] = sup;
+    (supplierItems[sup] = supplierItems[sup] || []).push(code);
+  });
+
+  results.forEach(r=>{
+    const sup = itemSupplier[r.code];
+    if(!sup || !(r.decision==='BUY_NOW'||r.decision==='BUY_SOON')) return;
+    const typical = supplierTypical[sup];
+    if(!typical || !typical.typicalValue) return;
+    const dueSiblings = (supplierItems[sup]||[]).filter(c=>c!==r.code)
+      .map(c=>resultByCode[c]).filter(x=>x && (x.decision==='BUY_NOW'||x.decision==='BUY_SOON'));
+    const combinedValue = (r.recommendedQty||0)*r.unitCost + dueSiblings.reduce((a,x)=>a+((x.recommendedQty||0)*x.unitCost),0);
+    r.consolidation = {
+      supplier: sup,
+      typicalValue: Math.round(typical.typicalValue),
+      shipmentCount: typical.shipmentCount,
+      dueSiblings: dueSiblings.map(x=>x.name),
+      combinedValue: Math.round(combinedValue),
+      ratio: Math.round((combinedValue/typical.typicalValue)*100)
+    };
+  });
+}
 function stdev(arr){
   if(arr.length<2) return 0;
   const m = mean(arr);
@@ -745,6 +833,7 @@ function runEngine(){
     };
   });
 
+  computeConsolidation(results);
   results.sort((a,b)=> b.priorityScore - a.priorityScore);
   state.computed = results;
 }
@@ -828,6 +917,19 @@ function renderTower(){
     reasons.push(['مستوى الثقة بالتوصية', r.confidence+'٪']);
     if(r.qtyNotes.length) reasons.push(['ملاحظات على الكمية', r.qtyNotes.join(' · ')]);
     if(r.missing.length) reasons.push(['بيانات ناقصة', r.missing.join('، ')]);
+    let consolidationHtml = '';
+    if(r.consolidation){
+      const c = r.consolidation;
+      const ratioTxt = c.ratio+'٪ من الحمولة المعتادة ('+c.typicalValue.toLocaleString('en-US')+' من '+c.shipmentCount+' شحنة سابقة)';
+      if(c.dueSiblings.length){
+        consolidationHtml = '<div class="callout" style="margin:10px 0 0;padding:10px 14px;"><span class="label">🔗 فرصة تجميع — '+esc(c.supplier)+'</span>'
+          + 'أصناف تانية من نفس المورد قريبة من الطلب هلق: <b>'+esc(c.dueSiblings.join('، '))+'</b>. '
+          + 'إجمالي القيمة لو انطلبوا سوا ≈ '+c.combinedValue.toLocaleString('en-US')+' — '+ratioTxt+'.</div>';
+      } else if(c.ratio < 40){
+        consolidationHtml = '<div class="callout warning" style="margin:10px 0 0;padding:10px 14px;"><span class="label">⚠ طلب منفرد صغير — '+esc(c.supplier)+'</span>'
+          + 'هالطلب لحاله ≈ '+c.combinedValue.toLocaleString('en-US')+' بس '+ratioTxt+'. مفيش صنف تاني من نفس المورد جاهز يُطلب هلق — فكّر تطلبه لحاله (إذا الخطر حقيقي) أو تنتظر شوي لين يقرب صنف تاني.</div>';
+      }
+    }
 
     return '<div class="rowc" id="row-'+idx+'">'
       + '<div class="rowc-head" onclick="toggleRow('+idx+')">'
@@ -845,6 +947,7 @@ function renderTower(){
         + '<div style="font-size:12px;margin-bottom:6px;"><b>لماذا؟</b> '+esc(r.decisionReason)+'</div>'
         + '<div class="chain">'+chain.map((c,i)=>'<span class="node">'+esc(c)+'</span>'+(i<chain.length-1?'<span class="arrow">→</span>':'')).join('')+'</div>'
         + '<ul class="reason-list">'+reasons.map(x=>'<li><b>'+esc(x[0])+'</b><span>'+esc(x[1])+'</span></li>').join('')+'</ul>'
+        + consolidationHtml
       + '</div>'
     + '</div>';
   }).join('');
