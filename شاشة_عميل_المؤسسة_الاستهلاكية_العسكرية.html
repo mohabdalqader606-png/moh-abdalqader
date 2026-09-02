@@ -3483,11 +3483,12 @@ function renderDailyInvoiceMatch(){
     // سند إله حركة بس ما وصلته فاتورة مرفوعة بعد لهاي المجموعة (سوق/تاريخ) — مو فرق حقيقي، بس بانتظار الفاتورة
     const awaitingInvoice = b.kind==='market' && b.invItems.size===0 && b.trItems.size>0;
     const codes = new Set([...b.trItems.keys(), ...b.invItems.keys()]);
-    let hasDiff = false, trTotal=0, invTotal=0, ourTrTotal=0, ourInvTotal=0;
+    let hasDiff = false, trTotal=0, invTotal=0, ourTrTotal=0, ourInvTotal=0, expectedValueTotal=0, invoicedValueTotal=0;
     const rows = Array.from(codes).map(c=>{
       const t=b.trItems.get(c)||0, i=b.invItems.get(c)||0, diff=t-i;
       const ourPrice = priceByTheirCode.has(c) ? priceByTheirCode.get(c) : null;
-      const invPrice = i ? (b.invValue.get(c)||0)/i : null;
+      const invValueForCode = b.invValue.get(c)||0;
+      const invPrice = i ? invValueForCode/i : null;
       const priceDiff = (ourPrice!=null && invPrice!=null) ? (invPrice-ourPrice) : null;
       const priceMismatch = priceDiff!=null && Math.abs(priceDiff)>PRICE_EPS;
       if(Math.abs(diff)>EPS || priceMismatch) hasDiff = true;
@@ -3496,12 +3497,14 @@ function renderDailyInvoiceMatch(){
       const factor = (item && item.factor) || 1;
       const ourTr = t/factor, ourInv = i/factor;
       ourTrTotal += ourTr; ourInvTotal += ourInv;
+      if(ourPrice!=null) expectedValueTotal += ourPrice * t;
+      invoicedValueTotal += invValueForCode;
       return {code:c, tr:t, inv:i, diff, ourPrice, invPrice, priceDiff, priceMismatch,
         ourCode: item ? item.ourCode : '', ourName: item ? item.ourName : '',
         theirName: (item && item.theirName) || theirNameByCode.get(c) || '',
         ourTr, ourInv, ourDiff: ourTr-ourInv};
     }).sort((a,b2)=>String(a.code).localeCompare(String(b2.code),'ar'));
-    return {key, label:b.label, kind:b.kind, awaitingInvoice, dates:Array.from(b.dates).filter(Boolean).sort(), invNos:Array.from(b.invNos), docNums:Array.from(b.docNums).filter(Boolean), rows, hasDiff: hasDiff && !awaitingInvoice, trTotal, invTotal, ourTrTotal, ourInvTotal};
+    return {key, label:b.label, kind:b.kind, awaitingInvoice, dates:Array.from(b.dates).filter(Boolean).sort(), invNos:Array.from(b.invNos), docNums:Array.from(b.docNums).filter(Boolean), rows, hasDiff: hasDiff && !awaitingInvoice, trTotal, invTotal, ourTrTotal, ourInvTotal, expectedValueTotal, invoicedValueTotal};
   });
 
   if(from||to){
@@ -3559,7 +3562,7 @@ function renderDailyInvoiceMatch(){
           <td class="mono">${r.invPrice==null?'—':fmt4(r.invPrice)}</td>
           <td class="mono" style="font-weight:700; color:${r.priceMismatch?'var(--crimson)':(r.priceDiff==null?'var(--ink-soft)':'var(--teal)')};">${r.priceDiff==null?'—':fmt4(r.priceDiff)}</td>
         </tr>`).join('')}
-        <tr style="font-weight:700; background:var(--paper);"><td colspan="3">الإجمالي</td><td class="mono">${fmtNum(g.trTotal)}</td><td class="mono">${fmtNum(g.invTotal)}</td><td class="mono">${fmtNum(g.trTotal-g.invTotal)}</td><td class="mono">${fmtNum(g.ourTrTotal)}</td><td class="mono">${fmtNum(g.ourInvTotal)}</td><td class="mono">${fmtNum(g.ourTrTotal-g.ourInvTotal)}</td><td colspan="3"></td></tr>
+        <tr style="font-weight:700; background:var(--paper);"><td colspan="3">الإجمالي</td><td class="mono">${fmtNum(g.trTotal)}</td><td class="mono">${fmtNum(g.invTotal)}</td><td class="mono">${fmtNum(g.trTotal-g.invTotal)}</td><td class="mono">${fmtNum(g.ourTrTotal)}</td><td class="mono">${fmtNum(g.ourInvTotal)}</td><td class="mono">${fmtNum(g.ourTrTotal-g.ourInvTotal)}</td><td class="mono">${fmt4(g.expectedValueTotal)}</td><td class="mono">${fmt4(g.invoicedValueTotal)}</td><td class="mono" style="color:${Math.abs(g.invoicedValueTotal-g.expectedValueTotal)>PRICE_EPS?'var(--crimson)':'var(--teal)'};">${fmt4(g.invoicedValueTotal-g.expectedValueTotal)}</td></tr>
         </tbody>
       </table>
       </div>
