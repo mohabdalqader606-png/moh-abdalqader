@@ -6,20 +6,49 @@
 <title>نظام ذكاء المشتريات والمخزون — مركز التحكم | الكيلاني للأغذية</title>
 <!--
   إعداد Supabase (مرّة واحدة فقط، من مالك الحساب):
-  1) جدول حالة السحابة (نفس نمط باقي شاشات المستودع):
-     create table if not exists procurement_app_state (
-       id text primary key,
-       data jsonb,
-       updated_at timestamptz default now()
+
+  1) جداول تخزين البيانات — كل نوع بيانات بجدول مستقل (بدل نسخة JSON واحدة ضخمة
+     كانت تفشل بصمت مع آلاف الأصناف ومئات آلاف أسطر المبيعات):
+     create table if not exists procurement_items (
+       item_code text primary key, name text
      );
-     alter table procurement_app_state enable row level security;
-     -- مطابقة لنفس سياسة RLS المستخدمة على جداول *_app_state لباقي الشاشات
-     create policy "allow authenticated read/write" on procurement_app_state
-       for all using (auth.role() = 'authenticated') with check (auth.role() = 'authenticated');
+     create table if not exists procurement_sales (
+       id bigserial primary key, item_code text, sale_date date, qty numeric, whs text
+     );
+     create index if not exists procurement_sales_item_idx on procurement_sales(item_code);
+     create table if not exists procurement_inventory (
+       id bigserial primary key, item_code text, whs text, on_hand numeric, on_order numeric
+     );
+     create table if not exists procurement_leadtime (
+       id bigserial primary key, item_code text, order_date date, recv_date date
+     );
+     create table if not exists procurement_ap_invoices (
+       id bigserial primary key, item_code text, supplier text, doc_entry text, qty numeric
+     );
+     create table if not exists procurement_params (
+       item_code text primary key, supplier text, lead_time_days numeric, moq numeric,
+       order_multiple numeric, shelf_life_days numeric, min_remain_shelf_life numeric,
+       unit_cost numeric, service_level numeric, criticality text,
+       lead_time_is_default boolean, moq_is_default boolean
+     );
+     alter table procurement_items enable row level security;
+     alter table procurement_sales enable row level security;
+     alter table procurement_inventory enable row level security;
+     alter table procurement_leadtime enable row level security;
+     alter table procurement_ap_invoices enable row level security;
+     alter table procurement_params enable row level security;
+     create policy "authenticated rw" on procurement_items for all using (auth.role()='authenticated') with check (auth.role()='authenticated');
+     create policy "authenticated rw" on procurement_sales for all using (auth.role()='authenticated') with check (auth.role()='authenticated');
+     create policy "authenticated rw" on procurement_inventory for all using (auth.role()='authenticated') with check (auth.role()='authenticated');
+     create policy "authenticated rw" on procurement_leadtime for all using (auth.role()='authenticated') with check (auth.role()='authenticated');
+     create policy "authenticated rw" on procurement_ap_invoices for all using (auth.role()='authenticated') with check (auth.role()='authenticated');
+     create policy "authenticated rw" on procurement_params for all using (auth.role()='authenticated') with check (auth.role()='authenticated');
 
   2) منح صلاحية الدخول لهذه الشاشة لحساب واحد فقط (بدون مشاركتها مع باقي الموظفين):
      update profiles set allowed_apps = coalesce(allowed_apps, '{}') || '{procurement-intelligence}'
        where id = (select id from auth.users where email = 'mohabdalqader606@gmail.com');
+
+  ملاحظة: الجدول القديم procurement_app_state لم يعد يُستخدَم — يمكن تركه أو حذفه يدوياً.
 -->
 <style>
   :root{
@@ -354,10 +383,16 @@ function saveStateLocal(){
   try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){ console.warn('تعذر الحفظ محلياً', e); }
 }
 let cloudSaveTimer=null;
-function scheduleCloudSave(){
+let pendingDatasets = new Set();
+function scheduleCloudSave(datasets){
   saveStateLocal();
+  (datasets || ['items','params']).forEach(d=>pendingDatasets.add(d));
   clearTimeout(cloudSaveTimer);
-  cloudSaveTimer = setTimeout(pushStateToCloud, 1200);
+  cloudSaveTimer = setTimeout(()=>{
+    const ds = pendingDatasets;
+    pendingDatasets = new Set();
+    pushStateToCloud(ds);
+  }, 1200);
 }
 
 /* ================= أدوات تحليل النص الملصوق ================= */
@@ -512,7 +547,13 @@ function processAllDataHeavy(){
     + (paramsUpdatedCount ? (' · تحديث بارامترات ' + paramsUpdatedCount + ' صنف من الكويري') : '');
   msg.className='status-msg ok';
   switchTab('tower');
-  scheduleCloudSave();
+  const changedDatasets = ['items','params'];
+  if(itemsTxt.trim()) changedDatasets.push('items');
+  if(salesTxt.trim()) changedDatasets.push('sales');
+  if(invTxt.trim()) changedDatasets.push('inventory');
+  if(ltTxt.trim()) changedDatasets.push('leadtime');
+  if(apTxt.trim()) changedDatasets.push('apinvoice');
+  scheduleCloudSave(changedDatasets);
 }
 function clearAllPasted(){
   ['pasteItems','pasteSales','pasteInventory','pasteLeadTime','pasteParams','pasteApInvoices'].forEach(id=>document.getElementById(id).value='');
@@ -979,7 +1020,7 @@ function restoreBackup(evt){
       document.getElementById('paramsPanel').style.display='block';
       renderTower();
       const el = document.getElementById('backupStatusMsg'); el.textContent='✔ تم الاسترجاع'; el.className='status-msg ok';
-      scheduleCloudSave();
+      scheduleCloudSave(['items','params','sales','inventory','leadtime','apinvoice']);
     }catch(e){
       const el = document.getElementById('backupStatusMsg'); el.textContent='ملف غير صالح'; el.className='status-msg err';
     }
@@ -1035,25 +1076,111 @@ async function onSignedIn(user){
   document.getElementById('appView').style.display = 'block';
   await pullStateFromCloud();
 }
+/* ================= مزامنة سحابية على جداول حقيقية (بدل نسخة JSON واحدة ضخمة) ================= */
+function chunkArray(arr, size){ const out=[]; for(let i=0;i<arr.length;i+=size) out.push(arr.slice(i,i+size)); return out; }
+function normDateForDb(s){ const d = parseDateFlexible(s); return d ? dateKey(d) : null; }
+async function pushChunked(table, rows){
+  for(const c of chunkArray(rows, 500)){
+    const {error} = await sb.from(table).insert(c);
+    if(error) throw error;
+  }
+}
+async function upsertChunked(table, rows){
+  for(const c of chunkArray(rows, 500)){
+    const {error} = await sb.from(table).upsert(c, {onConflict:'item_code'});
+    if(error) throw error;
+  }
+}
+async function replaceLogTable(table, rows){
+  const {error:delErr} = await sb.from(table).delete().gt('id', 0);
+  if(delErr) throw delErr;
+  if(rows.length) await pushChunked(table, rows);
+}
+async function fetchAllRows(table, selectCols){
+  let all = [], from = 0; const pageSize = 1000;
+  while(true){
+    const {data, error} = await sb.from(table).select(selectCols).range(from, from+pageSize-1);
+    if(error){ console.warn('تعذر قراءة '+table, error); break; }
+    if(!data || !data.length) break;
+    all = all.concat(data);
+    if(data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
 async function pullStateFromCloud(){
   if(!sb || !curUser) return;
+  const el = document.getElementById('cloudSyncMsg');
   try{
-    const {data, error} = await sb.from('procurement_app_state').select('data, updated_at').eq('id','main').maybeSingle();
-    if(error || !data || !data.data) return;
-    Object.assign(state, data.data);
+    if(el){ el.textContent = '⏳ جارٍ تحميل البيانات المحفوظة...'; el.className='status-msg ok'; }
+    const [items, params, sales, inv, lt, ap] = await Promise.all([
+      fetchAllRows('procurement_items', 'item_code,name'),
+      fetchAllRows('procurement_params', '*'),
+      fetchAllRows('procurement_sales', 'item_code,sale_date,qty,whs'),
+      fetchAllRows('procurement_inventory', 'item_code,whs,on_hand,on_order'),
+      fetchAllRows('procurement_leadtime', 'item_code,order_date,recv_date'),
+      fetchAllRows('procurement_ap_invoices', 'item_code,supplier,doc_entry,qty'),
+    ]);
+    if(items.length){ state.itemsRaw = {}; items.forEach(r=>{ state.itemsRaw[r.item_code] = {code:r.item_code, name:r.name}; }); }
+    if(params.length){
+      state.params = {};
+      params.forEach(r=>{ state.params[r.item_code] = {
+        supplier: r.supplier||'', leadTimeDays: r.lead_time_days ?? '', moq: r.moq ?? '',
+        orderMultiple: r.order_multiple ?? 1, shelfLifeDays: r.shelf_life_days ?? '',
+        minRemainShelfLife: r.min_remain_shelf_life ?? '', unitCost: r.unit_cost ?? '',
+        serviceLevel: r.service_level ?? 95, criticality: r.criticality || 'Medium',
+        leadTimeIsDefault: !!r.lead_time_is_default, moqIsDefault: !!r.moq_is_default
+      };});
+    }
+    if(sales.length) state.salesRaw = sales.map(r=>({code:r.item_code, date:r.sale_date, qty:r.qty, whs:r.whs||''}));
+    if(inv.length) state.invRaw = inv.map(r=>({code:r.item_code, onHand:r.on_hand||0, onOrder:r.on_order||0, whs:r.whs||''}));
+    if(lt.length) state.leadTimeRaw = lt.map(r=>({code:r.item_code, orderDate:r.order_date, recvDate:r.recv_date}));
+    if(ap.length) state.apInvoiceRaw = ap.map(r=>({code:r.item_code, supplier:r.supplier, docEntry:r.doc_entry, qty:r.qty}));
     saveStateLocal();
     if(Object.keys(state.itemsRaw||{}).length){
-      renderParamsTable(); runEngine(); document.getElementById('paramsPanel').style.display='block'; renderTower();
+      renderParamsTable(); runEngine(); document.getElementById('paramsPanel').style.display='block'; switchTab('tower');
     }
-    const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ تم تحميل آخر نسخة من السيرفر'; el.className='status-msg ok'; }
-  }catch(e){ console.warn('تعذر التحميل من السيرفر', e); }
+    if(el){ el.textContent = '✔ تم تحميل '+Object.keys(state.itemsRaw||{}).length+' صنف من السيرفر'; el.className='status-msg ok'; }
+  }catch(e){ console.warn('تعذر التحميل من السيرفر', e); if(el){ el.textContent='⚠ تعذر التحميل من السيرفر'; el.className='status-msg err'; } }
 }
-async function pushStateToCloud(){
+async function pushStateToCloud(datasets){
   if(!sb || !curUser) return;
+  const el = document.getElementById('cloudSyncMsg');
   try{
-    await sb.from('procurement_app_state').upsert({id:'main', data: state, updated_at: new Date().toISOString()});
-    const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ محفوظ سحابياً'; el.className='status-msg ok'; }
-  }catch(e){ console.warn('تعذر الحفظ على السيرفر', e); }
+    if(el){ el.textContent = '⏳ جارٍ الحفظ على السيرفر...'; el.className='status-msg ok'; }
+    if(datasets.has('items')){
+      await upsertChunked('procurement_items', Object.values(state.itemsRaw).map(it=>({item_code:it.code, name:it.name})));
+    }
+    if(datasets.has('params')){
+      await upsertChunked('procurement_params', Object.keys(state.params).map(code=>{
+        const p = state.params[code];
+        return {
+          item_code: code, supplier: p.supplier || null,
+          lead_time_days: p.leadTimeDays===''||p.leadTimeDays==null ? null : p.leadTimeDays,
+          moq: p.moq===''||p.moq==null ? null : p.moq,
+          order_multiple: p.orderMultiple===''||p.orderMultiple==null ? null : p.orderMultiple,
+          shelf_life_days: p.shelfLifeDays===''||p.shelfLifeDays==null ? null : p.shelfLifeDays,
+          min_remain_shelf_life: p.minRemainShelfLife===''||p.minRemainShelfLife==null ? null : p.minRemainShelfLife,
+          unit_cost: p.unitCost===''||p.unitCost==null ? null : p.unitCost,
+          service_level: p.serviceLevel || 95, criticality: p.criticality || 'Medium',
+          lead_time_is_default: !!p.leadTimeIsDefault, moq_is_default: !!p.moqIsDefault
+        };
+      }));
+    }
+    if(datasets.has('sales')){
+      await replaceLogTable('procurement_sales', state.salesRaw.map(r=>({item_code:r.code, sale_date:normDateForDb(r.date), qty:r.qty, whs:r.whs||null})));
+    }
+    if(datasets.has('inventory')){
+      await replaceLogTable('procurement_inventory', state.invRaw.map(r=>({item_code:r.code, whs:r.whs||null, on_hand:r.onHand, on_order:r.onOrder})));
+    }
+    if(datasets.has('leadtime')){
+      await replaceLogTable('procurement_leadtime', state.leadTimeRaw.map(r=>({item_code:r.code, order_date:normDateForDb(r.orderDate), recv_date:normDateForDb(r.recvDate)})));
+    }
+    if(datasets.has('apinvoice')){
+      await replaceLogTable('procurement_ap_invoices', state.apInvoiceRaw.map(r=>({item_code:r.code, supplier:r.supplier, doc_entry:String(r.docEntry), qty:r.qty})));
+    }
+    if(el){ el.textContent = '✔ محفوظ سحابياً'; el.className='status-msg ok'; }
+  }catch(e){ console.warn('تعذر الحفظ على السيرفر', e); if(el){ el.textContent='⚠ تعذر الحفظ على السيرفر — محفوظ محلياً فقط بهالمتصفح'; el.className='status-msg err'; } }
 }
 (async function bootAuth(){
   loadStateLocal();
