@@ -2443,6 +2443,16 @@ async function replaceLogTable(table, rows){
 // هيك جدول فيه خطأ قراءة كان يبين بالضبط متل جدول فاضي فعلاً، فالمستخدم يحس إنه
 // "البيانات راحت" بينما هي أصلاً موجودة بالسيرفر بس ما قدرنا نقرأها. صرنا نرمي الخطأ
 // عشان يوصل لرسالة واضحة للمستخدم بدل ما يختفي بصمت بـ Console.
+// كنا نعرض بس error.message أو error.code، وأخطاء Postgrest/الشبكة كتير مرات
+// بتوصل بشكل تاني (details/hint/status/اسم الخطأ بس) فتطلع "خطأ غير معروف" بدون
+// أي فايدة تشخيصية. صرنا نجرّب كل الحقول المحتملة وننزل لـ JSON.stringify كملاذ أخير.
+function describeError(e){
+  if(!e) return 'خطأ غير معروف';
+  const parts = [e.message, e.details, e.hint, e.code, e.status, e.name].filter(Boolean);
+  if(parts.length) return parts.join(' — ');
+  try{ const s = JSON.stringify(e); if(s && s!=='{}') return s; }catch(_){}
+  return String(e) || 'خطأ غير معروف';
+}
 // بدون مهلة زمنية، طلب معلّق (مشروع Supabase متوقف/متجاوز حدوده مثلاً) كان يخلي
 // "جارٍ التحميل..." يضل معلّق للأبد بدون أي رسالة — صار كل صفحة قراءة إلها 20 ثانية
 // بعدها نرمي خطأ واضح بدل التعليق الصامت
@@ -2459,7 +2469,7 @@ function withTimeout(promise, ms, label){
 async function fetchAllRows(table, selectCols){
   const pageSize = 1000, concurrency = 3;
   const {count, error: countErr} = await withTimeout(sb.from(table).select(selectCols, {count:'exact', head:true}), 20000, table+' (عدّ الصفوف)');
-  if(countErr){ console.warn('تعذر عدّ '+table, countErr); throw new Error('تعذر قراءة جدول '+table+' — '+(countErr.message||countErr.code||'خطأ غير معروف')); }
+  if(countErr){ console.warn('تعذر عدّ '+table, countErr); throw new Error('تعذر قراءة جدول '+table+' — '+describeError(countErr)); }
   if(!count) return [];
   const pageCount = Math.ceil(count/pageSize);
   let all = [];
@@ -2471,7 +2481,7 @@ async function fetchAllRows(table, selectCols){
     }
     const results = await Promise.all(batch);
     for(const {data, error} of results){
-      if(error){ console.warn('تعذر قراءة '+table, error); throw new Error('تعذر قراءة جدول '+table+' — '+(error.message||error.code||'خطأ غير معروف')); }
+      if(error){ console.warn('تعذر قراءة '+table, error); throw new Error('تعذر قراءة جدول '+table+' — '+describeError(error)); }
       if(data) all = all.concat(data);
     }
   }
@@ -2485,7 +2495,7 @@ async function pullStateFromCloud(){
   const failedTables = [];
   async function fetchSafe(table, cols){
     try{ return await fetchAllRows(table, cols); }
-    catch(e){ console.warn('تعذر قراءة '+table, e); failedTables.push(table+' ('+(e && e.message ? e.message : 'خطأ غير معروف')+')'); return []; }
+    catch(e){ console.warn('تعذر قراءة '+table, e); failedTables.push(table+' ('+describeError(e)+')'); return []; }
   }
   try{
     if(el){ el.textContent = '⏳ جارٍ تحميل البيانات المحفوظة...'; el.className='status-msg ok'; }
@@ -2538,7 +2548,7 @@ async function pullStateFromCloud(){
         el.textContent = '✔ تم تحميل '+Object.keys(state.itemsRaw||{}).length+' صنف من السيرفر'; el.className='status-msg ok';
       }
     }
-  }catch(e){ console.warn('تعذر التحميل من السيرفر', e); if(el){ el.textContent='⚠ تعذر التحميل من السيرفر — '+(e && e.message ? e.message : 'خطأ غير معروف'); el.className='status-msg err'; } }
+  }catch(e){ console.warn('تعذر التحميل من السيرفر', e); if(el){ el.textContent='⚠ تعذر التحميل من السيرفر — '+describeError(e); el.className='status-msg err'; } }
 }
 let cloudSaveInProgress = false;
 const DATASET_LABELS = {items:'الأصناف', params:'البارامترات', sales:'المبيعات', inventory:'المخزون', leadtime:'مدة التوريد', apinvoice:'استلام البضاعة', po:'طلبات الشراء المفتوحة', suppliers:'إعدادات الموردين', customers:'بيانات العملاء', actualcost:'التكلفة الفعلية (Landed Cost)'};
