@@ -40,6 +40,7 @@
      create table if not exists procurement_suppliers (
        supplier_key text primary key, relationship_type text, note text
      );
+     alter table procurement_suppliers add column if not exists display_name text;
      alter table procurement_suppliers enable row level security;
      create policy "authenticated rw" on procurement_suppliers for all using (auth.role()='authenticated') with check (auth.role()='authenticated');
      create table if not exists procurement_params (
@@ -458,6 +459,19 @@ WHERE T0."DocStatus"='O' AND T1."LineStatus"='O'</code>
         مدة التوريد والتأخير محسوبة من كويري "تاريخ الطلب والاستلام الفعلي" (رقم 4) مجمَّعة على كل أصناف نفس المورد سوا — أدق إحصائياً من حساب كل صنف لحاله. رتّب الجدول تلقائياً حسب أطول تأخير مسجَّل.<br>
         <b>نوع العلاقة:</b> "عادي" = القرار حسب معدل الطلب والتغطية كالعادة · "عقد سنوي/موسمي" و"تارجيت وتعويض" = لا تُعرَض توصية "أوقف الشراء" تلقائياً حتى لو زاد المخزون — القرار يرجع لك حسب حالة العقد.
       </div>
+      <details class="opt">
+        <summary>📋 استيراد أسماء الموردين الحقيقية (لو عمود "المورد" عندك بيطلع رمز متل V000002 بدل الاسم)</summary>
+        <div class="hint">
+          عمود "المورد" بكويري البارامترات بيجيب حقل حر بـ SAP (UDF) وممكن يكون فيه أحياناً رمز المورد
+          بدل اسمه. الصق هنا قائمة رمز المورد واسمه (من جدول الموردين OCRD مثلاً)، وبتنعرض الأسماء
+          بدل الرموز بكل الشاشة (تقرير الأصناف، تبويب الموردون) — بدون ما تغيّر شي بربط البيانات نفسه.
+          <code class="block">SELECT "CardCode" AS "رمز المورد", "CardName" AS "اسم المورد"
+FROM OCRD WHERE "CardType"='S'</code>
+        </div>
+        <textarea id="pasteSupplierNames" placeholder="الصق هنا: رمز المورد / اسم المورد ..."></textarea>
+        <button class="btn-primary btn-sm" style="margin-top:8px;" onclick="importSupplierNames()">استيراد الأسماء</button>
+        <span class="status-msg" id="supplierNamesMsg"></span>
+      </details>
       <div class="tbl-scroll">
         <table id="suppliersTable"><thead id="suppliersThead"></thead><tbody id="suppliersTbody"></tbody></table>
       </div>
@@ -855,6 +869,10 @@ function computeConsolidation(results){
       display = match ? match.supplier : nk;
     }
     if(!nk) return;
+    // كويري SAP كتير مرات بيرجّع رمز المورد (متل V000002) مش اسمه بعامود "المورد" —
+    // إذا عندنا اسم حقيقي مستورد يدوياً لهالرمز (تبويب الموردون)، نعرضه بدل الرمز.
+    const knownName = state.supplierSettings[nk] && state.supplierSettings[nk].displayName;
+    if(knownName) display = knownName;
     itemSupplierKey[code] = nk; itemSupplierDisplay[code] = display;
     (supplierItems[nk] = supplierItems[nk] || []).push(code);
   });
@@ -1530,7 +1548,7 @@ function renderSuppliers(){
   tbody.innerHTML = list.map(s=>{
     const relClass = s.relationshipType==='contract' ? 'rel-contract' : (s.relationshipType==='target' ? 'rel-target' : '');
     return '<tr class="'+relClass+'">'
-      + '<td><b>'+esc(s.display)+'</b></td>'
+      + '<td><b>'+esc(s.display)+'</b><br><span class="item-code">'+esc(s.key)+'</span></td>'
       + '<td class="num">'+s.itemCount+'</td>'
       + '<td class="num">'+s.sampleSize+'</td>'
       + '<td class="num">'+(s.avgLeadTime??'—')+'</td>'
@@ -1547,8 +1565,31 @@ function renderSuppliers(){
   }).join('');
 }
 function updateSupplierSetting(key, field, value){
-  if(!state.supplierSettings[key]) state.supplierSettings[key] = {relationshipType:'normal', note:''};
+  if(!state.supplierSettings[key]) state.supplierSettings[key] = {relationshipType:'normal', note:'', displayName:''};
   state.supplierSettings[key][field] = value;
+  runEngine();
+  renderSuppliers();
+  renderTower();
+  scheduleCloudSave(['suppliers']);
+}
+function importSupplierNames(){
+  const msg = document.getElementById('supplierNamesMsg');
+  const txt = document.getElementById('pasteSupplierNames').value;
+  if(!txt.trim()){ msg.textContent='الصق قائمة رمز/اسم المورد أولاً'; msg.className='status-msg err'; return; }
+  const {headers, rows} = splitPasted(txt);
+  const iCode = colIndex(headers, ['رمز المورد','CardCode']);
+  const iName = colIndex(headers, ['اسم المورد','CardName']);
+  if(iCode<0 || iName<0){ msg.textContent='تعذر إيجاد عمودي "رمز المورد" و"اسم المورد"'; msg.className='status-msg err'; return; }
+  let count = 0;
+  rows.forEach(r=>{
+    const code = r[iCode], name = r[iName]; if(!code || !name) return;
+    const nk = normSupplierKey(code);
+    if(!state.supplierSettings[nk]) state.supplierSettings[nk] = {relationshipType:'normal', note:''};
+    state.supplierSettings[nk].displayName = name;
+    count++;
+  });
+  msg.textContent = '✔ استُوردت أسماء '+count+' مورد';
+  msg.className='status-msg ok';
   runEngine();
   renderSuppliers();
   renderTower();
@@ -1704,7 +1745,7 @@ async function pullStateFromCloud(){
       fetchAllRows('procurement_leadtime', 'item_code,order_date,recv_date'),
       fetchAllRows('procurement_ap_invoices', 'item_code,supplier,doc_entry,qty,recv_date'),
       fetchAllRows('procurement_po', 'item_code,qty,arrival_date,supplier'),
-      fetchAllRows('procurement_suppliers', 'supplier_key,relationship_type,note'),
+      fetchAllRows('procurement_suppliers', 'supplier_key,relationship_type,note,display_name'),
     ]);
     if(items.length){ state.itemsRaw = {}; items.forEach(r=>{ state.itemsRaw[r.item_code] = {code:r.item_code, name:r.name}; }); }
     if(params.length){
@@ -1724,7 +1765,7 @@ async function pullStateFromCloud(){
     if(po.length) state.poRaw = po.map(r=>({code:r.item_code, qty:r.qty, arrivalDate:r.arrival_date, supplier:r.supplier||''}));
     if(supSettings.length){
       state.supplierSettings = {};
-      supSettings.forEach(r=>{ state.supplierSettings[r.supplier_key] = {relationshipType:r.relationship_type||'normal', note:r.note||''}; });
+      supSettings.forEach(r=>{ state.supplierSettings[r.supplier_key] = {relationshipType:r.relationship_type||'normal', note:r.note||'', displayName:r.display_name||''}; });
     }
     saveStateLocal();
     if(Object.keys(state.itemsRaw||{}).length){
@@ -1771,7 +1812,7 @@ async function pushStateToCloud(datasets){
   await safeSave('apinvoice', ()=> replaceLogTable('procurement_ap_invoices', state.apInvoiceRaw.map(r=>({item_code:r.code, supplier:r.supplier, doc_entry:String(r.docEntry), qty:r.qty, recv_date:normDateForDb(r.date)}))));
   await safeSave('po', ()=> replaceLogTable('procurement_po', state.poRaw.map(r=>({item_code:r.code, qty:r.qty, arrival_date:normDateForDb(r.arrivalDate), supplier:r.supplier||null}))));
   await safeSave('suppliers', async ()=>{
-    const rows = Object.keys(state.supplierSettings).map(k=>({supplier_key:k, relationship_type: state.supplierSettings[k].relationshipType||'normal', note: state.supplierSettings[k].note||null}));
+    const rows = Object.keys(state.supplierSettings).map(k=>({supplier_key:k, relationship_type: state.supplierSettings[k].relationshipType||'normal', note: state.supplierSettings[k].note||null, display_name: state.supplierSettings[k].displayName||null}));
     if(rows.length) await upsertChunked('procurement_suppliers', rows, 'supplier_key');
   });
   cloudSaveInProgress = false;
