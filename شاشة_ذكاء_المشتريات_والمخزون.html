@@ -2458,19 +2458,26 @@ async function fetchAllRows(table, selectCols){
 async function pullStateFromCloud(){
   if(!sb || !curUser) return;
   const el = document.getElementById('cloudSyncMsg');
+  // كل جدول بيتقرأ باستقلالية تامة (متل الحفظ بالضبط) — لو جدول واحد فشل (مثلاً ما
+  // انعمل create table إله لسا بـ Supabase) ما لازم يوقف تحميل باقي الجداول السليمة
+  const failedTables = [];
+  async function fetchSafe(table, cols){
+    try{ return await fetchAllRows(table, cols); }
+    catch(e){ console.warn('تعذر قراءة '+table, e); failedTables.push(table); return []; }
+  }
   try{
     if(el){ el.textContent = '⏳ جارٍ تحميل البيانات المحفوظة...'; el.className='status-msg ok'; }
     const [items, params, sales, inv, poOrders, ap, po, supSettings, customers, actualCost] = await Promise.all([
-      fetchAllRows('procurement_items', 'item_code,name'),
-      fetchAllRows('procurement_params', '*'),
-      fetchAllRows('procurement_sales', 'item_code,sale_date,qty,whs,customer,customer_code,amount'),
-      fetchAllRows('procurement_inventory', 'item_code,whs,whs_name,on_hand,on_order'),
-      fetchAllRows('procurement_po_orders', 'item_code,supplier,order_date,qty'),
-      fetchAllRows('procurement_ap_invoices', 'item_code,supplier,doc_entry,qty,recv_date,price'),
-      fetchAllRows('procurement_po', 'item_code,qty,arrival_date,supplier'),
-      fetchAllRows('procurement_suppliers', 'supplier_key,relationship_type,note,display_name'),
-      fetchAllRows('procurement_customers', 'customer_key,name'),
-      fetchAllRows('procurement_item_cost', 'item_code,cost_date,cost,doc_num,vendor,warehouse,batch,qty,currency,base_price,increase_pct,landed_cost_amount,added_cost_per_unit'),
+      fetchSafe('procurement_items', 'item_code,name'),
+      fetchSafe('procurement_params', '*'),
+      fetchSafe('procurement_sales', 'item_code,sale_date,qty,whs,customer,customer_code,amount'),
+      fetchSafe('procurement_inventory', 'item_code,whs,whs_name,on_hand,on_order'),
+      fetchSafe('procurement_po_orders', 'item_code,supplier,order_date,qty'),
+      fetchSafe('procurement_ap_invoices', 'item_code,supplier,doc_entry,qty,recv_date,price'),
+      fetchSafe('procurement_po', 'item_code,qty,arrival_date,supplier'),
+      fetchSafe('procurement_suppliers', 'supplier_key,relationship_type,note,display_name'),
+      fetchSafe('procurement_customers', 'customer_key,name'),
+      fetchSafe('procurement_item_cost', 'item_code,cost_date,cost,doc_num,vendor,warehouse,batch,qty,currency,base_price,increase_pct,landed_cost_amount,added_cost_per_unit'),
     ]);
     if(items.length){ state.itemsRaw = {}; items.forEach(r=>{ state.itemsRaw[r.item_code] = {code:r.item_code, name:r.name}; }); }
     if(params.length){
@@ -2501,7 +2508,14 @@ async function pullStateFromCloud(){
     if(Object.keys(state.itemsRaw||{}).length){
       renderParamsTable(); runEngine(); document.getElementById('paramsPanel').style.display='block'; switchTab('tower');
     }
-    if(el){ el.textContent = '✔ تم تحميل '+Object.keys(state.itemsRaw||{}).length+' صنف من السيرفر'; el.className='status-msg ok'; }
+    if(el){
+      if(failedTables.length){
+        el.textContent = '⚠ تم تحميل '+Object.keys(state.itemsRaw||{}).length+' صنف — بس تعذرت قراءة: '+failedTables.join('، ')+' (تأكد إنك نفّذتي كل أوامر SQL بأعلى ملف الشاشة على Supabase)';
+        el.className='status-msg err';
+      } else {
+        el.textContent = '✔ تم تحميل '+Object.keys(state.itemsRaw||{}).length+' صنف من السيرفر'; el.className='status-msg ok';
+      }
+    }
   }catch(e){ console.warn('تعذر التحميل من السيرفر', e); if(el){ el.textContent='⚠ تعذر التحميل من السيرفر — '+(e && e.message ? e.message : 'خطأ غير معروف'); el.className='status-msg err'; } }
 }
 let cloudSaveInProgress = false;
