@@ -2468,24 +2468,41 @@ function withTimeout(promise, ms, label){
 // الصفحات بالتوازي (دفعات صغيرة بدل كلها سوا، حتى ما نستهلك كل اتصالات قاعدة البيانات)
 async function fetchAllRows(table, selectCols){
   const pageSize = 1000, concurrency = 3;
-  // بنجيب العدد الكلي مع الصفحة الأولى بنفس طلب select().range() العادي (بدل طلب
-  // head:true منفصل — مسار أقل اختباراً وممكن يكون هو نفسه سبب "خطأ غير معروف")
-  const {data: firstPage, count, error: firstErr} = await withTimeout(sb.from(table).select(selectCols, {count:'exact'}).range(0, pageSize-1), 20000, table+' (صفحة 1)');
+  // count:'exact' على جدول كبير (مئات آلاف الأسطر) بيخلي Postgres يفحص الجدول
+  // كامل ليحسب رقم دقيق — بيضرب statement_timeout ويرجع خطأ 57014 (مؤكَّد من
+  // Console: procurement_sales/procurement_inventory). count:'estimated' سريع
+  // جداً (من إحصائيات الجدول المخزَّنة بدون فحص)، وممكن يكون تقريبي/قديم شوي —
+  // لهيك بنضيف تحقق تسلسلي أخير يكمل أي صفوف زايدة عن التقدير.
+  const {data: firstPage, count, error: firstErr} = await withTimeout(sb.from(table).select(selectCols, {count:'estimated'}).range(0, pageSize-1), 20000, table+' (صفحة 1)');
   if(firstErr){ console.warn('تعذر قراءة '+table, firstErr); throw new Error('تعذر قراءة جدول '+table+' — '+describeError(firstErr)); }
   let all = firstPage || [];
-  if(!count || count<=pageSize) return all;
-  const pageCount = Math.ceil(count/pageSize);
-  for(let start=1; start<pageCount; start+=concurrency){
+  if(!firstPage || firstPage.length < pageSize) return all;
+  const estPageCount = Math.max(1, Math.ceil((count||pageSize)/pageSize));
+  let nextPage = 1;
+  for(let start=1; start<estPageCount; start+=concurrency){
+    const ends = Math.min(start+concurrency, estPageCount);
     const batch = [];
-    for(let p=start; p<Math.min(start+concurrency, pageCount); p++){
+    for(let p=start; p<ends; p++){
       const from = p*pageSize;
-      batch.push(withTimeout(sb.from(table).select(selectCols).range(from, from+pageSize-1), 20000, table+' (صفحة '+(p+1)+'/'+pageCount+')'));
+      batch.push(withTimeout(sb.from(table).select(selectCols).range(from, from+pageSize-1), 20000, table+' (صفحة '+(p+1)+')'));
     }
     const results = await Promise.all(batch);
     for(const {data, error} of results){
       if(error){ console.warn('تعذر قراءة '+table, error); throw new Error('تعذر قراءة جدول '+table+' — '+describeError(error)); }
       if(data) all = all.concat(data);
     }
+    nextPage = ends;
+  }
+  // تحقق أخير تسلسلي: لو التقدير كان أقل من الحقيقة (إحصائيات قديمة)، نكمل صفحة
+  // صفحة لحد ما توصل صفحة ناقصة — يضمن جلب كل البيانات حتى لو التقدير غلط
+  while(true){
+    const from = nextPage*pageSize;
+    const {data, error} = await withTimeout(sb.from(table).select(selectCols).range(from, from+pageSize-1), 20000, table+' (صفحة إضافية)');
+    if(error){ console.warn('تعذر قراءة '+table, error); throw new Error('تعذر قراءة جدول '+table+' — '+describeError(error)); }
+    if(!data || !data.length) break;
+    all = all.concat(data);
+    nextPage++;
+    if(data.length < pageSize) break;
   }
   return all;
 }
