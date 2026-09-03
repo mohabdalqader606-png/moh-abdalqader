@@ -105,6 +105,9 @@
   .btn-sm{padding:5px 11px; font-size:11.5px; border-radius:7px;}
   .status-msg{font-size:12px; margin-inline-start:auto; color:var(--ink-soft);}
   .status-msg.err{color:var(--crimson);} .status-msg.ok{color:var(--teal);}
+  #cloudSaveBanner.saving{display:block; background:var(--gold-bg); color:var(--gold);}
+  #cloudSaveBanner.failed{display:block; background:var(--crimson-bg); color:var(--crimson);}
+  #cloudSaveBanner.done{display:block; background:var(--teal-bg); color:var(--teal);}
   details.opt summary{cursor:pointer; font-size:12.5px; color:var(--navy); font-weight:600; padding:4px 0; display:flex; align-items:center; gap:6px;}
   details.opt{margin-bottom:12px;}
   code.block{direction:ltr;display:block;background:#F4F6F9;padding:8px 10px;border-radius:6px;margin-top:6px;font-size:10.5px; white-space:pre-wrap;}
@@ -155,13 +158,20 @@
   .chain span.node{background:#EEF2F8; border:1px solid var(--line); border-radius:7px; padding:5px 9px; white-space:nowrap;}
   .chain span.arrow{color:var(--ink-soft); padding:0 5px; align-self:center;}
 
+  /* حاوية تمرير بارتفاع محدود لكل الجداول الكبيرة — لازمة عشان يشتغل فريز رأس الجدول
+     (position:sticky بالمحور الرأسي محتاج حاوية عندها تمرير فعلي، مش الصفحة كلها) */
+  .tbl-scroll{overflow:auto; max-height:70vh; border:1px solid var(--line); border-radius:10px;}
+  .tbl-scroll table{margin:0;}
+  .sortable-th{cursor:pointer; user-select:none;}
+  .sortable-th .sort-ic{display:inline-block; width:11px; opacity:.55; font-size:9px;}
   #reportTable{width:100%; border-collapse:collapse; font-size:11px;}
   #reportTable th{background:#EEF2F8; color:var(--navy); text-align:right; padding:6px 8px; font-weight:700; font-size:10px; white-space:nowrap; border-bottom:1.5px solid var(--line);}
   #reportTable td{padding:5px 8px; border-bottom:1px solid var(--line); white-space:nowrap;}
   #reportTable tbody tr:hover{background:#FAFBFD;}
+  #reportTable thead th{position:sticky; top:0; z-index:3;}
   #reportTable .freeze{position:sticky; z-index:2; box-shadow:1px 0 0 var(--line);}
-  #reportTable th.freeze{z-index:3; background:#EEF2F8;}
-  #reportTable td.freeze{background:#fff;}
+  #reportTable th.freeze{z-index:4; background:#EEF2F8;}
+  #reportTable td.freeze{background:#fff; position:sticky;}
   #reportTable tbody tr:hover td.freeze{background:#FAFBFD;}
   #reportTable .freeze-1{right:0; width:170px; min-width:170px; max-width:170px; white-space:normal;}
   #reportTable .freeze-2{right:170px; width:120px; min-width:120px; max-width:120px; white-space:normal;}
@@ -171,12 +181,12 @@
   .minitbl th{background:#EEF2F8; color:var(--navy); text-align:right; padding:6px 8px; font-weight:700; font-size:10.5px; border-bottom:1.5px solid var(--line);}
   .minitbl td{padding:5px 8px; border-bottom:1px solid var(--line);}
   #suppliersTable{width:100%; border-collapse:collapse; font-size:11.5px;}
-  #suppliersTable th{background:#EEF2F8; color:var(--navy); text-align:right; padding:7px 9px; font-weight:700; font-size:10.5px; white-space:nowrap; border-bottom:1.5px solid var(--line);}
+  #suppliersTable th{background:#EEF2F8; color:var(--navy); text-align:right; padding:7px 9px; font-weight:700; font-size:10.5px; white-space:nowrap; border-bottom:1.5px solid var(--line); position:sticky; top:0; z-index:2;}
   #suppliersTable td{padding:6px 9px; border-bottom:1px solid var(--line); white-space:nowrap;}
   #suppliersTable select, #suppliersTable input{border:1px solid var(--line); border-radius:6px; padding:4px 6px; font-size:11px; font-family:var(--disp);}
   #suppliersTable tr.rel-contract td, #suppliersTable tr.rel-target td{background:var(--gold-bg);}
   table.paramtbl{width:100%; border-collapse:collapse; font-size:11px;}
-  table.paramtbl th{background:#EEF2F8; color:var(--navy); text-align:right; padding:6px 7px; font-weight:700; font-size:10px; white-space:nowrap; border-bottom:1.5px solid var(--line);}
+  table.paramtbl th{background:#EEF2F8; color:var(--navy); text-align:right; padding:6px 7px; font-weight:700; font-size:10px; white-space:nowrap; border-bottom:1.5px solid var(--line); position:sticky; top:0; z-index:2;}
   table.paramtbl td{padding:3px 5px; border-bottom:1px solid var(--line);}
   table.paramtbl input, table.paramtbl select{width:100%; border:1px solid var(--line); border-radius:6px; padding:4px 6px; font-size:11px; font-family:var(--disp);}
   table.paramtbl input[type=number]{font-family:var(--mono); direction:ltr; text-align:left;}
@@ -201,6 +211,8 @@
 </style>
 </head>
 <body>
+
+<div id="cloudSaveBanner" style="display:none; position:sticky; top:0; z-index:50; padding:8px 16px; text-align:center; font-size:13px; font-weight:700;"></div>
 
 <div id="loginView">
   <h2>تسجيل الدخول</h2>
@@ -378,12 +390,9 @@ WHERE T0."DocStatus"='O' AND T1."LineStatus"='O'</code>
         <button class="btn-ghost btn-sm" style="border-color:var(--gold); color:var(--gold);" onclick="applyDefaults()">تطبيق على الفاضي بس</button>
         <span class="status-msg" id="defaultsMsg"></span>
       </div>
-      <div style="overflow-x:auto;">
+      <div class="tbl-scroll">
         <table class="paramtbl" id="paramsTable">
-          <thead><tr>
-            <th>الصنف</th><th>المورد</th><th>Lead Time تعاقدي (يوم)</th><th>MOQ</th><th>مضاعف الطلب</th>
-            <th>الصلاحية (يوم)</th><th>حد أدنى صلاحية عند الاستلام (يوم)</th><th>تكلفة الوحدة</th><th>مستوى الخدمة</th><th>الأهمية</th>
-          </tr></thead>
+          <thead id="paramsThead"></thead>
           <tbody id="paramsTbody"></tbody>
         </table>
       </div>
@@ -434,7 +443,7 @@ WHERE T0."DocStatus"='O' AND T1."LineStatus"='O'</code>
       <div class="spacer"></div>
       <span style="font-size:11px;color:var(--ink-soft);">الترتيب: الأكبر للأصغر حسب إجمالي المدى المختار</span>
     </div>
-    <div style="overflow-x:auto; padding:0 24px;">
+    <div class="tbl-scroll" style="margin:0 24px;">
       <table id="reportTable"><thead id="reportThead"></thead><tbody id="reportTbody"></tbody></table>
     </div>
     <div id="reportPager" style="display:flex; align-items:center; gap:10px; justify-content:center; padding:14px 24px;"></div>
@@ -449,7 +458,7 @@ WHERE T0."DocStatus"='O' AND T1."LineStatus"='O'</code>
         مدة التوريد والتأخير محسوبة من كويري "تاريخ الطلب والاستلام الفعلي" (رقم 4) مجمَّعة على كل أصناف نفس المورد سوا — أدق إحصائياً من حساب كل صنف لحاله. رتّب الجدول تلقائياً حسب أطول تأخير مسجَّل.<br>
         <b>نوع العلاقة:</b> "عادي" = القرار حسب معدل الطلب والتغطية كالعادة · "عقد سنوي/موسمي" و"تارجيت وتعويض" = لا تُعرَض توصية "أوقف الشراء" تلقائياً حتى لو زاد المخزون — القرار يرجع لك حسب حالة العقد.
       </div>
-      <div style="overflow-x:auto;">
+      <div class="tbl-scroll">
         <table id="suppliersTable"><thead id="suppliersThead"></thead><tbody id="suppliersTbody"></tbody></table>
       </div>
     </div>
@@ -690,9 +699,43 @@ function clearAllPasted(){
 /* ================= جدول بارامترات الأصناف ================= */
 const PAGE_SIZE = 150;
 let paramsPageNum = 0;
+let paramsSortKey=null, paramsSortDir=1;
+function setParamsSort(key){
+  if(paramsSortKey===key) paramsSortDir=-paramsSortDir;
+  else { paramsSortKey=key; paramsSortDir = (key==='name'||key==='supplier'||key==='criticality') ? 1 : -1; }
+  paramsPageNum = 0;
+  renderParamsTable();
+}
+const PARAMS_COLS = [
+  ['name','الصنف'], ['supplier','المورد'], ['leadTimeDays','Lead Time تعاقدي (يوم)'], ['moq','MOQ'], ['orderMultiple','مضاعف الطلب'],
+  ['shelfLifeDays','الصلاحية (يوم)'], ['minRemainShelfLife','حد أدنى صلاحية عند الاستلام (يوم)'], ['unitCost','تكلفة الوحدة'],
+  ['serviceLevel','مستوى الخدمة'], ['criticality','الأهمية']
+];
+function paramsSortVal(code, key){
+  const it = state.itemsRaw[code]; const p = state.params[code] || {};
+  switch(key){
+    case 'name': return it.name||'';
+    case 'supplier': return p.supplier||'';
+    case 'leadTimeDays': return p.leadTimeDays===''||p.leadTimeDays==null?null:p.leadTimeDays;
+    case 'moq': return p.moq===''||p.moq==null?null:p.moq;
+    case 'orderMultiple': return p.orderMultiple??1;
+    case 'shelfLifeDays': return p.shelfLifeDays===''||p.shelfLifeDays==null?null:p.shelfLifeDays;
+    case 'minRemainShelfLife': return p.minRemainShelfLife===''||p.minRemainShelfLife==null?null:p.minRemainShelfLife;
+    case 'unitCost': return p.unitCost===''||p.unitCost==null?null:p.unitCost;
+    case 'serviceLevel': return p.serviceLevel||95;
+    case 'criticality': return p.criticality||'Medium';
+    default: return code;
+  }
+}
 function renderParamsTable(){
+  const thead = document.getElementById('paramsThead');
   const tbody = document.getElementById('paramsTbody');
-  const allCodes = Object.keys(state.itemsRaw).sort();
+  thead.innerHTML = '<tr>' + PARAMS_COLS.map(([k,label])=>
+    '<th class="sortable-th" onclick="setParamsSort(\''+k+'\')">'+label+' '+sortIcon(paramsSortKey,k,paramsSortDir)+'</th>'
+  ).join('') + '</tr>';
+  const allCodes = paramsSortKey
+    ? Object.keys(state.itemsRaw).sort((a,b)=>compareGeneric(paramsSortVal(a,paramsSortKey), paramsSortVal(b,paramsSortKey), paramsSortDir))
+    : Object.keys(state.itemsRaw).sort();
   const pageCount = Math.max(1, Math.ceil(allCodes.length / PAGE_SIZE));
   if(paramsPageNum >= pageCount) paramsPageNum = pageCount - 1;
   const codes = allCodes.slice(paramsPageNum*PAGE_SIZE, paramsPageNum*PAGE_SIZE + PAGE_SIZE);
@@ -749,6 +792,21 @@ function applyDefaults(){
   scheduleCloudSave();
 }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+/* ================= ترتيب عام للجداول بالضغط على أي عامود ================= */
+function compareGeneric(va, vb, dir){
+  if(va instanceof Date) va = va.getTime();
+  if(vb instanceof Date) vb = vb.getTime();
+  const aEmpty = va==null || va==='', bEmpty = vb==null || vb==='';
+  if(aEmpty && bEmpty) return 0;
+  if(aEmpty) return 1; // الفاضي دايماً آخر الترتيب بغض النظر عن الاتجاه
+  if(bEmpty) return -1;
+  if(typeof va==='string' || typeof vb==='string') return dir*String(va).localeCompare(String(vb), 'ar');
+  return dir*((va||0)-(vb||0));
+}
+function sortIcon(curKey, key, dir){
+  if(curKey!==key) return '<span class="sort-ic">⇅</span>';
+  return '<span class="sort-ic">'+(dir===1?'▲':'▼')+'</span>';
+}
 function renderPager(elId, total, pageNum, pageCount, onGo){
   const el = document.getElementById(elId);
   if(!el) return;
@@ -1295,6 +1353,13 @@ function toggleRow(idx){ document.getElementById('row-'+idx).classList.toggle('o
 /* ================= تقرير الأصناف: رصيد + مبيعات شهرية + تفصيل عند الضغط ================= */
 let reportMode = 'qty';
 let reportPageNum = 0;
+let reportSortKey = null, reportSortDir = -1;
+function setReportSort(key){
+  if(reportSortKey===key) reportSortDir=-reportSortDir;
+  else { reportSortKey=key; reportSortDir = (key==='name'||key==='supplier') ? 1 : -1; }
+  reportPageNum = 0;
+  renderReport();
+}
 function setReportMode(m){
   reportMode = m;
   document.querySelectorAll('#reportModeSeg button').forEach(b=>b.classList.toggle('active', b.dataset.m===m));
@@ -1334,12 +1399,27 @@ function renderReport(){
   let toIdx = parseInt(document.getElementById('reportToMonth').value,10)||0;
   if(fromIdx>toIdx){ const t=fromIdx; fromIdx=toIdx; toIdx=t; }
   const months = (state.allMonthKeys||[]).slice(fromIdx, toIdx+1);
+
+  // متوسط "الشهر" محسوب على عدد الأيام الفعلي بالمدى المختار وليس عدد الأشهر —
+  // شهر جارٍ لسا ما خلص (متل هلق) بيتحسب بأيامه الفعلية المنقضية بس، مش يوم كامل
+  // 30 يوم، عشان ما ينخفض المتوسط بشكل مضلِّل.
+  const DAYS_PER_MONTH = 30.4368;
   const rangeLen = months.length || 1;
+  let rangeDays = rangeLen*30;
+  if(months.length){
+    const [fy,fm] = months[0].split('-').map(Number);
+    const [ly,lm] = months[months.length-1].split('-').map(Number);
+    const rangeStart = new Date(fy, fm-1, 1);
+    const naturalEnd = new Date(ly, lm, 0); // آخر يوم بالشهر الأخير المختار
+    const today = new Date();
+    const rangeEnd = naturalEnd < today ? naturalEnd : today;
+    rangeDays = Math.max(1, Math.round((rangeEnd - rangeStart)/86400000) + 1);
+  }
 
   function rangeTotal(r){
     let qty=0, value=0;
     months.forEach(k=>{ const m=r.monthly[k]; if(m){ qty+=m.qty; value+=m.value; } });
-    return {qty, value, avgQty: Math.round((qty/rangeLen)*100)/100, avgValue: Math.round((value/rangeLen)*100)/100};
+    return {qty, value, avgQty: Math.round((qty/rangeDays*DAYS_PER_MONTH)*100)/100, avgValue: Math.round((value/rangeDays*DAYS_PER_MONTH)*100)/100};
   }
 
   const q = (document.getElementById('reportSearchBox').value||'').trim().toLowerCase();
@@ -1347,23 +1427,42 @@ function renderReport(){
   if(q) list = list.filter(r=> r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
   const totals = new Map();
   list.forEach(r=>totals.set(r.code, rangeTotal(r)));
-  const hasAnyValue = list.some(r=>totals.get(r.code).value>0);
-  const sortByValue = (reportMode!=='qty') && hasAnyValue;
-  list = list.slice().sort((a,b)=> sortByValue ? (totals.get(b.code).value-totals.get(a.code).value) : (totals.get(b.code).qty-totals.get(a.code).qty));
+
+  function reportSortVal(r, key){
+    if(key==='name') return r.name||'';
+    if(key==='supplier') return (state.itemSupplierDisplay && state.itemSupplierDisplay[r.code]) || r.supplier || '';
+    if(key==='lastReceiptDate') return r.lastReceiptDate;
+    if(key==='lastReceiptQty') return r.lastReceiptQty;
+    if(key==='balance') return reportMode==='value' ? r.onHand*r.unitCost : r.onHand;
+    if(key==='avg'){ const t=totals.get(r.code); return reportMode==='value' ? t.avgValue : t.avgQty; }
+    if(key.indexOf('month:')===0){ const mk=key.slice(6); const m=r.monthly[mk]; if(!m) return null; return reportMode==='value' ? m.value : m.qty; }
+    return null;
+  }
+  if(reportSortKey){
+    list = list.slice().sort((a,b)=>compareGeneric(reportSortVal(a,reportSortKey), reportSortVal(b,reportSortKey), reportSortDir));
+  } else {
+    const hasAnyValue = list.some(r=>totals.get(r.code).value>0);
+    const sortByValue = (reportMode!=='qty') && hasAnyValue;
+    list = list.slice().sort((a,b)=> sortByValue ? (totals.get(b.code).value-totals.get(a.code).value) : (totals.get(b.code).qty-totals.get(a.code).qty));
+  }
 
   const pageCount = Math.max(1, Math.ceil(list.length/PAGE_SIZE));
   if(reportPageNum>=pageCount) reportPageNum = pageCount-1;
   const pageList = list.slice(reportPageNum*PAGE_SIZE, reportPageNum*PAGE_SIZE+PAGE_SIZE);
   renderPager('reportPager', list.length, reportPageNum, pageCount, (p)=>{ reportPageNum=p; renderReport(); });
 
+  function rth(key, label, extraClass){
+    return '<th class="sortable-th '+(extraClass||'')+'" onclick="setReportSort(\''+key+'\')">'+label+' '+sortIcon(reportSortKey,key,reportSortDir)+'</th>';
+  }
   thead.innerHTML = '<tr>'
-    + '<th class="freeze freeze-1">الصنف</th>'
-    + '<th class="freeze freeze-2">المورد</th>'
-    + '<th class="freeze freeze-3">تاريخ آخر استلام</th>'
-    + '<th class="freeze freeze-4">كمية آخر استلام</th>'
-    + '<th>الرصيد الحالي</th>'
-    + months.map(k=>'<th>'+esc(state.allMonthLabel[k])+'</th>').join('')
-    + '<th>متوسط المدى المختار</th></tr>';
+    + rth('name','الصنف','freeze freeze-1')
+    + rth('supplier','المورد','freeze freeze-2')
+    + rth('lastReceiptDate','تاريخ آخر استلام','freeze freeze-3')
+    + rth('lastReceiptQty','كمية آخر استلام','freeze freeze-4')
+    + rth('balance','الرصيد الحالي')
+    + months.map(k=>rth('month:'+k, esc(state.allMonthLabel[k]))).join('')
+    + rth('avg','متوسط المدى المختار')
+    + '</tr>';
 
   if(!pageList.length){ tbody.innerHTML = '<tr><td class="empty-state"><div class="ic">📊</div>لا توجد أصناف مطابقة للبحث.</td></tr>'; return; }
   tbody.innerHTML = pageList.map(r=>{
@@ -1402,11 +1501,28 @@ function showBalanceDrilldown(code){
     + '</tbody></table>');
 }
 /* ================= تبويب الموردون ================= */
+let suppliersSortKey=null, suppliersSortDir=-1;
+function setSuppliersSort(key){
+  if(suppliersSortKey===key) suppliersSortDir=-suppliersSortDir;
+  else { suppliersSortKey=key; suppliersSortDir = key==='display' ? 1 : -1; }
+  renderSuppliers();
+}
+const SUPPLIERS_COLS = [
+  ['display','المورد'], ['itemCount','عدد الأصناف'], ['sampleSize','عينة مدة التوريد'],
+  ['avgLeadTime','متوسط (يوم)'], ['medianLeadTime','الوسيط (يوم)'], ['maxLeadTime','أقصى تأخير مسجَّل (يوم)'],
+  ['leadTimeStd','تذبذب (σ)'], ['itemsDueNowCount','مطلوب الآن'], ['itemsDueNowValue','قيمة المطلوب الآن'],
+  ['relationshipType','نوع العلاقة'], ['note','ملاحظة']
+];
 function renderSuppliers(){
   const thead = document.getElementById('suppliersThead');
   const tbody = document.getElementById('suppliersTbody');
-  const list = state.supplierStats || [];
-  thead.innerHTML = '<tr><th>المورد</th><th>عدد الأصناف</th><th>عينة مدة التوريد</th><th>متوسط (يوم)</th><th>الوسيط (يوم)</th><th>أقصى تأخير مسجَّل (يوم)</th><th>تذبذب (σ)</th><th>مطلوب الآن</th><th>قيمة المطلوب الآن</th><th>نوع العلاقة</th><th>ملاحظة</th></tr>';
+  let list = (state.supplierStats || []).slice();
+  if(suppliersSortKey){
+    list.sort((a,b)=>compareGeneric(a[suppliersSortKey], b[suppliersSortKey], suppliersSortDir));
+  }
+  thead.innerHTML = '<tr>' + SUPPLIERS_COLS.map(([k,label])=>
+    '<th class="sortable-th" onclick="setSuppliersSort(\''+k+'\')">'+label+' '+sortIcon(suppliersSortKey,k,suppliersSortDir)+'</th>'
+  ).join('') + '</tr>';
   if(!list.length){
     tbody.innerHTML = '<tr><td colspan="11" class="empty-state"><div class="ic">🏭</div>ما فيه ربط موردين لسا — لازم عمود "المورد" بجدول البارامترات (رقم 5) أو كويري رقم 6 معبّى.</td></tr>';
     return;
@@ -1617,52 +1733,60 @@ async function pullStateFromCloud(){
     if(el){ el.textContent = '✔ تم تحميل '+Object.keys(state.itemsRaw||{}).length+' صنف من السيرفر'; el.className='status-msg ok'; }
   }catch(e){ console.warn('تعذر التحميل من السيرفر', e); if(el){ el.textContent='⚠ تعذر التحميل من السيرفر'; el.className='status-msg err'; } }
 }
+let cloudSaveInProgress = false;
+const DATASET_LABELS = {items:'الأصناف', params:'البارامترات', sales:'المبيعات', inventory:'المخزون', leadtime:'مدة التوريد', apinvoice:'استلام البضاعة', po:'طلبات الشراء المفتوحة', suppliers:'إعدادات الموردين'};
 async function pushStateToCloud(datasets){
   if(!sb || !curUser) return;
   const el = document.getElementById('cloudSyncMsg');
-  try{
-    if(el){ el.textContent = '⏳ جارٍ الحفظ على السيرفر...'; el.className='status-msg ok'; }
-    if(datasets.has('items')){
-      await upsertChunked('procurement_items', Object.values(state.itemsRaw).map(it=>({item_code:it.code, name:it.name})));
-    }
-    if(datasets.has('params')){
-      await upsertChunked('procurement_params', Object.keys(state.params).map(code=>{
-        const p = state.params[code];
-        return {
-          item_code: code, supplier: p.supplier || null,
-          lead_time_days: p.leadTimeDays===''||p.leadTimeDays==null ? null : p.leadTimeDays,
-          moq: p.moq===''||p.moq==null ? null : p.moq,
-          order_multiple: p.orderMultiple===''||p.orderMultiple==null ? null : p.orderMultiple,
-          shelf_life_days: p.shelfLifeDays===''||p.shelfLifeDays==null ? null : p.shelfLifeDays,
-          min_remain_shelf_life: p.minRemainShelfLife===''||p.minRemainShelfLife==null ? null : p.minRemainShelfLife,
-          unit_cost: p.unitCost===''||p.unitCost==null ? null : p.unitCost,
-          service_level: p.serviceLevel || 95, criticality: p.criticality || 'Medium',
-          lead_time_is_default: !!p.leadTimeIsDefault, moq_is_default: !!p.moqIsDefault
-        };
-      }));
-    }
-    if(datasets.has('sales')){
-      await replaceLogTable('procurement_sales', state.salesRaw.map(r=>({item_code:r.code, sale_date:normDateForDb(r.date), qty:r.qty, whs:r.whs||null, customer:r.customer||null, amount: isNaN(r.amount)?null:r.amount})));
-    }
-    if(datasets.has('inventory')){
-      await replaceLogTable('procurement_inventory', state.invRaw.map(r=>({item_code:r.code, whs:r.whs||null, whs_name:r.whsName||null, on_hand:r.onHand, on_order:r.onOrder})));
-    }
-    if(datasets.has('leadtime')){
-      await replaceLogTable('procurement_leadtime', state.leadTimeRaw.map(r=>({item_code:r.code, order_date:normDateForDb(r.orderDate), recv_date:normDateForDb(r.recvDate)})));
-    }
-    if(datasets.has('apinvoice')){
-      await replaceLogTable('procurement_ap_invoices', state.apInvoiceRaw.map(r=>({item_code:r.code, supplier:r.supplier, doc_entry:String(r.docEntry), qty:r.qty, recv_date:normDateForDb(r.date)})));
-    }
-    if(datasets.has('po')){
-      await replaceLogTable('procurement_po', state.poRaw.map(r=>({item_code:r.code, qty:r.qty, arrival_date:normDateForDb(r.arrivalDate), supplier:r.supplier||null})));
-    }
-    if(datasets.has('suppliers')){
-      const rows = Object.keys(state.supplierSettings).map(k=>({supplier_key:k, relationship_type: state.supplierSettings[k].relationshipType||'normal', note: state.supplierSettings[k].note||null}));
-      if(rows.length) await upsertChunked('procurement_suppliers', rows, 'supplier_key');
-    }
-    if(el){ el.textContent = '✔ محفوظ سحابياً'; el.className='status-msg ok'; }
-  }catch(e){ console.warn('تعذر الحفظ على السيرفر', e); if(el){ el.textContent='⚠ تعذر الحفظ على السيرفر — محفوظ محلياً فقط بهالمتصفح'; el.className='status-msg err'; } }
+  const banner = document.getElementById('cloudSaveBanner');
+  cloudSaveInProgress = true;
+  if(el){ el.textContent = '⏳ جارٍ الحفظ على السيرفر — الرجاء عدم إغلاق الصفحة...'; el.className='status-msg ok'; }
+  if(banner){ banner.textContent = '⏳ جارٍ حفظ البيانات على السيرفر — لا تغلق الصفحة أو تحدّثها حتى يظهر "تم الحفظ"'; banner.className='saving'; }
+  // كل مجموعة بيانات تُحفظ باستقلالية تامة (try/catch منفصل) — فشل حفظ مجموعة واحدة
+  // (مثلاً بسبب عمود ناقص بقاعدة البيانات) ما لازم يوقف حفظ باقي المجموعات بعدها.
+  const failed = [];
+  async function safeSave(key, fn){
+    if(!datasets.has(key)) return;
+    try{ await fn(); }
+    catch(e){ console.warn('تعذر حفظ '+key, e); failed.push(key + (e && e.message ? (' — '+e.message) : '')); }
+  }
+  await safeSave('items', ()=> upsertChunked('procurement_items', Object.values(state.itemsRaw).map(it=>({item_code:it.code, name:it.name}))));
+  await safeSave('params', ()=> upsertChunked('procurement_params', Object.keys(state.params).map(code=>{
+    const p = state.params[code];
+    return {
+      item_code: code, supplier: p.supplier || null,
+      lead_time_days: p.leadTimeDays===''||p.leadTimeDays==null ? null : p.leadTimeDays,
+      moq: p.moq===''||p.moq==null ? null : p.moq,
+      order_multiple: p.orderMultiple===''||p.orderMultiple==null ? null : p.orderMultiple,
+      shelf_life_days: p.shelfLifeDays===''||p.shelfLifeDays==null ? null : p.shelfLifeDays,
+      min_remain_shelf_life: p.minRemainShelfLife===''||p.minRemainShelfLife==null ? null : p.minRemainShelfLife,
+      unit_cost: p.unitCost===''||p.unitCost==null ? null : p.unitCost,
+      service_level: p.serviceLevel || 95, criticality: p.criticality || 'Medium',
+      lead_time_is_default: !!p.leadTimeIsDefault, moq_is_default: !!p.moqIsDefault
+    };
+  })));
+  await safeSave('sales', ()=> replaceLogTable('procurement_sales', state.salesRaw.map(r=>({item_code:r.code, sale_date:normDateForDb(r.date), qty:r.qty, whs:r.whs||null, customer:r.customer||null, amount: isNaN(r.amount)?null:r.amount}))));
+  await safeSave('inventory', ()=> replaceLogTable('procurement_inventory', state.invRaw.map(r=>({item_code:r.code, whs:r.whs||null, whs_name:r.whsName||null, on_hand:r.onHand, on_order:r.onOrder}))));
+  await safeSave('leadtime', ()=> replaceLogTable('procurement_leadtime', state.leadTimeRaw.map(r=>({item_code:r.code, order_date:normDateForDb(r.orderDate), recv_date:normDateForDb(r.recvDate)}))));
+  await safeSave('apinvoice', ()=> replaceLogTable('procurement_ap_invoices', state.apInvoiceRaw.map(r=>({item_code:r.code, supplier:r.supplier, doc_entry:String(r.docEntry), qty:r.qty, recv_date:normDateForDb(r.date)}))));
+  await safeSave('po', ()=> replaceLogTable('procurement_po', state.poRaw.map(r=>({item_code:r.code, qty:r.qty, arrival_date:normDateForDb(r.arrivalDate), supplier:r.supplier||null}))));
+  await safeSave('suppliers', async ()=>{
+    const rows = Object.keys(state.supplierSettings).map(k=>({supplier_key:k, relationship_type: state.supplierSettings[k].relationshipType||'normal', note: state.supplierSettings[k].note||null}));
+    if(rows.length) await upsertChunked('procurement_suppliers', rows, 'supplier_key');
+  });
+  cloudSaveInProgress = false;
+  if(el){
+    if(!failed.length){ el.textContent = '✔ محفوظ سحابياً بالكامل'; el.className='status-msg ok'; }
+    else { el.textContent = '⚠ فشل حفظ: ' + failed.map(k=>DATASET_LABELS[k.split(' — ')[0]]||k).join('، ') + ' — الباقي محفوظ. افتح Console (F12) لتفاصيل الخطأ.'; el.className='status-msg err'; }
+  }
+  if(banner){
+    if(!failed.length){ banner.textContent = '✔ تم حفظ كل البيانات على السيرفر بنجاح'; banner.className='done'; setTimeout(()=>{ if(banner.className==='done') banner.className=''; }, 4000); }
+    else { banner.textContent = '⚠ تعذّر حفظ: ' + failed.map(k=>DATASET_LABELS[k.split(' — ')[0]]||k).join('، ') + ' — البيانات الأخرى محفوظة. حاول "تحليل" من جديد بعد إصلاح السبب (راجع Console).'; banner.className='failed'; }
+  }
 }
+window.addEventListener('beforeunload', function(e){
+  if(cloudSaveInProgress){ e.preventDefault(); e.returnValue = 'جارٍ حفظ البيانات على السيرفر — لا تغلق الصفحة الآن'; return e.returnValue; }
+});
 (async function bootAuth(){
   loadStateLocal();
   if(!window.supabase){ authMsg('تعذر تحميل مكتبة الاتصال — تحقق من الإنترنت وحدّث الصفحة', false); return; }
