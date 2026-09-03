@@ -186,9 +186,10 @@
   #reportTable td.freeze{background:#fff; position:sticky;}
   #reportTable tbody tr:hover td.freeze{background:#FAFBFD;}
   #reportTable .freeze-1{right:0; width:170px; min-width:170px; max-width:170px; white-space:normal;}
-  #reportTable .freeze-2{right:170px; width:120px; min-width:120px; max-width:120px; white-space:normal;}
-  #reportTable .freeze-3{right:290px; width:95px; min-width:95px;}
-  #reportTable .freeze-4{right:385px; width:80px; min-width:80px; box-shadow:2px 0 3px -1px rgba(21,42,74,.15);}
+  #reportTable .freeze-2{right:170px; width:90px; min-width:90px; max-width:90px;}
+  #reportTable .freeze-3{right:260px; width:130px; min-width:130px; max-width:130px; white-space:normal;}
+  #reportTable .freeze-4{right:390px; width:95px; min-width:95px;}
+  #reportTable .freeze-5{right:485px; width:80px; min-width:80px; box-shadow:2px 0 3px -1px rgba(21,42,74,.15);}
   .minitbl{width:100%; border-collapse:collapse; font-size:11.5px;}
   .minitbl th{background:#EEF2F8; color:var(--navy); text-align:right; padding:6px 8px; font-weight:700; font-size:10.5px; border-bottom:1.5px solid var(--line);}
   .minitbl td{padding:5px 8px; border-bottom:1px solid var(--line);}
@@ -541,7 +542,6 @@ WHERE T0."DocStatus"='O' AND T1."LineStatus"='O'</code>
       <table id="reportTable"><thead id="reportThead"></thead><tbody id="reportTbody"></tbody></table>
     </div>
     <div id="reportPager" style="display:flex; align-items:center; gap:10px; justify-content:center; padding:14px 24px;"></div>
-    <div id="reportDrilldown" style="display:none; margin:0 24px 22px; border:1px solid var(--line); border-radius:12px; background:#FAFBFD;"></div>
   </section>
 
   <!-- ===================== تبويب الموردون ===================== -->
@@ -1532,7 +1532,7 @@ function setReportSort(key){
 function setReportMode(m){
   reportMode = m;
   document.querySelectorAll('#reportModeSeg button').forEach(b=>b.classList.toggle('active', b.dataset.m===m));
-  document.getElementById('reportDrilldown').style.display = 'none';
+  openDrilldownKey = null;
   renderReport();
 }
 function fmtNum(n){ return (Math.round((n||0)*10)/10).toLocaleString('en-US'); }
@@ -1557,6 +1557,7 @@ function populateReportMonthSelectors(){
 function renderReport(){
   const thead = document.getElementById('reportThead');
   const tbody = document.getElementById('reportTbody');
+  openDrilldownKey = null; // إعادة بناء الجدول بتشيل أي تفصيل مفتوح — رجّع المفتاح لحاله الأصلية
   if(!state.computed.length){
     thead.innerHTML = '';
     tbody.innerHTML = '<tr><td class="empty-state"><div class="ic">📊</div>لسا ما في بيانات محلَّلة — روح لتبويب "البيانات" وألصق الكويريات.</td></tr>';
@@ -1625,9 +1626,10 @@ function renderReport(){
   }
   thead.innerHTML = '<tr>'
     + rth('name','الصنف','freeze freeze-1')
-    + rth('supplier','المورد','freeze freeze-2')
-    + rth('lastReceiptDate','تاريخ آخر استلام','freeze freeze-3')
-    + rth('lastReceiptQty','كمية آخر استلام','freeze freeze-4')
+    + rth('supplierCode','رمز المورد','freeze freeze-2')
+    + rth('supplier','اسم المورد','freeze freeze-3')
+    + rth('lastReceiptDate','تاريخ آخر استلام','freeze freeze-4')
+    + rth('lastReceiptQty','كمية آخر استلام','freeze freeze-5')
     + rth('balance','الرصيد الحالي')
     + months.map(k=>rth('month:'+k, esc(state.allMonthLabel[k]))).join('')
     + rth('avg','متوسط المدى المختار')
@@ -1637,28 +1639,43 @@ function renderReport(){
   tbody.innerHTML = pageList.map(r=>{
     const balVal = r.onHand * r.unitCost;
     const t = totals.get(r.code);
+    const supCode = (state.itemSupplierRawCode && state.itemSupplierRawCode[r.code]) || '—';
     const supDisplay = (state.itemSupplierDisplay && state.itemSupplierDisplay[r.code]) || r.supplier || '—';
     const lastRecvDate = r.lastReceiptDate ? fmtDate(r.lastReceiptDate) : '—';
     const lastRecvQty = r.lastReceiptQty!=null ? fmtNum(r.lastReceiptQty) : '—';
     return '<tr>'
       + '<td class="freeze freeze-1"><b>'+esc(r.name)+'</b><br><span class="item-code">'+esc(r.code)+'</span></td>'
-      + '<td class="freeze freeze-2">'+esc(supDisplay)+'</td>'
-      + '<td class="freeze freeze-3">'+esc(lastRecvDate)+'</td>'
-      + '<td class="num freeze freeze-4">'+esc(lastRecvQty)+'</td>'
-      + '<td class="num" style="cursor:pointer;color:var(--navy);text-decoration:underline;" onclick="showBalanceDrilldown(\''+r.code+'\')">'+cellHtml(r.onHand, balVal)+'</td>'
-      + months.map(k=>'<td class="num" style="cursor:pointer;color:var(--navy);text-decoration:underline;" onclick="showMonthDrilldown(\''+r.code+'\',\''+k+'\')">'+cellHtml(r.monthly[k].qty, r.monthly[k].value)+'</td>').join('')
+      + '<td class="freeze freeze-2 item-code">'+esc(supCode)+'</td>'
+      + '<td class="freeze freeze-3">'+esc(supDisplay)+'</td>'
+      + '<td class="freeze freeze-4">'+esc(lastRecvDate)+'</td>'
+      + '<td class="num freeze freeze-5">'+esc(lastRecvQty)+'</td>'
+      + '<td class="num" style="cursor:pointer;color:var(--navy);text-decoration:underline;" onclick="showBalanceDrilldown(this,\''+r.code+'\')">'+cellHtml(r.onHand, balVal)+'</td>'
+      + months.map(k=>'<td class="num" style="cursor:pointer;color:var(--navy);text-decoration:underline;" onclick="showMonthDrilldown(this,\''+r.code+'\',\''+k+'\')">'+cellHtml(r.monthly[k].qty, r.monthly[k].value)+'</td>').join('')
       + '<td class="num">'+cellHtml(t.avgQty, t.avgValue)+'</td>'
     + '</tr>';
   }).join('');
 }
-function renderDrilldown(title, bodyHtml){
-  const el = document.getElementById('reportDrilldown');
-  el.innerHTML = '<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid var(--line);">'
+// التفصيل بيفتح كصف مباشرة تحت الصف يلي ضُغِط عليه (مش بآخر الصفحة) — ضغط نفس
+// الخلية مرة ثانية يسكّره (toggle)، وضغط خلية تانية يسكّر القديم ويفتح الجديد
+let openDrilldownKey = null;
+function renderDrilldown(sourceEl, reqKey, title, bodyHtml){
+  const tbody = document.getElementById('reportTbody');
+  const existing = tbody.querySelector('tr.drilldown-row');
+  if(existing) existing.remove();
+  if(openDrilldownKey===reqKey){ openDrilldownKey = null; return; }
+  openDrilldownKey = reqKey;
+  const tr = sourceEl.closest('tr'); if(!tr) return;
+  const colCount = document.querySelectorAll('#reportThead th').length || 1;
+  const row = document.createElement('tr');
+  row.className = 'drilldown-row';
+  row.innerHTML = '<td colspan="'+colCount+'" style="padding:0;">'
+    + '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-top:2px solid var(--navy);background:#EEF2F8;">'
     + '<b style="font-size:13px;color:var(--navy);">'+esc(title)+'</b>'
-    + '<button class="btn-ghost btn-sm" onclick="document.getElementById(\'reportDrilldown\').style.display=\'none\';">إغلاق ✕</button></div>'
-    + '<div style="padding:12px 16px;max-height:360px;overflow-y:auto;">'+bodyHtml+'</div>';
-  el.style.display = 'block';
-  el.scrollIntoView({behavior:'smooth', block:'nearest'});
+    + '<button class="btn-ghost btn-sm" onclick="this.closest(\'tr.drilldown-row\').remove(); openDrilldownKey=null;">إغلاق ✕</button></div>'
+    + '<div style="padding:12px 16px;max-height:360px;overflow-y:auto;background:#FAFBFD;">'+bodyHtml+'</div>'
+    + '</td>';
+  tr.after(row);
+  row.scrollIntoView({behavior:'smooth', block:'nearest'});
 }
 // أعمدة الكمية/القيمة بجداول التفصيل تتبع نفس اختيار "كميات فقط / مبالغ فقط / كميات ومبالغ"
 // المختار بأعلى تقرير الأصناف — بدل ما تفرض عمود قيمة دايماً حتى لو المستخدم ما بده ياه
@@ -1672,12 +1689,12 @@ function qtyValueTd(qty, value){
   if(reportMode==='value') return '<td class="num">'+fmtMoney(value)+'</td>';
   return '<td class="num">'+fmtNum(qty)+'</td><td class="num">'+fmtMoney(value)+'</td>';
 }
-function showBalanceDrilldown(code){
+function showBalanceDrilldown(sourceEl, code){
   const r = findReportItem(code); if(!r) return;
   const list = (r.warehouses||[]).slice().sort((a,b)=>b.onHand-a.onHand);
   const colCount = reportMode==='both' ? 3 : 2;
   const rows = list.map(w=>'<tr><td>'+esc((state.warehouseNames&&state.warehouseNames[w.whs]) || w.whs || '-')+'</td>'+qtyValueTd(w.onHand, w.onHand*r.unitCost)+'</tr>').join('');
-  renderDrilldown('الرصيد الحالي — '+r.name+' ('+r.code+')',
+  renderDrilldown(sourceEl, code+'|balance', 'الرصيد الحالي — '+r.name+' ('+r.code+')',
     '<table class="minitbl"><thead><tr><th>المستودع</th>'+qtyValueTh('الكمية','القيمة')+'</tr></thead><tbody>'
     + (rows || '<tr><td colspan="'+colCount+'" style="text-align:center;color:var(--ink-soft);padding:14px;">لا يوجد تفصيل مستودعات لهالصنف</td></tr>')
     + '</tbody></table>');
@@ -1805,7 +1822,7 @@ function importCustomersMaster(){
   msg.className='status-msg ok';
   scheduleCloudSave(['customers']);
 }
-function showMonthDrilldown(code, monthKey){
+function showMonthDrilldown(sourceEl, code, monthKey){
   const r = findReportItem(code); if(!r) return;
   const rowsRaw = state.salesRaw.filter(x=>{
     if(x.code!==code) return false;
@@ -1828,7 +1845,7 @@ function showMonthDrilldown(code, monthKey){
   list.sort((a,b)=> sortByValue ? b.value-a.value : b.qty-a.qty);
   const colCount = reportMode==='both' ? 3 : 2;
   const rows = list.map(x=>'<tr><td>'+esc(x.customer)+'</td>'+qtyValueTd(x.qty, x.value)+'</tr>').join('');
-  renderDrilldown('مبيعات '+(state.allMonthLabel[monthKey]||monthKey)+' — '+r.name+' ('+r.code+')',
+  renderDrilldown(sourceEl, code+'|month:'+monthKey, 'مبيعات '+(state.allMonthLabel[monthKey]||monthKey)+' — '+r.name+' ('+r.code+')',
     '<table class="minitbl"><thead><tr><th>العميل</th>'+qtyValueTh('الكمية','المبلغ')+'</tr></thead><tbody>'
     + (rows || '<tr><td colspan="'+colCount+'" style="text-align:center;color:var(--ink-soft);padding:14px;">لا يوجد تفصيل عملاء — تأكد من لصق عمود العميل بكويري المبيعات</td></tr>')
     + '</tbody></table>');
