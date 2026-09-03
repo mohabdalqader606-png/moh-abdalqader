@@ -34,6 +34,11 @@
      );
      alter table procurement_po enable row level security;
      create policy "authenticated rw" on procurement_po for all using (auth.role()='authenticated') with check (auth.role()='authenticated');
+     create table if not exists procurement_suppliers (
+       supplier_key text primary key, relationship_type text, note text
+     );
+     alter table procurement_suppliers enable row level security;
+     create policy "authenticated rw" on procurement_suppliers for all using (auth.role()='authenticated') with check (auth.role()='authenticated');
      create table if not exists procurement_params (
        item_code text primary key, supplier text, lead_time_days numeric, moq numeric,
        order_multiple numeric, shelf_life_days numeric, min_remain_shelf_life numeric,
@@ -154,6 +159,11 @@
   .minitbl{width:100%; border-collapse:collapse; font-size:11.5px;}
   .minitbl th{background:#EEF2F8; color:var(--navy); text-align:right; padding:6px 8px; font-weight:700; font-size:10.5px; border-bottom:1.5px solid var(--line);}
   .minitbl td{padding:5px 8px; border-bottom:1px solid var(--line);}
+  #suppliersTable{width:100%; border-collapse:collapse; font-size:11.5px;}
+  #suppliersTable th{background:#EEF2F8; color:var(--navy); text-align:right; padding:7px 9px; font-weight:700; font-size:10.5px; white-space:nowrap; border-bottom:1.5px solid var(--line);}
+  #suppliersTable td{padding:6px 9px; border-bottom:1px solid var(--line); white-space:nowrap;}
+  #suppliersTable select, #suppliersTable input{border:1px solid var(--line); border-radius:6px; padding:4px 6px; font-size:11px; font-family:var(--disp);}
+  #suppliersTable tr.rel-contract td, #suppliersTable tr.rel-target td{background:var(--gold-bg);}
   table.paramtbl{width:100%; border-collapse:collapse; font-size:11px;}
   table.paramtbl th{background:#EEF2F8; color:var(--navy); text-align:right; padding:6px 7px; font-weight:700; font-size:10px; white-space:nowrap; border-bottom:1.5px solid var(--line);}
   table.paramtbl td{padding:3px 5px; border-bottom:1px solid var(--line);}
@@ -228,6 +238,7 @@
     <button class="btn-primary" id="tabBtn-data" onclick="switchTab('data')">🗂️ البيانات وبارامترات الأصناف</button>
     <button class="btn-ghost" id="tabBtn-tower" onclick="switchTab('tower')">🗼 مركز التحكم</button>
     <button class="btn-ghost" id="tabBtn-report" onclick="switchTab('report')">📊 تقرير الأصناف</button>
+    <button class="btn-ghost" id="tabBtn-suppliers" onclick="switchTab('suppliers')">🏭 الموردون</button>
     <span style="flex:1;"></span>
     <button class="btn-ghost btn-sm" style="border-color:var(--teal); color:var(--teal); border-radius:9px 9px 0 0;" onclick="downloadBackup()">💾 نسخة احتياطية</button>
     <label class="btn-ghost btn-sm" style="border-color:var(--navy); color:var(--navy); border-radius:9px 9px 0 0; cursor:pointer; display:inline-flex; align-items:center;">
@@ -412,6 +423,20 @@ WHERE T0."DocStatus"='O' AND T1."LineStatus"='O'</code>
     <div id="reportPager" style="display:flex; align-items:center; gap:10px; justify-content:center; padding:14px 24px;"></div>
     <div id="reportDrilldown" style="display:none; margin:0 24px 22px; border:1px solid var(--line); border-radius:12px; background:#FAFBFD;"></div>
   </section>
+
+  <!-- ===================== تبويب الموردون ===================== -->
+  <section class="panel" id="suppliersPage" style="display:none;">
+    <div class="input-panel">
+      <h2 style="margin-bottom:4px;">أداء الموردين ونوع العلاقة التجارية</h2>
+      <div class="hint">
+        مدة التوريد والتأخير محسوبة من كويري "تاريخ الطلب والاستلام الفعلي" (رقم 4) مجمَّعة على كل أصناف نفس المورد سوا — أدق إحصائياً من حساب كل صنف لحاله. رتّب الجدول تلقائياً حسب أطول تأخير مسجَّل.<br>
+        <b>نوع العلاقة:</b> "عادي" = القرار حسب معدل الطلب والتغطية كالعادة · "عقد سنوي/موسمي" و"تارجيت وتعويض" = لا تُعرَض توصية "أوقف الشراء" تلقائياً حتى لو زاد المخزون — القرار يرجع لك حسب حالة العقد.
+      </div>
+      <div style="overflow-x:auto;">
+        <table id="suppliersTable"><thead id="suppliersThead"></thead><tbody id="suppliersTbody"></tbody></table>
+      </div>
+    </div>
+  </section>
 </main>
 </div>
 
@@ -422,6 +447,7 @@ const STORAGE_KEY = 'procint_state_v1';
 let state = {
   itemsRaw:{}, salesRaw:[], invRaw:[], leadTimeRaw:[], apInvoiceRaw:[], poRaw:[],
   params:{}, // itemCode -> {supplier, leadTimeDays, moq, orderMultiple, shelfLifeDays, minRemainShelfLife, unitCost, serviceLevel, criticality}
+  supplierSettings:{}, // supplierKey(normalized) -> {relationshipType:'normal'|'contract'|'target', note}
   computed:[], demandWindowDays:90
 };
 let curFilter='all';
@@ -715,57 +741,129 @@ function median(arr){
 }
 /* تحليل حمولة الشحنة المعتادة لكل مورد من تاريخ فواتير الشراء الفعلية، لمعرفة
    هل يُطلَب الصنف لحاله أو يُجمَّع مع أصناف تانية جاهزة من نفس المورد */
+function normSupplierKey(s){ return String(s||'').trim().toLowerCase(); }
 function computeConsolidation(results){
-  if(!state.apInvoiceRaw.length) return;
   const resultByCode = {};
   results.forEach(r=>{ resultByCode[r.code]=r; });
 
-  const shipMap = {}; // supplier|docEntry -> {supplier, items:Set, value}
+  // ربط الصنف بالمورد: نفضّل حقل المورد الموثّق بجدول البارامترات (من SAP مباشرة عادةً)،
+  // ولا نلجأ لاستنتاجه من تكرار الاستلامات إلا لو كان فاضياً. المطابقة بمفتاح مُطبَّع
+  // (Trim + Lowercase) حتى ما ينكسر الربط بفرق بسيط بالكتابة بين المصدرين.
+  const itemSupplierFreq = {};
   state.apInvoiceRaw.forEach(r=>{
-    const key = r.supplier+'|'+r.docEntry;
-    const s = shipMap[key] = shipMap[key] || {supplier:r.supplier, items:new Set(), value:0};
+    const nk = normSupplierKey(r.supplier);
+    itemSupplierFreq[r.code] = itemSupplierFreq[r.code] || {};
+    itemSupplierFreq[r.code][nk] = (itemSupplierFreq[r.code][nk]||0)+1;
+  });
+  const itemSupplierKey = {}, itemSupplierDisplay = {}, supplierItems = {};
+  Object.keys(resultByCode).forEach(code=>{
+    let display = (state.params[code]||{}).supplier || '';
+    let nk = normSupplierKey(display);
+    if(!nk && itemSupplierFreq[code]){
+      nk = Object.keys(itemSupplierFreq[code]).sort((a,b)=>itemSupplierFreq[code][b]-itemSupplierFreq[code][a])[0];
+      const match = state.apInvoiceRaw.find(r=>normSupplierKey(r.supplier)===nk);
+      display = match ? match.supplier : nk;
+    }
+    if(!nk) return;
+    itemSupplierKey[code] = nk; itemSupplierDisplay[code] = display;
+    (supplierItems[nk] = supplierItems[nk] || []).push(code);
+  });
+  state.itemSupplierKey = itemSupplierKey;
+  state.itemSupplierDisplay = itemSupplierDisplay;
+
+  if(!state.apInvoiceRaw.length) return;
+
+  const shipMap = {}; // normKey|docEntry -> {supplierKey, supplierDisplay, items:Set, value}
+  state.apInvoiceRaw.forEach(r=>{
+    const nk = normSupplierKey(r.supplier);
+    const key = nk+'|'+r.docEntry;
+    const s = shipMap[key] = shipMap[key] || {supplierKey:nk, supplierDisplay:r.supplier, items:new Set(), value:0};
     s.items.add(r.code);
     const cost = toNum((state.params[r.code]||{}).unitCost);
     if(!isNaN(cost)) s.value += (r.qty||0) * cost;
   });
-  const shipments = {}; // supplier -> [shipment,...]
-  Object.values(shipMap).forEach(s=>{ (shipments[s.supplier] = shipments[s.supplier] || []).push(s); });
+  const shipments = {}; // normKey -> [shipment,...]
+  Object.values(shipMap).forEach(s=>{ (shipments[s.supplierKey] = shipments[s.supplierKey] || []).push(s); });
 
   const supplierTypical = {};
-  Object.keys(shipments).forEach(sup=>{
-    const list = shipments[sup];
-    supplierTypical[sup] = { typicalValue: median(list.map(s=>s.value).filter(v=>v>0)), shipmentCount: list.length };
-  });
-
-  const itemSupplierFreq = {};
-  state.apInvoiceRaw.forEach(r=>{
-    itemSupplierFreq[r.code] = itemSupplierFreq[r.code] || {};
-    itemSupplierFreq[r.code][r.supplier] = (itemSupplierFreq[r.code][r.supplier]||0)+1;
-  });
-  const itemSupplier = {}, supplierItems = {};
-  Object.keys(itemSupplierFreq).forEach(code=>{
-    const freq = itemSupplierFreq[code];
-    const sup = Object.keys(freq).sort((a,b)=>freq[b]-freq[a])[0];
-    itemSupplier[code] = sup;
-    (supplierItems[sup] = supplierItems[sup] || []).push(code);
+  Object.keys(shipments).forEach(nk=>{
+    const list = shipments[nk];
+    supplierTypical[nk] = { typicalValue: median(list.map(s=>s.value).filter(v=>v>0)), shipmentCount: list.length };
   });
 
   results.forEach(r=>{
-    const sup = itemSupplier[r.code];
-    if(!sup || !(r.decision==='BUY_NOW'||r.decision==='BUY_SOON')) return;
-    const typical = supplierTypical[sup];
+    const nk = itemSupplierKey[r.code];
+    if(!nk || !(r.decision==='BUY_NOW'||r.decision==='BUY_SOON')) return;
+    const typical = supplierTypical[nk];
     if(!typical || !typical.typicalValue) return;
-    const dueSiblings = (supplierItems[sup]||[]).filter(c=>c!==r.code)
+    const dueSiblings = (supplierItems[nk]||[]).filter(c=>c!==r.code)
       .map(c=>resultByCode[c]).filter(x=>x && (x.decision==='BUY_NOW'||x.decision==='BUY_SOON'));
     const combinedValue = (r.recommendedQty||0)*r.unitCost + dueSiblings.reduce((a,x)=>a+((x.recommendedQty||0)*x.unitCost),0);
     r.consolidation = {
-      supplier: sup,
+      supplier: itemSupplierDisplay[r.code],
       typicalValue: Math.round(typical.typicalValue),
       shipmentCount: typical.shipmentCount,
       dueSiblings: dueSiblings.map(x=>x.name),
       combinedValue: Math.round(combinedValue),
       ratio: Math.round((combinedValue/typical.typicalValue)*100)
     };
+  });
+}
+
+/* ================= إحصاءات الموردين: مدة التوريد والتأخير مجمَّعة على مستوى المورد كامل ================= */
+function computeSupplierStats(results){
+  const resultByCode = {};
+  results.forEach(r=>{ resultByCode[r.code]=r; });
+  const itemSupplierKey = state.itemSupplierKey || {};
+  const itemSupplierDisplay = state.itemSupplierDisplay || {};
+
+  const bySupplier = {};
+  Object.keys(itemSupplierKey).forEach(code=>{
+    const nk = itemSupplierKey[code];
+    const s = bySupplier[nk] = bySupplier[nk] || {display: itemSupplierDisplay[code], items:[], leadTimes:[]};
+    s.items.push(code);
+  });
+  state.leadTimeRaw.forEach(r=>{
+    const nk = itemSupplierKey[r.code]; if(!nk || !bySupplier[nk]) return;
+    const od = parseDateFlexible(r.orderDate), rd = parseDateFlexible(r.recvDate);
+    if(!od || !rd) return;
+    const d = daysBetween(od, rd); if(d<=0 || d>365) return;
+    bySupplier[nk].leadTimes.push(d);
+  });
+
+  state.supplierStats = Object.keys(bySupplier).map(nk=>{
+    const s = bySupplier[nk];
+    const lts = s.leadTimes;
+    const itemsDueNow = s.items.map(c=>resultByCode[c]).filter(x=>x && (x.decision==='BUY_NOW'||x.decision==='BUY_SOON'));
+    const settings = state.supplierSettings[nk] || {relationshipType:'normal', note:''};
+    return {
+      key: nk, display: s.display, itemCount: s.items.length, sampleSize: lts.length,
+      avgLeadTime: lts.length ? Math.round(mean(lts)*10)/10 : null,
+      medianLeadTime: lts.length ? median(lts) : null,
+      maxLeadTime: lts.length ? Math.max.apply(null, lts) : null,
+      leadTimeStd: lts.length>=2 ? Math.round(stdev(lts)*10)/10 : null,
+      itemsDueNowCount: itemsDueNow.length,
+      itemsDueNowValue: Math.round(itemsDueNow.reduce((a,x)=>a+((x.recommendedQty||0)*x.unitCost),0)),
+      relationshipType: settings.relationshipType||'normal', note: settings.note||''
+    };
+  }).sort((a,b)=> (b.maxLeadTime||0) - (a.maxLeadTime||0));
+}
+
+/* علاقات تجارية خاصة (عقد سنوي/تارجيت وتعويض): لا نوصي تلقائياً بإيقاف الشراء بسبب
+   فائض بسيط عند هالموردين — القرار البشري هو الحاكم، نكتفي بتنبيه صريح بدل قرار آلي */
+function applySupplierRelationshipOverrides(results){
+  const itemSupplierKey = state.itemSupplierKey || {};
+  results.forEach(r=>{
+    const nk = itemSupplierKey[r.code];
+    if(!nk) return;
+    const settings = state.supplierSettings[nk];
+    if(!settings || settings.relationshipType==='normal' || !settings.relationshipType) return;
+    if(r.decision==='EXCESS'){
+      const label = settings.relationshipType==='target' ? 'مورد بنظام تارجيت/تعويض' : 'مورد بعقد سنوي/موسمي';
+      r.decision = 'WAIT';
+      r.decisionLabel = '🟢 انتظر';
+      r.decisionReason = '('+label+' — لا نوصي بإيقاف الشراء تلقائياً؛ راجع حسب حالة العقد/التارجيت يدوياً) '+r.decisionReason;
+    }
   });
 }
 function stdev(arr){
@@ -1008,6 +1106,8 @@ function runEngine(){
   });
 
   computeConsolidation(results);
+  computeSupplierStats(results);
+  applySupplierRelationshipOverrides(results);
   results.sort((a,b)=> b.priorityScore - a.priorityScore);
   state.computed = results;
 }
@@ -1017,11 +1117,14 @@ function switchTab(tab){
   document.getElementById('dataPage').style.display = tab==='data' ? 'block' : 'none';
   document.getElementById('towerPage').style.display = tab==='tower' ? 'block' : 'none';
   document.getElementById('reportPage').style.display = tab==='report' ? 'block' : 'none';
+  document.getElementById('suppliersPage').style.display = tab==='suppliers' ? 'block' : 'none';
   document.getElementById('tabBtn-data').className = tab==='data' ? 'btn-primary' : 'btn-ghost';
   document.getElementById('tabBtn-tower').className = tab==='tower' ? 'btn-primary' : 'btn-ghost';
   document.getElementById('tabBtn-report').className = tab==='report' ? 'btn-primary' : 'btn-ghost';
+  document.getElementById('tabBtn-suppliers').className = tab==='suppliers' ? 'btn-primary' : 'btn-ghost';
   if(tab==='tower') renderTower();
   if(tab==='report') renderReport();
+  if(tab==='suppliers') renderSuppliers();
 }
 function setFilter(f){
   curFilter = f;
@@ -1209,6 +1312,43 @@ function showBalanceDrilldown(code){
     + (rows || '<tr><td colspan="3" style="text-align:center;color:var(--ink-soft);padding:14px;">لا يوجد تفصيل مستودعات لهالصنف</td></tr>')
     + '</tbody></table>');
 }
+/* ================= تبويب الموردون ================= */
+function renderSuppliers(){
+  const thead = document.getElementById('suppliersThead');
+  const tbody = document.getElementById('suppliersTbody');
+  const list = state.supplierStats || [];
+  thead.innerHTML = '<tr><th>المورد</th><th>عدد الأصناف</th><th>عينة مدة التوريد</th><th>متوسط (يوم)</th><th>الوسيط (يوم)</th><th>أقصى تأخير مسجَّل (يوم)</th><th>تذبذب (σ)</th><th>مطلوب الآن</th><th>قيمة المطلوب الآن</th><th>نوع العلاقة</th><th>ملاحظة</th></tr>';
+  if(!list.length){
+    tbody.innerHTML = '<tr><td colspan="11" class="empty-state"><div class="ic">🏭</div>ما فيه ربط موردين لسا — لازم عمود "المورد" بجدول البارامترات (رقم 5) أو كويري رقم 6 معبّى.</td></tr>';
+    return;
+  }
+  tbody.innerHTML = list.map(s=>{
+    const relClass = s.relationshipType==='contract' ? 'rel-contract' : (s.relationshipType==='target' ? 'rel-target' : '');
+    return '<tr class="'+relClass+'">'
+      + '<td><b>'+esc(s.display)+'</b></td>'
+      + '<td class="num">'+s.itemCount+'</td>'
+      + '<td class="num">'+s.sampleSize+'</td>'
+      + '<td class="num">'+(s.avgLeadTime??'—')+'</td>'
+      + '<td class="num">'+(s.medianLeadTime??'—')+'</td>'
+      + '<td class="num">'+(s.maxLeadTime??'—')+'</td>'
+      + '<td class="num">'+(s.leadTimeStd??'—')+'</td>'
+      + '<td class="num">'+s.itemsDueNowCount+'</td>'
+      + '<td class="num">'+s.itemsDueNowValue.toLocaleString('en-US')+'</td>'
+      + '<td><select onchange="updateSupplierSetting(\''+s.key+'\',\'relationshipType\',this.value)">'
+        + ['normal','contract','target'].map(v=>'<option value="'+v+'" '+(s.relationshipType===v?'selected':'')+'>'+({normal:'عادي', contract:'عقد سنوي/موسمي', target:'تارجيت وتعويض'}[v])+'</option>').join('')
+        + '</select></td>'
+      + '<td><input value="'+esc(s.note)+'" placeholder="ملاحظة..." style="width:140px;" onchange="updateSupplierSetting(\''+s.key+'\',\'note\',this.value)"></td>'
+    + '</tr>';
+  }).join('');
+}
+function updateSupplierSetting(key, field, value){
+  if(!state.supplierSettings[key]) state.supplierSettings[key] = {relationshipType:'normal', note:''};
+  state.supplierSettings[key][field] = value;
+  runEngine();
+  renderSuppliers();
+  renderTower();
+  scheduleCloudSave(['suppliers']);
+}
 function showMonthDrilldown(code, monthKey){
   const r = findReportItem(code); if(!r) return;
   const rowsRaw = state.salesRaw.filter(x=>{
@@ -1258,7 +1398,7 @@ function restoreBackup(evt){
       document.getElementById('paramsPanel').style.display='block';
       renderTower();
       const el = document.getElementById('backupStatusMsg'); el.textContent='✔ تم الاسترجاع'; el.className='status-msg ok';
-      scheduleCloudSave(['items','params','sales','inventory','leadtime','apinvoice','po']);
+      scheduleCloudSave(['items','params','sales','inventory','leadtime','apinvoice','po','suppliers']);
     }catch(e){
       const el = document.getElementById('backupStatusMsg'); el.textContent='ملف غير صالح'; el.className='status-msg err';
     }
@@ -1323,9 +1463,9 @@ async function pushChunked(table, rows){
     if(error) throw error;
   }
 }
-async function upsertChunked(table, rows){
+async function upsertChunked(table, rows, conflictCol){
   for(const c of chunkArray(rows, 500)){
-    const {error} = await sb.from(table).upsert(c, {onConflict:'item_code'});
+    const {error} = await sb.from(table).upsert(c, {onConflict: conflictCol || 'item_code'});
     if(error) throw error;
   }
 }
@@ -1351,7 +1491,7 @@ async function pullStateFromCloud(){
   const el = document.getElementById('cloudSyncMsg');
   try{
     if(el){ el.textContent = '⏳ جارٍ تحميل البيانات المحفوظة...'; el.className='status-msg ok'; }
-    const [items, params, sales, inv, lt, ap, po] = await Promise.all([
+    const [items, params, sales, inv, lt, ap, po, supSettings] = await Promise.all([
       fetchAllRows('procurement_items', 'item_code,name'),
       fetchAllRows('procurement_params', '*'),
       fetchAllRows('procurement_sales', 'item_code,sale_date,qty,whs,customer,amount'),
@@ -1359,6 +1499,7 @@ async function pullStateFromCloud(){
       fetchAllRows('procurement_leadtime', 'item_code,order_date,recv_date'),
       fetchAllRows('procurement_ap_invoices', 'item_code,supplier,doc_entry,qty'),
       fetchAllRows('procurement_po', 'item_code,qty,arrival_date,supplier'),
+      fetchAllRows('procurement_suppliers', 'supplier_key,relationship_type,note'),
     ]);
     if(items.length){ state.itemsRaw = {}; items.forEach(r=>{ state.itemsRaw[r.item_code] = {code:r.item_code, name:r.name}; }); }
     if(params.length){
@@ -1376,6 +1517,10 @@ async function pullStateFromCloud(){
     if(lt.length) state.leadTimeRaw = lt.map(r=>({code:r.item_code, orderDate:r.order_date, recvDate:r.recv_date}));
     if(ap.length) state.apInvoiceRaw = ap.map(r=>({code:r.item_code, supplier:r.supplier, docEntry:r.doc_entry, qty:r.qty}));
     if(po.length) state.poRaw = po.map(r=>({code:r.item_code, qty:r.qty, arrivalDate:r.arrival_date, supplier:r.supplier||''}));
+    if(supSettings.length){
+      state.supplierSettings = {};
+      supSettings.forEach(r=>{ state.supplierSettings[r.supplier_key] = {relationshipType:r.relationship_type||'normal', note:r.note||''}; });
+    }
     saveStateLocal();
     if(Object.keys(state.itemsRaw||{}).length){
       renderParamsTable(); runEngine(); document.getElementById('paramsPanel').style.display='block'; switchTab('tower');
@@ -1421,6 +1566,10 @@ async function pushStateToCloud(datasets){
     }
     if(datasets.has('po')){
       await replaceLogTable('procurement_po', state.poRaw.map(r=>({item_code:r.code, qty:r.qty, arrival_date:normDateForDb(r.arrivalDate), supplier:r.supplier||null})));
+    }
+    if(datasets.has('suppliers')){
+      const rows = Object.keys(state.supplierSettings).map(k=>({supplier_key:k, relationship_type: state.supplierSettings[k].relationshipType||'normal', note: state.supplierSettings[k].note||null}));
+      if(rows.length) await upsertChunked('procurement_suppliers', rows, 'supplier_key');
     }
     if(el){ el.textContent = '✔ محفوظ سحابياً'; el.className='status-msg ok'; }
   }catch(e){ console.warn('تعذر الحفظ على السيرفر', e); if(el){ el.textContent='⚠ تعذر الحفظ على السيرفر — محفوظ محلياً فقط بهالمتصفح'; el.className='status-msg err'; } }
