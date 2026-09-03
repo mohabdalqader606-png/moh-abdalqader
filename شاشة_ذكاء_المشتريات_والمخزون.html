@@ -220,6 +220,11 @@
   .minitbl{width:100%; border-collapse:collapse; font-size:11.5px;}
   .minitbl th{background:#EEF2F8; color:var(--navy); text-align:right; padding:6px 8px; font-weight:700; font-size:10.5px; border-bottom:1.5px solid var(--line);}
   .minitbl td{padding:5px 8px; border-bottom:1px solid var(--line);}
+  /* عمود "الصنف" بجداول التفصيل (Drilldown) المتفرّعة من جدول عريض (الموردين) لازم يضل
+     ظاهر بغض النظر عن موضع التمرير الأفقي للجدول الخارجي — نفس فكرة freeze بس داخل
+     الجدول المتشعّب، لأنه sticky بيحسب أقرب حاوية تمرير (.tbl-scroll) مش الجدول المتشعّب نفسه */
+  .minitbl .freeze-name{position:sticky; right:0; background:#FAFBFD; z-index:1; box-shadow:1px 0 0 var(--line); max-width:200px; white-space:normal;}
+  .minitbl th.freeze-name{background:#EEF2F8; z-index:2;}
   #suppliersTable{width:100%; border-collapse:collapse; font-size:11.5px;}
   #suppliersTable th{background:#EEF2F8; color:var(--navy); text-align:right; padding:7px 9px; font-weight:700; font-size:10.5px; white-space:nowrap; border-bottom:1.5px solid var(--line); position:sticky; top:0; z-index:2;}
   #suppliersTable td{padding:6px 9px; border-bottom:1px solid var(--line); white-space:nowrap;}
@@ -853,6 +858,9 @@ function processAllDataHeavy(){
   const msg = document.getElementById('dataStatusMsg');
   state.demandWindowDays = toNum(document.getElementById('demandWindowDays').value) || 90;
   const raggedNotes = [];
+  // تشخيص مطابقة الأعمدة لكويري 6 و8 تحديداً (السعر/الكلفة) — عشان لو انطابق عمود غلط
+  // (مثلاً الكمية بدل السعر) يبين فوراً برسالة الحالة بدل ما يظهر كرقم غريب بالتقرير بس
+  const columnDiagnostics = [];
 
   // 1) الأصناف
   const itemsTxt = getPasteText('pasteItems');
@@ -976,6 +984,7 @@ function processAllDataHeavy(){
     const iPrice = colIndex(headers, ['السعر','Price']);
     if(iCode>=0 && iSupplier>=0 && iDoc>=0 && iQty>=0){
       state.apInvoiceRaw = rows.map(r=>({code:r[iCode], supplier:r[iSupplier], docEntry:r[iDoc], qty:toNum(r[iQty]), date: iDate>=0?r[iDate]:'', price: iPrice>=0 ? toNum(r[iPrice]) : NaN})).filter(r=>r.code && r.supplier && r.docEntry);
+      columnDiagnostics.push('كويري 6 — الكمية: "'+headers[iQty]+'"'+(iPrice>=0 ? '، السعر: "'+headers[iPrice]+'"' : '، السعر: غير موجود'));
     }
   }
 
@@ -1031,6 +1040,9 @@ function processAllDataHeavy(){
           landedCostAmount: iLcAmount>=0 ? toNum(r[iLcAmount]) : NaN
         };
       }).filter(r=>r.code && !isNaN(r.cost));
+      columnDiagnostics.push('كويري 8 — الكمية: '+(iQty>=0?'"'+headers[iQty]+'"':'غير موجود')
+        +'، سعر المنشأ: '+(iBasePrice>=0?'"'+headers[iBasePrice]+'"':'غير موجود')
+        +'، الكلفة الإضافية للوحدة: "'+headers[iAddedCost]+'"');
     }
   }
 
@@ -1039,7 +1051,8 @@ function processAllDataHeavy(){
   document.getElementById('paramsPanel').style.display='block';
   msg.textContent = '✔ تم التحليل — ' + Object.keys(state.itemsRaw).length + ' صنف'
     + (paramsUpdatedCount ? (' · تحديث بارامترات ' + paramsUpdatedCount + ' صنف من الكويري') : '')
-    + (raggedNotes.length ? (' · ⚠ سطور غير متطابقة الأعمدة (تحقق من المحاذاة): ' + raggedNotes.join('، ')) : '');
+    + (raggedNotes.length ? (' · ⚠ سطور غير متطابقة الأعمدة (تحقق من المحاذاة): ' + raggedNotes.join('، ')) : '')
+    + (columnDiagnostics.length ? (' · 🔎 ' + columnDiagnostics.join(' | ')) : '');
   msg.className='status-msg ' + (raggedNotes.length ? 'err' : 'ok');
   switchTab('tower');
   const changedDatasets = ['items','params'];
@@ -2164,7 +2177,7 @@ function showSupplierPODrilldown(sourceEl, supplierKey){
     return Object.assign({}, x, {suggestedQty, reason});
   }).filter(x=>x.suggestedQty>0).sort((a,b)=> (b.dueQty - a.dueQty) || (b.suggestedQty - a.suggestedQty));
 
-  const rows = list.map(x=>'<tr><td style="max-width:200px;white-space:normal;">'+esc(x.name)+'<br><span class="item-code">'+esc(x.code)+'</span></td>'
+  const rows = list.map(x=>'<tr><td class="freeze-name">'+esc(x.name)+'<br><span class="item-code">'+esc(x.code)+'</span></td>'
     + '<td style="white-space:nowrap;">'+esc(x.decisionLabel)+'</td>'
     + '<td class="num">'+(x.onHand!=null?fmtNum(x.onHand):'—')+'</td>'
     + '<td class="num">'+(x.daysCover!=null?(x.daysCover===Infinity?'∞':x.daysCover):'—')+'</td>'
@@ -2175,7 +2188,7 @@ function showSupplierPODrilldown(sourceEl, supplierKey){
 
   renderDrilldown(sourceEl, 'supplierPO|'+supplierKey, 'طلب شراء مقترح — '+s.display+' ('+s.code+')',
     (totalShipments<2 ? '<div style="margin-bottom:8px;color:var(--gold);font-size:12px;">⚠ عدد شحنات هالمورد المسجَّلة بكويري رقم 6 قليل جداً ('+totalShipments+') — نمط ترافق الأصناف مش موثوق لسا.</div>' : '')
-    + '<table class="minitbl"><thead><tr><th>الصنف</th><th>القرار</th><th>الرصيد الحالي</th><th>أيام تغطية</th>'
+    + '<table class="minitbl"><thead><tr><th class="freeze-name">الصنف</th><th>القرار</th><th>الرصيد الحالي</th><th>أيام تغطية</th>'
     + '<th>الكمية الموصى بها</th><th>متوسط/شحنة (نسبة الترافق)</th><th>الكمية المقترحة بالطلب</th><th>السبب</th></tr></thead><tbody>'
     + (rows || '<tr><td colspan="8" style="text-align:center;color:var(--ink-soft);padding:14px;">ما فيه أصناف مطلوبة الآن أو معتادة الترافق مع هالمورد حالياً</td></tr>')
     + '</tbody></table>', 'suppliersTbody', 'suppliersThead');
@@ -2199,7 +2212,7 @@ function showSupplierItemsDrilldown(sourceEl, supplierKey){
   }).sort((a,b)=> (DECISION_ORDER[a.decision]??5) - (DECISION_ORDER[b.decision]??5)
     || ((a.daysCover===Infinity?1e9:a.daysCover) ?? 1e9) - ((b.daysCover===Infinity?1e9:b.daysCover) ?? 1e9));
 
-  const rows = list.map(x=>'<tr><td style="max-width:200px;white-space:normal;">'+esc(x.name)+'<br><span class="item-code">'+esc(x.code)+'</span></td>'
+  const rows = list.map(x=>'<tr><td class="freeze-name">'+esc(x.name)+'<br><span class="item-code">'+esc(x.code)+'</span></td>'
     + '<td style="white-space:nowrap;">'+esc(x.decisionLabel)+'</td>'
     + '<td class="num">'+(x.onHand!=null?fmtNum(x.onHand):'—')+'</td>'
     + '<td class="num">'+(x.daysCover!=null?(x.daysCover===Infinity?'∞':x.daysCover):'—')+'</td>'
@@ -2208,7 +2221,7 @@ function showSupplierItemsDrilldown(sourceEl, supplierKey){
     + '<td class="num">'+(x.lastActualCost!=null?fmtPrice(x.lastActualCost):'—')+'</td></tr>').join('');
 
   renderDrilldown(sourceEl, 'supplierItems|'+supplierKey, 'تقرير أصناف — '+s.display+' ('+s.code+')',
-    '<table class="minitbl"><thead><tr><th>الصنف</th><th>القرار</th><th>الرصيد الحالي</th><th>أيام تغطية</th>'
+    '<table class="minitbl"><thead><tr><th class="freeze-name">الصنف</th><th>القرار</th><th>الرصيد الحالي</th><th>أيام تغطية</th>'
     + '<th>الكمية الموصى بها</th><th>آخر سعر منشأ (الفاتورة)</th><th>آخر كلفة نهائية (Landed Cost)</th></tr></thead><tbody>'
     + (rows || '<tr><td colspan="7" style="text-align:center;color:var(--ink-soft);padding:14px;">ما فيه أصناف مرتبطة بهالمورد حالياً</td></tr>')
     + '</tbody></table>', 'suppliersTbody', 'suppliersThead');
