@@ -1084,7 +1084,7 @@ function processAllDataHeavy(){
   switchTab('tower');
   const changedDatasets = ['items','params'];
   if(itemsTxt.trim()) changedDatasets.push('items');
-  if(salesTxt.trim()) changedDatasets.push('sales');
+  // المبيعات محلية بالمتصفح بس بناءً على طلب المستخدم — لا تُضاف لقائمة الرفع للسيرفر
   if(invTxt.trim()) changedDatasets.push('inventory');
   if(ltTxt.trim()) changedDatasets.push('leadtime');
   if(apTxt.trim()) changedDatasets.push('apinvoice');
@@ -2393,7 +2393,7 @@ function restoreBackup(evt){
       document.getElementById('paramsPanel').style.display='block';
       renderTower();
       const el = document.getElementById('backupStatusMsg'); el.textContent='✔ تم الاسترجاع'; el.className='status-msg ok';
-      scheduleCloudSave(['items','params','sales','inventory','leadtime','apinvoice','po','suppliers','actualcost']);
+      scheduleCloudSave(['items','params','inventory','leadtime','apinvoice','po','suppliers','actualcost']);
     }catch(e){
       const el = document.getElementById('backupStatusMsg'); el.textContent='ملف غير صالح'; el.className='status-msg err';
     }
@@ -2555,10 +2555,12 @@ async function pullStateFromCloud(){
   }
   try{
     if(el){ el.textContent = '⏳ جارٍ تحميل البيانات المحفوظة...'; el.className='status-msg ok'; }
-    const [items, params, sales, inv, poOrders, ap, po, supSettings, customers, actualCost] = await Promise.all([
+    // المبيعات صارت محلية بالمتصفح بس (بناءً على طلب المستخدم) — ما بترفع/بتنزّل من
+    // Supabase أبداً، عشان تفادي رفع/تحميل مئات الميغابايت من بيانات المبيعات التاريخية
+    // بكل مرة. لازم تُلصق وتُحلَّل من جديد بكل جلسة (أو تضل محفوظة محلياً بالمتصفح فقط).
+    const [items, params, inv, poOrders, ap, po, supSettings, customers, actualCost] = await Promise.all([
       fetchSafe('procurement_items', 'item_code,name'),
       fetchSafe('procurement_params', '*'),
-      fetchSafe('procurement_sales', 'item_code,sale_date,qty,whs,customer,customer_code,amount'),
       fetchSafe('procurement_inventory', 'item_code,whs,whs_name,on_hand,on_order'),
       fetchSafe('procurement_po_orders', 'item_code,supplier,order_date,qty'),
       fetchSafe('procurement_ap_invoices', 'item_code,supplier,doc_entry,qty,recv_date,price'),
@@ -2578,7 +2580,6 @@ async function pullStateFromCloud(){
         leadTimeIsDefault: !!r.lead_time_is_default, moqIsDefault: !!r.moq_is_default
       };});
     }
-    if(sales.length) state.salesRaw = sales.map(r=>({code:r.item_code, date:r.sale_date, qty:r.qty, whs:r.whs||'', customer:r.customer||'', customerCode:r.customer_code||'', amount:r.amount??NaN}));
     if(inv.length) state.invRaw = inv.map(r=>({code:r.item_code, onHand:r.on_hand||0, onOrder:r.on_order||0, whs:r.whs||'', whsName:r.whs_name||''}));
     if(poOrders.length) state.poOrdersRaw = poOrders.map(r=>({code:r.item_code, supplier:r.supplier||'', orderDate:r.order_date, qty:r.qty}));
     if(ap.length) state.apInvoiceRaw = ap.map(r=>({code:r.item_code, supplier:r.supplier, docEntry:r.doc_entry, qty:r.qty, date:r.recv_date||'', price: r.price??NaN}));
@@ -2642,7 +2643,6 @@ async function pushStateToCloud(datasets){
       lead_time_is_default: !!p.leadTimeIsDefault, moq_is_default: !!p.moqIsDefault
     };
   })));
-  await safeSave('sales', ()=> replaceLogTable('procurement_sales', state.salesRaw.map(r=>({item_code:r.code, sale_date:normDateForDb(r.date), qty:r.qty, whs:r.whs||null, customer:r.customer||null, customer_code:r.customerCode||null, amount: isNaN(r.amount)?null:r.amount}))));
   await safeSave('inventory', ()=> replaceLogTable('procurement_inventory', state.invRaw.map(r=>({item_code:r.code, whs:r.whs||null, whs_name:r.whsName||null, on_hand:r.onHand, on_order:r.onOrder}))));
   await safeSave('leadtime', ()=> replaceLogTable('procurement_po_orders', state.poOrdersRaw.map(r=>({item_code:r.code, supplier:r.supplier||null, order_date:normDateForDb(r.orderDate), qty: isNaN(r.qty)?null:r.qty}))));
   await safeSave('apinvoice', ()=> replaceLogTable('procurement_ap_invoices', state.apInvoiceRaw.map(r=>({item_code:r.code, supplier:r.supplier, doc_entry:String(r.docEntry), qty:r.qty, recv_date:normDateForDb(r.date), price: isNaN(r.price)?null:r.price}))));
