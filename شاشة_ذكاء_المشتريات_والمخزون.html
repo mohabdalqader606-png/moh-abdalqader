@@ -303,6 +303,7 @@
     <div class="userbox" id="userbox" style="display:none;">
       <div class="who"><b id="uName"></b><span id="uRole"></span><span class="status-msg" id="cloudSyncMsg" style="margin-top:2px;"></span></div>
       <button class="btn-ghost btn-sm" onclick="pullStateFromCloud()" title="تحميل آخر نسخة من السيرفر المشترك">🔄</button>
+      <button class="btn-primary btn-sm" id="manualSaveBtn" onclick="manualCloudSave()" title="الحفظ على السيرفر صار يدوياً بالكامل — اضغطي هون لما تكوني جاهزة ترفعي آخر تغييراتك">☁️ احفظ على السيرفر<span id="pendingBadge" style="display:none;"></span></button>
       <button class="btn-ghost btn-sm" onclick="doLogout()">خروج</button>
     </div>
   </div>
@@ -772,17 +773,32 @@ function loadStateLocal(){
 function saveStateLocal(){
   try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){ console.warn('تعذر الحفظ محلياً', e); }
 }
-let cloudSaveTimer=null;
+// الحفظ على السيرفر صار يدوي بالكامل بناءً على طلب المستخدم (بدل رفع تلقائي بعد
+// كل تحليل) — الحفظ المحلي بالمتصفح (فوري ومجاني) يضل تلقائي دايماً، بس رفع
+// السيرفر بيصير بس لما يضغط زر "☁️ احفظ على السيرفر" بنفسه
 let pendingDatasets = new Set();
 function scheduleCloudSave(datasets){
   saveStateLocal();
   (datasets || ['items','params']).forEach(d=>pendingDatasets.add(d));
-  clearTimeout(cloudSaveTimer);
-  cloudSaveTimer = setTimeout(()=>{
-    const ds = pendingDatasets;
-    pendingDatasets = new Set();
-    pushStateToCloud(ds);
-  }, 1200);
+  updatePendingSaveBadge();
+}
+function updatePendingSaveBadge(){
+  const badge = document.getElementById('pendingBadge');
+  if(!badge) return;
+  if(pendingDatasets.size){ badge.textContent = ' ('+pendingDatasets.size+')'; badge.style.display='inline'; }
+  else { badge.style.display='none'; }
+}
+async function manualCloudSave(){
+  if(!sb || !curUser) return;
+  if(!pendingDatasets.size){
+    const el = document.getElementById('cloudSyncMsg');
+    if(el){ el.textContent = 'لا يوجد تغييرات جديدة — كل شي محفوظ أصلاً'; el.className='status-msg ok'; }
+    return;
+  }
+  const ds = pendingDatasets;
+  pendingDatasets = new Set();
+  updatePendingSaveBadge();
+  await pushStateToCloud(ds);
 }
 
 /* ================= رفع ملف بدل اللصق (لتفادي تعليق المتصفح مع بيانات ضخمة) =================
@@ -2584,7 +2600,7 @@ async function pushStateToCloud(datasets){
   async function safeSave(key, fn){
     if(!datasets.has(key)) return;
     try{ await fn(); }
-    catch(e){ console.warn('تعذر حفظ '+key, e); failed.push(key + (e && e.message ? (' — '+e.message) : '')); }
+    catch(e){ console.warn('تعذر حفظ '+key, e); failed.push(key + (e && e.message ? (' — '+e.message) : '')); pendingDatasets.add(key); }
   }
   await safeSave('items', ()=> upsertChunked('procurement_items', Object.values(state.itemsRaw).map(it=>({item_code:it.code, name:it.name}))));
   await safeSave('params', ()=> upsertChunked('procurement_params', Object.keys(state.params).map(code=>{
@@ -2616,6 +2632,7 @@ async function pushStateToCloud(datasets){
     if(rows.length) await upsertChunked('procurement_customers', rows, 'customer_key');
   });
   cloudSaveInProgress = false;
+  updatePendingSaveBadge();
   if(el){
     if(!failed.length){ el.textContent = '✔ محفوظ سحابياً بالكامل'; el.className='status-msg ok'; }
     else { el.textContent = '⚠ فشل حفظ: ' + failed.map(k=>DATASET_LABELS[k.split(' — ')[0]]||k).join('، ') + ' — الباقي محفوظ. افتح Console (F12) لتفاصيل الخطأ.'; el.className='status-msg err'; }
@@ -2627,6 +2644,7 @@ async function pushStateToCloud(datasets){
 }
 window.addEventListener('beforeunload', function(e){
   if(cloudSaveInProgress){ e.preventDefault(); e.returnValue = 'جارٍ حفظ البيانات على السيرفر — لا تغلق الصفحة الآن'; return e.returnValue; }
+  if(pendingDatasets.size){ e.preventDefault(); e.returnValue = 'عندك تغييرات ما انحفظت على السيرفر بعد — اضغطي "☁️ احفظ على السيرفر" قبل ما تسكّري الصفحة'; return e.returnValue; }
 });
 (async function bootAuth(){
   loadStateLocal();
