@@ -52,10 +52,21 @@
      -- ترقية جدول قديم أُنشئ قبل إضافة تاريخ الاستلام/السعر (آمن التكرار):
      alter table procurement_ap_invoices add column if not exists recv_date date;
      alter table procurement_ap_invoices add column if not exists price numeric;
-     -- procurement_item_cost: التكلفة الفعلية بعد اللاندد كوست (كويري رقم 8، من OINM.CalcPrice)
+     -- procurement_item_cost: مستندات اللاندد كوست (كويري رقم 8، من OIPF/IPF1) — الكلفة
+     -- الفعلية النهائية للوحدة لكل شحنة/باتش، مقارنة بسعر المنشأ (Base Doc. Price)
      create table if not exists procurement_item_cost (
        id bigserial primary key, item_code text, cost_date date, cost numeric
      );
+     -- ترقية جدول قديم أُنشئ بنسخة مبكّرة (آمن التكرار):
+     alter table procurement_item_cost add column if not exists doc_num text;
+     alter table procurement_item_cost add column if not exists vendor text;
+     alter table procurement_item_cost add column if not exists warehouse text;
+     alter table procurement_item_cost add column if not exists batch text;
+     alter table procurement_item_cost add column if not exists qty numeric;
+     alter table procurement_item_cost add column if not exists currency text;
+     alter table procurement_item_cost add column if not exists base_price numeric;
+     alter table procurement_item_cost add column if not exists increase_pct numeric;
+     alter table procurement_item_cost add column if not exists landed_cost_amount numeric;
      alter table procurement_item_cost enable row level security;
      create policy "authenticated rw" on procurement_item_cost for all using (auth.role()='authenticated') with check (auth.role()='authenticated');
      create table if not exists procurement_po (
@@ -458,17 +469,140 @@ WHERE T0."DocStatus"='O' AND T1."LineStatus"='O'</code>
       </details>
 
       <details class="opt">
-        <summary><span class="num-badge opt">8</span> آخر تكلفة فعلية للمخزون (Landed Cost) — لمقارنتها بسعر المنشأ (اختياري)</summary>
+        <summary><span class="num-badge opt">8</span> مستندات اللاندد كوست (Landed Cost) — الكلفة الفعلية النهائية لكل شحنة/باتش (اختياري)</summary>
         <div class="hint">
-          سعر كويري رقم 6 هو سعر المنشأ (سعر الفاتورة وقت الاستلام) بس — ما بيشمل الشحن والجمارك والمصاريف. عندكم نظام باتشات، فالتكلفة الفعلية النهائية بعد توزيع اللاندد كوست بتنعكس بجدول حركات المخزون (OINM) بعمود CalcPrice — كل ما انضاف مستند لاندد كوست لاحق، بينضاف سطر جديد يعدّل التكلفة. نجيب كل الحركات (مو بس آخر وحدة) عشان نقدر نطلع تسلسل التكلفة قبل/بعد اللاندد كوست.
-          <code class="block">SELECT T0."ItemCode" AS "رمز الصنف", T0."CreateDate" AS "التاريخ",
-       T0."CalcPrice" AS "الكلفة الفعلية"
-FROM OINM T0
-WHERE T0."CalcPrice" <> 0
-ORDER BY T0."ItemCode", T0."CreateDate"</code>
-          <div style="margin-top:6px;color:var(--crimson);">⚠ الكويري بترجع سطر لكل حركة مخزون (استلام، لاندد كوست، تحويل...) — ممكن يكون حجمها كبير، فضّل ترفع ملف بدل اللصق المباشر، وحدد مدى تاريخي (مثلاً آخر سنة أو سنتين) بالـ WHERE لو الحجم كبير كتير.</div>
+          سعر كويري رقم 6 هو سعر المنشأ (سعر الفاتورة وقت الاستلام) بس — ما بيشمل الشحن والجمارك والمصاريف. هالكويري بيجيب مستندات اللاندد كوست نفسها (OIPF/IPF1) مربوطة بمستند الأساس (GRPO/فاتورة)، وبتحسب فيها SQL مباشرة: الكلفة النهائية للوحدة (Final Unit Cost)، ومقدار ونسبة الزيادة عن سعر المنشأ. الفلتر بالأسفل بياخذ آخر لاندد كوست بالسلسلة بس (لو انعمل أكتر من مستند لاندد كوست متتالي لنفس السطر). عند تشغيل الكويري بـ SAP رح تُطلب منك تاريخ البداية والنهاية.
+          <code class="block">SELECT
+
+/* Landed Cost Header */
+
+T0."DocNum" AS "Landed Cost No",
+T0."DocDate" AS "Landed Cost Date",
+T0."Ref1" AS "Reference 1",
+
+T0."CardCode" AS "Vendor Code",
+T0."SuppName" AS "Vendor Name",
+
+
+/* Base Document */
+
+CASE
+    WHEN T1."BaseType" = 20 THEN 'GRPO'
+    WHEN T1."BaseType" = 18 THEN 'A/P Invoice'
+    WHEN T1."BaseType" = 69 THEN 'Landed Cost'
+    ELSE CAST(T1."BaseType" AS NVARCHAR(20))
+END AS "Base Document Type",
+
+T1."BaseEntry" AS "Base Document Internal ID",
+T1."BaseRowNum" AS "Base Row Number",
+
+
+/* Item Details */
+
+T1."ItemCode" AS "Item Code",
+T1."Dscription" AS "Item Description",
+T1."WhsCode" AS "Warehouse",
+
+T1."Quantity" AS "Quantity",
+T1."UnitCode" AS "UoM",
+T1."DistNumber" AS "Batch Number",
+
+
+/* Purchase Cost */
+
+T1."Currency" AS "Currency",
+T1."Rate" AS "Exchange Rate",
+
+T1."PriceAtWH" AS "Base Doc. Price",
+
+(T1."PriceAtWH" * T1."Quantity") AS "Base Doc. Value",
+
+
+/* Landed Cost Details */
+
+T1."FobValue" AS "FOB Value",
+T1."FobValCurr" AS "FOB Currency",
+
+T1."Custom" AS "Customs",
+
+T1."Cost" AS "Additional Cost",
+
+T1."TtlExpndLC" AS "Landed Cost Amount",
+
+
+/* Final Cost */
+
+T1."TtlCostLC" AS "Total",
+
+CASE
+    WHEN T1."Quantity" <> 0
+    THEN T1."TtlCostLC" / T1."Quantity"
+    ELSE 0
+END AS "Final Unit Cost",
+
+
+/* Increase Analysis */
+
+CASE
+    WHEN T1."Quantity" <> 0
+    THEN
+        (T1."TtlCostLC" / T1."Quantity")
+        -
+        T1."PriceAtWH"
+    ELSE 0
+END AS "Landed Cost Increase Per Unit",
+
+
+CASE
+    WHEN T1."PriceAtWH" <> 0
+    THEN
+        (((T1."TtlCostLC" / T1."Quantity")
+        -
+        T1."PriceAtWH")
+        /
+        T1."PriceAtWH") * 100
+    ELSE 0
+END AS "Increase %",
+
+
+/* Tax */
+
+T1."VatGroup" AS "VAT Group",
+T1."VatPrcnt" AS "VAT %"
+
+
+FROM OIPF T0
+
+INNER JOIN IPF1 T1
+ON T0."DocEntry" = T1."DocEntry"
+
+
+/* Take Last Landed Cost in Chain */
+
+WHERE NOT EXISTS
+(
+    SELECT 1
+
+    FROM IPF1 N1
+
+    WHERE
+        N1."BaseType" = 69
+        AND N1."BaseEntry" = T0."DocEntry"
+        AND N1."ItemCode" = T1."ItemCode"
+)
+
+
+AND T0."DocDate" BETWEEN '[%0]' AND '[%1]'
+
+
+ORDER BY
+
+T0."DocDate",
+T0."DocNum",
+T1."ItemCode";</code>
+          <div style="margin-top:6px;color:var(--crimson);">⚠ ممكن يكون حجمها كبير حسب المدى الزمني المختار — فضّل ترفع ملف بدل اللصق المباشر لو النتيجة كبيرة.</div>
         </div>
-        <textarea id="pasteActualCost" placeholder="الصق هنا: رمز الصنف / التاريخ / الكلفة الفعلية ..."></textarea>
+        <textarea id="pasteActualCost" placeholder="الصق هنا: Landed Cost No / Landed Cost Date / Item Code / Base Doc. Price / Final Unit Cost / Increase % ..."></textarea>
         <div class="row-actions" style="margin-top:6px;">
           <input type="file" id="pasteActualCostFile" accept=".txt,.csv,.tsv" style="display:none;" onchange="loadPasteFromFile(event,'pasteActualCost')">
           <button class="btn-ghost btn-sm" type="button" onclick="document.getElementById('pasteActualCostFile').click()">📁 ارفع ملف بدل اللصق (أسرع كتير للبيانات الضخمة)</button>
@@ -854,16 +988,33 @@ function processAllDataHeavy(){
     }
   }
 
-  // 8) آخر تكلفة فعلية للمخزون (Landed Cost) — اختياري، من OINM
+  // 8) مستندات اللاندد كوست (اختياري) — الكلفة الفعلية النهائية لكل شحنة/باتش من OIPF/IPF1
   const acTxt = getPasteText('pasteActualCost');
   if(acTxt.trim()){
     const {headers, rows, raggedCount} = splitPasted(acTxt);
-    if(raggedCount) raggedNotes.push('التكلفة الفعلية ('+raggedCount+' سطر)');
-    const iCode = colIndex(headers, ['رمز الصنف','ItemCode','Item No.']);
-    const iDate = colIndex(headers, ['التاريخ','CreateDate','Posting Date']);
-    const iCost = colIndex(headers, ['الكلفة الفعلية','CalcPrice']);
-    if(iCode>=0 && iDate>=0 && iCost>=0){
-      state.actualCostRaw = rows.map(r=>({code:r[iCode], date:r[iDate], cost:toNum(r[iCost])})).filter(r=>r.code && !isNaN(r.cost));
+    if(raggedCount) raggedNotes.push('اللاندد كوست ('+raggedCount+' سطر)');
+    const iCode = colIndex(headers, ['Item Code','رمز الصنف','ItemCode','Item No.']);
+    const iDate = colIndex(headers, ['Landed Cost Date','التاريخ']);
+    const iDocNum = colIndex(headers, ['Landed Cost No']);
+    const iVendor = colIndex(headers, ['Vendor Name','Vendor Code']);
+    const iWhs = colIndex(headers, ['Warehouse']);
+    const iBatch = colIndex(headers, ['Batch Number']);
+    const iQty = colIndex(headers, ['Quantity']);
+    const iCurrency = colIndex(headers, ['Currency']);
+    const iBasePrice = colIndex(headers, ['Base Doc. Price']);
+    const iFinalCost = colIndex(headers, ['Final Unit Cost']);
+    const iIncreasePct = colIndex(headers, ['Increase %']);
+    const iLcAmount = colIndex(headers, ['Landed Cost Amount']);
+    if(iCode>=0 && iDate>=0 && iFinalCost>=0){
+      state.actualCostRaw = rows.map(r=>({
+        code:r[iCode], date:r[iDate], cost:toNum(r[iFinalCost]),
+        docNum: iDocNum>=0 ? r[iDocNum] : '', vendor: iVendor>=0 ? r[iVendor] : '',
+        warehouse: iWhs>=0 ? r[iWhs] : '', batch: iBatch>=0 ? r[iBatch] : '',
+        qty: iQty>=0 ? toNum(r[iQty]) : NaN, currency: iCurrency>=0 ? r[iCurrency] : '',
+        basePrice: iBasePrice>=0 ? toNum(r[iBasePrice]) : NaN,
+        increasePct: iIncreasePct>=0 ? toNum(r[iIncreasePct]) : NaN,
+        landedCostAmount: iLcAmount>=0 ? toNum(r[iLcAmount]) : NaN
+      })).filter(r=>r.code && !isNaN(r.cost));
     }
   }
 
@@ -1317,12 +1468,15 @@ function runEngine(){
     priceHistoryByItem[code] = priceHistoryByItem[code].slice(0,5);
   });
 
-  // آخر 5 قيم تكلفة فعلية (Landed Cost) لكل صنف من كويري رقم 8 (OINM.CalcPrice) —
-  // بتشمل تعديلات مستندات اللاندد كوست اللاحقة، بعكس سعر المنشأ يلي هو سعر الفاتورة بس
+  // آخر 5 مستندات لاندد كوست لكل صنف (كويري رقم 8، OIPF/IPF1) — الكلفة الفعلية النهائية
+  // لكل شحنة/باتش مع نسبة الزيادة عن سعر المنشأ المحسوبة مباشرة بالـ SQL
   const actualCostHistoryByItem = {};
   state.actualCostRaw.forEach(r=>{
     const d = parseDateFlexible(r.date); if(!d) return;
-    (actualCostHistoryByItem[r.code] = actualCostHistoryByItem[r.code] || []).push({date:d, cost:r.cost});
+    (actualCostHistoryByItem[r.code] = actualCostHistoryByItem[r.code] || []).push({
+      date:d, cost:r.cost, docNum:r.docNum, vendor:r.vendor, warehouse:r.warehouse,
+      batch:r.batch, qty:r.qty, currency:r.currency, basePrice:r.basePrice, increasePct:r.increasePct
+    });
   });
   Object.keys(actualCostHistoryByItem).forEach(code=>{
     actualCostHistoryByItem[code].sort((a,b)=>b.date-a.date);
@@ -1489,7 +1643,7 @@ function runEngine(){
       prevPrice: (priceHistoryByItem[code] && priceHistoryByItem[code][1]) ? priceHistoryByItem[code][1].price : null,
       costHistory: actualCostHistoryByItem[code] || [],
       lastActualCost: (actualCostHistoryByItem[code] && actualCostHistoryByItem[code][0]) ? actualCostHistoryByItem[code][0].cost : null,
-      prevActualCost: (actualCostHistoryByItem[code] && actualCostHistoryByItem[code][1]) ? actualCostHistoryByItem[code][1].cost : null,
+      lastCostIncreasePct: (actualCostHistoryByItem[code] && actualCostHistoryByItem[code][0] && !isNaN(actualCostHistoryByItem[code][0].increasePct)) ? actualCostHistoryByItem[code][0].increasePct : null,
       monthly
     };
   });
@@ -1776,11 +1930,11 @@ function renderReport(){
       costCell = '<td class="num">—</td>';
     } else {
       let changeHtml = '';
-      if(r.prevActualCost!=null && r.prevActualCost!==0){
-        const pct = ((r.lastActualCost - r.prevActualCost) / r.prevActualCost) * 100;
+      if(r.lastCostIncreasePct!=null){
+        const pct = r.lastCostIncreasePct;
         const dir = pct>0 ? '▲' : (pct<0 ? '▼' : '—');
         const color = pct>0 ? '#B91C1C' : (pct<0 ? '#15803D' : 'var(--ink-soft)');
-        changeHtml = '<br><span style="font-size:11px;color:'+color+';">'+dir+' '+Math.abs(Math.round(pct*10)/10)+'%</span>';
+        changeHtml = '<br><span style="font-size:11px;color:'+color+';" title="نسبة الزيادة عن سعر المنشأ بآخر لاندد كوست">'+dir+' '+Math.abs(Math.round(pct*10)/10)+'% عن المنشأ</span>';
       }
       costCell = '<td class="num" style="cursor:pointer;color:var(--navy);text-decoration:underline;" onclick="showCostDrilldown(this,\''+r.code+'\')">'+fmtPrice(r.lastActualCost)+changeHtml+'</td>';
     }
@@ -1865,20 +2019,22 @@ function showPriceDrilldown(sourceEl, code){
 function showCostDrilldown(sourceEl, code){
   const r = findReportItem(code); if(!r) return;
   const hist = r.costHistory || [];
-  const rows = hist.map((h,i)=>{
-    const prev = hist[i+1];
-    let changeCell = '—';
-    if(prev && prev.cost){
-      const pct = ((h.cost - prev.cost) / prev.cost) * 100;
+  const rows = hist.map(h=>{
+    let pctCell = '—';
+    if(h.increasePct!=null && !isNaN(h.increasePct)){
+      const pct = h.increasePct;
       const dir = pct>0 ? '▲' : (pct<0 ? '▼' : '—');
       const color = pct>0 ? '#B91C1C' : (pct<0 ? '#15803D' : 'var(--ink-soft)');
-      changeCell = '<span style="color:'+color+';">'+dir+' '+Math.abs(Math.round(pct*10)/10)+'%</span>';
+      pctCell = '<span style="color:'+color+';">'+dir+' '+Math.abs(Math.round(pct*10)/10)+'%</span>';
     }
-    return '<tr><td>'+esc(fmtDate(h.date))+'</td><td class="num">'+fmtPrice(h.cost)+'</td><td class="num">'+changeCell+'</td></tr>';
+    return '<tr><td>'+esc(fmtDate(h.date))+'</td><td class="item-code">'+esc(h.docNum||'—')+'</td>'
+      + '<td>'+esc(h.vendor||'—')+'</td><td>'+esc(h.batch||'—')+'</td><td class="num">'+fmtNum(h.qty)+'</td>'
+      + '<td class="num">'+(isNaN(h.basePrice)?'—':fmtPrice(h.basePrice))+'</td>'
+      + '<td class="num">'+fmtPrice(h.cost)+'</td><td class="num">'+pctCell+'</td></tr>';
   }).join('');
-  renderDrilldown(sourceEl, code+'|cost', 'آخر تكلفة فعلية (Landed Cost) — '+r.name+' ('+r.code+')',
-    '<table class="minitbl"><thead><tr><th>التاريخ</th><th>الكلفة الفعلية</th><th>التغيّر عن السابق</th></tr></thead><tbody>'
-    + (rows || '<tr><td colspan="3" style="text-align:center;color:var(--ink-soft);padding:14px;">لا يوجد تكلفة فعلية مسجَّلة لهالصنف — تأكد إنك لصقت كويري رقم 8 (OINM)</td></tr>')
+  renderDrilldown(sourceEl, code+'|cost', 'آخر مستندات اللاندد كوست — '+r.name+' ('+r.code+')',
+    '<table class="minitbl"><thead><tr><th>التاريخ</th><th>رقم اللاندد كوست</th><th>المورد</th><th>الباتش</th><th>الكمية</th><th>سعر المنشأ</th><th>الكلفة النهائية</th><th>نسبة الزيادة</th></tr></thead><tbody>'
+    + (rows || '<tr><td colspan="8" style="text-align:center;color:var(--ink-soft);padding:14px;">لا يوجد لاندد كوست مسجَّل لهالصنف — تأكد إنك لصقت كويري رقم 8</td></tr>')
     + '</tbody></table>');
 }
 /* ================= تبويب الموردون ================= */
@@ -2161,7 +2317,7 @@ async function pullStateFromCloud(){
       fetchAllRows('procurement_po', 'item_code,qty,arrival_date,supplier'),
       fetchAllRows('procurement_suppliers', 'supplier_key,relationship_type,note,display_name'),
       fetchAllRows('procurement_customers', 'customer_key,name'),
-      fetchAllRows('procurement_item_cost', 'item_code,cost_date,cost'),
+      fetchAllRows('procurement_item_cost', 'item_code,cost_date,cost,doc_num,vendor,warehouse,batch,qty,currency,base_price,increase_pct,landed_cost_amount'),
     ]);
     if(items.length){ state.itemsRaw = {}; items.forEach(r=>{ state.itemsRaw[r.item_code] = {code:r.item_code, name:r.name}; }); }
     if(params.length){
@@ -2179,7 +2335,7 @@ async function pullStateFromCloud(){
     if(poOrders.length) state.poOrdersRaw = poOrders.map(r=>({code:r.item_code, supplier:r.supplier||'', orderDate:r.order_date, qty:r.qty}));
     if(ap.length) state.apInvoiceRaw = ap.map(r=>({code:r.item_code, supplier:r.supplier, docEntry:r.doc_entry, qty:r.qty, date:r.recv_date||'', price: r.price??NaN}));
     if(po.length) state.poRaw = po.map(r=>({code:r.item_code, qty:r.qty, arrivalDate:r.arrival_date, supplier:r.supplier||''}));
-    if(actualCost.length) state.actualCostRaw = actualCost.map(r=>({code:r.item_code, date:r.cost_date, cost:r.cost}));
+    if(actualCost.length) state.actualCostRaw = actualCost.map(r=>({code:r.item_code, date:r.cost_date, cost:r.cost, docNum:r.doc_num||'', vendor:r.vendor||'', warehouse:r.warehouse||'', batch:r.batch||'', qty:r.qty??NaN, currency:r.currency||'', basePrice:r.base_price??NaN, increasePct:r.increase_pct??NaN, landedCostAmount:r.landed_cost_amount??NaN}));
     if(supSettings.length){
       state.supplierSettings = {};
       supSettings.forEach(r=>{ state.supplierSettings[r.supplier_key] = {relationshipType:r.relationship_type||'normal', note:r.note||'', displayName:r.display_name||''}; });
@@ -2232,7 +2388,7 @@ async function pushStateToCloud(datasets){
   await safeSave('leadtime', ()=> replaceLogTable('procurement_po_orders', state.poOrdersRaw.map(r=>({item_code:r.code, supplier:r.supplier||null, order_date:normDateForDb(r.orderDate), qty: isNaN(r.qty)?null:r.qty}))));
   await safeSave('apinvoice', ()=> replaceLogTable('procurement_ap_invoices', state.apInvoiceRaw.map(r=>({item_code:r.code, supplier:r.supplier, doc_entry:String(r.docEntry), qty:r.qty, recv_date:normDateForDb(r.date), price: isNaN(r.price)?null:r.price}))));
   await safeSave('po', ()=> replaceLogTable('procurement_po', state.poRaw.map(r=>({item_code:r.code, qty:r.qty, arrival_date:normDateForDb(r.arrivalDate), supplier:r.supplier||null}))));
-  await safeSave('actualcost', ()=> replaceLogTable('procurement_item_cost', state.actualCostRaw.map(r=>({item_code:r.code, cost_date:normDateForDb(r.date), cost:r.cost}))));
+  await safeSave('actualcost', ()=> replaceLogTable('procurement_item_cost', state.actualCostRaw.map(r=>({item_code:r.code, cost_date:normDateForDb(r.date), cost:r.cost, doc_num:r.docNum||null, vendor:r.vendor||null, warehouse:r.warehouse||null, batch:r.batch||null, qty: isNaN(r.qty)?null:r.qty, currency:r.currency||null, base_price: isNaN(r.basePrice)?null:r.basePrice, increase_pct: isNaN(r.increasePct)?null:r.increasePct, landed_cost_amount: isNaN(r.landedCostAmount)?null:r.landedCostAmount}))));
   await safeSave('suppliers', async ()=>{
     const rows = Object.keys(state.supplierSettings).map(k=>({supplier_key:k, relationship_type: state.supplierSettings[k].relationshipType||'normal', note: state.supplierSettings[k].note||null, display_name: state.supplierSettings[k].displayName||null}));
     if(rows.length) await upsertChunked('procurement_suppliers', rows, 'supplier_key');
