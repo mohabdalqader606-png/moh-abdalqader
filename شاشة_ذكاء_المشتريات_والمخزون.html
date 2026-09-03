@@ -21,14 +21,17 @@
      alter table procurement_sales add column if not exists amount numeric;
      create index if not exists procurement_sales_item_idx on procurement_sales(item_code);
      create table if not exists procurement_inventory (
-       id bigserial primary key, item_code text, whs text, on_hand numeric, on_order numeric
+       id bigserial primary key, item_code text, whs text, whs_name text, on_hand numeric, on_order numeric
      );
+     alter table procurement_inventory add column if not exists whs_name text;
      create table if not exists procurement_leadtime (
        id bigserial primary key, item_code text, order_date date, recv_date date
      );
      create table if not exists procurement_ap_invoices (
        id bigserial primary key, item_code text, supplier text, doc_entry text, qty numeric
      );
+     -- ترقية جدول قديم أُنشئ قبل إضافة تاريخ الاستلام (آمن التكرار):
+     alter table procurement_ap_invoices add column if not exists recv_date date;
      create table if not exists procurement_po (
        id bigserial primary key, item_code text, qty numeric, arrival_date date, supplier text
      );
@@ -156,6 +159,14 @@
   #reportTable th{background:#EEF2F8; color:var(--navy); text-align:right; padding:6px 8px; font-weight:700; font-size:10px; white-space:nowrap; border-bottom:1.5px solid var(--line);}
   #reportTable td{padding:5px 8px; border-bottom:1px solid var(--line); white-space:nowrap;}
   #reportTable tbody tr:hover{background:#FAFBFD;}
+  #reportTable .freeze{position:sticky; z-index:2; box-shadow:1px 0 0 var(--line);}
+  #reportTable th.freeze{z-index:3; background:#EEF2F8;}
+  #reportTable td.freeze{background:#fff;}
+  #reportTable tbody tr:hover td.freeze{background:#FAFBFD;}
+  #reportTable .freeze-1{right:0; width:170px; min-width:170px; max-width:170px; white-space:normal;}
+  #reportTable .freeze-2{right:170px; width:120px; min-width:120px; max-width:120px; white-space:normal;}
+  #reportTable .freeze-3{right:290px; width:95px; min-width:95px;}
+  #reportTable .freeze-4{right:385px; width:80px; min-width:80px; box-shadow:2px 0 3px -1px rgba(21,42,74,.15);}
   .minitbl{width:100%; border-collapse:collapse; font-size:11.5px;}
   .minitbl th{background:#EEF2F8; color:var(--navy); text-align:right; padding:6px 8px; font-weight:700; font-size:10.5px; border-bottom:1.5px solid var(--line);}
   .minitbl td{padding:5px 8px; border-bottom:1px solid var(--line);}
@@ -279,12 +290,12 @@ ORDER BY T1."ItemCode", T0."DocDate"</code>
       <details class="opt" open>
         <summary><span class="num-badge">3</span> كويري المخزون الحالي (إلزامي)</summary>
         <div class="hint">
-          الرصيد الحالي إلزامي. الوارد/تحت الطلب اختياري (لولا وجوده، يُفترض صفر).
-          <code class="block">SELECT "ItemCode" AS "رمز الصنف", "WhsCode" AS "المستودع",
-       "OnHand" AS "الرصيد الحالي", "OnOrder" AS "تحت الطلب"
-FROM OITW</code>
+          الرصيد الحالي إلزامي. الوارد/تحت الطلب واسم المستودع اختياريان (بدون اسم المستودع، بيتعرض رمزه بس بتفصيل الرصيد).
+          <code class="block">SELECT T0."ItemCode" AS "رمز الصنف", T0."WhsCode" AS "المستودع", T1."WhsName" AS "اسم المستودع",
+       T0."OnHand" AS "الرصيد الحالي", T0."OnOrder" AS "تحت الطلب"
+FROM OITW T0 LEFT JOIN OWHS T1 ON T0."WhsCode"=T1."WhsCode"</code>
         </div>
-        <textarea id="pasteInventory" placeholder="الصق هنا: رمز الصنف / المستودع(اختياري) / الرصيد الحالي / تحت الطلب(اختياري) ..."></textarea>
+        <textarea id="pasteInventory" placeholder="الصق هنا: رمز الصنف / المستودع(اختياري) / اسم المستودع(اختياري) / الرصيد الحالي / تحت الطلب(اختياري) ..."></textarea>
       </details>
 
       <details class="opt">
@@ -414,8 +425,14 @@ WHERE T0."DocStatus"='O' AND T1."LineStatus"='O'</code>
         <button data-m="both" onclick="setReportMode('both')">كميات ومبالغ</button>
       </div>
       <input type="text" class="search" id="reportSearchBox" placeholder="بحث برمز/اسم الصنف..." oninput="reportPageNum=0; renderReport()">
+      <label style="font-size:11.5px; color:var(--ink-soft); display:flex; align-items:center; gap:5px;">من
+        <select id="reportFromMonth" onchange="reportPageNum=0; renderReport()"></select>
+      </label>
+      <label style="font-size:11.5px; color:var(--ink-soft); display:flex; align-items:center; gap:5px;">إلى
+        <select id="reportToMonth" onchange="reportPageNum=0; renderReport()"></select>
+      </label>
       <div class="spacer"></div>
-      <span style="font-size:11px;color:var(--ink-soft);">الترتيب: الأكبر للأصغر حسب إجمالي السنة</span>
+      <span style="font-size:11px;color:var(--ink-soft);">الترتيب: الأكبر للأصغر حسب إجمالي المدى المختار</span>
     </div>
     <div style="overflow-x:auto; padding:0 24px;">
       <table id="reportTable"><thead id="reportThead"></thead><tbody id="reportTbody"></tbody></table>
@@ -448,6 +465,7 @@ let state = {
   itemsRaw:{}, salesRaw:[], invRaw:[], leadTimeRaw:[], apInvoiceRaw:[], poRaw:[],
   params:{}, // itemCode -> {supplier, leadTimeDays, moq, orderMultiple, shelfLifeDays, minRemainShelfLife, unitCost, serviceLevel, criticality}
   supplierSettings:{}, // supplierKey(normalized) -> {relationshipType:'normal'|'contract'|'target', note}
+  warehouseNames:{}, // whsCode -> whsName
   computed:[], demandWindowDays:90
 };
 let curFilter='all';
@@ -474,11 +492,13 @@ function scheduleCloudSave(datasets){
 /* ================= أدوات تحليل النص الملصوق ================= */
 function splitPasted(text){
   const lines = text.split(/\r?\n/).filter(l=>l.trim()!=='');
-  if(!lines.length) return {headers:[], rows:[]};
+  if(!lines.length) return {headers:[], rows:[], raggedCount:0};
   const delim = lines[0].includes('\t') ? '\t' : ',';
   const headers = lines[0].split(delim).map(h=>h.replace(/^"|"$/g,'').trim());
   const rows = lines.slice(1).map(l=>l.split(delim).map(c=>c.replace(/^"|"$/g,'').trim()));
-  return {headers, rows};
+  // صف بعدد أعمدة مختلف عن رأس الجدول = مؤشر لصق مقصوص/مدمج غلط — يزيح كل القيم عمود عن مكانه
+  const raggedCount = rows.filter(r=>r.length!==headers.length).length;
+  return {headers, rows, raggedCount};
 }
 function colIndex(headers, names){
   for(const n of names){ const i = headers.findIndex(h=>h===n); if(i>=0) return i; }
@@ -510,11 +530,13 @@ function processAllData(){
 function processAllDataHeavy(){
   const msg = document.getElementById('dataStatusMsg');
   state.demandWindowDays = toNum(document.getElementById('demandWindowDays').value) || 90;
+  const raggedNotes = [];
 
   // 1) الأصناف
   const itemsTxt = document.getElementById('pasteItems').value;
   if(itemsTxt.trim()){
-    const {headers, rows} = splitPasted(itemsTxt);
+    const {headers, rows, raggedCount} = splitPasted(itemsTxt);
+    if(raggedCount) raggedNotes.push('الأصناف ('+raggedCount+' سطر)');
     const iCode = colIndex(headers, ['رمز الصنف','ItemCode']);
     const iName = colIndex(headers, ['اسم الصنف','ItemName']);
     if(iCode<0){ msg.textContent='تعذر إيجاد عمود "رمز الصنف" بكويري الأصناف'; msg.className='status-msg err'; return; }
@@ -528,7 +550,8 @@ function processAllDataHeavy(){
   // 2) المبيعات
   const salesTxt = document.getElementById('pasteSales').value;
   if(salesTxt.trim()){
-    const {headers, rows} = splitPasted(salesTxt);
+    const {headers, rows, raggedCount} = splitPasted(salesTxt);
+    if(raggedCount) raggedNotes.push('المبيعات ('+raggedCount+' سطر)');
     const iCode = colIndex(headers, ['رمز الصنف','ItemCode']);
     const iDate = colIndex(headers, ['التاريخ','DocDate']);
     const iQty = colIndex(headers, ['الكمية','Quantity']);
@@ -545,21 +568,25 @@ function processAllDataHeavy(){
   // 3) المخزون الحالي
   const invTxt = document.getElementById('pasteInventory').value;
   if(invTxt.trim()){
-    const {headers, rows} = splitPasted(invTxt);
+    const {headers, rows, raggedCount} = splitPasted(invTxt);
+    if(raggedCount) raggedNotes.push('المخزون ('+raggedCount+' سطر)');
     const iCode = colIndex(headers, ['رمز الصنف','ItemCode']);
     const iOnHand = colIndex(headers, ['الرصيد الحالي','OnHand']);
     const iOnOrder = colIndex(headers, ['تحت الطلب','الوارد','OnOrder']);
     const iWhs = colIndex(headers, ['المستودع','WhsCode']);
+    const iWhsName = colIndex(headers, ['اسم المستودع','WhsName']);
     if(iCode<0 || iOnHand<0){ msg.textContent='تعذر إيجاد أعمدة كويري المخزون (رمز الصنف/الرصيد الحالي)'; msg.className='status-msg err'; return; }
     state.invRaw = rows.map(r=>({
-      code:r[iCode], onHand:toNum(r[iOnHand])||0, onOrder: iOnOrder>=0 ? (toNum(r[iOnOrder])||0) : 0, whs: iWhs>=0 ? r[iWhs] : ''
+      code:r[iCode], onHand:toNum(r[iOnHand])||0, onOrder: iOnOrder>=0 ? (toNum(r[iOnOrder])||0) : 0,
+      whs: iWhs>=0 ? r[iWhs] : '', whsName: iWhsName>=0 ? r[iWhsName] : ''
     })).filter(r=>r.code);
   }
 
   // 4) مدة التوريد الفعلية (اختياري)
   const ltTxt = document.getElementById('pasteLeadTime').value;
   if(ltTxt.trim()){
-    const {headers, rows} = splitPasted(ltTxt);
+    const {headers, rows, raggedCount} = splitPasted(ltTxt);
+    if(raggedCount) raggedNotes.push('مدة التوريد ('+raggedCount+' سطر)');
     const iCode = colIndex(headers, ['رمز الصنف','ItemCode']);
     const iOrder = colIndex(headers, ['تاريخ الطلب']);
     const iRecv = colIndex(headers, ['تاريخ الاستلام']);
@@ -572,7 +599,8 @@ function processAllDataHeavy(){
   let paramsUpdatedCount = 0;
   const paramsTxt = document.getElementById('pasteParams').value;
   if(paramsTxt.trim()){
-    const {headers, rows} = splitPasted(paramsTxt);
+    const {headers, rows, raggedCount} = splitPasted(paramsTxt);
+    if(raggedCount) raggedNotes.push('بارامترات الشراء ('+raggedCount+' سطر)');
     const iCode = colIndex(headers, ['رمز الصنف','ItemCode']);
     if(iCode>=0){
       const iSupplier = colIndex(headers, ['المورد','CardCode','Supplier']);
@@ -606,23 +634,26 @@ function processAllDataHeavy(){
     }
   }
 
-  // 6) تاريخ استلام البضاعة GRPO (اختياري — لتحليل حمولة الشحنة المعتادة لكل مورد)
+  // 6) تاريخ استلام البضاعة GRPO (اختياري — لتحليل حمولة الشحنة المعتادة لكل مورد + آخر استلام)
   const apTxt = document.getElementById('pasteApInvoices').value;
   if(apTxt.trim()){
-    const {headers, rows} = splitPasted(apTxt);
+    const {headers, rows, raggedCount} = splitPasted(apTxt);
+    if(raggedCount) raggedNotes.push('استلام البضاعة ('+raggedCount+' سطر)');
     const iCode = colIndex(headers, ['رمز الصنف','ItemCode']);
     const iSupplier = colIndex(headers, ['المورد','CardCode']);
     const iDoc = colIndex(headers, ['رقم الفاتورة','DocEntry','DocNum']);
     const iQty = colIndex(headers, ['الكمية','Quantity']);
+    const iDate = colIndex(headers, ['تاريخ الفاتورة','تاريخ الاستلام','DocDate']);
     if(iCode>=0 && iSupplier>=0 && iDoc>=0 && iQty>=0){
-      state.apInvoiceRaw = rows.map(r=>({code:r[iCode], supplier:r[iSupplier], docEntry:r[iDoc], qty:toNum(r[iQty])})).filter(r=>r.code && r.supplier && r.docEntry);
+      state.apInvoiceRaw = rows.map(r=>({code:r[iCode], supplier:r[iSupplier], docEntry:r[iDoc], qty:toNum(r[iQty]), date: iDate>=0?r[iDate]:''})).filter(r=>r.code && r.supplier && r.docEntry);
     }
   }
 
   // 7) طلبات الشراء المفتوحة (اختياري — بضاعة بالطريق بتاريخ وصول)
   const poTxt = document.getElementById('pastePO').value;
   if(poTxt.trim()){
-    const {headers, rows} = splitPasted(poTxt);
+    const {headers, rows, raggedCount} = splitPasted(poTxt);
+    if(raggedCount) raggedNotes.push('طلبات الشراء المفتوحة ('+raggedCount+' سطر)');
     const iCode = colIndex(headers, ['رمز الصنف','ItemCode']);
     const iQty = colIndex(headers, ['الكمية','OpenQty','Quantity']);
     const iArr = colIndex(headers, ['تاريخ الوصول المتوقع','ShipDate']);
@@ -639,8 +670,9 @@ function processAllDataHeavy(){
   runEngine();
   document.getElementById('paramsPanel').style.display='block';
   msg.textContent = '✔ تم التحليل — ' + Object.keys(state.itemsRaw).length + ' صنف'
-    + (paramsUpdatedCount ? (' · تحديث بارامترات ' + paramsUpdatedCount + ' صنف من الكويري') : '');
-  msg.className='status-msg ok';
+    + (paramsUpdatedCount ? (' · تحديث بارامترات ' + paramsUpdatedCount + ' صنف من الكويري') : '')
+    + (raggedNotes.length ? (' · ⚠ سطور غير متطابقة الأعمدة (تحقق من المحاذاة): ' + raggedNotes.join('، ')) : '');
+  msg.className='status-msg ' + (raggedNotes.length ? 'err' : 'ok');
   switchTab('tower');
   const changedDatasets = ['items','params'];
   if(itemsTxt.trim()) changedDatasets.push('items');
@@ -886,11 +918,21 @@ function runEngine(){
   const windowDays = state.demandWindowDays || 90;
   const windowStart = new Date(now.getTime() - windowDays*86400000);
 
-  // آخر 12 شهر (لتقرير الأصناف) — مستقل عن نافذة تحليل الطلب أعلاه
-  state.reportMonthKeys = [];
-  state.reportMonthLabel = {};
-  { const base = new Date(now.getFullYear(), now.getMonth(), 1);
-    for(let i=11;i>=0;i--){ const m=new Date(base.getFullYear(), base.getMonth()-i, 1); const k=m.getFullYear()+'-'+String(m.getMonth()+1).padStart(2,'0'); state.reportMonthKeys.push(k); state.reportMonthLabel[k]=ARABIC_MONTHS[m.getMonth()]+' '+m.getFullYear(); }
+  // كل الأشهر المتوفرة فعلياً ببيانات المبيعات (كامل المدى، لا آخر سنة بس) — لتقرير
+  // الأصناف، مستقل عن نافذة تحليل الطلب أعلاه. المستخدم يختار أي مدى شهر-لشهر منها بالتقرير.
+  state.allMonthKeys = [];
+  state.allMonthLabel = {};
+  { let minD=null, maxD=null;
+    state.salesRaw.forEach(r=>{ const d=parseDateFlexible(r.date); if(!d) return; if(!minD||d<minD) minD=d; if(!maxD||d>maxD) maxD=d; });
+    if(minD && maxD){
+      let cur = new Date(minD.getFullYear(), minD.getMonth(), 1);
+      const end = new Date(maxD.getFullYear(), maxD.getMonth(), 1);
+      while(cur<=end){
+        const k = cur.getFullYear()+'-'+String(cur.getMonth()+1).padStart(2,'0');
+        state.allMonthKeys.push(k); state.allMonthLabel[k]=ARABIC_MONTHS[cur.getMonth()]+' '+cur.getFullYear();
+        cur = new Date(cur.getFullYear(), cur.getMonth()+1, 1);
+      }
+    }
   }
   // شحنات الشراء المفتوحة القادمة، مجمَّعة لكل صنف ومرتَّبة بتاريخ الوصول
   const poByItem = {};
@@ -917,7 +959,6 @@ function runEngine(){
   state.salesRaw.forEach(r=>{
     const d = parseDateFlexible(r.date); if(!d) return;
     const mk = dateKey(d).slice(0,7);
-    if(state.reportMonthKeys.indexOf(mk)<0) return;
     (allSalesByItem[r.code] = allSalesByItem[r.code] || []).push({monthKey:mk, qty:r.qty, amount:r.amount});
   });
 
@@ -929,13 +970,15 @@ function runEngine(){
     (salesByItem[r.code] = salesByItem[r.code] || []).push({date:d, qty:r.qty});
   });
 
-  // تجميع المخزون لكل صنف (قد يكون بأكثر من مستودع)
+  // تجميع المخزون لكل صنف (قد يكون بأكثر من مستودع) + خريطة أسماء المستودعات
   const invByItem = {};
+  state.warehouseNames = state.warehouseNames || {};
   state.invRaw.forEach(r=>{
     const cur = invByItem[r.code] || {onHand:0, onOrder:0, warehouses:[]};
     cur.onHand += r.onHand||0; cur.onOrder += r.onOrder||0;
     cur.warehouses.push({whs:r.whs||'-', onHand:r.onHand||0});
     invByItem[r.code] = cur;
+    if(r.whs && r.whsName) state.warehouseNames[r.whs] = r.whsName;
   });
 
   // Lead Time الفعلي لكل صنف (إن وُجد)
@@ -945,6 +988,14 @@ function runEngine(){
     if(!od || !rd) return;
     const d = daysBetween(od, rd); if(d<=0 || d>365) return;
     (ltByItem[r.code] = ltByItem[r.code] || []).push(d);
+  });
+
+  // آخر استلام فعلي لكل صنف (من بيانات استلام البضاعة GRPO)
+  const lastReceiptByItem = {};
+  state.apInvoiceRaw.forEach(r=>{
+    const d = parseDateFlexible(r.date); if(!d) return;
+    const cur = lastReceiptByItem[r.code];
+    if(!cur || d > cur.date) lastReceiptByItem[r.code] = {date:d, qty:r.qty, supplier:r.supplier};
   });
 
   const salesValueByItem = {}; // لتصنيف ABC
@@ -1066,15 +1117,16 @@ function runEngine(){
       priorityScore = Math.round(0.45*stockoutRiskScore + 0.25*valueScore + 0.30*criticalityScore);
     }
 
-    // تجميع شهري لآخر 12 شهر (لتقرير الأصناف — القسم الجديد)
+    // تجميع شهري لكامل المدى المتوفر (لتقرير الأصناف) — المستخدم يختار مدى العرض بالتقرير نفسه
     const monthly = {};
-    state.reportMonthKeys.forEach(k=>monthly[k]={qty:0, value:0, hasValue:false});
+    state.allMonthKeys.forEach(k=>monthly[k]={qty:0, value:0, hasValue:false});
     (allSalesByItem[code]||[]).forEach(x=>{
+      if(!monthly[x.monthKey]) return;
       monthly[x.monthKey].qty += x.qty||0;
       if(!isNaN(x.amount)){ monthly[x.monthKey].value += x.amount; monthly[x.monthKey].hasValue = true; }
     });
-    const totalYearQty = state.reportMonthKeys.reduce((a,k)=>a+monthly[k].qty,0);
-    const totalYearValue = state.reportMonthKeys.reduce((a,k)=>a+monthly[k].value,0);
+
+    const lastReceipt = lastReceiptByItem[code] || null;
 
     // Confidence
     let confidence = 100 - missing.length*30;
@@ -1099,9 +1151,9 @@ function runEngine(){
       priorityScore, confidence,
       unitCost: toNum(p.unitCost)||0, criticality: p.criticality||'Medium',
       moq: toNum(p.moq), orderMultiple: toNum(p.orderMultiple)||1, shelfLifeDays: toNum(p.shelfLifeDays),
-      monthly, totalYearQty, totalYearValue,
-      avgMonthlyQty: Math.round((totalYearQty/12)*100)/100,
-      avgMonthlyValue: Math.round((totalYearValue/12)*100)/100
+      lastReceiptDate: lastReceipt ? lastReceipt.date : null,
+      lastReceiptQty: lastReceipt ? lastReceipt.qty : null,
+      monthly
     };
   });
 
@@ -1257,6 +1309,17 @@ function cellHtml(qty, value){
   return fmtNum(qty)+'<br><span style="font-size:9px;color:var(--ink-soft)">'+fmtMoney(value)+'</span>';
 }
 function findReportItem(code){ return state.computed.find(x=>x.code===code); }
+function populateReportMonthSelectors(){
+  const all = state.allMonthKeys || [];
+  const fromSel = document.getElementById('reportFromMonth'), toSel = document.getElementById('reportToMonth');
+  const prevFrom = fromSel.value, prevTo = toSel.value;
+  const opts = all.map((k,i)=>'<option value="'+i+'">'+esc(state.allMonthLabel[k])+'</option>').join('');
+  fromSel.innerHTML = opts; toSel.innerHTML = opts;
+  if(!all.length) return;
+  const defaultFrom = Math.max(0, all.length-12), defaultTo = all.length-1;
+  fromSel.value = (prevFrom!=='' && +prevFrom < all.length) ? prevFrom : defaultFrom;
+  toSel.value = (prevTo!=='' && +prevTo < all.length) ? prevTo : defaultTo;
+}
 function renderReport(){
   const thead = document.getElementById('reportThead');
   const tbody = document.getElementById('reportTbody');
@@ -1266,31 +1329,57 @@ function renderReport(){
     document.getElementById('reportPager').innerHTML = '';
     return;
   }
-  const hasAnyValue = state.computed.some(r=>r.totalYearValue>0);
+  if(document.getElementById('reportFromMonth').options.length !== (state.allMonthKeys||[]).length) populateReportMonthSelectors();
+  let fromIdx = parseInt(document.getElementById('reportFromMonth').value,10)||0;
+  let toIdx = parseInt(document.getElementById('reportToMonth').value,10)||0;
+  if(fromIdx>toIdx){ const t=fromIdx; fromIdx=toIdx; toIdx=t; }
+  const months = (state.allMonthKeys||[]).slice(fromIdx, toIdx+1);
+  const rangeLen = months.length || 1;
+
+  function rangeTotal(r){
+    let qty=0, value=0;
+    months.forEach(k=>{ const m=r.monthly[k]; if(m){ qty+=m.qty; value+=m.value; } });
+    return {qty, value, avgQty: Math.round((qty/rangeLen)*100)/100, avgValue: Math.round((value/rangeLen)*100)/100};
+  }
+
   const q = (document.getElementById('reportSearchBox').value||'').trim().toLowerCase();
   let list = state.computed;
   if(q) list = list.filter(r=> r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
+  const totals = new Map();
+  list.forEach(r=>totals.set(r.code, rangeTotal(r)));
+  const hasAnyValue = list.some(r=>totals.get(r.code).value>0);
   const sortByValue = (reportMode!=='qty') && hasAnyValue;
-  list = list.slice().sort((a,b)=> sortByValue ? (b.totalYearValue-a.totalYearValue) : (b.totalYearQty-a.totalYearQty));
+  list = list.slice().sort((a,b)=> sortByValue ? (totals.get(b.code).value-totals.get(a.code).value) : (totals.get(b.code).qty-totals.get(a.code).qty));
 
   const pageCount = Math.max(1, Math.ceil(list.length/PAGE_SIZE));
   if(reportPageNum>=pageCount) reportPageNum = pageCount-1;
   const pageList = list.slice(reportPageNum*PAGE_SIZE, reportPageNum*PAGE_SIZE+PAGE_SIZE);
   renderPager('reportPager', list.length, reportPageNum, pageCount, (p)=>{ reportPageNum=p; renderReport(); });
 
-  const months = state.reportMonthKeys || [];
-  thead.innerHTML = '<tr><th>الصنف</th><th>الرصيد الحالي</th>'
-    + months.map(k=>'<th>'+esc(state.reportMonthLabel[k])+'</th>').join('')
-    + '<th>المتوسط الشهري</th></tr>';
+  thead.innerHTML = '<tr>'
+    + '<th class="freeze freeze-1">الصنف</th>'
+    + '<th class="freeze freeze-2">المورد</th>'
+    + '<th class="freeze freeze-3">تاريخ آخر استلام</th>'
+    + '<th class="freeze freeze-4">كمية آخر استلام</th>'
+    + '<th>الرصيد الحالي</th>'
+    + months.map(k=>'<th>'+esc(state.allMonthLabel[k])+'</th>').join('')
+    + '<th>متوسط المدى المختار</th></tr>';
 
   if(!pageList.length){ tbody.innerHTML = '<tr><td class="empty-state"><div class="ic">📊</div>لا توجد أصناف مطابقة للبحث.</td></tr>'; return; }
   tbody.innerHTML = pageList.map(r=>{
     const balVal = r.onHand * r.unitCost;
+    const t = totals.get(r.code);
+    const supDisplay = (state.itemSupplierDisplay && state.itemSupplierDisplay[r.code]) || r.supplier || '—';
+    const lastRecvDate = r.lastReceiptDate ? fmtDate(r.lastReceiptDate) : '—';
+    const lastRecvQty = r.lastReceiptQty!=null ? fmtNum(r.lastReceiptQty) : '—';
     return '<tr>'
-      + '<td><b>'+esc(r.name)+'</b><br><span class="item-code">'+esc(r.code)+'</span></td>'
+      + '<td class="freeze freeze-1"><b>'+esc(r.name)+'</b><br><span class="item-code">'+esc(r.code)+'</span></td>'
+      + '<td class="freeze freeze-2">'+esc(supDisplay)+'</td>'
+      + '<td class="freeze freeze-3">'+esc(lastRecvDate)+'</td>'
+      + '<td class="num freeze freeze-4">'+esc(lastRecvQty)+'</td>'
       + '<td class="num" style="cursor:pointer;color:var(--navy);text-decoration:underline;" onclick="showBalanceDrilldown(\''+r.code+'\')">'+cellHtml(r.onHand, balVal)+'</td>'
       + months.map(k=>'<td class="num" style="cursor:pointer;color:var(--navy);text-decoration:underline;" onclick="showMonthDrilldown(\''+r.code+'\',\''+k+'\')">'+cellHtml(r.monthly[k].qty, r.monthly[k].value)+'</td>').join('')
-      + '<td class="num">'+cellHtml(r.avgMonthlyQty, r.avgMonthlyValue)+'</td>'
+      + '<td class="num">'+cellHtml(t.avgQty, t.avgValue)+'</td>'
     + '</tr>';
   }).join('');
 }
@@ -1306,7 +1395,7 @@ function renderDrilldown(title, bodyHtml){
 function showBalanceDrilldown(code){
   const r = findReportItem(code); if(!r) return;
   const list = (r.warehouses||[]).slice().sort((a,b)=>b.onHand-a.onHand);
-  const rows = list.map(w=>'<tr><td>'+esc(w.whs||'-')+'</td><td class="num">'+fmtNum(w.onHand)+'</td><td class="num">'+fmtMoney(w.onHand*r.unitCost)+'</td></tr>').join('');
+  const rows = list.map(w=>'<tr><td>'+esc((state.warehouseNames&&state.warehouseNames[w.whs]) || w.whs || '-')+'</td><td class="num">'+fmtNum(w.onHand)+'</td><td class="num">'+fmtMoney(w.onHand*r.unitCost)+'</td></tr>').join('');
   renderDrilldown('الرصيد الحالي — '+r.name+' ('+r.code+')',
     '<table class="minitbl"><thead><tr><th>المستودع</th><th>الكمية</th><th>القيمة</th></tr></thead><tbody>'
     + (rows || '<tr><td colspan="3" style="text-align:center;color:var(--ink-soft);padding:14px;">لا يوجد تفصيل مستودعات لهالصنف</td></tr>')
@@ -1367,7 +1456,7 @@ function showMonthDrilldown(code, monthKey){
   const sortByValue = reportMode!=='qty' && list.some(x=>x.value>0);
   list.sort((a,b)=> sortByValue ? b.value-a.value : b.qty-a.qty);
   const rows = list.map(x=>'<tr><td>'+esc(x.customer)+'</td><td class="num">'+fmtNum(x.qty)+'</td><td class="num">'+fmtMoney(x.value)+'</td></tr>').join('');
-  renderDrilldown('مبيعات '+(state.reportMonthLabel[monthKey]||monthKey)+' — '+r.name+' ('+r.code+')',
+  renderDrilldown('مبيعات '+(state.allMonthLabel[monthKey]||monthKey)+' — '+r.name+' ('+r.code+')',
     '<table class="minitbl"><thead><tr><th>العميل</th><th>الكمية</th><th>المبلغ</th></tr></thead><tbody>'
     + (rows || '<tr><td colspan="3" style="text-align:center;color:var(--ink-soft);padding:14px;">لا يوجد تفصيل عملاء — تأكد من لصق عمود العميل بكويري المبيعات</td></tr>')
     + '</tbody></table>');
@@ -1495,9 +1584,9 @@ async function pullStateFromCloud(){
       fetchAllRows('procurement_items', 'item_code,name'),
       fetchAllRows('procurement_params', '*'),
       fetchAllRows('procurement_sales', 'item_code,sale_date,qty,whs,customer,amount'),
-      fetchAllRows('procurement_inventory', 'item_code,whs,on_hand,on_order'),
+      fetchAllRows('procurement_inventory', 'item_code,whs,whs_name,on_hand,on_order'),
       fetchAllRows('procurement_leadtime', 'item_code,order_date,recv_date'),
-      fetchAllRows('procurement_ap_invoices', 'item_code,supplier,doc_entry,qty'),
+      fetchAllRows('procurement_ap_invoices', 'item_code,supplier,doc_entry,qty,recv_date'),
       fetchAllRows('procurement_po', 'item_code,qty,arrival_date,supplier'),
       fetchAllRows('procurement_suppliers', 'supplier_key,relationship_type,note'),
     ]);
@@ -1513,9 +1602,9 @@ async function pullStateFromCloud(){
       };});
     }
     if(sales.length) state.salesRaw = sales.map(r=>({code:r.item_code, date:r.sale_date, qty:r.qty, whs:r.whs||'', customer:r.customer||'', amount:r.amount??NaN}));
-    if(inv.length) state.invRaw = inv.map(r=>({code:r.item_code, onHand:r.on_hand||0, onOrder:r.on_order||0, whs:r.whs||''}));
+    if(inv.length) state.invRaw = inv.map(r=>({code:r.item_code, onHand:r.on_hand||0, onOrder:r.on_order||0, whs:r.whs||'', whsName:r.whs_name||''}));
     if(lt.length) state.leadTimeRaw = lt.map(r=>({code:r.item_code, orderDate:r.order_date, recvDate:r.recv_date}));
-    if(ap.length) state.apInvoiceRaw = ap.map(r=>({code:r.item_code, supplier:r.supplier, docEntry:r.doc_entry, qty:r.qty}));
+    if(ap.length) state.apInvoiceRaw = ap.map(r=>({code:r.item_code, supplier:r.supplier, docEntry:r.doc_entry, qty:r.qty, date:r.recv_date||''}));
     if(po.length) state.poRaw = po.map(r=>({code:r.item_code, qty:r.qty, arrivalDate:r.arrival_date, supplier:r.supplier||''}));
     if(supSettings.length){
       state.supplierSettings = {};
@@ -1556,13 +1645,13 @@ async function pushStateToCloud(datasets){
       await replaceLogTable('procurement_sales', state.salesRaw.map(r=>({item_code:r.code, sale_date:normDateForDb(r.date), qty:r.qty, whs:r.whs||null, customer:r.customer||null, amount: isNaN(r.amount)?null:r.amount})));
     }
     if(datasets.has('inventory')){
-      await replaceLogTable('procurement_inventory', state.invRaw.map(r=>({item_code:r.code, whs:r.whs||null, on_hand:r.onHand, on_order:r.onOrder})));
+      await replaceLogTable('procurement_inventory', state.invRaw.map(r=>({item_code:r.code, whs:r.whs||null, whs_name:r.whsName||null, on_hand:r.onHand, on_order:r.onOrder})));
     }
     if(datasets.has('leadtime')){
       await replaceLogTable('procurement_leadtime', state.leadTimeRaw.map(r=>({item_code:r.code, order_date:normDateForDb(r.orderDate), recv_date:normDateForDb(r.recvDate)})));
     }
     if(datasets.has('apinvoice')){
-      await replaceLogTable('procurement_ap_invoices', state.apInvoiceRaw.map(r=>({item_code:r.code, supplier:r.supplier, doc_entry:String(r.docEntry), qty:r.qty})));
+      await replaceLogTable('procurement_ap_invoices', state.apInvoiceRaw.map(r=>({item_code:r.code, supplier:r.supplier, doc_entry:String(r.docEntry), qty:r.qty, recv_date:normDateForDb(r.date)})));
     }
     if(datasets.has('po')){
       await replaceLogTable('procurement_po', state.poRaw.map(r=>({item_code:r.code, qty:r.qty, arrival_date:normDateForDb(r.arrivalDate), supplier:r.supplier||null})));
