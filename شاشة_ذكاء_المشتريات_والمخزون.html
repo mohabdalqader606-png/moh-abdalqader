@@ -68,6 +68,7 @@
      alter table procurement_item_cost add column if not exists increase_pct numeric;
      alter table procurement_item_cost add column if not exists landed_cost_amount numeric;
      alter table procurement_item_cost add column if not exists added_cost_per_unit numeric;
+     alter table procurement_item_cost add column if not exists rate numeric;
      alter table procurement_item_cost enable row level security;
      create policy "authenticated rw" on procurement_item_cost for all using (auth.role()='authenticated') with check (auth.role()='authenticated');
      create table if not exists procurement_po (
@@ -489,7 +490,7 @@ WHERE T0."DocStatus"='O' AND T1."LineStatus"='O'</code>
       <details class="opt">
         <summary><span class="num-badge opt">8</span> مستندات اللاندد كوست (Landed Cost) — الكلفة الفعلية النهائية لكل شحنة/باتش (اختياري)</summary>
         <div class="hint">
-          سعر كويري رقم 6 هو سعر المنشأ (سعر الفاتورة وقت الاستلام) بس — ما بيشمل الشحن والجمارك والمصاريف. هالكويري بيجيب مستندات اللاندد كوست نفسها (OIPF/IPF1) مربوطة بمستند الأساس (GRPO/فاتورة). ملاحظة مهمة: عمود "Final Unit Cost" بالكويري هو فعلياً الكلفة الإضافية للوحدة بس (شحن/جمارك/مصاريف)، مش شامل سعر المنشأ — الشاشة بتحسب الكلفة النهائية الحقيقية تلقائياً = سعر المنشأ (Base Doc. Price) + هالكلفة الإضافية، وبتحسب نسبة الزيادة الصحيحة بنفسها (تجاهلي عمود "Increase %" بالكويري لأنه طالع سالب وغلط). الفلتر بالأسفل بياخذ آخر لاندد كوست بالسلسلة بس (لو انعمل أكتر من مستند لاندد كوست متتالي لنفس السطر). عند تشغيل الكويري بـ SAP رح تُطلب منك تاريخ البداية والنهاية.
+          سعر كويري رقم 6 هو سعر المنشأ (سعر الفاتورة وقت الاستلام) بس — ما بيشمل الشحن والجمارك والمصاريف. هالكويري بيجيب مستندات اللاندد كوست نفسها (OIPF/IPF1) مربوطة بمستند الأساس (GRPO/فاتورة). ملاحظة مهمة: عمود "Final Unit Cost" بالكويري هو فعلياً الكلفة الإضافية للوحدة بس (شحن/جمارك/مصاريف)، مش شامل سعر المنشأ — الشاشة بتحسب الكلفة النهائية الحقيقية تلقائياً = سعر المنشأ (Base Doc. Price) + هالكلفة الإضافية، وبتحسب نسبة الزيادة الصحيحة بنفسها (تجاهلي عمود "Increase %" بالكويري لأنه طالع سالب وغلط). عمود "Exchange Rate" بيُستخدم لتحويل الكلفة تلقائياً للدينار (لو الكويري بعملة أجنبية زي يورو/دولار). الفلتر بالأسفل بياخذ آخر لاندد كوست بالسلسلة بس (لو انعمل أكتر من مستند لاندد كوست متتالي لنفس السطر). عند تشغيل الكويري بـ SAP رح تُطلب منك تاريخ البداية والنهاية.
           <code class="block">SELECT
 
 /* Landed Cost Header */
@@ -1038,6 +1039,7 @@ function processAllDataHeavy(){
     const iBatch = colIndex(headers, ['Batch Number']);
     const iQty = colIndex(headers, ['Quantity']);
     const iCurrency = colIndex(headers, ['Price Currency','Currency']);
+    const iRate = colIndex(headers, ['Exchange Rate']);
     const iBasePrice = colIndex(headers, ['Base Doc. Price']);
     // "Final Unit Cost" بالكويري فعلياً هي الكلفة الإضافية للوحدة بس (شحن/جمارك)، مش
     // شاملة سعر المنشأ — مؤكَّد من عينة بيانات حقيقية: بكل سطر Final Unit Cost = Additional Cost
@@ -1051,8 +1053,13 @@ function processAllDataHeavy(){
         const addedCostPerUnit = toNum(r[iAddedCost]);
         const cost = !isNaN(basePrice) ? basePrice + addedCostPerUnit : addedCostPerUnit;
         const increasePct = (!isNaN(basePrice) && basePrice!==0) ? (addedCostPerUnit/basePrice*100) : NaN;
+        const rate = iRate>=0 ? toNum(r[iRate]) : NaN;
+        // Rate بـ SAP هو سعر صرف عملة المستند مقابل العملة المحلية (دينار) — لو موجود
+        // نحوّل الكلفة للدينار، ولو مش موجود (أو الكويري أصلاً بالدينار) نعتبر الكلفة
+        // نفسها بالدينار أصلاً بدون تحويل
+        const costJod = (!isNaN(rate) && rate>0) ? cost*rate : cost;
         return {
-          code:r[iCode], date:r[iDate], cost, addedCostPerUnit,
+          code:r[iCode], date:r[iDate], cost, addedCostPerUnit, costJod, rate,
           docNum: iDocNum>=0 ? r[iDocNum] : '', vendor: iVendor>=0 ? r[iVendor] : '',
           warehouse: iWhs>=0 ? r[iWhs] : '', batch: iBatch>=0 ? r[iBatch] : '',
           qty: iQty>=0 ? toNum(r[iQty]) : NaN, currency: iCurrency>=0 ? r[iCurrency] : '',
@@ -1536,7 +1543,7 @@ function runEngine(){
   state.actualCostRaw.forEach(r=>{
     const d = parseDateFlexible(r.date); if(!d) return;
     (actualCostHistoryByItem[r.code] = actualCostHistoryByItem[r.code] || []).push({
-      date:d, cost:r.cost, addedCostPerUnit:r.addedCostPerUnit, docNum:r.docNum, vendor:r.vendor,
+      date:d, cost:r.cost, costJod:r.costJod, rate:r.rate, addedCostPerUnit:r.addedCostPerUnit, docNum:r.docNum, vendor:r.vendor,
       warehouse:r.warehouse, batch:r.batch, qty:r.qty, currency:r.currency, basePrice:r.basePrice, increasePct:r.increasePct
     });
   });
@@ -1705,6 +1712,8 @@ function runEngine(){
       prevPrice: (priceHistoryByItem[code] && priceHistoryByItem[code][1]) ? priceHistoryByItem[code][1].price : null,
       costHistory: actualCostHistoryByItem[code] || [],
       lastActualCost: (actualCostHistoryByItem[code] && actualCostHistoryByItem[code][0]) ? actualCostHistoryByItem[code][0].cost : null,
+      lastActualCostJod: (actualCostHistoryByItem[code] && actualCostHistoryByItem[code][0]) ? actualCostHistoryByItem[code][0].costJod : null,
+      lastLandedCostDocNum: (actualCostHistoryByItem[code] && actualCostHistoryByItem[code][0]) ? actualCostHistoryByItem[code][0].docNum : null,
       lastCostIncreasePct: (actualCostHistoryByItem[code] && actualCostHistoryByItem[code][0] && !isNaN(actualCostHistoryByItem[code][0].increasePct)) ? actualCostHistoryByItem[code][0].increasePct : null,
       monthly
     };
@@ -1932,6 +1941,8 @@ function renderReport(){
     if(key==='lastReceiptQty') return r.lastReceiptQty;
     if(key==='lastPrice') return r.lastPrice;
     if(key==='lastActualCost') return r.lastActualCost;
+    if(key==='lastActualCostJod') return r.lastActualCostJod;
+    if(key==='lastLandedCostDocNum') return r.lastLandedCostDocNum;
     if(key==='balance') return reportMode==='value' ? r.onHand*r.unitCost : r.onHand;
     if(key==='avg'){ const t=totals.get(r.code); return reportMode==='value' ? t.avgValue : t.avgQty; }
     if(key.indexOf('month:')===0){ const mk=key.slice(6); const m=r.monthly[mk]; if(!m) return null; return reportMode==='value' ? m.value : m.qty; }
@@ -1961,6 +1972,8 @@ function renderReport(){
     + rth('lastReceiptQty','كمية آخر استلام','freeze freeze-5')
     + rth('lastPrice','آخر سعر منشأ (الفاتورة)')
     + rth('lastActualCost','آخر كلفة نهائية (Landed Cost)')
+    + rth('lastActualCostJod','الكلفة بالدينار (JOD)')
+    + rth('lastLandedCostDocNum','رقم اللاندد كوست')
     + rth('balance','الرصيد الحالي')
     + months.map(k=>rth('month:'+k, esc(state.allMonthLabel[k]))).join('')
     + rth('avg','متوسط المدى المختار')
@@ -2008,6 +2021,8 @@ function renderReport(){
       + '<td class="num freeze freeze-5">'+esc(lastRecvQty)+'</td>'
       + priceCell
       + costCell
+      + '<td class="num">'+(r.lastActualCostJod!=null?fmtPrice(r.lastActualCostJod)+' د.أ':'—')+'</td>'
+      + '<td class="item-code">'+(r.lastLandedCostDocNum?esc(r.lastLandedCostDocNum):'—')+'</td>'
       + '<td class="num" style="cursor:pointer;color:var(--navy);text-decoration:underline;" onclick="showBalanceDrilldown(this,\''+r.code+'\')">'+cellHtml(r.onHand, balVal)+'</td>'
       + months.map(k=>'<td class="num" style="cursor:pointer;color:var(--navy);text-decoration:underline;" onclick="showMonthDrilldown(this,\''+r.code+'\',\''+k+'\')">'+cellHtml(r.monthly[k].qty, r.monthly[k].value)+'</td>').join('')
       + '<td class="num">'+cellHtml(t.avgQty, t.avgValue)+'</td>'
@@ -2098,11 +2113,13 @@ function showCostDrilldown(sourceEl, code){
       + '<td>'+esc(h.vendor||'—')+'</td><td>'+esc(h.batch||'—')+'</td><td class="num">'+fmtNum(h.qty)+'</td>'
       + '<td class="num">'+(isNaN(h.basePrice)?'—':fmtPrice(h.basePrice))+'</td>'
       + '<td class="num">'+(isNaN(h.addedCostPerUnit)?'—':fmtPrice(h.addedCostPerUnit))+'</td>'
-      + '<td class="num">'+fmtPrice(h.cost)+'</td><td class="num">'+pctCell+'</td></tr>';
+      + '<td class="num">'+fmtPrice(h.cost)+'</td>'
+      + '<td class="num">'+(h.costJod!=null?fmtPrice(h.costJod)+' د.أ':'—')+'</td>'
+      + '<td class="num">'+pctCell+'</td></tr>';
   }).join('');
   renderDrilldown(sourceEl, code+'|cost', 'آخر مستندات اللاندد كوست — '+r.name+' ('+r.code+')',
-    '<table class="minitbl"><thead><tr><th class="freeze-name">التاريخ</th><th>رقم اللاندد كوست</th><th>المورد</th><th>الباتش</th><th>الكمية</th><th>سعر المنشأ</th><th>كلفة إضافية للوحدة</th><th>الكلفة النهائية</th><th>نسبة الزيادة</th></tr></thead><tbody>'
-    + (rows || '<tr><td colspan="9" style="text-align:center;color:var(--ink-soft);padding:14px;">لا يوجد لاندد كوست مسجَّل لهالصنف — تأكد إنك لصقت كويري رقم 8</td></tr>')
+    '<table class="minitbl"><thead><tr><th class="freeze-name">التاريخ</th><th>رقم اللاندد كوست</th><th>المورد</th><th>الباتش</th><th>الكمية</th><th>سعر المنشأ</th><th>كلفة إضافية للوحدة</th><th>الكلفة النهائية</th><th>الكلفة بالدينار</th><th>نسبة الزيادة</th></tr></thead><tbody>'
+    + (rows || '<tr><td colspan="10" style="text-align:center;color:var(--ink-soft);padding:14px;">لا يوجد لاندد كوست مسجَّل لهالصنف — تأكد إنك لصقت كويري رقم 8</td></tr>')
     + '</tbody></table>');
 }
 /* ================= تبويب الموردون ================= */
@@ -2548,7 +2565,7 @@ async function pullStateFromCloud(){
       fetchSafe('procurement_po', 'item_code,qty,arrival_date,supplier'),
       fetchSafe('procurement_suppliers', 'supplier_key,relationship_type,note,display_name'),
       fetchSafe('procurement_customers', 'customer_key,name'),
-      fetchSafe('procurement_item_cost', 'item_code,cost_date,cost,doc_num,vendor,warehouse,batch,qty,currency,base_price,increase_pct,landed_cost_amount,added_cost_per_unit'),
+      fetchSafe('procurement_item_cost', 'item_code,cost_date,cost,doc_num,vendor,warehouse,batch,qty,currency,base_price,increase_pct,landed_cost_amount,added_cost_per_unit,rate'),
     ]);
     if(items.length){ state.itemsRaw = {}; items.forEach(r=>{ state.itemsRaw[r.item_code] = {code:r.item_code, name:r.name}; }); }
     if(params.length){
@@ -2566,7 +2583,11 @@ async function pullStateFromCloud(){
     if(poOrders.length) state.poOrdersRaw = poOrders.map(r=>({code:r.item_code, supplier:r.supplier||'', orderDate:r.order_date, qty:r.qty}));
     if(ap.length) state.apInvoiceRaw = ap.map(r=>({code:r.item_code, supplier:r.supplier, docEntry:r.doc_entry, qty:r.qty, date:r.recv_date||'', price: r.price??NaN}));
     if(po.length) state.poRaw = po.map(r=>({code:r.item_code, qty:r.qty, arrivalDate:r.arrival_date, supplier:r.supplier||''}));
-    if(actualCost.length) state.actualCostRaw = actualCost.map(r=>({code:r.item_code, date:r.cost_date, cost:r.cost, docNum:r.doc_num||'', vendor:r.vendor||'', warehouse:r.warehouse||'', batch:r.batch||'', qty:r.qty??NaN, currency:r.currency||'', basePrice:r.base_price??NaN, increasePct:r.increase_pct??NaN, landedCostAmount:r.landed_cost_amount??NaN, addedCostPerUnit:r.added_cost_per_unit??NaN}));
+    if(actualCost.length) state.actualCostRaw = actualCost.map(r=>{
+      const rate = r.rate??NaN;
+      const costJod = (!isNaN(rate) && rate>0) ? r.cost*rate : r.cost;
+      return {code:r.item_code, date:r.cost_date, cost:r.cost, costJod, rate, docNum:r.doc_num||'', vendor:r.vendor||'', warehouse:r.warehouse||'', batch:r.batch||'', qty:r.qty??NaN, currency:r.currency||'', basePrice:r.base_price??NaN, increasePct:r.increase_pct??NaN, landedCostAmount:r.landed_cost_amount??NaN, addedCostPerUnit:r.added_cost_per_unit??NaN};
+    });
     if(supSettings.length){
       state.supplierSettings = {};
       supSettings.forEach(r=>{ state.supplierSettings[r.supplier_key] = {relationshipType:r.relationship_type||'normal', note:r.note||'', displayName:r.display_name||''}; });
@@ -2626,7 +2647,7 @@ async function pushStateToCloud(datasets){
   await safeSave('leadtime', ()=> replaceLogTable('procurement_po_orders', state.poOrdersRaw.map(r=>({item_code:r.code, supplier:r.supplier||null, order_date:normDateForDb(r.orderDate), qty: isNaN(r.qty)?null:r.qty}))));
   await safeSave('apinvoice', ()=> replaceLogTable('procurement_ap_invoices', state.apInvoiceRaw.map(r=>({item_code:r.code, supplier:r.supplier, doc_entry:String(r.docEntry), qty:r.qty, recv_date:normDateForDb(r.date), price: isNaN(r.price)?null:r.price}))));
   await safeSave('po', ()=> replaceLogTable('procurement_po', state.poRaw.map(r=>({item_code:r.code, qty:r.qty, arrival_date:normDateForDb(r.arrivalDate), supplier:r.supplier||null}))));
-  await safeSave('actualcost', ()=> replaceLogTable('procurement_item_cost', state.actualCostRaw.map(r=>({item_code:r.code, cost_date:normDateForDb(r.date), cost:r.cost, doc_num:r.docNum||null, vendor:r.vendor||null, warehouse:r.warehouse||null, batch:r.batch||null, qty: isNaN(r.qty)?null:r.qty, currency:r.currency||null, base_price: isNaN(r.basePrice)?null:r.basePrice, increase_pct: isNaN(r.increasePct)?null:r.increasePct, landed_cost_amount: isNaN(r.landedCostAmount)?null:r.landedCostAmount, added_cost_per_unit: isNaN(r.addedCostPerUnit)?null:r.addedCostPerUnit}))));
+  await safeSave('actualcost', ()=> replaceLogTable('procurement_item_cost', state.actualCostRaw.map(r=>({item_code:r.code, cost_date:normDateForDb(r.date), cost:r.cost, doc_num:r.docNum||null, vendor:r.vendor||null, warehouse:r.warehouse||null, batch:r.batch||null, qty: isNaN(r.qty)?null:r.qty, currency:r.currency||null, base_price: isNaN(r.basePrice)?null:r.basePrice, increase_pct: isNaN(r.increasePct)?null:r.increasePct, landed_cost_amount: isNaN(r.landedCostAmount)?null:r.landedCostAmount, added_cost_per_unit: isNaN(r.addedCostPerUnit)?null:r.addedCostPerUnit, rate: isNaN(r.rate)?null:r.rate}))));
   await safeSave('suppliers', async ()=>{
     const rows = Object.keys(state.supplierSettings).map(k=>({supplier_key:k, relationship_type: state.supplierSettings[k].relationshipType||'normal', note: state.supplierSettings[k].note||null, display_name: state.supplierSettings[k].displayName||null}));
     if(rows.length) await upsertChunked('procurement_suppliers', rows, 'supplier_key');
