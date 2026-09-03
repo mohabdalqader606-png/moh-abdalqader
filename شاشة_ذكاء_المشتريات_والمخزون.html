@@ -1614,13 +1614,26 @@ function renderDrilldown(title, bodyHtml){
   el.style.display = 'block';
   el.scrollIntoView({behavior:'smooth', block:'nearest'});
 }
+// أعمدة الكمية/القيمة بجداول التفصيل تتبع نفس اختيار "كميات فقط / مبالغ فقط / كميات ومبالغ"
+// المختار بأعلى تقرير الأصناف — بدل ما تفرض عمود قيمة دايماً حتى لو المستخدم ما بده ياه
+function qtyValueTh(qtyLabel, valLabel){
+  if(reportMode==='qty') return '<th>'+qtyLabel+'</th>';
+  if(reportMode==='value') return '<th>'+valLabel+'</th>';
+  return '<th>'+qtyLabel+'</th><th>'+valLabel+'</th>';
+}
+function qtyValueTd(qty, value){
+  if(reportMode==='qty') return '<td class="num">'+fmtNum(qty)+'</td>';
+  if(reportMode==='value') return '<td class="num">'+fmtMoney(value)+'</td>';
+  return '<td class="num">'+fmtNum(qty)+'</td><td class="num">'+fmtMoney(value)+'</td>';
+}
 function showBalanceDrilldown(code){
   const r = findReportItem(code); if(!r) return;
   const list = (r.warehouses||[]).slice().sort((a,b)=>b.onHand-a.onHand);
-  const rows = list.map(w=>'<tr><td>'+esc((state.warehouseNames&&state.warehouseNames[w.whs]) || w.whs || '-')+'</td><td class="num">'+fmtNum(w.onHand)+'</td><td class="num">'+fmtMoney(w.onHand*r.unitCost)+'</td></tr>').join('');
+  const colCount = reportMode==='both' ? 3 : 2;
+  const rows = list.map(w=>'<tr><td>'+esc((state.warehouseNames&&state.warehouseNames[w.whs]) || w.whs || '-')+'</td>'+qtyValueTd(w.onHand, w.onHand*r.unitCost)+'</tr>').join('');
   renderDrilldown('الرصيد الحالي — '+r.name+' ('+r.code+')',
-    '<table class="minitbl"><thead><tr><th>المستودع</th><th>الكمية</th><th>القيمة</th></tr></thead><tbody>'
-    + (rows || '<tr><td colspan="3" style="text-align:center;color:var(--ink-soft);padding:14px;">لا يوجد تفصيل مستودعات لهالصنف</td></tr>')
+    '<table class="minitbl"><thead><tr><th>المستودع</th>'+qtyValueTh('الكمية','القيمة')+'</tr></thead><tbody>'
+    + (rows || '<tr><td colspan="'+colCount+'" style="text-align:center;color:var(--ink-soft);padding:14px;">لا يوجد تفصيل مستودعات لهالصنف</td></tr>')
     + '</tbody></table>');
 }
 /* ================= تبويب الموردون ================= */
@@ -1718,10 +1731,11 @@ function showMonthDrilldown(code, monthKey){
   const list = Object.keys(byCustomer).map(c=>({customer:c, qty:byCustomer[c].qty, value:byCustomer[c].value}));
   const sortByValue = reportMode!=='qty' && list.some(x=>x.value>0);
   list.sort((a,b)=> sortByValue ? b.value-a.value : b.qty-a.qty);
-  const rows = list.map(x=>'<tr><td>'+esc(x.customer)+'</td><td class="num">'+fmtNum(x.qty)+'</td><td class="num">'+fmtMoney(x.value)+'</td></tr>').join('');
+  const colCount = reportMode==='both' ? 3 : 2;
+  const rows = list.map(x=>'<tr><td>'+esc(x.customer)+'</td>'+qtyValueTd(x.qty, x.value)+'</tr>').join('');
   renderDrilldown('مبيعات '+(state.allMonthLabel[monthKey]||monthKey)+' — '+r.name+' ('+r.code+')',
-    '<table class="minitbl"><thead><tr><th>العميل</th><th>الكمية</th><th>المبلغ</th></tr></thead><tbody>'
-    + (rows || '<tr><td colspan="3" style="text-align:center;color:var(--ink-soft);padding:14px;">لا يوجد تفصيل عملاء — تأكد من لصق عمود العميل بكويري المبيعات</td></tr>')
+    '<table class="minitbl"><thead><tr><th>العميل</th>'+qtyValueTh('الكمية','المبلغ')+'</tr></thead><tbody>'
+    + (rows || '<tr><td colspan="'+colCount+'" style="text-align:center;color:var(--ink-soft);padding:14px;">لا يوجد تفصيل عملاء — تأكد من لصق عمود العميل بكويري المبيعات</td></tr>')
     + '</tbody></table>');
 }
 
