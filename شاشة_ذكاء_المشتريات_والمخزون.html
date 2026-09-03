@@ -2090,9 +2090,9 @@ function renderSuppliers(){
   const FREEZE_TH = {code:'freeze freeze-1', display:'freeze freeze-2'};
   thead.innerHTML = '<tr>' + SUPPLIERS_COLS.map(([k,label])=>
     '<th class="sortable-th '+(FREEZE_TH[k]||'')+'" onclick="setSuppliersSort(\''+k+'\')">'+label+' '+sortIcon(suppliersSortKey,k,suppliersSortDir)+'</th>'
-  ).join('') + '<th>طلب شراء مقترح</th></tr>';
+  ).join('') + '<th>تقرير الأصناف</th><th>طلب شراء مقترح</th></tr>';
   if(!list.length){
-    tbody.innerHTML = '<tr><td colspan="13" class="empty-state"><div class="ic">🏭</div>ما فيه ربط موردين لسا — لازم عمود "المورد" بجدول البارامترات (رقم 5) أو كويري رقم 6 معبّى.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="14" class="empty-state"><div class="ic">🏭</div>ما فيه ربط موردين لسا — لازم عمود "المورد" بجدول البارامترات (رقم 5) أو كويري رقم 6 معبّى.</td></tr>';
     return;
   }
   tbody.innerHTML = list.map(s=>{
@@ -2112,6 +2112,7 @@ function renderSuppliers(){
         + ['normal','contract','target'].map(v=>'<option value="'+v+'" '+(s.relationshipType===v?'selected':'')+'>'+({normal:'عادي', contract:'عقد سنوي/موسمي', target:'تارجيت وتعويض'}[v])+'</option>').join('')
         + '</select></td>'
       + '<td><input value="'+esc(s.note)+'" placeholder="ملاحظة..." style="width:140px;" onchange="updateSupplierSetting(\''+s.key+'\',\'note\',this.value)"></td>'
+      + '<td><button class="btn-ghost btn-sm" type="button" onclick="showSupplierItemsDrilldown(this,\''+s.key+'\')">📋 الأصناف</button></td>'
       + '<td><button class="btn-ghost btn-sm" type="button" onclick="showSupplierPODrilldown(this,\''+s.key+'\')">📦 اقترح</button></td>'
     + '</tr>';
   }).join('');
@@ -2172,6 +2173,39 @@ function showSupplierPODrilldown(sourceEl, supplierKey){
     + '<table class="minitbl"><thead><tr><th>الصنف</th><th>القرار</th><th>الرصيد الحالي</th><th>أيام تغطية</th>'
     + '<th>الكمية الموصى بها</th><th>متوسط/شحنة (نسبة الترافق)</th><th>الكمية المقترحة بالطلب</th><th>السبب</th></tr></thead><tbody>'
     + (rows || '<tr><td colspan="8" style="text-align:center;color:var(--ink-soft);padding:14px;">ما فيه أصناف مطلوبة الآن أو معتادة الترافق مع هالمورد حالياً</td></tr>')
+    + '</tbody></table>', 'suppliersTbody', 'suppliersThead');
+}
+// تقرير كل أصناف مورد معيّن مع وضع كل صنف (قرار الشراء، تغطية، سعر) — عكس "طلب شراء
+// مقترح" يلي بيفلتر للمطلوب/المترافق بس، هون بيعرض كل صنف مرتبط بالمورد بغض النظر عن حالته
+const DECISION_ORDER = {BUY_NOW:0, BUY_SOON:1, REVIEW:2, WAIT:3, EXCESS:4};
+function showSupplierItemsDrilldown(sourceEl, supplierKey){
+  const s = (state.supplierStats || []).find(x=>x.key===supplierKey); if(!s) return;
+  const itemCodes = Object.keys(state.itemSupplierKey || {}).filter(c=>state.itemSupplierKey[c]===supplierKey);
+
+  let list = itemCodes.map(code=>{
+    const r = findReportItem(code);
+    return {
+      code, name: (r && r.name) || (state.itemsRaw[code] && state.itemsRaw[code].name) || code,
+      decision: r ? r.decision : 'REVIEW', decisionLabel: r ? r.decisionLabel : 'بيانات ناقصة',
+      onHand: r ? r.onHand : null, daysCover: r ? r.daysCover : null,
+      recommendedQty: r ? r.recommendedQty : null, lastPrice: r ? r.lastPrice : null,
+      lastActualCost: r ? r.lastActualCost : null
+    };
+  }).sort((a,b)=> (DECISION_ORDER[a.decision]??5) - (DECISION_ORDER[b.decision]??5)
+    || ((a.daysCover===Infinity?1e9:a.daysCover) ?? 1e9) - ((b.daysCover===Infinity?1e9:b.daysCover) ?? 1e9));
+
+  const rows = list.map(x=>'<tr><td>'+esc(x.name)+'<br><span class="item-code">'+esc(x.code)+'</span></td>'
+    + '<td>'+esc(x.decisionLabel)+'</td>'
+    + '<td class="num">'+(x.onHand!=null?fmtNum(x.onHand):'—')+'</td>'
+    + '<td class="num">'+(x.daysCover!=null?(x.daysCover===Infinity?'∞':x.daysCover):'—')+'</td>'
+    + '<td class="num">'+(x.recommendedQty?fmtNum(x.recommendedQty):'—')+'</td>'
+    + '<td class="num">'+(x.lastPrice!=null?fmtPrice(x.lastPrice):'—')+'</td>'
+    + '<td class="num">'+(x.lastActualCost!=null?fmtPrice(x.lastActualCost):'—')+'</td></tr>').join('');
+
+  renderDrilldown(sourceEl, 'supplierItems|'+supplierKey, 'تقرير أصناف — '+s.display+' ('+s.code+')',
+    '<table class="minitbl"><thead><tr><th>الصنف</th><th>القرار</th><th>الرصيد الحالي</th><th>أيام تغطية</th>'
+    + '<th>الكمية الموصى بها</th><th>آخر سعر منشأ</th><th>الكلفة الفعلية</th></tr></thead><tbody>'
+    + (rows || '<tr><td colspan="7" style="text-align:center;color:var(--ink-soft);padding:14px;">ما فيه أصناف مرتبطة بهالمورد حالياً</td></tr>')
     + '</tbody></table>', 'suppliersTbody', 'suppliersThead');
 }
 function updateSupplierSetting(key, field, value){
