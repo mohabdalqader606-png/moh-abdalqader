@@ -2409,10 +2409,17 @@ async function upsertChunked(table, rows, conflictCol){
     if(error) throw error;
   }
 }
+// نستبدل بيانات جدول "إدخال جديد" (سطر يومي معاد توليده كل تحليل: مبيعات، مخزون، استلام...)
+// بأسلوب آمن: نضيف الجديد أولاً، وبعدين نمسح بس القديم (id <= أعلى id كان موجود قبل
+// الإضافة). لو فشل الإدخال بالنص (انقطاع شبكة، تسكير التبويب...) البيانات القديمة
+// بتضل موجودة كاملة بدل ما تنمسح قبل ما نتأكد إن البديل انضاف بنجاح.
 async function replaceLogTable(table, rows){
-  const {error:delErr} = await sb.from(table).delete().gt('id', 0);
-  if(delErr) throw delErr;
+  const {data: maxRow, error: maxErr} = await sb.from(table).select('id').order('id', {ascending:false}).limit(1);
+  if(maxErr) throw maxErr;
+  const cutoffId = (maxRow && maxRow.length) ? maxRow[0].id : 0;
   if(rows.length) await pushChunked(table, rows);
+  const {error:delErr} = await sb.from(table).delete().lte('id', cutoffId);
+  if(delErr) throw delErr;
 }
 async function fetchAllRows(table, selectCols){
   let all = [], from = 0; const pageSize = 1000;
