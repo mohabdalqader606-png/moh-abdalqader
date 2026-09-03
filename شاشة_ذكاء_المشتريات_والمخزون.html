@@ -29,6 +29,11 @@
      create table if not exists procurement_ap_invoices (
        id bigserial primary key, item_code text, supplier text, doc_entry text, qty numeric
      );
+     create table if not exists procurement_po (
+       id bigserial primary key, item_code text, qty numeric, arrival_date date, supplier text
+     );
+     alter table procurement_po enable row level security;
+     create policy "authenticated rw" on procurement_po for all using (auth.role()='authenticated') with check (auth.role()='authenticated');
      create table if not exists procurement_params (
        item_code text primary key, supplier text, lead_time_days numeric, moq numeric,
        order_multiple numeric, shelf_life_days numeric, min_remain_shelf_life numeric,
@@ -316,6 +321,19 @@ ORDER BY T0."CardCode", T0."DocEntry"</code>
         <textarea id="pasteApInvoices" placeholder="الصق هنا: رمز الصنف / المورد / رقم المستند / تاريخ الاستلام / الكمية ..."></textarea>
       </details>
 
+      <details class="opt">
+        <summary><span class="num-badge opt">7</span> طلبات الشراء المفتوحة (Purchase Orders) — بضاعة بالطريق (اختياري بس مهم)</summary>
+        <div class="hint">
+          بدون هالكويري، الكمية "تحت الطلب" من كويري المخزون (رقم 3) بتُستخدَم كرقم إجمالي بدون تاريخ وصول — يعني ما فينا نعرف بالضبط الشحنة رح توصل قبل أو بعد الانقطاع. بهالكويري، تاريخ الانقطاع المتوقع بيصير محسوب يوم بيوم مع أخذ موعد كل شحنة بعين الاعتبار (مش بس الكمية).
+          <code class="block">SELECT T1."ItemCode" AS "رمز الصنف", T1."OpenQty" AS "الكمية",
+       T1."ShipDate" AS "تاريخ الوصول المتوقع", T0."CardName" AS "المورد"
+FROM OPOR T0 INNER JOIN POR1 T1 ON T0."DocEntry"=T1."DocEntry"
+WHERE T0."DocStatus"='O' AND T1."LineStatus"='O'</code>
+          <div style="margin-top:6px;color:var(--crimson);">⚠ تحقق من اسم عمود "الكمية المتبقية غير المستلمة" و"تاريخ الوصول" عندكم (ممكن يختلف الاسم) قبل ما تشغّل الكويري — بنفس أسلوب فحص TABLE_COLUMNS يلي استخدمناه قبل.</div>
+        </div>
+        <textarea id="pastePO" placeholder="الصق هنا: رمز الصنف / الكمية / تاريخ الوصول المتوقع / المورد(اختياري) ..."></textarea>
+      </details>
+
       <div class="row-actions">
         <button class="btn-primary" onclick="processAllData()">تحليل البيانات</button>
         <button class="btn-ghost" onclick="clearAllPasted()">تفريغ الكويريات</button>
@@ -402,7 +420,7 @@ ORDER BY T0."CardCode", T0."DocEntry"</code>
 /* ================= الحالة العامة ================= */
 const STORAGE_KEY = 'procint_state_v1';
 let state = {
-  itemsRaw:{}, salesRaw:[], invRaw:[], leadTimeRaw:[], apInvoiceRaw:[],
+  itemsRaw:{}, salesRaw:[], invRaw:[], leadTimeRaw:[], apInvoiceRaw:[], poRaw:[],
   params:{}, // itemCode -> {supplier, leadTimeDays, moq, orderMultiple, shelfLifeDays, minRemainShelfLife, unitCost, serviceLevel, criticality}
   computed:[], demandWindowDays:90
 };
@@ -575,6 +593,22 @@ function processAllDataHeavy(){
     }
   }
 
+  // 7) طلبات الشراء المفتوحة (اختياري — بضاعة بالطريق بتاريخ وصول)
+  const poTxt = document.getElementById('pastePO').value;
+  if(poTxt.trim()){
+    const {headers, rows} = splitPasted(poTxt);
+    const iCode = colIndex(headers, ['رمز الصنف','ItemCode']);
+    const iQty = colIndex(headers, ['الكمية','OpenQty','Quantity']);
+    const iArr = colIndex(headers, ['تاريخ الوصول المتوقع','ShipDate']);
+    const iSup = colIndex(headers, ['المورد','CardName','CardCode']);
+    if(iCode>=0 && iQty>=0){
+      state.poRaw = rows.map(r=>({code:r[iCode], qty:toNum(r[iQty]), arrivalDate: iArr>=0?r[iArr]:'', supplier: iSup>=0?r[iSup]:''})).filter(r=>r.code && !isNaN(r.qty));
+    } else {
+      msg.textContent = 'تعذر إيجاد أعمدة كويري طلبات الشراء المفتوحة (رمز الصنف/الكمية)';
+      msg.className='status-msg err';
+    }
+  }
+
   renderParamsTable();
   runEngine();
   document.getElementById('paramsPanel').style.display='block';
@@ -588,10 +622,11 @@ function processAllDataHeavy(){
   if(invTxt.trim()) changedDatasets.push('inventory');
   if(ltTxt.trim()) changedDatasets.push('leadtime');
   if(apTxt.trim()) changedDatasets.push('apinvoice');
+  if(poTxt.trim()) changedDatasets.push('po');
   scheduleCloudSave(changedDatasets);
 }
 function clearAllPasted(){
-  ['pasteItems','pasteSales','pasteInventory','pasteLeadTime','pasteParams','pasteApInvoices'].forEach(id=>document.getElementById(id).value='');
+  ['pasteItems','pasteSales','pasteInventory','pasteLeadTime','pasteParams','pasteApInvoices','pastePO'].forEach(id=>document.getElementById(id).value='');
 }
 
 /* ================= جدول بارامترات الأصناف ================= */
@@ -759,6 +794,27 @@ function runEngine(){
   { const base = new Date(now.getFullYear(), now.getMonth(), 1);
     for(let i=11;i>=0;i--){ const m=new Date(base.getFullYear(), base.getMonth()-i, 1); const k=m.getFullYear()+'-'+String(m.getMonth()+1).padStart(2,'0'); state.reportMonthKeys.push(k); state.reportMonthLabel[k]=ARABIC_MONTHS[m.getMonth()]+' '+m.getFullYear(); }
   }
+  // شحنات الشراء المفتوحة القادمة، مجمَّعة لكل صنف ومرتَّبة بتاريخ الوصول
+  const poByItem = {};
+  state.poRaw.forEach(r=>{
+    const d = parseDateFlexible(r.arrivalDate);
+    (poByItem[r.code] = poByItem[r.code] || []).push({date:d, qty:r.qty||0});
+  });
+  Object.keys(poByItem).forEach(code=>poByItem[code].sort((a,b)=>{
+    if(!a.date && !b.date) return 0; if(!a.date) return 1; if(!b.date) return -1; return a.date-b.date;
+  }));
+  function projectStockoutDate(onHand, dAvgVal, lots, nowRef){
+    if(dAvgVal<=0) return null;
+    let projected = onHand, li = 0;
+    for(let day=1; day<=730; day++){
+      const d = new Date(nowRef.getTime() + day*86400000);
+      while(li<lots.length && lots[li].date && lots[li].date<=d){ projected += lots[li].qty; li++; }
+      projected -= dAvgVal;
+      if(projected <= 0) return d;
+    }
+    return null;
+  }
+
   const allSalesByItem = {};
   state.salesRaw.forEach(r=>{
     const d = parseDateFlexible(r.date); if(!d) return;
@@ -835,6 +891,12 @@ function runEngine(){
       ltAvg = null; ltStd = null; ltSource='غير متوفر';
     }
 
+    // بضاعة بالطريق: نفضّل شحنات PO المؤرَّخة (رقم 7) على رقم OnOrder الإجمالي من كويري المخزون لتفادي الحساب المزدوج
+    const poLots = poByItem[code] || [];
+    const poTotalQty = poLots.reduce((a,l)=>a+l.qty,0);
+    const effectiveOnOrder = poLots.length ? poTotalQty : inv.onOrder;
+    const hasDatedPo = poLots.some(l=>l.date);
+
     const z = Z_TABLE[p.serviceLevel] || Z_TABLE[95];
     const criticalityBoost = {High:1.15, Medium:1.0, Low:0.9}[p.criticality||'Medium'];
     let safetyStock = null, rop = null, daysCover = null, stockoutDate = null, stockoutProb = null;
@@ -843,11 +905,15 @@ function runEngine(){
       rop = dAvg*ltAvg + safetyStock;
       daysCover = dAvg>0 ? (inv.onHand / dAvg) : (inv.onHand>0 ? Infinity : 0);
       if(dAvg>0){
-        const daysToZero = Math.floor(inv.onHand / dAvg);
-        stockoutDate = new Date(now.getTime() + daysToZero*86400000);
+        if(hasDatedPo){
+          stockoutDate = projectStockoutDate(inv.onHand, dAvg, poLots, now);
+        } else {
+          const daysToZero = Math.floor(inv.onHand / dAvg);
+          stockoutDate = new Date(now.getTime() + daysToZero*86400000);
+        }
       }
       const denom = Math.sqrt(Math.max(0,ltAvg)*dStd*dStd + dAvg*dAvg*ltStd*ltStd) || 1;
-      const zProb = (inv.onHand + inv.onOrder - dAvg*ltAvg) / denom;
+      const zProb = (inv.onHand + effectiveOnOrder - dAvg*ltAvg) / denom;
       stockoutProb = Math.round((1-normCdf(zProb))*1000)/10;
     }
 
@@ -855,7 +921,7 @@ function runEngine(){
     let recommendedQty = null, qtyNotes = [];
     if(ltAvg!=null && !isNaN(toNum(p.moq))){
       const reviewPeriod = 7;
-      let base = dAvg*(ltAvg+reviewPeriod) + (safetyStock||0) - (inv.onHand + inv.onOrder);
+      let base = dAvg*(ltAvg+reviewPeriod) + (safetyStock||0) - (inv.onHand + effectiveOnOrder);
       base = Math.max(0, base);
       const mult = toNum(p.orderMultiple) || 1;
       let qty = mult>0 ? Math.ceil(base/mult)*mult : base;
@@ -922,7 +988,7 @@ function runEngine(){
 
     return {
       code, name: it.name, supplier: p.supplier||'—',
-      onHand: inv.onHand, onOrder: inv.onOrder, warehouses: inv.warehouses,
+      onHand: inv.onHand, onOrder: effectiveOnOrder, poLots, warehouses: inv.warehouses,
       dAvg: Math.round(dAvg*100)/100, dStd: Math.round(dStd*100)/100,
       ltAvg, ltStd, ltSource,
       safetyStock: safetyStock!=null ? Math.round(safetyStock) : null,
@@ -1021,7 +1087,10 @@ function renderTower(){
     const reasons = [];
     reasons.push(['تغطية المخزون الحالي', (r.daysCover!=null?(isFinite(r.daysCover)?r.daysCover+' يوم':'∞'):'—')]);
     reasons.push(['مدة التوريد ('+(r.ltSource||'—')+')', r.ltAvg!=null? Math.round(r.ltAvg)+' يوم':'—']);
-    reasons.push(['تاريخ الانقطاع المتوقع', fmtDate(r.stockoutDate)]);
+    reasons.push(['تاريخ الانقطاع المتوقع', fmtDate(r.stockoutDate) + (r.poLots && r.poLots.some(l=>l.date) ? ' (محسوب مع مواعيد الشحنات القادمة)' : '')]);
+    if(r.poLots && r.poLots.length){
+      reasons.push(['بضاعة بالطريق', r.poLots.map(l=>fmtNum(l.qty)+' — '+(l.date?fmtDate(l.date):'بدون تاريخ')).join(' · ')]);
+    }
     reasons.push(['احتمال الانقطاع قبل وصول الطلب', r.stockoutProb!=null? r.stockoutProb+'٪':'—']);
     reasons.push(['مخزون الأمان / نقطة إعادة الطلب', (r.safetyStock??'—')+' / '+(r.rop??'—')]);
     reasons.push(['تصنيف ABC/XYZ', r.abc+r.xyz]);
@@ -1051,7 +1120,10 @@ function renderTower(){
         + '<div class="num">'+fmtDate(r.stockoutDate)+'<br><span style="color:var(--ink-soft);font-size:9.5px;">انقطاع متوقع</span></div>'
         + '<div class="num">'+(r.recommendedQty??'—')+'<br><span style="color:var(--ink-soft);font-size:9.5px;">كمية مقترحة</span></div>'
         + '<div>'+(r.priorityScore?('أولوية '+r.priorityScore):'')+'</div>'
-        + '<div><span class="badge '+(badgeClass[r.decision]||'gray')+'">'+r.decisionLabel+'</span></div>'
+        + '<div><span class="badge '+(badgeClass[r.decision]||'gray')+'">'+r.decisionLabel+'</span>'
+          + (r.consolidation && r.consolidation.dueSiblings.length ? ' <span class="badge info" title="فرصة تجميع مع أصناف تانية من نفس المورد">🔗 تجميع</span>' : '')
+          + (r.consolidation && !r.consolidation.dueSiblings.length && r.consolidation.ratio<40 ? ' <span class="badge warn" title="طلب منفرد صغير مقارنة بحمولة المورد المعتادة">⚠ طلب صغير</span>' : '')
+        + '</div>'
         + '<span></span>'
       + '</div>'
       + '<div class="rowc-body">'
@@ -1186,7 +1258,7 @@ function restoreBackup(evt){
       document.getElementById('paramsPanel').style.display='block';
       renderTower();
       const el = document.getElementById('backupStatusMsg'); el.textContent='✔ تم الاسترجاع'; el.className='status-msg ok';
-      scheduleCloudSave(['items','params','sales','inventory','leadtime','apinvoice']);
+      scheduleCloudSave(['items','params','sales','inventory','leadtime','apinvoice','po']);
     }catch(e){
       const el = document.getElementById('backupStatusMsg'); el.textContent='ملف غير صالح'; el.className='status-msg err';
     }
@@ -1279,13 +1351,14 @@ async function pullStateFromCloud(){
   const el = document.getElementById('cloudSyncMsg');
   try{
     if(el){ el.textContent = '⏳ جارٍ تحميل البيانات المحفوظة...'; el.className='status-msg ok'; }
-    const [items, params, sales, inv, lt, ap] = await Promise.all([
+    const [items, params, sales, inv, lt, ap, po] = await Promise.all([
       fetchAllRows('procurement_items', 'item_code,name'),
       fetchAllRows('procurement_params', '*'),
       fetchAllRows('procurement_sales', 'item_code,sale_date,qty,whs,customer,amount'),
       fetchAllRows('procurement_inventory', 'item_code,whs,on_hand,on_order'),
       fetchAllRows('procurement_leadtime', 'item_code,order_date,recv_date'),
       fetchAllRows('procurement_ap_invoices', 'item_code,supplier,doc_entry,qty'),
+      fetchAllRows('procurement_po', 'item_code,qty,arrival_date,supplier'),
     ]);
     if(items.length){ state.itemsRaw = {}; items.forEach(r=>{ state.itemsRaw[r.item_code] = {code:r.item_code, name:r.name}; }); }
     if(params.length){
@@ -1302,6 +1375,7 @@ async function pullStateFromCloud(){
     if(inv.length) state.invRaw = inv.map(r=>({code:r.item_code, onHand:r.on_hand||0, onOrder:r.on_order||0, whs:r.whs||''}));
     if(lt.length) state.leadTimeRaw = lt.map(r=>({code:r.item_code, orderDate:r.order_date, recvDate:r.recv_date}));
     if(ap.length) state.apInvoiceRaw = ap.map(r=>({code:r.item_code, supplier:r.supplier, docEntry:r.doc_entry, qty:r.qty}));
+    if(po.length) state.poRaw = po.map(r=>({code:r.item_code, qty:r.qty, arrivalDate:r.arrival_date, supplier:r.supplier||''}));
     saveStateLocal();
     if(Object.keys(state.itemsRaw||{}).length){
       renderParamsTable(); runEngine(); document.getElementById('paramsPanel').style.display='block'; switchTab('tower');
@@ -1344,6 +1418,9 @@ async function pushStateToCloud(datasets){
     }
     if(datasets.has('apinvoice')){
       await replaceLogTable('procurement_ap_invoices', state.apInvoiceRaw.map(r=>({item_code:r.code, supplier:r.supplier, doc_entry:String(r.docEntry), qty:r.qty})));
+    }
+    if(datasets.has('po')){
+      await replaceLogTable('procurement_po', state.poRaw.map(r=>({item_code:r.code, qty:r.qty, arrival_date:normDateForDb(r.arrivalDate), supplier:r.supplier||null})));
     }
     if(el){ el.textContent = '✔ محفوظ سحابياً'; el.className='status-msg ok'; }
   }catch(e){ console.warn('تعذر الحفظ على السيرفر', e); if(el){ el.textContent='⚠ تعذر الحفظ على السيرفر — محفوظ محلياً فقط بهالمتصفح'; el.className='status-msg err'; } }
