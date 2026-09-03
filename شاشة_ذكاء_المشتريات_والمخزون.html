@@ -1926,8 +1926,8 @@ function renderReport(){
     + rth('supplier','اسم المورد','freeze freeze-3')
     + rth('lastReceiptDate','تاريخ آخر استلام','freeze freeze-4')
     + rth('lastReceiptQty','كمية آخر استلام','freeze freeze-5')
-    + rth('lastPrice','سعر المنشأ (الفاتورة)')
-    + rth('lastActualCost','الكلفة الفعلية (Landed Cost)')
+    + rth('lastPrice','آخر سعر منشأ (الفاتورة)')
+    + rth('lastActualCost','آخر كلفة نهائية (Landed Cost)')
     + rth('balance','الرصيد الحالي')
     + months.map(k=>rth('month:'+k, esc(state.allMonthLabel[k]))).join('')
     + rth('avg','متوسط المدى المختار')
@@ -1998,9 +1998,14 @@ function renderDrilldown(sourceEl, reqKey, title, bodyHtml, tbodyId, theadId){
     + '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 16px;border-top:2px solid var(--navy);background:#EEF2F8;">'
     + '<b style="font-size:13px;color:var(--navy);">'+esc(title)+'</b>'
     + '<button class="btn-ghost btn-sm" onclick="this.closest(\'tr.drilldown-row\').remove(); openDrilldownKey=null;">إغلاق ✕</button></div>'
-    + '<div style="padding:12px 16px;max-height:360px;overflow-y:auto;background:#FAFBFD;">'+bodyHtml+'</div>'
+    + '<div style="padding:12px 16px;max-height:360px;overflow:auto;background:#FAFBFD;">'+bodyHtml+'</div>'
     + '</td>';
   tr.after(row);
+  // الصف يلي انفتح عليه التفصيل ممكن يكون بمنتصف تمرير أفقي طويل (بعد ضغط زر بآخر
+  // الجدول) — نرجّع تمرير الجدول لبدايته عشان أول عمود بالتفصيل (الصنف) يضل ظاهر
+  // ومش مقطوع، بدل ما يبدو التفصيل "مش متطابق" مع رؤوس الأعمدة
+  const scrollWrap = sourceEl.closest('.tbl-scroll');
+  if(scrollWrap) scrollWrap.scrollLeft = 0;
   row.scrollIntoView({behavior:'smooth', block:'nearest'});
 }
 // أعمدة الكمية/القيمة بجداول التفصيل تتبع نفس اختيار "كميات فقط / مبالغ فقط / كميات ومبالغ"
@@ -2041,7 +2046,7 @@ function showPriceDrilldown(sourceEl, code){
       + '<td class="num">'+fmtNum(h.qty)+'</td><td class="num">'+fmtPrice(h.price)+'</td><td class="num">'+changeCell+'</td></tr>';
   }).join('');
   renderDrilldown(sourceEl, code+'|price', 'آخر أسعار المنشأ (الفاتورة) — '+r.name+' ('+r.code+')',
-    '<table class="minitbl"><thead><tr><th>التاريخ</th><th>المورد</th><th>رقم المستند</th><th>الكمية</th><th>السعر</th><th>التغيّر عن السابق</th></tr></thead><tbody>'
+    '<table class="minitbl"><thead><tr><th>التاريخ</th><th>المورد</th><th>رقم المستند</th><th>الكمية</th><th>السعر (المنشأ)</th><th>التغيّر عن السابق</th></tr></thead><tbody>'
     + (rows || '<tr><td colspan="6" style="text-align:center;color:var(--ink-soft);padding:14px;">لا يوجد سعر مسجَّل لهالصنف — تأكد إن عمود "السعر" معبّى بكويري استلام البضاعة (رقم 6)</td></tr>')
     + '</tbody></table>');
 }
@@ -2159,14 +2164,14 @@ function showSupplierPODrilldown(sourceEl, supplierKey){
     return Object.assign({}, x, {suggestedQty, reason});
   }).filter(x=>x.suggestedQty>0).sort((a,b)=> (b.dueQty - a.dueQty) || (b.suggestedQty - a.suggestedQty));
 
-  const rows = list.map(x=>'<tr><td>'+esc(x.name)+'<br><span class="item-code">'+esc(x.code)+'</span></td>'
-    + '<td>'+esc(x.decisionLabel)+'</td>'
+  const rows = list.map(x=>'<tr><td style="max-width:200px;white-space:normal;">'+esc(x.name)+'<br><span class="item-code">'+esc(x.code)+'</span></td>'
+    + '<td style="white-space:nowrap;">'+esc(x.decisionLabel)+'</td>'
     + '<td class="num">'+(x.onHand!=null?fmtNum(x.onHand):'—')+'</td>'
     + '<td class="num">'+(x.daysCover!=null?(x.daysCover===Infinity?'∞':x.daysCover):'—')+'</td>'
     + '<td class="num">'+fmtNum(x.dueQty)+'</td>'
     + '<td class="num">'+(x.avgQtyPerShipment?fmtNum(x.avgQtyPerShipment)+' ('+Math.round(x.inclusionRate*100)+'٪)':'—')+'</td>'
     + '<td class="num"><b>'+fmtNum(x.suggestedQty)+'</b></td>'
-    + '<td style="font-size:11px;color:var(--ink-soft);">'+esc(x.reason)+'</td></tr>').join('');
+    + '<td style="font-size:11px;color:var(--ink-soft);max-width:180px;white-space:normal;">'+esc(x.reason)+'</td></tr>').join('');
 
   renderDrilldown(sourceEl, 'supplierPO|'+supplierKey, 'طلب شراء مقترح — '+s.display+' ('+s.code+')',
     (totalShipments<2 ? '<div style="margin-bottom:8px;color:var(--gold);font-size:12px;">⚠ عدد شحنات هالمورد المسجَّلة بكويري رقم 6 قليل جداً ('+totalShipments+') — نمط ترافق الأصناف مش موثوق لسا.</div>' : '')
@@ -2194,8 +2199,8 @@ function showSupplierItemsDrilldown(sourceEl, supplierKey){
   }).sort((a,b)=> (DECISION_ORDER[a.decision]??5) - (DECISION_ORDER[b.decision]??5)
     || ((a.daysCover===Infinity?1e9:a.daysCover) ?? 1e9) - ((b.daysCover===Infinity?1e9:b.daysCover) ?? 1e9));
 
-  const rows = list.map(x=>'<tr><td>'+esc(x.name)+'<br><span class="item-code">'+esc(x.code)+'</span></td>'
-    + '<td>'+esc(x.decisionLabel)+'</td>'
+  const rows = list.map(x=>'<tr><td style="max-width:200px;white-space:normal;">'+esc(x.name)+'<br><span class="item-code">'+esc(x.code)+'</span></td>'
+    + '<td style="white-space:nowrap;">'+esc(x.decisionLabel)+'</td>'
     + '<td class="num">'+(x.onHand!=null?fmtNum(x.onHand):'—')+'</td>'
     + '<td class="num">'+(x.daysCover!=null?(x.daysCover===Infinity?'∞':x.daysCover):'—')+'</td>'
     + '<td class="num">'+(x.recommendedQty?fmtNum(x.recommendedQty):'—')+'</td>'
@@ -2204,7 +2209,7 @@ function showSupplierItemsDrilldown(sourceEl, supplierKey){
 
   renderDrilldown(sourceEl, 'supplierItems|'+supplierKey, 'تقرير أصناف — '+s.display+' ('+s.code+')',
     '<table class="minitbl"><thead><tr><th>الصنف</th><th>القرار</th><th>الرصيد الحالي</th><th>أيام تغطية</th>'
-    + '<th>الكمية الموصى بها</th><th>آخر سعر منشأ</th><th>الكلفة الفعلية</th></tr></thead><tbody>'
+    + '<th>الكمية الموصى بها</th><th>آخر سعر منشأ (الفاتورة)</th><th>آخر كلفة نهائية (Landed Cost)</th></tr></thead><tbody>'
     + (rows || '<tr><td colspan="7" style="text-align:center;color:var(--ink-soft);padding:14px;">ما فيه أصناف مرتبطة بهالمورد حالياً</td></tr>')
     + '</tbody></table>', 'suppliersTbody', 'suppliersThead');
 }
