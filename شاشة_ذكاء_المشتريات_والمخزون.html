@@ -30,14 +30,22 @@
        id bigserial primary key, item_code text, whs text, whs_name text, on_hand numeric, on_order numeric
      );
      alter table procurement_inventory add column if not exists whs_name text;
+     -- procurement_leadtime: جدول قديم مهجور (كان يفترض ربط استلام رسمي بأمر شراء —
+     -- غير قابل للاستخدام لو الاستلام ما بيتعمل Copy From أمر الشراء بـ SAP). يمكن تركه.
      create table if not exists procurement_leadtime (
        id bigserial primary key, item_code text, order_date date, recv_date date
      );
-     -- ترقية جدول قديم أُنشئ قبل إضافة الكمية/السعر/المورد/رقم المستند (آمن التكرار):
      alter table procurement_leadtime add column if not exists qty numeric;
      alter table procurement_leadtime add column if not exists price numeric;
      alter table procurement_leadtime add column if not exists supplier text;
      alter table procurement_leadtime add column if not exists doc_entry text;
+     -- procurement_po_orders: البديل الفعلي — تاريخ أمر الشراء بس (بدون ربط استلام)،
+     -- ومدة التوريد تُشتق تلقائياً بمطابقتها مع بيانات procurement_ap_invoices (GRPO)
+     create table if not exists procurement_po_orders (
+       id bigserial primary key, item_code text, supplier text, order_date date, qty numeric
+     );
+     alter table procurement_po_orders enable row level security;
+     create policy "authenticated rw" on procurement_po_orders for all using (auth.role()='authenticated') with check (auth.role()='authenticated');
      create table if not exists procurement_ap_invoices (
        id bigserial primary key, item_code text, supplier text, doc_entry text, qty numeric
      );
@@ -360,22 +368,19 @@ FROM OITW T0 LEFT JOIN OWHS T1 ON T0."WhsCode"=T1."WhsCode"</code>
       </details>
 
       <details class="opt">
-        <summary><span class="num-badge opt">4</span> تاريخ الطلب والاستلام الفعلي + الكمية والمورد (اختياري — لحساب مدة التوريد الحقيقية)</summary>
+        <summary><span class="num-badge opt">4</span> تاريخ أوامر الشراء (اختياري — لتقدير مدة التوريد الفعلية)</summary>
         <div class="hint">
           بدون هذا الكويري، تُستخدم مدة التوريد التعاقدية اليدوية (بجدول البارامترات) مع افتراض تذبذب 20٪ حوله.
-          الكويري أصلاً مربوط بأمر الشراء ومستند الاستلام الحقيقيين، فمعه بلاش نتكل بس على حقل المورد
-          الحر بجدول الأصناف — <code>CardName</code> هون هو اسم المورد الرسمي من أمر الشراء نفسه، وبيُستخدم
-          كمصدر إضافي موثوق لربط الصنف بالمورد ولتاريخ/كمية آخر استلام (بالإضافة لكويري رقم 6).
-          <code class="block">SELECT T1."ItemCode" AS "رمز الصنف", T0."DocDate" AS "تاريخ الطلب",
-       T2."DocDate" AS "تاريخ الاستلام", T3."Quantity" AS "الكمية", T3."Price" AS "السعر",
-       T0."CardName" AS "المورد", T2."DocEntry" AS "رقم المستند"
-FROM OPOR T0
-INNER JOIN POR1 T1 ON T0."DocEntry"=T1."DocEntry"
-INNER JOIN PDN1 T3 ON T3."BaseEntry"=T0."DocEntry" AND T3."BaseType"=22
-INNER JOIN OPDN T2 ON T2."DocEntry"=T3."DocEntry"
-WHERE T0."DocDate" >= ADD_YEARS(CURRENT_DATE, -3)</code>
+          عندكم الاستلام ما بينربط رسمياً بأمر الشراء (Copy From)، فبدل ما نحتاج ربط مباشر بقاعدة البيانات،
+          هالكويري بتجيب بس <b>تاريخ كل أمر شراء</b>، والشاشة بتطابقه تلقائياً مع أقرب استلام فعلي بعده لنفس
+          الصنف والمورد (من كويري رقم 6) لتقدير مدة التوريد — بدون الحاجة لأي ربط SQL معقّد.
+          <code class="block">SELECT T1."ItemCode" AS "رمز الصنف", T0."CardCode" AS "المورد",
+       T0."DocDate" AS "تاريخ الطلب", T1."Quantity" AS "الكمية"
+FROM OPOR T0 INNER JOIN POR1 T1 ON T0."DocEntry"=T1."DocEntry"
+WHERE T0."DocDate" BETWEEN [%0] AND [%1]
+ORDER BY T1."ItemCode", T0."DocDate"</code>
         </div>
-        <textarea id="pasteLeadTime" placeholder="الصق هنا: رمز الصنف / تاريخ الطلب / تاريخ الاستلام / الكمية(اختياري) / السعر(اختياري) / المورد(اختياري) ..."></textarea>
+        <textarea id="pasteLeadTime" placeholder="الصق هنا: رمز الصنف / المورد / تاريخ الطلب / الكمية ..."></textarea>
         <div class="row-actions" style="margin-top:6px;">
           <input type="file" id="pasteLeadTimeFile" accept=".txt,.csv,.tsv" style="display:none;" onchange="loadPasteFromFile(event,'pasteLeadTime')">
           <button class="btn-ghost btn-sm" type="button" onclick="document.getElementById('pasteLeadTimeFile').click()">📁 ارفع ملف بدل اللصق (أسرع كتير للبيانات الضخمة)</button>
@@ -578,7 +583,7 @@ FROM OCRD WHERE "CardType"='S'</code>
 /* ================= الحالة العامة ================= */
 const STORAGE_KEY = 'procint_state_v1';
 let state = {
-  itemsRaw:{}, salesRaw:[], invRaw:[], leadTimeRaw:[], apInvoiceRaw:[], poRaw:[],
+  itemsRaw:{}, salesRaw:[], invRaw:[], leadTimeRaw:[], poOrdersRaw:[], apInvoiceRaw:[], poRaw:[],
   params:{}, // itemCode -> {supplier, leadTimeDays, moq, orderMultiple, shelfLifeDays, minRemainShelfLife, unitCost, serviceLevel, criticality}
   supplierSettings:{}, // supplierKey(normalized) -> {relationshipType:'normal'|'contract'|'target', note}
   warehouseNames:{}, // whsCode -> whsName
@@ -733,23 +738,19 @@ function processAllDataHeavy(){
     })).filter(r=>r.code);
   }
 
-  // 4) مدة التوريد الفعلية (اختياري)
+  // 4) تاريخ أوامر الشراء (اختياري — بيتطابق تلقائياً مع استلام كويري 6 لتقدير مدة التوريد)
   const ltTxt = getPasteText('pasteLeadTime');
   if(ltTxt.trim()){
     const {headers, rows, raggedCount} = splitPasted(ltTxt);
-    if(raggedCount) raggedNotes.push('مدة التوريد ('+raggedCount+' سطر)');
+    if(raggedCount) raggedNotes.push('أوامر الشراء ('+raggedCount+' سطر)');
     const iCode = colIndex(headers, ['رمز الصنف','ItemCode','Item No.']);
-    const iOrder = colIndex(headers, ['تاريخ الطلب']);
-    const iRecv = colIndex(headers, ['تاريخ الاستلام']);
+    const iOrder = colIndex(headers, ['تاريخ الطلب','DocDate']);
     const iQty = colIndex(headers, ['الكمية','Quantity']);
-    const iPrice = colIndex(headers, ['السعر','Price']);
-    const iSupplier = colIndex(headers, ['المورد','CardName','Customer/Vendor Code']);
-    const iDoc = colIndex(headers, ['رقم المستند','DocEntry','Internal Number']);
-    if(iCode>=0 && iOrder>=0 && iRecv>=0){
-      state.leadTimeRaw = rows.map(r=>({
-        code:r[iCode], orderDate:r[iOrder], recvDate:r[iRecv],
-        qty: iQty>=0 ? toNum(r[iQty]) : NaN, price: iPrice>=0 ? toNum(r[iPrice]) : NaN,
-        supplier: iSupplier>=0 ? r[iSupplier] : '', docEntry: iDoc>=0 ? r[iDoc] : ''
+    const iSupplier = colIndex(headers, ['المورد','CardCode','CardName','Customer/Vendor Code']);
+    if(iCode>=0 && iOrder>=0){
+      state.poOrdersRaw = rows.map(r=>({
+        code:r[iCode], orderDate:r[iOrder], qty: iQty>=0 ? toNum(r[iQty]) : NaN,
+        supplier: iSupplier>=0 ? r[iSupplier] : ''
       })).filter(r=>r.code);
     }
   }
@@ -1137,7 +1138,43 @@ function normCdf(x){
 }
 
 const ARABIC_MONTHS = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+// مدة التوريد الفعلية بدون ربط SQL مباشر بين أمر الشراء والاستلام (حالة عدم استخدام
+// Copy From): نطابق كل أمر شراء (كويري 4: رمز الصنف + المورد + تاريخ الطلب) مع أقرب
+// استلام فعلي بعده لنفس الصنف والمورد (كويري 6: GRPO) — تقدير تقريبي بس عملي.
+function deriveLeadTimeFromOrders(){
+  state.leadTimeRaw = [];
+  if(!state.poOrdersRaw || !state.poOrdersRaw.length || !state.apInvoiceRaw || !state.apInvoiceRaw.length) return;
+  const ordersByKey = {}, receiptsByKey = {};
+  state.poOrdersRaw.forEach(r=>{
+    const d = parseDateFlexible(r.orderDate); if(!d || !r.supplier) return;
+    const key = r.code+'|'+normSupplierKey(r.supplier);
+    (ordersByKey[key] = ordersByKey[key] || []).push(d);
+  });
+  state.apInvoiceRaw.forEach(r=>{
+    const d = parseDateFlexible(r.date); if(!d || !r.supplier) return;
+    const key = r.code+'|'+normSupplierKey(r.supplier);
+    (receiptsByKey[key] = receiptsByKey[key] || []).push({date:d, qty:r.qty, docEntry:r.docEntry, supplier:r.supplier});
+  });
+  Object.keys(ordersByKey).forEach(key=>{
+    const code = key.slice(0, key.indexOf('|'));
+    const orders = ordersByKey[key].slice().sort((a,b)=>a-b);
+    const receipts = (receiptsByKey[key] || []).slice().sort((a,b)=>a.date-b.date);
+    let ri = 0;
+    orders.forEach(orderDate=>{
+      while(ri < receipts.length && receipts[ri].date < orderDate) ri++;
+      if(ri < receipts.length){
+        const rcp = receipts[ri];
+        const days = daysBetween(orderDate, rcp.date);
+        if(days>0 && days<=365){
+          state.leadTimeRaw.push({code, orderDate: dateKey(orderDate), recvDate: dateKey(rcp.date), qty: rcp.qty, supplier: rcp.supplier, docEntry: rcp.docEntry});
+        }
+        ri++;
+      }
+    });
+  });
+}
 function runEngine(){
+  deriveLeadTimeFromOrders();
   const now = new Date(); now.setHours(0,0,0,0);
   const windowDays = state.demandWindowDays || 90;
   const windowStart = new Date(now.getTime() - windowDays*86400000);
@@ -1969,12 +2006,12 @@ async function pullStateFromCloud(){
   const el = document.getElementById('cloudSyncMsg');
   try{
     if(el){ el.textContent = '⏳ جارٍ تحميل البيانات المحفوظة...'; el.className='status-msg ok'; }
-    const [items, params, sales, inv, lt, ap, po, supSettings, customers] = await Promise.all([
+    const [items, params, sales, inv, poOrders, ap, po, supSettings, customers] = await Promise.all([
       fetchAllRows('procurement_items', 'item_code,name'),
       fetchAllRows('procurement_params', '*'),
       fetchAllRows('procurement_sales', 'item_code,sale_date,qty,whs,customer,customer_code,amount'),
       fetchAllRows('procurement_inventory', 'item_code,whs,whs_name,on_hand,on_order'),
-      fetchAllRows('procurement_leadtime', 'item_code,order_date,recv_date,qty,price,supplier,doc_entry'),
+      fetchAllRows('procurement_po_orders', 'item_code,supplier,order_date,qty'),
       fetchAllRows('procurement_ap_invoices', 'item_code,supplier,doc_entry,qty,recv_date'),
       fetchAllRows('procurement_po', 'item_code,qty,arrival_date,supplier'),
       fetchAllRows('procurement_suppliers', 'supplier_key,relationship_type,note,display_name'),
@@ -1993,7 +2030,7 @@ async function pullStateFromCloud(){
     }
     if(sales.length) state.salesRaw = sales.map(r=>({code:r.item_code, date:r.sale_date, qty:r.qty, whs:r.whs||'', customer:r.customer||'', customerCode:r.customer_code||'', amount:r.amount??NaN}));
     if(inv.length) state.invRaw = inv.map(r=>({code:r.item_code, onHand:r.on_hand||0, onOrder:r.on_order||0, whs:r.whs||'', whsName:r.whs_name||''}));
-    if(lt.length) state.leadTimeRaw = lt.map(r=>({code:r.item_code, orderDate:r.order_date, recvDate:r.recv_date, qty:r.qty, price:r.price, supplier:r.supplier||'', docEntry:r.doc_entry||''}));
+    if(poOrders.length) state.poOrdersRaw = poOrders.map(r=>({code:r.item_code, supplier:r.supplier||'', orderDate:r.order_date, qty:r.qty}));
     if(ap.length) state.apInvoiceRaw = ap.map(r=>({code:r.item_code, supplier:r.supplier, docEntry:r.doc_entry, qty:r.qty, date:r.recv_date||''}));
     if(po.length) state.poRaw = po.map(r=>({code:r.item_code, qty:r.qty, arrivalDate:r.arrival_date, supplier:r.supplier||''}));
     if(supSettings.length){
@@ -2045,7 +2082,7 @@ async function pushStateToCloud(datasets){
   })));
   await safeSave('sales', ()=> replaceLogTable('procurement_sales', state.salesRaw.map(r=>({item_code:r.code, sale_date:normDateForDb(r.date), qty:r.qty, whs:r.whs||null, customer:r.customer||null, customer_code:r.customerCode||null, amount: isNaN(r.amount)?null:r.amount}))));
   await safeSave('inventory', ()=> replaceLogTable('procurement_inventory', state.invRaw.map(r=>({item_code:r.code, whs:r.whs||null, whs_name:r.whsName||null, on_hand:r.onHand, on_order:r.onOrder}))));
-  await safeSave('leadtime', ()=> replaceLogTable('procurement_leadtime', state.leadTimeRaw.map(r=>({item_code:r.code, order_date:normDateForDb(r.orderDate), recv_date:normDateForDb(r.recvDate), qty: isNaN(r.qty)?null:r.qty, price: isNaN(r.price)?null:r.price, supplier:r.supplier||null, doc_entry:r.docEntry||null}))));
+  await safeSave('leadtime', ()=> replaceLogTable('procurement_po_orders', state.poOrdersRaw.map(r=>({item_code:r.code, supplier:r.supplier||null, order_date:normDateForDb(r.orderDate), qty: isNaN(r.qty)?null:r.qty}))));
   await safeSave('apinvoice', ()=> replaceLogTable('procurement_ap_invoices', state.apInvoiceRaw.map(r=>({item_code:r.code, supplier:r.supplier, doc_entry:String(r.docEntry), qty:r.qty, recv_date:normDateForDb(r.date)}))));
   await safeSave('po', ()=> replaceLogTable('procurement_po', state.poRaw.map(r=>({item_code:r.code, qty:r.qty, arrival_date:normDateForDb(r.arrivalDate), supplier:r.supplier||null}))));
   await safeSave('suppliers', async ()=>{
