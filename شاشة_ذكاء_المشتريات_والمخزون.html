@@ -2452,15 +2452,28 @@ function withTimeout(promise, ms, label){
     new Promise((_, reject)=> setTimeout(()=> reject(new Error('انتهت المهلة (20 ثانية) — تأكد إن مشروع Supabase شغّال ومش متوقف/متجاوز حدوده ('+label+')')), ms))
   ]);
 }
+// كنا نجيب الصفحات (1000 سطر بكل مرة) وحدة وحدة بالتتالي — لجدول فيه مئات آلاف
+// الأسطر (زي المبيعات التاريخية) هاد يعني مئات الطلبات المتتالية، كل وحدة تنتظر يلي
+// قبلها، فالتحميل ممكن ياخذ دقايق طويلة. صرنا نجيب عدد الأسطر أولاً، وبعدين نطلب
+// الصفحات بالتوازي (دفعات صغيرة بدل كلها سوا، حتى ما نستهلك كل اتصالات قاعدة البيانات)
 async function fetchAllRows(table, selectCols){
-  let all = [], from = 0; const pageSize = 1000;
-  while(true){
-    const {data, error} = await withTimeout(sb.from(table).select(selectCols).range(from, from+pageSize-1), 20000, table);
-    if(error){ console.warn('تعذر قراءة '+table, error); throw new Error('تعذر قراءة جدول '+table+' — '+(error.message||error.code||'خطأ غير معروف')); }
-    if(!data || !data.length) break;
-    all = all.concat(data);
-    if(data.length < pageSize) break;
-    from += pageSize;
+  const pageSize = 1000, concurrency = 3;
+  const {count, error: countErr} = await withTimeout(sb.from(table).select(selectCols, {count:'exact', head:true}), 20000, table+' (عدّ الصفوف)');
+  if(countErr){ console.warn('تعذر عدّ '+table, countErr); throw new Error('تعذر قراءة جدول '+table+' — '+(countErr.message||countErr.code||'خطأ غير معروف')); }
+  if(!count) return [];
+  const pageCount = Math.ceil(count/pageSize);
+  let all = [];
+  for(let start=0; start<pageCount; start+=concurrency){
+    const batch = [];
+    for(let p=start; p<Math.min(start+concurrency, pageCount); p++){
+      const from = p*pageSize;
+      batch.push(withTimeout(sb.from(table).select(selectCols).range(from, from+pageSize-1), 20000, table+' (صفحة '+(p+1)+'/'+pageCount+')'));
+    }
+    const results = await Promise.all(batch);
+    for(const {data, error} of results){
+      if(error){ console.warn('تعذر قراءة '+table, error); throw new Error('تعذر قراءة جدول '+table+' — '+(error.message||error.code||'خطأ غير معروف')); }
+      if(data) all = all.concat(data);
+    }
   }
   return all;
 }
