@@ -956,7 +956,7 @@ function computeConsolidation(results){
     itemSupplierFreq[r.code] = itemSupplierFreq[r.code] || {};
     itemSupplierFreq[r.code][nk] = (itemSupplierFreq[r.code][nk]||0)+1;
   });
-  const itemSupplierKey = {}, itemSupplierDisplay = {}, supplierItems = {};
+  const itemSupplierKey = {}, itemSupplierDisplay = {}, itemSupplierRawCode = {}, supplierItems = {};
   Object.keys(resultByCode).forEach(code=>{
     let display = (state.params[code]||{}).supplier || '';
     let nk = normSupplierKey(display);
@@ -967,14 +967,17 @@ function computeConsolidation(results){
     }
     if(!nk) return;
     // كويري SAP كتير مرات بيرجّع رمز المورد (متل V000002) مش اسمه بعامود "المورد" —
-    // إذا عندنا اسم حقيقي مستورد يدوياً لهالرمز (تبويب الموردون)، نعرضه بدل الرمز.
+    // نحتفظ بالقيمة الخام (الرمز غالباً) لعرضها بعامود منفصل، وإذا عندنا اسم حقيقي
+    // مستورد يدوياً لهالرمز (تبويب الموردون)، نعرضه كاسم بعامود ثاني.
+    const rawCode = display || nk;
     const knownName = state.supplierSettings[nk] && state.supplierSettings[nk].displayName;
     if(knownName) display = knownName;
-    itemSupplierKey[code] = nk; itemSupplierDisplay[code] = display;
+    itemSupplierKey[code] = nk; itemSupplierDisplay[code] = display; itemSupplierRawCode[code] = rawCode;
     (supplierItems[nk] = supplierItems[nk] || []).push(code);
   });
   state.itemSupplierKey = itemSupplierKey;
   state.itemSupplierDisplay = itemSupplierDisplay;
+  state.itemSupplierRawCode = itemSupplierRawCode;
 
   if(!receiptSources.length) return;
 
@@ -1022,11 +1025,12 @@ function computeSupplierStats(results){
   results.forEach(r=>{ resultByCode[r.code]=r; });
   const itemSupplierKey = state.itemSupplierKey || {};
   const itemSupplierDisplay = state.itemSupplierDisplay || {};
+  const itemSupplierRawCode = state.itemSupplierRawCode || {};
 
   const bySupplier = {};
   Object.keys(itemSupplierKey).forEach(code=>{
     const nk = itemSupplierKey[code];
-    const s = bySupplier[nk] = bySupplier[nk] || {display: itemSupplierDisplay[code], items:[], leadTimes:[]};
+    const s = bySupplier[nk] = bySupplier[nk] || {display: itemSupplierDisplay[code], rawCode: itemSupplierRawCode[code], items:[], leadTimes:[]};
     s.items.push(code);
   });
   state.leadTimeRaw.forEach(r=>{
@@ -1043,7 +1047,7 @@ function computeSupplierStats(results){
     const itemsDueNow = s.items.map(c=>resultByCode[c]).filter(x=>x && (x.decision==='BUY_NOW'||x.decision==='BUY_SOON'));
     const settings = state.supplierSettings[nk] || {relationshipType:'normal', note:''};
     return {
-      key: nk, display: s.display, itemCount: s.items.length, sampleSize: lts.length,
+      key: nk, code: s.rawCode || nk, display: s.display, itemCount: s.items.length, sampleSize: lts.length,
       avgLeadTime: lts.length ? Math.round(mean(lts)*10)/10 : null,
       medianLeadTime: lts.length ? median(lts) : null,
       maxLeadTime: lts.length ? Math.max.apply(null, lts) : null,
@@ -1623,11 +1627,11 @@ function showBalanceDrilldown(code){
 let suppliersSortKey=null, suppliersSortDir=-1;
 function setSuppliersSort(key){
   if(suppliersSortKey===key) suppliersSortDir=-suppliersSortDir;
-  else { suppliersSortKey=key; suppliersSortDir = key==='display' ? 1 : -1; }
+  else { suppliersSortKey=key; suppliersSortDir = (key==='display'||key==='code') ? 1 : -1; }
   renderSuppliers();
 }
 const SUPPLIERS_COLS = [
-  ['display','المورد'], ['itemCount','عدد الأصناف'], ['sampleSize','عينة مدة التوريد'],
+  ['code','رمز المورد'], ['display','اسم المورد'], ['itemCount','عدد الأصناف'], ['sampleSize','عينة مدة التوريد'],
   ['avgLeadTime','متوسط (يوم)'], ['medianLeadTime','الوسيط (يوم)'], ['maxLeadTime','أقصى تأخير مسجَّل (يوم)'],
   ['leadTimeStd','تذبذب (σ)'], ['itemsDueNowCount','مطلوب الآن'], ['itemsDueNowValue','قيمة المطلوب الآن'],
   ['relationshipType','نوع العلاقة'], ['note','ملاحظة']
@@ -1643,13 +1647,14 @@ function renderSuppliers(){
     '<th class="sortable-th" onclick="setSuppliersSort(\''+k+'\')">'+label+' '+sortIcon(suppliersSortKey,k,suppliersSortDir)+'</th>'
   ).join('') + '</tr>';
   if(!list.length){
-    tbody.innerHTML = '<tr><td colspan="11" class="empty-state"><div class="ic">🏭</div>ما فيه ربط موردين لسا — لازم عمود "المورد" بجدول البارامترات (رقم 5) أو كويري رقم 6 معبّى.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" class="empty-state"><div class="ic">🏭</div>ما فيه ربط موردين لسا — لازم عمود "المورد" بجدول البارامترات (رقم 5) أو كويري رقم 6 معبّى.</td></tr>';
     return;
   }
   tbody.innerHTML = list.map(s=>{
     const relClass = s.relationshipType==='contract' ? 'rel-contract' : (s.relationshipType==='target' ? 'rel-target' : '');
     return '<tr class="'+relClass+'">'
-      + '<td><b>'+esc(s.display)+'</b><br><span class="item-code">'+esc(s.key)+'</span></td>'
+      + '<td class="item-code">'+esc(s.code)+'</td>'
+      + '<td><b>'+esc(s.display)+'</b></td>'
       + '<td class="num">'+s.itemCount+'</td>'
       + '<td class="num">'+s.sampleSize+'</td>'
       + '<td class="num">'+(s.avgLeadTime??'—')+'</td>'
