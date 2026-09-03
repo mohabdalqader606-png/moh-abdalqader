@@ -16,10 +16,16 @@
        id bigserial primary key, item_code text, sale_date date, qty numeric, whs text,
        customer text, amount numeric
      );
-     -- ترقية جدول قديم أُنشئ قبل إضافة عمودي customer/amount (آمن التكرار):
+     -- ترقية جدول قديم أُنشئ قبل إضافة أعمدة customer/amount/customer_code (آمن التكرار):
      alter table procurement_sales add column if not exists customer text;
      alter table procurement_sales add column if not exists amount numeric;
+     alter table procurement_sales add column if not exists customer_code text;
      create index if not exists procurement_sales_item_idx on procurement_sales(item_code);
+     create table if not exists procurement_customers (
+       customer_key text primary key, name text
+     );
+     alter table procurement_customers enable row level security;
+     create policy "authenticated rw" on procurement_customers for all using (auth.role()='authenticated') with check (auth.role()='authenticated');
      create table if not exists procurement_inventory (
        id bigserial primary key, item_code text, whs text, whs_name text, on_hand numeric, on_order numeric
      );
@@ -297,18 +303,36 @@ WHERE T0."validFor"='Y'</code>
         </div>
       </details>
 
+      <details class="opt">
+        <summary>🗂 استيراد كشف كامل الأصناف من SAP (يضيف الناقص بس — ما بيلمس أصناف موجودة)</summary>
+        <div class="hint">
+          لصق تصدير "Items" الكامل من SAP B1 مباشرة (نفس أعمدة "Item No." / "Item Description")
+          أو أي كويري فيها هالعمودين. بيضيف بس الأصناف يلي مش موجودة أصلاً بجدول البارامترات —
+          ما بيغيّر اسم أي صنف موجود مسبقاً حتى لو مختلف.
+        </div>
+        <textarea id="pasteItemsMaster" placeholder="الصق هنا كشف الأصناف الكامل (Item No. / Item Description) ..."></textarea>
+        <div class="row-actions" style="margin-top:6px;">
+          <input type="file" id="pasteItemsMasterFile" accept=".txt,.csv,.tsv" style="display:none;" onchange="loadPasteFromFile(event,'pasteItemsMaster')">
+          <button class="btn-ghost btn-sm" type="button" onclick="document.getElementById('pasteItemsMasterFile').click()">📁 ارفع ملف</button>
+          <button class="btn-ghost btn-sm" type="button" onclick="clearUploadedFile('pasteItemsMaster')">✕ إزالة الملف</button>
+          <button class="btn-primary btn-sm" type="button" onclick="importItemsMaster()">استيراد الأصناف الناقصة</button>
+          <span class="status-msg" id="itemsMasterMsg"></span>
+        </div>
+      </details>
+
       <details class="opt" open>
         <summary><span class="num-badge">2</span> كويري المبيعات التاريخية (إلزامي)</summary>
         <div class="hint">
           كل ما زاد المدى الزمني كل ما كان التوقع أدق. المستودع والعميل والمبلغ أعمدة اختيارية — بدونها بيشتغل التوقع عادي، بس تقرير "الأصناف" (تفصيل حسب العميل والمبالغ) بيحتاجهم.
+          رمز العميل اختياري كمان — لو موجود، بيُستخدم لربط اسم موثوق من بيانات العملاء المستوردة (تحت) بدل الاعتماد على اسم الفاتورة بس.
           <code class="block">SELECT T1."ItemCode" AS "رمز الصنف", T0."DocDate" AS "التاريخ",
        T1."Quantity" AS "الكمية", T1."WhsCode" AS "المستودع",
-       T0."CardName" AS "العميل", T1."LineTotal" AS "المبلغ"
+       T0."CardCode" AS "رمز العميل", T0."CardName" AS "العميل", T1."LineTotal" AS "المبلغ"
 FROM OINV T0 INNER JOIN INV1 T1 ON T0."DocEntry"=T1."DocEntry"
 WHERE T0."DocDate" >= ADD_YEARS(CURRENT_DATE, -3)
 ORDER BY T1."ItemCode", T0."DocDate"</code>
         </div>
-        <textarea id="pasteSales" placeholder="الصق هنا: رمز الصنف / التاريخ / الكمية / المستودع(اختياري) / العميل(اختياري) / المبلغ(اختياري) ..."></textarea>
+        <textarea id="pasteSales" placeholder="الصق هنا: رمز الصنف / التاريخ / الكمية / المستودع(اختياري) / رمز العميل(اختياري) / العميل(اختياري) / المبلغ(اختياري) ..."></textarea>
         <div class="row-actions" style="margin-top:6px;">
           <input type="file" id="pasteSalesFile" accept=".txt,.csv,.tsv" style="display:none;" onchange="loadPasteFromFile(event,'pasteSales')">
           <button class="btn-ghost btn-sm" type="button" onclick="document.getElementById('pasteSalesFile').click()">📁 ارفع ملف بدل اللصق (أسرع كتير للبيانات الضخمة)</button>
@@ -417,6 +441,24 @@ WHERE T0."DocStatus"='O' AND T1."LineStatus"='O'</code>
           <button class="btn-ghost btn-sm" type="button" onclick="document.getElementById('pastePOFile').click()">📁 ارفع ملف بدل اللصق (أسرع كتير للبيانات الضخمة)</button>
           <button class="btn-ghost btn-sm" type="button" onclick="clearUploadedFile('pastePO')">✕ إزالة الملف</button>
           <span class="status-msg" id="pastePOFileMsg"></span>
+        </div>
+      </details>
+
+      <details class="opt">
+        <summary>🗂 استيراد بيانات العملاء (رمز/اسم، لربط تفصيل المبيعات حسب العميل)</summary>
+        <div class="hint">
+          لصق تصدير "Customers" الكامل من SAP B1 مباشرة (نفس أعمدة "BP Code" / "BP Name") أو كويري
+          <code>SELECT "CardCode" AS "رمز العميل", "CardName" AS "اسم العميل" FROM OCRD WHERE "CardType"='C'</code>.
+          يُستخدم لعرض اسم موثوق بتفصيل مبيعات العميل بالتقرير حتى لو تغيّر اسم العميل بفاتورة قديمة.
+          إضافة فقط — ما بيغيّر اسم موجود مسبقاً.
+        </div>
+        <textarea id="pasteCustomers" placeholder="الصق هنا: رمز العميل / اسم العميل ..."></textarea>
+        <div class="row-actions" style="margin-top:6px;">
+          <input type="file" id="pasteCustomersFile" accept=".txt,.csv,.tsv" style="display:none;" onchange="loadPasteFromFile(event,'pasteCustomers')">
+          <button class="btn-ghost btn-sm" type="button" onclick="document.getElementById('pasteCustomersFile').click()">📁 ارفع ملف</button>
+          <button class="btn-ghost btn-sm" type="button" onclick="clearUploadedFile('pasteCustomers')">✕ إزالة الملف</button>
+          <button class="btn-primary btn-sm" type="button" onclick="importCustomersMaster()">استيراد بيانات العملاء</button>
+          <span class="status-msg" id="customersMasterMsg"></span>
         </div>
       </details>
 
@@ -540,6 +582,7 @@ let state = {
   params:{}, // itemCode -> {supplier, leadTimeDays, moq, orderMultiple, shelfLifeDays, minRemainShelfLife, unitCost, serviceLevel, criticality}
   supplierSettings:{}, // supplierKey(normalized) -> {relationshipType:'normal'|'contract'|'target', note}
   warehouseNames:{}, // whsCode -> whsName
+  customerNames:{}, // normalized customer code -> اسم العميل الموثوق (من كشف SAP)
   computed:[], demandWindowDays:90
 };
 let curFilter='all';
@@ -661,12 +704,15 @@ function processAllDataHeavy(){
     const iDate = colIndex(headers, ['التاريخ','DocDate']);
     const iQty = colIndex(headers, ['الكمية','Quantity']);
     const iWhs = colIndex(headers, ['المستودع','WhsCode']);
-    const iCust = colIndex(headers, ['العميل','CardName','CardCode']);
+    const iCustCode = colIndex(headers, ['رمز العميل','CardCode']);
+    const iCustName = colIndex(headers, ['العميل','CardName']);
     const iAmt = colIndex(headers, ['المبلغ','LineTotal','Amount']);
     if(iCode<0 || iDate<0 || iQty<0){ msg.textContent='تعذر إيجاد أعمدة كويري المبيعات (رمز الصنف/التاريخ/الكمية)'; msg.className='status-msg err'; return; }
     state.salesRaw = rows.map(r=>({
       code:r[iCode], date:r[iDate], qty:toNum(r[iQty]), whs: iWhs>=0 ? r[iWhs] : '',
-      customer: iCust>=0 ? (r[iCust]||'') : '', amount: iAmt>=0 ? toNum(r[iAmt]) : NaN
+      customerCode: iCustCode>=0 ? (r[iCustCode]||'') : '',
+      customer: iCustName>=0 ? (r[iCustName]||'') : (iCustCode>=0 ? (r[iCustCode]||'') : ''),
+      amount: iAmt>=0 ? toNum(r[iAmt]) : NaN
     })).filter(r=>r.code && !isNaN(r.qty));
   }
 
@@ -1693,26 +1739,71 @@ function updateSupplierSetting(key, field, value){
 }
 function importSupplierNames(){
   const msg = document.getElementById('supplierNamesMsg');
-  const txt = document.getElementById('pasteSupplierNames').value;
+  const txt = getPasteText('pasteSupplierNames');
   if(!txt.trim()){ msg.textContent='الصق قائمة رمز/اسم المورد أولاً'; msg.className='status-msg err'; return; }
   const {headers, rows} = splitPasted(txt);
-  const iCode = colIndex(headers, ['رمز المورد','CardCode']);
-  const iName = colIndex(headers, ['اسم المورد','CardName']);
+  const iCode = colIndex(headers, ['رمز المورد','CardCode','BP Code']);
+  const iName = colIndex(headers, ['اسم المورد','CardName','BP Name']);
   if(iCode<0 || iName<0){ msg.textContent='تعذر إيجاد عمودي "رمز المورد" و"اسم المورد"'; msg.className='status-msg err'; return; }
-  let count = 0;
+  let count = 0, skipped = 0;
   rows.forEach(r=>{
     const code = r[iCode], name = r[iName]; if(!code || !name) return;
     const nk = normSupplierKey(code);
     if(!state.supplierSettings[nk]) state.supplierSettings[nk] = {relationshipType:'normal', note:''};
+    // إضافة فقط — ما بيغيّر اسم مستورد مسبقاً حتى لو مختلف بالنسخة الجديدة
+    if(state.supplierSettings[nk].displayName){ skipped++; return; }
     state.supplierSettings[nk].displayName = name;
     count++;
   });
-  msg.textContent = '✔ استُوردت أسماء '+count+' مورد';
+  msg.textContent = '✔ استُوردت أسماء '+count+' مورد جديد'+(skipped?(' — '+skipped+' موجود مسبقاً ما انلمس'):'');
   msg.className='status-msg ok';
   runEngine();
   renderSuppliers();
   renderTower();
   scheduleCloudSave(['suppliers']);
+}
+function importItemsMaster(){
+  const msg = document.getElementById('itemsMasterMsg');
+  const txt = getPasteText('pasteItemsMaster');
+  if(!txt.trim()){ msg.textContent='الصق كشف الأصناف أولاً'; msg.className='status-msg err'; return; }
+  const {headers, rows} = splitPasted(txt);
+  const iCode = colIndex(headers, ['رمز الصنف','ItemCode','Item No.']);
+  const iName = colIndex(headers, ['اسم الصنف','ItemName','Item Description']);
+  if(iCode<0){ msg.textContent='تعذر إيجاد عمود رمز الصنف ("Item No." أو "رمز الصنف")'; msg.className='status-msg err'; return; }
+  let count = 0, skipped = 0;
+  rows.forEach(r=>{
+    const code = r[iCode]; if(!code) return;
+    // إضافة فقط — أصناف موجودة أصلاً (من الكويري رقم 1) ما بتتلمس ولا حتى لو الاسم مختلف
+    if(state.itemsRaw[code]){ skipped++; return; }
+    state.itemsRaw[code] = { code, name: iName>=0 ? (r[iName]||code) : code };
+    if(!state.params[code]) state.params[code] = { supplier:'', leadTimeDays:'', moq:'', orderMultiple:1, shelfLifeDays:'', minRemainShelfLife:'', unitCost:'', serviceLevel:95, criticality:'Medium', leadTimeIsDefault:false, moqIsDefault:false };
+    count++;
+  });
+  msg.textContent = '✔ أُضيف '+count+' صنف جديد'+(skipped?(' — '+skipped+' موجود مسبقاً ما انلمس'):'');
+  msg.className='status-msg ok';
+  renderParamsTable();
+  runEngine();
+  scheduleCloudSave(['items']);
+}
+function importCustomersMaster(){
+  const msg = document.getElementById('customersMasterMsg');
+  const txt = getPasteText('pasteCustomers');
+  if(!txt.trim()){ msg.textContent='الصق قائمة رمز/اسم العميل أولاً'; msg.className='status-msg err'; return; }
+  const {headers, rows} = splitPasted(txt);
+  const iCode = colIndex(headers, ['رمز العميل','CardCode','BP Code']);
+  const iName = colIndex(headers, ['اسم العميل','CardName','BP Name']);
+  if(iCode<0 || iName<0){ msg.textContent='تعذر إيجاد عمودي "رمز العميل" و"اسم العميل"'; msg.className='status-msg err'; return; }
+  let count = 0, skipped = 0;
+  rows.forEach(r=>{
+    const code = r[iCode], name = r[iName]; if(!code || !name) return;
+    const nk = normSupplierKey(code); // نفس التطبيع (Trim+Lowercase) — يشتغل لأي رمز نصي
+    if(state.customerNames[nk]){ skipped++; return; }
+    state.customerNames[nk] = name;
+    count++;
+  });
+  msg.textContent = '✔ استُوردت أسماء '+count+' عميل جديد'+(skipped?(' — '+skipped+' موجود مسبقاً ما انلمس'):'');
+  msg.className='status-msg ok';
+  scheduleCloudSave(['customers']);
 }
 function showMonthDrilldown(code, monthKey){
   const r = findReportItem(code); if(!r) return;
@@ -1723,12 +1814,16 @@ function showMonthDrilldown(code, monthKey){
   });
   const byCustomer = {};
   rowsRaw.forEach(x=>{
-    const cust = x.customer || 'غير محدَّد';
-    const c = byCustomer[cust] = byCustomer[cust] || {qty:0, value:0};
+    // نجمّع حسب رمز العميل لو موجود (مفتاح فريد وموثوق) لا اسمه فقط — بيتفادى تكرار
+    // نفس العميل بأسطر منفصلة بفروقات كتابة بسيطة بالاسم بين فاتورة وفاتورة
+    const key = x.customerCode ? normSupplierKey(x.customerCode) : ('name:'+(x.customer||''));
+    const knownName = x.customerCode && state.customerNames[normSupplierKey(x.customerCode)];
+    const display = knownName || x.customer || x.customerCode || 'غير محدَّد';
+    const c = byCustomer[key] = byCustomer[key] || {display, qty:0, value:0};
     c.qty += x.qty||0;
     if(!isNaN(x.amount)) c.value += x.amount;
   });
-  const list = Object.keys(byCustomer).map(c=>({customer:c, qty:byCustomer[c].qty, value:byCustomer[c].value}));
+  const list = Object.keys(byCustomer).map(k=>({customer:byCustomer[k].display, qty:byCustomer[k].qty, value:byCustomer[k].value}));
   const sortByValue = reportMode!=='qty' && list.some(x=>x.value>0);
   list.sort((a,b)=> sortByValue ? b.value-a.value : b.qty-a.qty);
   const colCount = reportMode==='both' ? 3 : 2;
@@ -1857,15 +1952,16 @@ async function pullStateFromCloud(){
   const el = document.getElementById('cloudSyncMsg');
   try{
     if(el){ el.textContent = '⏳ جارٍ تحميل البيانات المحفوظة...'; el.className='status-msg ok'; }
-    const [items, params, sales, inv, lt, ap, po, supSettings] = await Promise.all([
+    const [items, params, sales, inv, lt, ap, po, supSettings, customers] = await Promise.all([
       fetchAllRows('procurement_items', 'item_code,name'),
       fetchAllRows('procurement_params', '*'),
-      fetchAllRows('procurement_sales', 'item_code,sale_date,qty,whs,customer,amount'),
+      fetchAllRows('procurement_sales', 'item_code,sale_date,qty,whs,customer,customer_code,amount'),
       fetchAllRows('procurement_inventory', 'item_code,whs,whs_name,on_hand,on_order'),
       fetchAllRows('procurement_leadtime', 'item_code,order_date,recv_date,qty,price,supplier,doc_entry'),
       fetchAllRows('procurement_ap_invoices', 'item_code,supplier,doc_entry,qty,recv_date'),
       fetchAllRows('procurement_po', 'item_code,qty,arrival_date,supplier'),
       fetchAllRows('procurement_suppliers', 'supplier_key,relationship_type,note,display_name'),
+      fetchAllRows('procurement_customers', 'customer_key,name'),
     ]);
     if(items.length){ state.itemsRaw = {}; items.forEach(r=>{ state.itemsRaw[r.item_code] = {code:r.item_code, name:r.name}; }); }
     if(params.length){
@@ -1878,7 +1974,7 @@ async function pullStateFromCloud(){
         leadTimeIsDefault: !!r.lead_time_is_default, moqIsDefault: !!r.moq_is_default
       };});
     }
-    if(sales.length) state.salesRaw = sales.map(r=>({code:r.item_code, date:r.sale_date, qty:r.qty, whs:r.whs||'', customer:r.customer||'', amount:r.amount??NaN}));
+    if(sales.length) state.salesRaw = sales.map(r=>({code:r.item_code, date:r.sale_date, qty:r.qty, whs:r.whs||'', customer:r.customer||'', customerCode:r.customer_code||'', amount:r.amount??NaN}));
     if(inv.length) state.invRaw = inv.map(r=>({code:r.item_code, onHand:r.on_hand||0, onOrder:r.on_order||0, whs:r.whs||'', whsName:r.whs_name||''}));
     if(lt.length) state.leadTimeRaw = lt.map(r=>({code:r.item_code, orderDate:r.order_date, recvDate:r.recv_date, qty:r.qty, price:r.price, supplier:r.supplier||'', docEntry:r.doc_entry||''}));
     if(ap.length) state.apInvoiceRaw = ap.map(r=>({code:r.item_code, supplier:r.supplier, docEntry:r.doc_entry, qty:r.qty, date:r.recv_date||''}));
@@ -1886,6 +1982,10 @@ async function pullStateFromCloud(){
     if(supSettings.length){
       state.supplierSettings = {};
       supSettings.forEach(r=>{ state.supplierSettings[r.supplier_key] = {relationshipType:r.relationship_type||'normal', note:r.note||'', displayName:r.display_name||''}; });
+    }
+    if(customers.length){
+      state.customerNames = {};
+      customers.forEach(r=>{ state.customerNames[r.customer_key] = r.name; });
     }
     saveStateLocal();
     if(Object.keys(state.itemsRaw||{}).length){
@@ -1895,7 +1995,7 @@ async function pullStateFromCloud(){
   }catch(e){ console.warn('تعذر التحميل من السيرفر', e); if(el){ el.textContent='⚠ تعذر التحميل من السيرفر'; el.className='status-msg err'; } }
 }
 let cloudSaveInProgress = false;
-const DATASET_LABELS = {items:'الأصناف', params:'البارامترات', sales:'المبيعات', inventory:'المخزون', leadtime:'مدة التوريد', apinvoice:'استلام البضاعة', po:'طلبات الشراء المفتوحة', suppliers:'إعدادات الموردين'};
+const DATASET_LABELS = {items:'الأصناف', params:'البارامترات', sales:'المبيعات', inventory:'المخزون', leadtime:'مدة التوريد', apinvoice:'استلام البضاعة', po:'طلبات الشراء المفتوحة', suppliers:'إعدادات الموردين', customers:'بيانات العملاء'};
 async function pushStateToCloud(datasets){
   if(!sb || !curUser) return;
   const el = document.getElementById('cloudSyncMsg');
@@ -1926,7 +2026,7 @@ async function pushStateToCloud(datasets){
       lead_time_is_default: !!p.leadTimeIsDefault, moq_is_default: !!p.moqIsDefault
     };
   })));
-  await safeSave('sales', ()=> replaceLogTable('procurement_sales', state.salesRaw.map(r=>({item_code:r.code, sale_date:normDateForDb(r.date), qty:r.qty, whs:r.whs||null, customer:r.customer||null, amount: isNaN(r.amount)?null:r.amount}))));
+  await safeSave('sales', ()=> replaceLogTable('procurement_sales', state.salesRaw.map(r=>({item_code:r.code, sale_date:normDateForDb(r.date), qty:r.qty, whs:r.whs||null, customer:r.customer||null, customer_code:r.customerCode||null, amount: isNaN(r.amount)?null:r.amount}))));
   await safeSave('inventory', ()=> replaceLogTable('procurement_inventory', state.invRaw.map(r=>({item_code:r.code, whs:r.whs||null, whs_name:r.whsName||null, on_hand:r.onHand, on_order:r.onOrder}))));
   await safeSave('leadtime', ()=> replaceLogTable('procurement_leadtime', state.leadTimeRaw.map(r=>({item_code:r.code, order_date:normDateForDb(r.orderDate), recv_date:normDateForDb(r.recvDate), qty: isNaN(r.qty)?null:r.qty, price: isNaN(r.price)?null:r.price, supplier:r.supplier||null, doc_entry:r.docEntry||null}))));
   await safeSave('apinvoice', ()=> replaceLogTable('procurement_ap_invoices', state.apInvoiceRaw.map(r=>({item_code:r.code, supplier:r.supplier, doc_entry:String(r.docEntry), qty:r.qty, recv_date:normDateForDb(r.date)}))));
@@ -1934,6 +2034,10 @@ async function pushStateToCloud(datasets){
   await safeSave('suppliers', async ()=>{
     const rows = Object.keys(state.supplierSettings).map(k=>({supplier_key:k, relationship_type: state.supplierSettings[k].relationshipType||'normal', note: state.supplierSettings[k].note||null, display_name: state.supplierSettings[k].displayName||null}));
     if(rows.length) await upsertChunked('procurement_suppliers', rows, 'supplier_key');
+  });
+  await safeSave('customers', async ()=>{
+    const rows = Object.keys(state.customerNames).map(k=>({customer_key:k, name: state.customerNames[k]}));
+    if(rows.length) await upsertChunked('procurement_customers', rows, 'customer_key');
   });
   cloudSaveInProgress = false;
   if(el){
