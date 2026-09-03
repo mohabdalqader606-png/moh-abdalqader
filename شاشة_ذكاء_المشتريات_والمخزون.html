@@ -2468,12 +2468,14 @@ function withTimeout(promise, ms, label){
 // الصفحات بالتوازي (دفعات صغيرة بدل كلها سوا، حتى ما نستهلك كل اتصالات قاعدة البيانات)
 async function fetchAllRows(table, selectCols){
   const pageSize = 1000, concurrency = 3;
-  const {count, error: countErr} = await withTimeout(sb.from(table).select(selectCols, {count:'exact', head:true}), 20000, table+' (عدّ الصفوف)');
-  if(countErr){ console.warn('تعذر عدّ '+table, countErr); throw new Error('تعذر قراءة جدول '+table+' — '+describeError(countErr)); }
-  if(!count) return [];
+  // بنجيب العدد الكلي مع الصفحة الأولى بنفس طلب select().range() العادي (بدل طلب
+  // head:true منفصل — مسار أقل اختباراً وممكن يكون هو نفسه سبب "خطأ غير معروف")
+  const {data: firstPage, count, error: firstErr} = await withTimeout(sb.from(table).select(selectCols, {count:'exact'}).range(0, pageSize-1), 20000, table+' (صفحة 1)');
+  if(firstErr){ console.warn('تعذر قراءة '+table, firstErr); throw new Error('تعذر قراءة جدول '+table+' — '+describeError(firstErr)); }
+  let all = firstPage || [];
+  if(!count || count<=pageSize) return all;
   const pageCount = Math.ceil(count/pageSize);
-  let all = [];
-  for(let start=0; start<pageCount; start+=concurrency){
+  for(let start=1; start<pageCount; start+=concurrency){
     const batch = [];
     for(let p=start; p<Math.min(start+concurrency, pageCount); p++){
       const from = p*pageSize;
