@@ -49,8 +49,9 @@
      create table if not exists procurement_ap_invoices (
        id bigserial primary key, item_code text, supplier text, doc_entry text, qty numeric
      );
-     -- ترقية جدول قديم أُنشئ قبل إضافة تاريخ الاستلام (آمن التكرار):
+     -- ترقية جدول قديم أُنشئ قبل إضافة تاريخ الاستلام/السعر (آمن التكرار):
      alter table procurement_ap_invoices add column if not exists recv_date date;
+     alter table procurement_ap_invoices add column if not exists price numeric;
      create table if not exists procurement_po (
        id bigserial primary key, item_code text, qty numeric, arrival_date date, supplier text
      );
@@ -414,15 +415,15 @@ WHERE T0."validFor"='Y'</code>
       <details class="opt">
         <summary><span class="num-badge opt">6</span> تاريخ استلام البضاعة (GRPO) — لتحليل حمولة الشحنة المعتادة لكل مورد (اختياري)</summary>
         <div class="hint">
-          نستخدم استلام البضاعة (GRPO) لا فاتورة الشراء، لأنه بيعكس فعلياً شو وصل سوا بنفس الشحنة (والتاريخ فيه دقيق، بعكس تاريخ إدخال الفاتورة). كل ما زاد المدى الزمني (سنتين-ثلاثة) كل ما كان التحليل أدق. رقم المستند إلزامي — هو اللي بيربط الأصناف يلي وصلت سوا بنفس الشحنة.
+          نستخدم استلام البضاعة (GRPO) لا فاتورة الشراء، لأنه بيعكس فعلياً شو وصل سوا بنفس الشحنة (والتاريخ فيه دقيق، بعكس تاريخ إدخال الفاتورة). كل ما زاد المدى الزمني (سنتين-ثلاثة) كل ما كان التحليل أدق. رقم المستند إلزامي — هو اللي بيربط الأصناف يلي وصلت سوا بنفس الشحنة. عمود السعر اختياري — لو موجود، بتقدر تشوف بتقرير الأصناف آخر سعر استلام لكل صنف مقارنة بالي قبله، وآخر 5 أسعار جنب بعض.
           <code class="block">SELECT T1."ItemCode" AS "رمز الصنف", T0."CardCode" AS "المورد",
        T0."DocEntry" AS "رقم الفاتورة", T0."DocDate" AS "تاريخ الفاتورة",
-       T1."Quantity" AS "الكمية"
+       T1."Quantity" AS "الكمية", T1."Price" AS "السعر"
 FROM OPDN T0 INNER JOIN PDN1 T1 ON T0."DocEntry"=T1."DocEntry"
 WHERE T0."DocDate" >= ADD_YEARS(CURRENT_DATE, -3)
 ORDER BY T0."CardCode", T0."DocEntry"</code>
         </div>
-        <textarea id="pasteApInvoices" placeholder="الصق هنا: رمز الصنف / المورد / رقم المستند / تاريخ الاستلام / الكمية ..."></textarea>
+        <textarea id="pasteApInvoices" placeholder="الصق هنا: رمز الصنف / المورد / رقم المستند / تاريخ الاستلام / الكمية / السعر (اختياري) ..."></textarea>
         <div class="row-actions" style="margin-top:6px;">
           <input type="file" id="pasteApInvoicesFile" accept=".txt,.csv,.tsv" style="display:none;" onchange="loadPasteFromFile(event,'pasteApInvoices')">
           <button class="btn-ghost btn-sm" type="button" onclick="document.getElementById('pasteApInvoicesFile').click()">📁 ارفع ملف بدل اللصق (أسرع كتير للبيانات الضخمة)</button>
@@ -804,8 +805,9 @@ function processAllDataHeavy(){
     const iDoc = colIndex(headers, ['رقم الفاتورة','DocEntry','DocNum','Internal Number']);
     const iQty = colIndex(headers, ['الكمية','Quantity']);
     const iDate = colIndex(headers, ['تاريخ الفاتورة','تاريخ الاستلام','DocDate','Posting Date']);
+    const iPrice = colIndex(headers, ['السعر','Price']);
     if(iCode>=0 && iSupplier>=0 && iDoc>=0 && iQty>=0){
-      state.apInvoiceRaw = rows.map(r=>({code:r[iCode], supplier:r[iSupplier], docEntry:r[iDoc], qty:toNum(r[iQty]), date: iDate>=0?r[iDate]:''})).filter(r=>r.code && r.supplier && r.docEntry);
+      state.apInvoiceRaw = rows.map(r=>({code:r[iCode], supplier:r[iSupplier], docEntry:r[iDoc], qty:toNum(r[iQty]), date: iDate>=0?r[iDate]:'', price: iPrice>=0 ? toNum(r[iPrice]) : NaN})).filter(r=>r.code && r.supplier && r.docEntry);
     }
   }
 
@@ -1262,6 +1264,19 @@ function runEngine(){
   state.apInvoiceRaw.forEach(r=> noteReceipt(r.code, r.date, r.qty, r.supplier));
   state.leadTimeRaw.forEach(r=> noteReceipt(r.code, r.recvDate, r.qty, r.supplier));
 
+  // آخر 5 أسعار استلام لكل صنف (من عمود السعر الاختياري بكويري GRPO رقم 6) — لمقارنة
+  // آخر سعر بالي قبله، مرتبة تنازلياً حسب التاريخ (الأحدث أولاً)
+  const priceHistoryByItem = {};
+  state.apInvoiceRaw.forEach(r=>{
+    if(isNaN(r.price)) return;
+    const d = parseDateFlexible(r.date); if(!d) return;
+    (priceHistoryByItem[r.code] = priceHistoryByItem[r.code] || []).push({date:d, price:r.price, supplier:r.supplier, docEntry:r.docEntry, qty:r.qty});
+  });
+  Object.keys(priceHistoryByItem).forEach(code=>{
+    priceHistoryByItem[code].sort((a,b)=>b.date-a.date);
+    priceHistoryByItem[code] = priceHistoryByItem[code].slice(0,5);
+  });
+
   const salesValueByItem = {}; // لتصنيف ABC
   Object.keys(state.itemsRaw).forEach(code=>{
     const s = salesByItem[code] || [];
@@ -1417,6 +1432,9 @@ function runEngine(){
       moq: toNum(p.moq), orderMultiple: toNum(p.orderMultiple)||1, shelfLifeDays: toNum(p.shelfLifeDays),
       lastReceiptDate: lastReceipt ? lastReceipt.date : null,
       lastReceiptQty: lastReceipt ? lastReceipt.qty : null,
+      priceHistory: priceHistoryByItem[code] || [],
+      lastPrice: (priceHistoryByItem[code] && priceHistoryByItem[code][0]) ? priceHistoryByItem[code][0].price : null,
+      prevPrice: (priceHistoryByItem[code] && priceHistoryByItem[code][1]) ? priceHistoryByItem[code][1].price : null,
       monthly
     };
   });
@@ -1574,6 +1592,7 @@ function setReportMode(m){
 }
 function fmtNum(n){ return (Math.round((n||0)*10)/10).toLocaleString('en-US'); }
 function fmtMoney(n){ return Math.round(n||0).toLocaleString('en-US'); }
+function fmtPrice(n){ return (Math.round((n||0)*1000)/1000).toLocaleString('en-US', {maximumFractionDigits:3}); }
 function cellHtml(qty, value){
   if(reportMode==='qty') return fmtNum(qty);
   if(reportMode==='value') return fmtMoney(value);
@@ -1640,6 +1659,7 @@ function renderReport(){
     if(key==='supplier') return (state.itemSupplierDisplay && state.itemSupplierDisplay[r.code]) || r.supplier || '';
     if(key==='lastReceiptDate') return r.lastReceiptDate;
     if(key==='lastReceiptQty') return r.lastReceiptQty;
+    if(key==='lastPrice') return r.lastPrice;
     if(key==='balance') return reportMode==='value' ? r.onHand*r.unitCost : r.onHand;
     if(key==='avg'){ const t=totals.get(r.code); return reportMode==='value' ? t.avgValue : t.avgQty; }
     if(key.indexOf('month:')===0){ const mk=key.slice(6); const m=r.monthly[mk]; if(!m) return null; return reportMode==='value' ? m.value : m.qty; }
@@ -1667,6 +1687,7 @@ function renderReport(){
     + rth('supplier','اسم المورد','freeze freeze-3')
     + rth('lastReceiptDate','تاريخ آخر استلام','freeze freeze-4')
     + rth('lastReceiptQty','كمية آخر استلام','freeze freeze-5')
+    + rth('lastPrice','آخر سعر استلام')
     + rth('balance','الرصيد الحالي')
     + months.map(k=>rth('month:'+k, esc(state.allMonthLabel[k]))).join('')
     + rth('avg','متوسط المدى المختار')
@@ -1680,12 +1701,26 @@ function renderReport(){
     const supDisplay = (state.itemSupplierDisplay && state.itemSupplierDisplay[r.code]) || r.supplier || '—';
     const lastRecvDate = r.lastReceiptDate ? fmtDate(r.lastReceiptDate) : '—';
     const lastRecvQty = r.lastReceiptQty!=null ? fmtNum(r.lastReceiptQty) : '—';
+    let priceCell;
+    if(r.lastPrice==null){
+      priceCell = '<td class="num">—</td>';
+    } else {
+      let changeHtml = '';
+      if(r.prevPrice!=null && r.prevPrice!==0){
+        const pct = ((r.lastPrice - r.prevPrice) / r.prevPrice) * 100;
+        const dir = pct>0 ? '▲' : (pct<0 ? '▼' : '—');
+        const color = pct>0 ? '#B91C1C' : (pct<0 ? '#15803D' : 'var(--ink-soft)');
+        changeHtml = '<br><span style="font-size:11px;color:'+color+';">'+dir+' '+Math.abs(Math.round(pct*10)/10)+'%</span>';
+      }
+      priceCell = '<td class="num" style="cursor:pointer;color:var(--navy);text-decoration:underline;" onclick="showPriceDrilldown(this,\''+r.code+'\')">'+fmtPrice(r.lastPrice)+changeHtml+'</td>';
+    }
     return '<tr>'
       + '<td class="freeze freeze-1"><b>'+esc(r.name)+'</b><br><span class="item-code">'+esc(r.code)+'</span></td>'
       + '<td class="freeze freeze-2 item-code">'+esc(supCode)+'</td>'
       + '<td class="freeze freeze-3">'+esc(supDisplay)+'</td>'
       + '<td class="freeze freeze-4">'+esc(lastRecvDate)+'</td>'
       + '<td class="num freeze freeze-5">'+esc(lastRecvQty)+'</td>'
+      + priceCell
       + '<td class="num" style="cursor:pointer;color:var(--navy);text-decoration:underline;" onclick="showBalanceDrilldown(this,\''+r.code+'\')">'+cellHtml(r.onHand, balVal)+'</td>'
       + months.map(k=>'<td class="num" style="cursor:pointer;color:var(--navy);text-decoration:underline;" onclick="showMonthDrilldown(this,\''+r.code+'\',\''+k+'\')">'+cellHtml(r.monthly[k].qty, r.monthly[k].value)+'</td>').join('')
       + '<td class="num">'+cellHtml(t.avgQty, t.avgValue)+'</td>'
@@ -1734,6 +1769,26 @@ function showBalanceDrilldown(sourceEl, code){
   renderDrilldown(sourceEl, code+'|balance', 'الرصيد الحالي — '+r.name+' ('+r.code+')',
     '<table class="minitbl"><thead><tr><th>المستودع</th>'+qtyValueTh('الكمية','القيمة')+'</tr></thead><tbody>'
     + (rows || '<tr><td colspan="'+colCount+'" style="text-align:center;color:var(--ink-soft);padding:14px;">لا يوجد تفصيل مستودعات لهالصنف</td></tr>')
+    + '</tbody></table>');
+}
+function showPriceDrilldown(sourceEl, code){
+  const r = findReportItem(code); if(!r) return;
+  const hist = r.priceHistory || [];
+  const rows = hist.map((h,i)=>{
+    const prev = hist[i+1];
+    let changeCell = '—';
+    if(prev && prev.price){
+      const pct = ((h.price - prev.price) / prev.price) * 100;
+      const dir = pct>0 ? '▲' : (pct<0 ? '▼' : '—');
+      const color = pct>0 ? '#B91C1C' : (pct<0 ? '#15803D' : 'var(--ink-soft)');
+      changeCell = '<span style="color:'+color+';">'+dir+' '+Math.abs(Math.round(pct*10)/10)+'%</span>';
+    }
+    return '<tr><td>'+esc(fmtDate(h.date))+'</td><td>'+esc(h.supplier||'—')+'</td><td class="item-code">'+esc(h.docEntry||'—')+'</td>'
+      + '<td class="num">'+fmtNum(h.qty)+'</td><td class="num">'+fmtPrice(h.price)+'</td><td class="num">'+changeCell+'</td></tr>';
+  }).join('');
+  renderDrilldown(sourceEl, code+'|price', 'آخر أسعار الاستلام — '+r.name+' ('+r.code+')',
+    '<table class="minitbl"><thead><tr><th>التاريخ</th><th>المورد</th><th>رقم المستند</th><th>الكمية</th><th>السعر</th><th>التغيّر عن السابق</th></tr></thead><tbody>'
+    + (rows || '<tr><td colspan="6" style="text-align:center;color:var(--ink-soft);padding:14px;">لا يوجد سعر مسجَّل لهالصنف — تأكد إن عمود "السعر" معبّى بكويري استلام البضاعة (رقم 6)</td></tr>')
     + '</tbody></table>');
 }
 /* ================= تبويب الموردون ================= */
@@ -2012,7 +2067,7 @@ async function pullStateFromCloud(){
       fetchAllRows('procurement_sales', 'item_code,sale_date,qty,whs,customer,customer_code,amount'),
       fetchAllRows('procurement_inventory', 'item_code,whs,whs_name,on_hand,on_order'),
       fetchAllRows('procurement_po_orders', 'item_code,supplier,order_date,qty'),
-      fetchAllRows('procurement_ap_invoices', 'item_code,supplier,doc_entry,qty,recv_date'),
+      fetchAllRows('procurement_ap_invoices', 'item_code,supplier,doc_entry,qty,recv_date,price'),
       fetchAllRows('procurement_po', 'item_code,qty,arrival_date,supplier'),
       fetchAllRows('procurement_suppliers', 'supplier_key,relationship_type,note,display_name'),
       fetchAllRows('procurement_customers', 'customer_key,name'),
@@ -2031,7 +2086,7 @@ async function pullStateFromCloud(){
     if(sales.length) state.salesRaw = sales.map(r=>({code:r.item_code, date:r.sale_date, qty:r.qty, whs:r.whs||'', customer:r.customer||'', customerCode:r.customer_code||'', amount:r.amount??NaN}));
     if(inv.length) state.invRaw = inv.map(r=>({code:r.item_code, onHand:r.on_hand||0, onOrder:r.on_order||0, whs:r.whs||'', whsName:r.whs_name||''}));
     if(poOrders.length) state.poOrdersRaw = poOrders.map(r=>({code:r.item_code, supplier:r.supplier||'', orderDate:r.order_date, qty:r.qty}));
-    if(ap.length) state.apInvoiceRaw = ap.map(r=>({code:r.item_code, supplier:r.supplier, docEntry:r.doc_entry, qty:r.qty, date:r.recv_date||''}));
+    if(ap.length) state.apInvoiceRaw = ap.map(r=>({code:r.item_code, supplier:r.supplier, docEntry:r.doc_entry, qty:r.qty, date:r.recv_date||'', price: r.price??NaN}));
     if(po.length) state.poRaw = po.map(r=>({code:r.item_code, qty:r.qty, arrivalDate:r.arrival_date, supplier:r.supplier||''}));
     if(supSettings.length){
       state.supplierSettings = {};
@@ -2083,7 +2138,7 @@ async function pushStateToCloud(datasets){
   await safeSave('sales', ()=> replaceLogTable('procurement_sales', state.salesRaw.map(r=>({item_code:r.code, sale_date:normDateForDb(r.date), qty:r.qty, whs:r.whs||null, customer:r.customer||null, customer_code:r.customerCode||null, amount: isNaN(r.amount)?null:r.amount}))));
   await safeSave('inventory', ()=> replaceLogTable('procurement_inventory', state.invRaw.map(r=>({item_code:r.code, whs:r.whs||null, whs_name:r.whsName||null, on_hand:r.onHand, on_order:r.onOrder}))));
   await safeSave('leadtime', ()=> replaceLogTable('procurement_po_orders', state.poOrdersRaw.map(r=>({item_code:r.code, supplier:r.supplier||null, order_date:normDateForDb(r.orderDate), qty: isNaN(r.qty)?null:r.qty}))));
-  await safeSave('apinvoice', ()=> replaceLogTable('procurement_ap_invoices', state.apInvoiceRaw.map(r=>({item_code:r.code, supplier:r.supplier, doc_entry:String(r.docEntry), qty:r.qty, recv_date:normDateForDb(r.date)}))));
+  await safeSave('apinvoice', ()=> replaceLogTable('procurement_ap_invoices', state.apInvoiceRaw.map(r=>({item_code:r.code, supplier:r.supplier, doc_entry:String(r.docEntry), qty:r.qty, recv_date:normDateForDb(r.date), price: isNaN(r.price)?null:r.price}))));
   await safeSave('po', ()=> replaceLogTable('procurement_po', state.poRaw.map(r=>({item_code:r.code, qty:r.qty, arrival_date:normDateForDb(r.arrivalDate), supplier:r.supplier||null}))));
   await safeSave('suppliers', async ()=>{
     const rows = Object.keys(state.supplierSettings).map(k=>({supplier_key:k, relationship_type: state.supplierSettings[k].relationshipType||'normal', note: state.supplierSettings[k].note||null, display_name: state.supplierSettings[k].displayName||null}));
