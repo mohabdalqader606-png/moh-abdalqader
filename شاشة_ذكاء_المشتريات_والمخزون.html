@@ -1964,14 +1964,14 @@ function renderReport(){
 // التفصيل بيفتح كصف مباشرة تحت الصف يلي ضُغِط عليه (مش بآخر الصفحة) — ضغط نفس
 // الخلية مرة ثانية يسكّره (toggle)، وضغط خلية تانية يسكّر القديم ويفتح الجديد
 let openDrilldownKey = null;
-function renderDrilldown(sourceEl, reqKey, title, bodyHtml){
-  const tbody = document.getElementById('reportTbody');
+function renderDrilldown(sourceEl, reqKey, title, bodyHtml, tbodyId, theadId){
+  const tbody = document.getElementById(tbodyId || 'reportTbody');
   const existing = tbody.querySelector('tr.drilldown-row');
   if(existing) existing.remove();
   if(openDrilldownKey===reqKey){ openDrilldownKey = null; return; }
   openDrilldownKey = reqKey;
   const tr = sourceEl.closest('tr'); if(!tr) return;
-  const colCount = document.querySelectorAll('#reportThead th').length || 1;
+  const colCount = document.querySelectorAll('#'+(theadId || 'reportThead')+' th').length || 1;
   const row = document.createElement('tr');
   row.className = 'drilldown-row';
   row.innerHTML = '<td colspan="'+colCount+'" style="padding:0;">'
@@ -2069,9 +2069,9 @@ function renderSuppliers(){
   }
   thead.innerHTML = '<tr>' + SUPPLIERS_COLS.map(([k,label])=>
     '<th class="sortable-th" onclick="setSuppliersSort(\''+k+'\')">'+label+' '+sortIcon(suppliersSortKey,k,suppliersSortDir)+'</th>'
-  ).join('') + '</tr>';
+  ).join('') + '<th>طلب شراء مقترح</th></tr>';
   if(!list.length){
-    tbody.innerHTML = '<tr><td colspan="12" class="empty-state"><div class="ic">🏭</div>ما فيه ربط موردين لسا — لازم عمود "المورد" بجدول البارامترات (رقم 5) أو كويري رقم 6 معبّى.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="13" class="empty-state"><div class="ic">🏭</div>ما فيه ربط موردين لسا — لازم عمود "المورد" بجدول البارامترات (رقم 5) أو كويري رقم 6 معبّى.</td></tr>';
     return;
   }
   tbody.innerHTML = list.map(s=>{
@@ -2091,8 +2091,67 @@ function renderSuppliers(){
         + ['normal','contract','target'].map(v=>'<option value="'+v+'" '+(s.relationshipType===v?'selected':'')+'>'+({normal:'عادي', contract:'عقد سنوي/موسمي', target:'تارجيت وتعويض'}[v])+'</option>').join('')
         + '</select></td>'
       + '<td><input value="'+esc(s.note)+'" placeholder="ملاحظة..." style="width:140px;" onchange="updateSupplierSetting(\''+s.key+'\',\'note\',this.value)"></td>'
+      + '<td><button class="btn-ghost btn-sm" type="button" onclick="showSupplierPODrilldown(this,\''+s.key+'\')">📦 اقترح</button></td>'
     + '</tr>';
   }).join('');
+}
+// طلب شراء مقترح لمورد: الكمية الموصى بها من المحرك للأصناف "مطلوبة الآن" + أصناف تانية
+// معتادة الترافق مع نفس المورد (حسب نمط استلام كويري 6 التاريخي) تُقترح بكمية تعبّي
+// الشحنة بدل ما نطلب صنف واحد لحاله بكمية صغيرة ما بتسوى شحنة/حاوية كاملة
+function showSupplierPODrilldown(sourceEl, supplierKey){
+  const s = (state.supplierStats || []).find(x=>x.key===supplierKey); if(!s) return;
+  const itemCodes = Object.keys(state.itemSupplierKey || {}).filter(c=>state.itemSupplierKey[c]===supplierKey);
+
+  const shipmentsByItem = {};
+  const allDocEntries = {};
+  state.apInvoiceRaw.forEach(r=>{
+    if(!r.code || normSupplierKey(r.supplier)!==supplierKey) return;
+    allDocEntries[r.docEntry] = true;
+    const m = shipmentsByItem[r.code] = shipmentsByItem[r.code] || {};
+    m[r.docEntry] = (m[r.docEntry]||0) + (isNaN(r.qty)?0:r.qty);
+  });
+  const totalShipments = Object.keys(allDocEntries).length;
+
+  let list = itemCodes.map(code=>{
+    const r = findReportItem(code);
+    const shipMap = shipmentsByItem[code] || {};
+    const qtys = Object.values(shipMap);
+    const shipCount = qtys.length;
+    const avgQtyPerShipment = shipCount ? qtys.reduce((a,b)=>a+b,0)/shipCount : 0;
+    const inclusionRate = totalShipments ? shipCount/totalShipments : 0;
+    const dueQty = (r && r.recommendedQty>0) ? r.recommendedQty : 0;
+    return {
+      code, name: (r && r.name) || (state.itemsRaw[code] && state.itemsRaw[code].name) || code,
+      dueQty, avgQtyPerShipment, inclusionRate,
+      onHand: r ? r.onHand : null, daysCover: r ? r.daysCover : null, decisionLabel: r ? r.decisionLabel : '—'
+    };
+  });
+
+  const anyDue = list.some(x=>x.dueQty>0);
+  list = list.map(x=>{
+    let suggestedQty = x.dueQty, reason = x.dueQty>0 ? 'مطلوب الآن حسب المحرك' : '—';
+    if(x.dueQty===0 && anyDue && x.inclusionRate>=0.5 && x.avgQtyPerShipment>0){
+      suggestedQty = Math.round(x.avgQtyPerShipment);
+      reason = 'اختياري — يترافق مع '+Math.round(x.inclusionRate*100)+'٪ من شحنات هالمورد تاريخياً';
+    }
+    return Object.assign({}, x, {suggestedQty, reason});
+  }).filter(x=>x.suggestedQty>0).sort((a,b)=> (b.dueQty - a.dueQty) || (b.suggestedQty - a.suggestedQty));
+
+  const rows = list.map(x=>'<tr><td>'+esc(x.name)+'<br><span class="item-code">'+esc(x.code)+'</span></td>'
+    + '<td>'+esc(x.decisionLabel)+'</td>'
+    + '<td class="num">'+(x.onHand!=null?fmtNum(x.onHand):'—')+'</td>'
+    + '<td class="num">'+(x.daysCover!=null?(x.daysCover===Infinity?'∞':x.daysCover):'—')+'</td>'
+    + '<td class="num">'+fmtNum(x.dueQty)+'</td>'
+    + '<td class="num">'+(x.avgQtyPerShipment?fmtNum(x.avgQtyPerShipment)+' ('+Math.round(x.inclusionRate*100)+'٪)':'—')+'</td>'
+    + '<td class="num"><b>'+fmtNum(x.suggestedQty)+'</b></td>'
+    + '<td style="font-size:11px;color:var(--ink-soft);">'+esc(x.reason)+'</td></tr>').join('');
+
+  renderDrilldown(sourceEl, 'supplierPO|'+supplierKey, 'طلب شراء مقترح — '+s.display+' ('+s.code+')',
+    (totalShipments<2 ? '<div style="margin-bottom:8px;color:var(--gold);font-size:12px;">⚠ عدد شحنات هالمورد المسجَّلة بكويري رقم 6 قليل جداً ('+totalShipments+') — نمط ترافق الأصناف مش موثوق لسا.</div>' : '')
+    + '<table class="minitbl"><thead><tr><th>الصنف</th><th>القرار</th><th>الرصيد الحالي</th><th>أيام تغطية</th>'
+    + '<th>الكمية الموصى بها</th><th>متوسط/شحنة (نسبة الترافق)</th><th>الكمية المقترحة بالطلب</th><th>السبب</th></tr></thead><tbody>'
+    + (rows || '<tr><td colspan="8" style="text-align:center;color:var(--ink-soft);padding:14px;">ما فيه أصناف مطلوبة الآن أو معتادة الترافق مع هالمورد حالياً</td></tr>')
+    + '</tbody></table>', 'suppliersTbody', 'suppliersThead');
 }
 function updateSupplierSetting(key, field, value){
   if(!state.supplierSettings[key]) state.supplierSettings[key] = {relationshipType:'normal', note:'', displayName:''};
