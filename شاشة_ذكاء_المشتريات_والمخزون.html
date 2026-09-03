@@ -27,6 +27,11 @@
      create table if not exists procurement_leadtime (
        id bigserial primary key, item_code text, order_date date, recv_date date
      );
+     -- ترقية جدول قديم أُنشئ قبل إضافة الكمية/السعر/المورد/رقم المستند (آمن التكرار):
+     alter table procurement_leadtime add column if not exists qty numeric;
+     alter table procurement_leadtime add column if not exists price numeric;
+     alter table procurement_leadtime add column if not exists supplier text;
+     alter table procurement_leadtime add column if not exists doc_entry text;
      create table if not exists procurement_ap_invoices (
        id bigserial primary key, item_code text, supplier text, doc_entry text, qty numeric
      );
@@ -312,18 +317,22 @@ FROM OITW T0 LEFT JOIN OWHS T1 ON T0."WhsCode"=T1."WhsCode"</code>
       </details>
 
       <details class="opt">
-        <summary><span class="num-badge opt">4</span> تاريخ الطلب والاستلام الفعلي (اختياري — لحساب مدة التوريد الحقيقية)</summary>
+        <summary><span class="num-badge opt">4</span> تاريخ الطلب والاستلام الفعلي + الكمية والمورد (اختياري — لحساب مدة التوريد الحقيقية)</summary>
         <div class="hint">
           بدون هذا الكويري، تُستخدم مدة التوريد التعاقدية اليدوية (بجدول البارامترات) مع افتراض تذبذب 20٪ حوله.
+          الكويري أصلاً مربوط بأمر الشراء ومستند الاستلام الحقيقيين، فمعه بلاش نتكل بس على حقل المورد
+          الحر بجدول الأصناف — <code>CardName</code> هون هو اسم المورد الرسمي من أمر الشراء نفسه، وبيُستخدم
+          كمصدر إضافي موثوق لربط الصنف بالمورد ولتاريخ/كمية آخر استلام (بالإضافة لكويري رقم 6).
           <code class="block">SELECT T1."ItemCode" AS "رمز الصنف", T0."DocDate" AS "تاريخ الطلب",
-       T2."DocDate" AS "تاريخ الاستلام"
+       T2."DocDate" AS "تاريخ الاستلام", T3."Quantity" AS "الكمية", T3."Price" AS "السعر",
+       T0."CardName" AS "المورد", T2."DocEntry" AS "رقم المستند"
 FROM OPOR T0
 INNER JOIN POR1 T1 ON T0."DocEntry"=T1."DocEntry"
 INNER JOIN PDN1 T3 ON T3."BaseEntry"=T0."DocEntry" AND T3."BaseType"=22
 INNER JOIN OPDN T2 ON T2."DocEntry"=T3."DocEntry"
 WHERE T0."DocDate" >= ADD_YEARS(CURRENT_DATE, -1)</code>
         </div>
-        <textarea id="pasteLeadTime" placeholder="الصق هنا: رمز الصنف / تاريخ الطلب / تاريخ الاستلام ..."></textarea>
+        <textarea id="pasteLeadTime" placeholder="الصق هنا: رمز الصنف / تاريخ الطلب / تاريخ الاستلام / الكمية(اختياري) / السعر(اختياري) / المورد(اختياري) ..."></textarea>
       </details>
 
       <details class="opt">
@@ -613,8 +622,16 @@ function processAllDataHeavy(){
     const iCode = colIndex(headers, ['رمز الصنف','ItemCode']);
     const iOrder = colIndex(headers, ['تاريخ الطلب']);
     const iRecv = colIndex(headers, ['تاريخ الاستلام']);
+    const iQty = colIndex(headers, ['الكمية','Quantity']);
+    const iPrice = colIndex(headers, ['السعر','Price']);
+    const iSupplier = colIndex(headers, ['المورد','CardName']);
+    const iDoc = colIndex(headers, ['رقم المستند','DocEntry']);
     if(iCode>=0 && iOrder>=0 && iRecv>=0){
-      state.leadTimeRaw = rows.map(r=>({code:r[iCode], orderDate:r[iOrder], recvDate:r[iRecv]})).filter(r=>r.code);
+      state.leadTimeRaw = rows.map(r=>({
+        code:r[iCode], orderDate:r[iOrder], recvDate:r[iRecv],
+        qty: iQty>=0 ? toNum(r[iQty]) : NaN, price: iPrice>=0 ? toNum(r[iPrice]) : NaN,
+        supplier: iSupplier>=0 ? r[iSupplier] : '', docEntry: iDoc>=0 ? r[iDoc] : ''
+      })).filter(r=>r.code);
     }
   }
 
@@ -850,11 +867,18 @@ function computeConsolidation(results){
   const resultByCode = {};
   results.forEach(r=>{ resultByCode[r.code]=r; });
 
+  // مصادر الاستلام الفعلي (لربط المورد وتحليل التجميع): كويري GRPO (رقم 6) + كويري
+  // مدة التوريد (رقم 4) لو فيه عمود مورد — الثاني مصدره أمر الشراء نفسه (OPOR.CardName)
+  // وعادة أوثق من حقل المورد الحر (UDF) بجدول الأصناف.
+  const receiptSources = state.apInvoiceRaw.concat(
+    (state.leadTimeRaw||[]).filter(r=>r.supplier).map(r=>({code:r.code, supplier:r.supplier, docEntry:r.docEntry||'', qty:r.qty}))
+  );
+
   // ربط الصنف بالمورد: نفضّل حقل المورد الموثّق بجدول البارامترات (من SAP مباشرة عادةً)،
   // ولا نلجأ لاستنتاجه من تكرار الاستلامات إلا لو كان فاضياً. المطابقة بمفتاح مُطبَّع
   // (Trim + Lowercase) حتى ما ينكسر الربط بفرق بسيط بالكتابة بين المصدرين.
   const itemSupplierFreq = {};
-  state.apInvoiceRaw.forEach(r=>{
+  receiptSources.forEach(r=>{
     const nk = normSupplierKey(r.supplier);
     itemSupplierFreq[r.code] = itemSupplierFreq[r.code] || {};
     itemSupplierFreq[r.code][nk] = (itemSupplierFreq[r.code][nk]||0)+1;
@@ -865,7 +889,7 @@ function computeConsolidation(results){
     let nk = normSupplierKey(display);
     if(!nk && itemSupplierFreq[code]){
       nk = Object.keys(itemSupplierFreq[code]).sort((a,b)=>itemSupplierFreq[code][b]-itemSupplierFreq[code][a])[0];
-      const match = state.apInvoiceRaw.find(r=>normSupplierKey(r.supplier)===nk);
+      const match = receiptSources.find(r=>normSupplierKey(r.supplier)===nk);
       display = match ? match.supplier : nk;
     }
     if(!nk) return;
@@ -879,10 +903,11 @@ function computeConsolidation(results){
   state.itemSupplierKey = itemSupplierKey;
   state.itemSupplierDisplay = itemSupplierDisplay;
 
-  if(!state.apInvoiceRaw.length) return;
+  if(!receiptSources.length) return;
 
   const shipMap = {}; // normKey|docEntry -> {supplierKey, supplierDisplay, items:Set, value}
-  state.apInvoiceRaw.forEach(r=>{
+  receiptSources.forEach(r=>{
+    if(!r.docEntry) return; // بدون رقم مستند ما فينا نجمّع أصناف نفس الشحنة
     const nk = normSupplierKey(r.supplier);
     const key = nk+'|'+r.docEntry;
     const s = shipMap[key] = shipMap[key] || {supplierKey:nk, supplierDisplay:r.supplier, items:new Set(), value:0};
@@ -1066,13 +1091,16 @@ function runEngine(){
     (ltByItem[r.code] = ltByItem[r.code] || []).push(d);
   });
 
-  // آخر استلام فعلي لكل صنف (من بيانات استلام البضاعة GRPO)
+  // آخر استلام فعلي لكل صنف — من بيانات استلام البضاعة GRPO (رقم 6) أو كويري
+  // مدة التوريد (رقم 4) لو فيه تاريخ استلام لهالصنف، أيهما أحدث
   const lastReceiptByItem = {};
-  state.apInvoiceRaw.forEach(r=>{
-    const d = parseDateFlexible(r.date); if(!d) return;
-    const cur = lastReceiptByItem[r.code];
-    if(!cur || d > cur.date) lastReceiptByItem[r.code] = {date:d, qty:r.qty, supplier:r.supplier};
-  });
+  function noteReceipt(code, dateStr, qty, supplier){
+    const d = parseDateFlexible(dateStr); if(!d) return;
+    const cur = lastReceiptByItem[code];
+    if(!cur || d > cur.date) lastReceiptByItem[code] = {date:d, qty, supplier};
+  }
+  state.apInvoiceRaw.forEach(r=> noteReceipt(r.code, r.date, r.qty, r.supplier));
+  state.leadTimeRaw.forEach(r=> noteReceipt(r.code, r.recvDate, r.qty, r.supplier));
 
   const salesValueByItem = {}; // لتصنيف ABC
   Object.keys(state.itemsRaw).forEach(code=>{
@@ -1742,7 +1770,7 @@ async function pullStateFromCloud(){
       fetchAllRows('procurement_params', '*'),
       fetchAllRows('procurement_sales', 'item_code,sale_date,qty,whs,customer,amount'),
       fetchAllRows('procurement_inventory', 'item_code,whs,whs_name,on_hand,on_order'),
-      fetchAllRows('procurement_leadtime', 'item_code,order_date,recv_date'),
+      fetchAllRows('procurement_leadtime', 'item_code,order_date,recv_date,qty,price,supplier,doc_entry'),
       fetchAllRows('procurement_ap_invoices', 'item_code,supplier,doc_entry,qty,recv_date'),
       fetchAllRows('procurement_po', 'item_code,qty,arrival_date,supplier'),
       fetchAllRows('procurement_suppliers', 'supplier_key,relationship_type,note,display_name'),
@@ -1760,7 +1788,7 @@ async function pullStateFromCloud(){
     }
     if(sales.length) state.salesRaw = sales.map(r=>({code:r.item_code, date:r.sale_date, qty:r.qty, whs:r.whs||'', customer:r.customer||'', amount:r.amount??NaN}));
     if(inv.length) state.invRaw = inv.map(r=>({code:r.item_code, onHand:r.on_hand||0, onOrder:r.on_order||0, whs:r.whs||'', whsName:r.whs_name||''}));
-    if(lt.length) state.leadTimeRaw = lt.map(r=>({code:r.item_code, orderDate:r.order_date, recvDate:r.recv_date}));
+    if(lt.length) state.leadTimeRaw = lt.map(r=>({code:r.item_code, orderDate:r.order_date, recvDate:r.recv_date, qty:r.qty, price:r.price, supplier:r.supplier||'', docEntry:r.doc_entry||''}));
     if(ap.length) state.apInvoiceRaw = ap.map(r=>({code:r.item_code, supplier:r.supplier, docEntry:r.doc_entry, qty:r.qty, date:r.recv_date||''}));
     if(po.length) state.poRaw = po.map(r=>({code:r.item_code, qty:r.qty, arrivalDate:r.arrival_date, supplier:r.supplier||''}));
     if(supSettings.length){
@@ -1808,7 +1836,7 @@ async function pushStateToCloud(datasets){
   })));
   await safeSave('sales', ()=> replaceLogTable('procurement_sales', state.salesRaw.map(r=>({item_code:r.code, sale_date:normDateForDb(r.date), qty:r.qty, whs:r.whs||null, customer:r.customer||null, amount: isNaN(r.amount)?null:r.amount}))));
   await safeSave('inventory', ()=> replaceLogTable('procurement_inventory', state.invRaw.map(r=>({item_code:r.code, whs:r.whs||null, whs_name:r.whsName||null, on_hand:r.onHand, on_order:r.onOrder}))));
-  await safeSave('leadtime', ()=> replaceLogTable('procurement_leadtime', state.leadTimeRaw.map(r=>({item_code:r.code, order_date:normDateForDb(r.orderDate), recv_date:normDateForDb(r.recvDate)}))));
+  await safeSave('leadtime', ()=> replaceLogTable('procurement_leadtime', state.leadTimeRaw.map(r=>({item_code:r.code, order_date:normDateForDb(r.orderDate), recv_date:normDateForDb(r.recvDate), qty: isNaN(r.qty)?null:r.qty, price: isNaN(r.price)?null:r.price, supplier:r.supplier||null, doc_entry:r.docEntry||null}))));
   await safeSave('apinvoice', ()=> replaceLogTable('procurement_ap_invoices', state.apInvoiceRaw.map(r=>({item_code:r.code, supplier:r.supplier, doc_entry:String(r.docEntry), qty:r.qty, recv_date:normDateForDb(r.date)}))));
   await safeSave('po', ()=> replaceLogTable('procurement_po', state.poRaw.map(r=>({item_code:r.code, qty:r.qty, arrival_date:normDateForDb(r.arrivalDate), supplier:r.supplier||null}))));
   await safeSave('suppliers', async ()=>{
