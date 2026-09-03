@@ -225,6 +225,13 @@
   #suppliersTable td{padding:6px 9px; border-bottom:1px solid var(--line); white-space:nowrap;}
   #suppliersTable select, #suppliersTable input{border:1px solid var(--line); border-radius:6px; padding:4px 6px; font-size:11px; font-family:var(--disp);}
   #suppliersTable tr.rel-contract td, #suppliersTable tr.rel-target td{background:var(--gold-bg);}
+  #suppliersTable .freeze{position:sticky; z-index:2; box-shadow:1px 0 0 var(--line);}
+  #suppliersTable th.freeze{z-index:4; background:#EEF2F8;}
+  #suppliersTable td.freeze{background:#fff; position:sticky;}
+  #suppliersTable tbody tr:hover td.freeze{background:#FAFBFD;}
+  #suppliersTable tr.rel-contract td.freeze, #suppliersTable tr.rel-target td.freeze{background:var(--gold-bg);}
+  #suppliersTable .freeze-1{right:0; width:95px; min-width:95px; max-width:95px;}
+  #suppliersTable .freeze-2{right:95px; width:190px; min-width:190px; max-width:190px; white-space:normal; box-shadow:2px 0 3px -1px rgba(21,42,74,.15);}
   table.paramtbl{width:100%; border-collapse:collapse; font-size:11px;}
   table.paramtbl th{background:#EEF2F8; color:var(--navy); text-align:right; padding:6px 7px; font-weight:700; font-size:10px; white-space:nowrap; border-bottom:1.5px solid var(--line); position:sticky; top:0; z-index:2;}
   table.paramtbl td{padding:3px 5px; border-bottom:1px solid var(--line);}
@@ -1200,15 +1207,28 @@ function computeConsolidation(results){
   // ولا نلجأ لاستنتاجه من تكرار الاستلامات إلا لو كان فاضياً. المطابقة بمفتاح مُطبَّع
   // (Trim + Lowercase) حتى ما ينكسر الربط بفرق بسيط بالكتابة بين المصدرين.
   const itemSupplierFreq = {};
+  const knownSupplierKeysFromReceipts = {};
   receiptSources.forEach(r=>{
     const nk = normSupplierKey(r.supplier);
     itemSupplierFreq[r.code] = itemSupplierFreq[r.code] || {};
     itemSupplierFreq[r.code][nk] = (itemSupplierFreq[r.code][nk]||0)+1;
+    if(nk) knownSupplierKeysFromReceipts[nk] = true;
   });
+  // حقل "المورد" بجدول البارامترات أحياناً بيتعبى بوصف الصنف غلط (لو مصدره حقل SAP حر
+  // زي U_U_ST_V_NAME) بدل رمز/اسم مورد حقيقي — بنقبله بس لو شكله رمز مورد (Vxxxxxx)
+  // أو موثّق بقائمة الموردين المستوردة أو ظهر فعلياً كمورد باستلامات/طلبات حقيقية،
+  // وإلا نتجاهله لعدم توليد "مورد" وهمي اسمه وصف صنف
+  function looksLikeRealSupplierValue(display, nk){
+    if(/^V\d{3,}$/i.test(String(display||'').trim())) return true;
+    if(state.supplierSettings[nk]) return true;
+    if(knownSupplierKeysFromReceipts[nk]) return true;
+    return false;
+  }
   const itemSupplierKey = {}, itemSupplierDisplay = {}, itemSupplierRawCode = {}, supplierItems = {};
   Object.keys(resultByCode).forEach(code=>{
     let display = (state.params[code]||{}).supplier || '';
     let nk = normSupplierKey(display);
+    if(nk && !looksLikeRealSupplierValue(display, nk)){ display = ''; nk = ''; }
     if(!nk && itemSupplierFreq[code]){
       nk = Object.keys(itemSupplierFreq[code]).sort((a,b)=>itemSupplierFreq[code][b]-itemSupplierFreq[code][a])[0];
       const match = receiptSources.find(r=>normSupplierKey(r.supplier)===nk);
@@ -2067,8 +2087,9 @@ function renderSuppliers(){
   if(suppliersSortKey){
     list.sort((a,b)=>compareGeneric(a[suppliersSortKey], b[suppliersSortKey], suppliersSortDir));
   }
+  const FREEZE_TH = {code:'freeze freeze-1', display:'freeze freeze-2'};
   thead.innerHTML = '<tr>' + SUPPLIERS_COLS.map(([k,label])=>
-    '<th class="sortable-th" onclick="setSuppliersSort(\''+k+'\')">'+label+' '+sortIcon(suppliersSortKey,k,suppliersSortDir)+'</th>'
+    '<th class="sortable-th '+(FREEZE_TH[k]||'')+'" onclick="setSuppliersSort(\''+k+'\')">'+label+' '+sortIcon(suppliersSortKey,k,suppliersSortDir)+'</th>'
   ).join('') + '<th>طلب شراء مقترح</th></tr>';
   if(!list.length){
     tbody.innerHTML = '<tr><td colspan="13" class="empty-state"><div class="ic">🏭</div>ما فيه ربط موردين لسا — لازم عمود "المورد" بجدول البارامترات (رقم 5) أو كويري رقم 6 معبّى.</td></tr>';
@@ -2077,8 +2098,8 @@ function renderSuppliers(){
   tbody.innerHTML = list.map(s=>{
     const relClass = s.relationshipType==='contract' ? 'rel-contract' : (s.relationshipType==='target' ? 'rel-target' : '');
     return '<tr class="'+relClass+'">'
-      + '<td class="item-code">'+esc(s.code)+'</td>'
-      + '<td><b>'+esc(s.display)+'</b></td>'
+      + '<td class="freeze freeze-1 item-code">'+esc(s.code)+'</td>'
+      + '<td class="freeze freeze-2"><b>'+esc(s.display)+'</b></td>'
       + '<td class="num">'+s.itemCount+'</td>'
       + '<td class="num">'+s.sampleSize+'</td>'
       + '<td class="num">'+(s.avgLeadTime??'—')+'</td>'
