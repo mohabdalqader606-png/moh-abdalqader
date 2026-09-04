@@ -179,6 +179,10 @@ function refDB() {
   const tabRefs = (js.match(/querySelector(All)?\((["'`])\.tabs?\b[^)]*\)/g) || []);
   R.notes.push({ tabsDomReferences: tabRefs });
 
+  /* ---------- 3b. shell geometry: sidebar and main side by side at desktop widths, stacked/drawer at 768 and 390 ---------- */
+  { const geo = await page.evaluate(() => { const sb = document.getElementById('kshSidebar'); if (!sb) return null; const m = document.querySelector('main').getBoundingClientRect(), s = sb.getBoundingClientRect(); return { sideBySide: m.top < s.bottom - 50 && (m.right <= s.left + 2 || m.left >= s.right - 2), mainTop: Math.round(m.top), shell: getComputedStyle(document.querySelector('.app-shell')).display }; });
+    if (geo) T('shell geometry: main beside the sidebar at 1440 (not below it)', geo.sideBySide && geo.mainTop < 200, geo); }
+
   /* ---------- 4. dialogs: open / fill / save / edit / delete for 15 collections, open-close for 3 aux ---------- */
   const dlg = [];
   for (const dg of DIALOGS) {
@@ -285,7 +289,8 @@ function refDB() {
     T('compare: DOM nodes within threshold', perf.domNodesRef <= th.domNodesRef, perf.domNodesRef + ' <= ' + th.domNodesRef);
     const slow = Object.entries(perf.switchMs).filter(([v, ms]) => ms > th.switchMs[v]); T('compare: view switch within thresholds', slow.length === 0, slow);
     const slowBig = Object.entries(perf.largeDataset).filter(([v, ms]) => th.largeSwitchMs[v] && ms > th.largeSwitchMs[v]); T('compare: large dataset switch within thresholds', slowBig.length === 0, slowBig);
-    const bp = JSON.parse(fs.readFileSync(path.join(BASE, 'baseline_result.json'), 'utf8')).print; T('compare: print output identical (day template, executive summary template, dashboard print text)', bp.day.textHash === print.day.textHash && bp.execSummary.textHash === print.execSummary.textHash && bp.dashboard.textHash === print.dashboard.textHash, { base: [bp.day.textHash, bp.execSummary.textHash, bp.dashboard.textHash], now: [print.day.textHash, print.execSummary.textHash, print.dashboard.textHash] });
+    const bp = JSON.parse(fs.readFileSync(path.join(BASE, 'baseline_result.json'), 'utf8')).print; T('compare: print templates identical (day plan popup, executive summary popup)', bp.day.textHash === print.day.textHash && bp.execSummary.textHash === print.execSummary.textHash, { base: [bp.day.textHash, bp.execSummary.textHash], now: [print.day.textHash, print.execSummary.textHash] });
+    T('compare: dashboard print path still calls window.print with shell hidden (text may differ by design once the dashboard is redesigned)', print.dashboard.printCalls === 1 && print.dashboard.hidden.every(h => /:none$|:n\/a$/.test(h)), { textIdenticalToBaseline: bp.dashboard.textHash === print.dashboard.textHash });
   }
   fs.writeFileSync(path.join(OUT, TAG + '_result.json'), JSON.stringify(R, null, 1));
   const fails = R.checks.filter(c => !c.ok).length; console.log('\nTOTAL:', R.checks.length, 'checks,', fails, 'failed'); console.log('PERF:', JSON.stringify(perf));
