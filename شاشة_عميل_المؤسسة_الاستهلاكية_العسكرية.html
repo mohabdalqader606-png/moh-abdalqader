@@ -228,6 +228,7 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
     <button class="btn-ghost" id="pageTabPrint" onclick="switchPage('print')" style="border-radius:9px 9px 0 0;">🖨️ طباعة الفواتير</button>
     <button class="btn-ghost" id="pageTabTransfers" onclick="switchPage('transfers')" style="border-radius:9px 9px 0 0;">🔄 سندات التحويل (011)</button>
     <button class="btn-ghost" id="pageTabSummary" onclick="switchPage('summary')" style="border-radius:9px 9px 0 0;">📋 ملخص الفواتير</button>
+    <button class="btn-ghost" id="pageTabBranch" onclick="switchPage('branch')" style="border-radius:9px 9px 0 0;">🏪 المبيعات حسب الفرع</button>
     <button class="btn-ghost" id="pageTabRoadmap" onclick="switchPage('roadmap')" style="border-radius:9px 9px 0 0;">🗺️ خارطة المراحل</button>
     <span style="flex:1;"></span>
     <button class="btn-ghost btn-sm" style="border-color:var(--teal); color:var(--teal); border-radius:9px 9px 0 0;" onclick="downloadBackup()">💾 نسخة احتياطية</button>
@@ -771,6 +772,48 @@ ORDER BY T0."DocNum"</code>
     </div>
   </section>
 
+  <!-- ============ صفحة المبيعات حسب الفرع ============ -->
+  <section class="panel" id="branchPage" style="display:none;">
+    <div class="input-panel" style="border-bottom:1px solid var(--line);">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;"><b style="font-size:13px;">مبيعات المؤسسة الاستهلاكية العسكرية حسب الفرع</b></div>
+      <div class="hint">تقرير يجمّع المبيعات على مستوى فرع/سوق المؤسسة (الكرامة، العقبة، الرمثا...). المصدر الأساسي <b>فواتير الصرف الوهمي</b> (قسم 6 بصفحة سندات التحويل): رقم/تاريخ/سوق/قيمة كل فاتورة وأصنافها. وبالإمكان عرض نفس التقرير من <b>سندات التحويل إلى 011</b> (حقل "اسم الفرع" الجاي من SAP) — الكمية بالحبة والقيمة محسوبة بسعر البيع/الحبة من جدول الربط (قبل الضريبة)، والمرتجعات من 011 بتنطرح. التقرير قراءة فقط ولا يعدّل أي بيانات.</div>
+      <div class="row-actions">
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">المصدر
+          <select id="brSource" onchange="brPopulateBranchFilter(); renderBranchPage();">
+            <option value="inv">فواتير الصرف الوهمي</option>
+            <option value="tr">سندات التحويل إلى 011</option>
+          </select>
+        </label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">الشهر <input type="month" id="brMonth" onchange="if(this.value){document.getElementById('brFrom').value='';document.getElementById('brTo').value='';} brPopulateBranchFilter(); renderBranchPage();" title="اختار شهر وبيطلعلك مبيعات كل فرع بهداك الشهر — بديل سريع عن من/إلى تاريخ"></label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">من تاريخ <input type="date" id="brFrom" onchange="if(this.value)document.getElementById('brMonth').value=''; brPopulateBranchFilter(); renderBranchPage();"></label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">إلى تاريخ <input type="date" id="brTo" onchange="if(this.value)document.getElementById('brMonth').value=''; brPopulateBranchFilter(); renderBranchPage();"></label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">الفرع
+          <select id="brBranch" onchange="renderBranchPage();"><option value="">— كل الفروع —</option></select>
+        </label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">طريقة العرض
+          <select id="brMode" onchange="renderBranchPage();">
+            <option value="byBranch">تجميعي (فرع واحد بسطر)</option>
+            <option value="byBranchDoc">حسب الفرع ثم الفاتورة/السند</option>
+            <option value="byBranchItem">حسب الفرع ثم الصنف</option>
+            <option value="byItemBranch">حسب الصنف ثم الفرع</option>
+          </select>
+        </label>
+        <button class="btn-primary btn-sm" onclick="brPopulateBranchFilter(); renderBranchPage()">عرض</button>
+        <button class="btn-ghost btn-sm" onclick="exportBranchExcel()">📊 تصدير Excel</button>
+        <button class="btn-ghost btn-sm" onclick="printSection('brTable','مبيعات المؤسسة الاستهلاكية العسكرية حسب الفرع')">🖨️ طباعة</button>
+        <span class="status-msg" id="brMsg"></span>
+      </div>
+    </div>
+    <div class="summary" id="brTotalsRow"></div>
+    <div class="tbl-wrap">
+      <table class="grid" id="brTable">
+        <thead id="brThead"></thead>
+        <tbody id="brTbody"></tbody>
+      </table>
+      <div class="empty-hint" id="brEmptyHint" style="display:none;">ما في بيانات بهاي الفترة/المصدر بعد — اعتمد فواتير صرف وهمي (قسم 5/6 بصفحة سندات التحويل) أو استورد سندات تحويل فيها عمود "اسم الفرع".</div>
+    </div>
+  </section>
+
   <section class="panel" id="roadmapPage" style="display:none;">
     <div class="roadmap">
       <div class="rm-item done">
@@ -1059,7 +1102,7 @@ async function pullStateFromCloud(){
 /* ==================== تنقّل الصفحات ==================== */
 function switchPage(p){
   currentPage = p;
-  ['mapping','invoices','statement','print','transfers','summary','roadmap'].forEach(k=>{
+  ['mapping','invoices','statement','print','transfers','summary','branch','roadmap'].forEach(k=>{
     document.getElementById(k+'Page').style.display = (k===p) ? 'block' : 'none';
     const tab = document.getElementById('pageTab'+k.charAt(0).toUpperCase()+k.slice(1));
     tab.className = (k===p) ? 'btn-primary' : 'btn-ghost';
@@ -1071,6 +1114,7 @@ function switchPage(p){
   if(p==='print') renderPrintPage();
   if(p==='transfers') renderTransfersPage();
   if(p==='summary') renderSummaryPage();
+  if(p==='branch'){ brPopulateBranchFilter(); renderBranchPage(); }
 }
 
 /* ==================== أدوات عامة ==================== */
@@ -4283,6 +4327,256 @@ function exportSummaryExcel(){
   XLSX.utils.book_append_sheet(wb, ws, 'ملخص الفواتير');
   XLSX.writeFile(wb, `ملخص_الفواتير_الشهرية.xlsx`);
   flash('sumMsg', `تم تصدير ${items.length} صنف.`, true);
+}
+
+/* ==================== المبيعات حسب الفرع (تقرير قراءة فقط — ما بيعدّل أي بيانات) ====================
+   المصدر الأساسي: فواتير الصرف الوهمي (DUMMY_INVOICES رأس الفاتورة: رقم/تاريخ/فرع/قيمة + DUMMY_INV_ITEMS أصنافها).
+   مصدر بديل: سندات التحويل إلى 011 (TRANSFERS) — الفرع من حقل "اسم الفرع" (SAP)، الكمية بالحبة (× التعبئة)،
+   والقيمة = الكمية × سعر البيع/الحبة من جدول الربط (قبل الضريبة). المرتجعات من 011 بتنطرح (نفس منطق المطابقة اليومية). */
+function brBranchName(b){ const s = String(b||'').trim(); return s || 'بدون فرع'; }
+function brInPeriod(dateISO){
+  const month = document.getElementById('brMonth').value;
+  const from = document.getElementById('brFrom').value;
+  const to = document.getElementById('brTo').value;
+  const d = normDateToISO(dateISO);
+  if(month) return !!d && d.slice(0,7)===month;
+  if((from||to) && !d) return false;
+  if(from && d < from) return false;
+  if(to && d > to) return false;
+  return true;
+}
+function brLineValue(l){
+  if(l.value!=null && l.value!=='' && !isNaN(+l.value)) return +l.value;
+  return (+l.qty||0) * (+l.price||0);
+}
+// كل المستندات (فاتورة صرف وهمي أو سند تحويل) ضمن الفترة المختارة:
+// {docNum, date, branch, qty, amount, warehouse, unmapped, lines:[{theirCode, ourCode, theirName, qty, value, unmapped}]}
+function brCollectDocs(){
+  const source = document.getElementById('brSource').value;
+  const docs = [];
+  if(source==='tr'){
+    const byDoc = new Map();
+    TRANSFERS.forEach(t=>{
+      const from011 = isWhs011(t.fromWhs), to011 = isWhs011(t.toWhs);
+      if(from011 === to011) return;
+      let sign;
+      if(to011){ if(isWhs007(t.fromWhs)) return; sign = 1; }
+      else { if(isWhs007(t.toWhs)) return; sign = -1; }
+      const n = normDocNum(t.docNum) || String(t.docNum||'').trim();
+      if(!n) return;
+      const it = ITEMS.find(x=>x.ourCode===t.ourCode);
+      const qty = sign * (+t.qty||0) * (it ? (it.factor||1) : 1);
+      const value = it ? qty * (it.salePricePiece||0) : 0;
+      if(!byDoc.has(n)) byDoc.set(n, {docNum:t.docNum, date:'', branch:'', qty:0, amount:0, warehouse:(t.fromWhs||'—')+' ← '+(t.toWhs||'—'), unmapped:0, lines:[]});
+      const d = byDoc.get(n);
+      if(!d.branch && t.branch) d.branch = t.branch;
+      if(!d.date && t.docDate) d.date = normDateToISO(t.docDate);
+      d.qty += qty; d.amount += value;
+      if(!it) d.unmapped++;
+      d.lines.push({theirCode: it ? (it.theirCode||'') : '', ourCode:t.ourCode||'', theirName: it ? (it.theirName||it.ourName||t.ourName||'') : (t.ourName||''), qty, value, unmapped:!it});
+    });
+    byDoc.forEach(d=> docs.push(d));
+  }else{
+    const headers = new Map();
+    DUMMY_INVOICES.forEach(r=>{ const n = normDocNum(r.docNum); if(n) headers.set(n, r); });
+    const linesByInv = new Map();
+    DUMMY_INV_ITEMS.forEach(r=>{ const n = normDocNum(r.invoiceNo); if(!n) return; if(!linesByInv.has(n)) linesByInv.set(n, []); linesByInv.get(n).push(r); });
+    const mapLines = lines => lines.map(l=>({theirCode:l.theirCode||'', ourCode:'', theirName:l.theirName||'', qty:+l.qty||0, value:brLineValue(l), unmapped:false}));
+    const seen = new Set();
+    headers.forEach((h, n)=>{
+      seen.add(n);
+      const lines = mapLines(linesByInv.get(n) || []);
+      const raw = linesByInv.get(n) || [];
+      const firstDate = raw.find(l=>l.date), firstMarket = raw.find(l=>l.market);
+      docs.push({docNum:h.docNum, date:normDateToISO(h.date || (firstDate ? firstDate.date : '')), branch: h.branch || (firstMarket ? firstMarket.market : ''), qty: lines.reduce((s,l)=>s+l.qty,0), amount:+h.amount||0, warehouse:h.warehouse||'', unmapped:0, lines});
+    });
+    // أصناف فواتير ما إلها رأس بسجل قسم 6 (حالة نادرة) — منعرضها برضه حتى ما يضيع شي
+    linesByInv.forEach((raw, n)=>{
+      if(seen.has(n)) return;
+      const lines = mapLines(raw);
+      const firstDate = raw.find(l=>l.date), firstMarket = raw.find(l=>l.market);
+      docs.push({docNum:raw[0].invoiceNo, date:normDateToISO(firstDate ? firstDate.date : ''), branch: firstMarket ? firstMarket.market : '', qty: lines.reduce((s,l)=>s+l.qty,0), amount: lines.reduce((s,l)=>s+l.value,0), warehouse:'', unmapped:0, lines});
+    });
+  }
+  docs.forEach(d=>{ d.branch = brBranchName(d.branch); });
+  return docs
+    .filter(d=> brInPeriod(d.date))
+    .sort((a,b)=> String(a.date||'').localeCompare(String(b.date||'')) || String(a.docNum||'').localeCompare(String(b.docNum||''),'ar'));
+}
+function brPopulateBranchFilter(){
+  const el = document.getElementById('brBranch');
+  const prev = el.value;
+  const names = [...new Set(brCollectDocs().map(d=>d.branch))].sort((a,b)=>a.localeCompare(b,'ar'));
+  el.innerHTML = '<option value="">— كل الفروع —</option>' + names.map(b=>`<option value="${esc(b)}">${esc(b)}</option>`).join('');
+  el.value = names.includes(prev) ? prev : '';
+}
+function brFilteredDocs(){
+  const b = document.getElementById('brBranch').value;
+  const docs = brCollectDocs();
+  return b ? docs.filter(d=>d.branch===b) : docs;
+}
+function brItemKey(l){ return l.theirCode || ('OUR:'+(l.ourCode||l.theirName||'?')); }
+function brAddItem(map, l){
+  const k = brItemKey(l);
+  if(!map.has(k)) map.set(k, {theirCode:l.theirCode||'', ourCode:l.ourCode||'', theirName:l.theirName||'', qty:0, value:0, unmapped:!!l.unmapped});
+  const it = map.get(k);
+  it.qty += l.qty; it.value += l.value;
+  if(!it.theirName && l.theirName) it.theirName = l.theirName;
+  return it;
+}
+// تجميع حسب الفرع: [{branch, docs:[...], qty, amount, items:Map}] مرتّبة تنازلياً حسب القيمة
+function brGroupByBranch(docs){
+  const m = new Map();
+  docs.forEach(d=>{
+    if(!m.has(d.branch)) m.set(d.branch, {branch:d.branch, docs:[], qty:0, amount:0, items:new Map()});
+    const g = m.get(d.branch);
+    g.docs.push(d); g.qty += d.qty; g.amount += d.amount;
+    d.lines.forEach(l=> brAddItem(g.items, l));
+  });
+  return Array.from(m.values()).sort((a,b)=> (b.amount - a.amount) || a.branch.localeCompare(b.branch,'ar'));
+}
+// تجميع حسب الصنف ثم الفرع: [{key, theirCode, theirName, qty, value, branches:[{branch, qty, value}]}]
+function brGroupByItemBranch(docs){
+  const m = new Map();
+  docs.forEach(d=> d.lines.forEach(l=>{
+    const k = brItemKey(l);
+    if(!m.has(k)) m.set(k, {key:k, theirCode:l.theirCode||'', ourCode:l.ourCode||'', theirName:l.theirName||'', qty:0, value:0, unmapped:!!l.unmapped, branches:new Map()});
+    const it = m.get(k);
+    it.qty += l.qty; it.value += l.value;
+    if(!it.theirName && l.theirName) it.theirName = l.theirName;
+    if(!it.branches.has(d.branch)) it.branches.set(d.branch, {branch:d.branch, qty:0, value:0});
+    const b = it.branches.get(d.branch); b.qty += l.qty; b.value += l.value;
+  }));
+  const items = Array.from(m.values()).sort((a,b)=> (b.value - a.value) || String(a.theirCode).localeCompare(String(b.theirCode),'ar'));
+  items.forEach(it=> it.branchRows = Array.from(it.branches.values()).sort((a,b)=> (b.value - a.value) || a.branch.localeCompare(b.branch,'ar')));
+  return items;
+}
+function brPct(part, whole){ return whole ? (part*100/whole).toFixed(1)+'%' : '—'; }
+function brDateStr(iso){ return iso ? iso.split('-').reverse().join('/') : '—'; }
+function brItemLabel(it){
+  const code = it.theirCode || (it.ourCode ? '('+it.ourCode+')' : '—');
+  return {code, warn: it.unmapped ? ' <span title="رمزنا مش مربوط برمز المؤسسة بجدول الربط — الكمية بوحدتنا وبدون قيمة" style="color:var(--crimson);">⚠ غير مربوط</span>' : ''};
+}
+function renderBranchPage(){
+  if(currentPage!=='branch') return;
+  const source = document.getElementById('brSource').value;
+  const mode = document.getElementById('brMode').value;
+  const docWord = source==='tr' ? 'سند' : 'فاتورة';
+  const docsWord = source==='tr' ? 'السندات' : 'الفواتير';
+  const valLabel = source==='tr' ? 'القيمة (سعر البيع/حبة — قبل الضريبة)' : 'قيمة الفاتورة';
+  const thead = document.getElementById('brThead');
+  const tbody = document.getElementById('brTbody');
+  const hint = document.getElementById('brEmptyHint');
+  const totals = document.getElementById('brTotalsRow');
+  const docs = brFilteredDocs();
+  if(!docs.length){ thead.innerHTML=''; tbody.innerHTML=''; totals.innerHTML=''; hint.style.display='block'; return; }
+  hint.style.display = 'none';
+  const groups = brGroupByBranch(docs);
+  const totalQty = docs.reduce((s,d)=>s+d.qty,0);
+  const totalAmt = docs.reduce((s,d)=>s+d.amount,0);
+  const unmapped = docs.reduce((s,d)=>s+(d.unmapped||0),0);
+  const top = groups[0];
+  totals.innerHTML = `
+    <div class="card"><div class="lbl">عدد الفروع</div><div class="val">${groups.length}</div></div>
+    <div class="card"><div class="lbl">عدد ${docsWord}</div><div class="val">${docs.length}</div></div>
+    <div class="card"><div class="lbl">إجمالي الكمية (حبة)</div><div class="val">${fmtNum(totalQty)}</div></div>
+    <div class="card"><div class="lbl">إجمالي القيمة</div><div class="val">${fmt3(totalAmt)}</div></div>
+    <div class="card"><div class="lbl">أعلى فرع</div><div class="val" style="font-size:15px;">${esc(top.branch)}<div style="font-size:11px; font-weight:400; color:var(--ink-soft);">${fmt3(top.amount)} · ${brPct(top.amount,totalAmt)}</div></div></div>
+    ${unmapped ? `<div class="card"><div class="lbl">أسطر بدون ربط (بلا قيمة)</div><div class="val" style="color:var(--crimson);">${unmapped}</div></div>` : ''}
+  `;
+  let html = '';
+  if(mode==='byBranch'){
+    thead.innerHTML = `<tr><th>#</th><th>الفرع</th><th>عدد ${docsWord}</th><th>الكمية (حبة)</th><th>${valLabel}</th><th>النسبة من الإجمالي</th><th>متوسط ال${docWord}</th></tr>`;
+    groups.forEach((g,i)=>{
+      html += `<tr>
+        <td class="mono">${i+1}</td>
+        <td><b>${esc(g.branch)}</b></td>
+        <td class="mono">${g.docs.length}</td>
+        <td class="mono">${fmtNum(g.qty)}</td>
+        <td class="mono">${fmt3(g.amount)}</td>
+        <td class="mono">${brPct(g.amount,totalAmt)}</td>
+        <td class="mono">${fmt3(g.docs.length ? g.amount/g.docs.length : 0)}</td>
+      </tr>`;
+    });
+    html += `<tr style="background:var(--paper); font-weight:700;">
+      <td></td><td>الإجمالي العام (${groups.length} فرع)</td>
+      <td class="mono">${docs.length}</td>
+      <td class="mono">${fmtNum(totalQty)}</td>
+      <td class="mono">${fmt3(totalAmt)}</td>
+      <td class="mono">100%</td>
+      <td class="mono">${fmt3(docs.length ? totalAmt/docs.length : 0)}</td>
+    </tr>`;
+  }else if(mode==='byBranchDoc'){
+    thead.innerHTML = `<tr><th>الفرع</th><th>رقم ال${docWord}</th><th>التاريخ</th><th>عدد الأصناف</th><th>الكمية (حبة)</th><th>${valLabel}</th><th>${source==='tr' ? 'من ← إلى مستودع' : 'مستودع'}</th></tr>`;
+    groups.forEach(g=>{
+      html += `<tr style="background:var(--paper);"><td colspan="7" style="text-align:right; font-weight:700;">${esc(g.branch)} — ${g.docs.length} ${docWord} · ${fmt3(g.amount)} (${brPct(g.amount,totalAmt)})</td></tr>`;
+      g.docs.forEach(d=>{
+        html += `<tr>
+          <td>${esc(g.branch)}</td>
+          <td class="mono">${esc(d.docNum)||'—'}</td>
+          <td>${brDateStr(d.date)}</td>
+          <td class="mono">${d.lines.length}</td>
+          <td class="mono">${fmtNum(d.qty)}</td>
+          <td class="mono">${fmt3(d.amount)}</td>
+          <td class="mono">${esc(d.warehouse)||'—'}</td>
+        </tr>`;
+      });
+      html += `<tr style="font-weight:700;"><td colspan="3">إجمالي ${esc(g.branch)}</td><td class="mono">${g.docs.length} ${docWord}</td><td class="mono">${fmtNum(g.qty)}</td><td class="mono">${fmt3(g.amount)}</td><td></td></tr>`;
+    });
+    html += `<tr style="background:var(--paper); font-weight:700;"><td colspan="3">الإجمالي العام</td><td class="mono">${docs.length} ${docWord}</td><td class="mono">${fmtNum(totalQty)}</td><td class="mono">${fmt3(totalAmt)}</td><td></td></tr>`;
+  }else if(mode==='byBranchItem'){
+    thead.innerHTML = `<tr><th>الفرع</th><th>رمز الصنف لدى المؤسسة</th><th>اسم الصنف</th><th>الكمية (حبة)</th><th>قيمة الأصناف</th><th>النسبة داخل الفرع</th></tr>`;
+    let grandItemsVal = 0;
+    groups.forEach(g=>{
+      const items = Array.from(g.items.values()).sort((a,b)=> (b.value - a.value) || String(a.theirCode).localeCompare(String(b.theirCode),'ar'));
+      const gVal = items.reduce((s,it)=>s+it.value,0);
+      const gQty = items.reduce((s,it)=>s+it.qty,0);
+      grandItemsVal += gVal;
+      html += `<tr style="background:var(--paper);"><td colspan="6" style="text-align:right; font-weight:700;">${esc(g.branch)} — ${items.length} صنف · ${g.docs.length} ${docWord} · ${fmt3(gVal)}</td></tr>`;
+      items.forEach(it=>{
+        const lb = brItemLabel(it);
+        html += `<tr>
+          <td>${esc(g.branch)}</td>
+          <td class="mono">${esc(lb.code)}${lb.warn}</td>
+          <td>${esc(it.theirName)}</td>
+          <td class="mono">${fmtNum(it.qty)}</td>
+          <td class="mono">${fmt3(it.value)}</td>
+          <td class="mono">${brPct(it.value,gVal)}</td>
+        </tr>`;
+      });
+      html += `<tr style="font-weight:700;"><td colspan="3">إجمالي ${esc(g.branch)}</td><td class="mono">${fmtNum(gQty)}</td><td class="mono">${fmt3(gVal)}</td><td class="mono">100%</td></tr>`;
+    });
+    html += `<tr style="background:var(--paper); font-weight:700;"><td colspan="3">الإجمالي العام</td><td class="mono">${fmtNum(totalQty)}</td><td class="mono">${fmt3(grandItemsVal)}</td><td></td></tr>`;
+  }else{
+    thead.innerHTML = `<tr><th>رمز الصنف لدى المؤسسة</th><th>اسم الصنف</th><th>الفرع</th><th>الكمية (حبة)</th><th>قيمة الأصناف</th><th>النسبة من الصنف</th></tr>`;
+    const items = brGroupByItemBranch(docs);
+    let grandItemsVal = 0;
+    items.forEach(it=>{
+      const lb = brItemLabel(it);
+      grandItemsVal += it.value;
+      html += `<tr style="background:var(--paper);"><td colspan="6" style="text-align:right; font-weight:700;">${esc(lb.code)}${lb.warn} — ${esc(it.theirName)} · ${it.branchRows.length} فرع · ${fmtNum(it.qty)} حبة · ${fmt3(it.value)}</td></tr>`;
+      it.branchRows.forEach(b=>{
+        html += `<tr>
+          <td class="mono">${esc(lb.code)}</td>
+          <td>${esc(it.theirName)}</td>
+          <td>${esc(b.branch)}</td>
+          <td class="mono">${fmtNum(b.qty)}</td>
+          <td class="mono">${fmt3(b.value)}</td>
+          <td class="mono">${brPct(b.value,it.value)}</td>
+        </tr>`;
+      });
+      if(it.branchRows.length>1) html += `<tr style="font-weight:700;"><td colspan="3">إجمالي ${esc(it.theirName||lb.code)}</td><td class="mono">${fmtNum(it.qty)}</td><td class="mono">${fmt3(it.value)}</td><td class="mono">100%</td></tr>`;
+    });
+    html += `<tr style="background:var(--paper); font-weight:700;"><td colspan="3">الإجمالي العام (${items.length} صنف · ${groups.length} فرع)</td><td class="mono">${fmtNum(totalQty)}</td><td class="mono">${fmt3(grandItemsVal)}</td><td></td></tr>`;
+  }
+  tbody.innerHTML = html;
+}
+function exportBranchExcel(){
+  if(!document.querySelector('#brTbody tr')){ flash('brMsg','ما في بيانات لتصديرها — اختار فترة/مصدر فيه بيانات أول.', false); return; }
+  const mode = document.getElementById('brMode').value;
+  const suffix = {byBranch:'تجميعي', byBranchDoc:'حسب_الفرع_والفاتورة', byBranchItem:'حسب_الفرع_والصنف', byItemBranch:'حسب_الصنف_والفرع'}[mode] || '';
+  exportTableToExcel('brTable', 'مبيعات_المؤسسة_حسب_الفرع_'+suffix, 'حسب الفرع');
+  flash('brMsg','تم التصدير.', true);
 }
 
 const TR_FOLDER_IDS = ['trFolder1','trFolder2','trFolder3','trFolder5','trFolder6'];
