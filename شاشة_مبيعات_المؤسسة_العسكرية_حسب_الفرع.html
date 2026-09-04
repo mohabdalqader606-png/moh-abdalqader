@@ -1,0 +1,1464 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>مبيعات المؤسسة العسكرية حسب الفرع</title>
+<!--
+  إعداد Supabase مطلوب مرة وحدة قبل ما هاي الشاشة تشتغل (نفس مشروع باقي شاشات المستودع):
+
+  1) إنشاء جدول تخزين الحالة المشتركة (SQL Editor بلوحة Supabase):
+     create table if not exists mil_branch_sales_state (
+       id text primary key, data jsonb, updated_by uuid, updated_at timestamptz
+     );
+     alter table mil_branch_sales_state enable row level security;
+     create policy "authenticated rw" on mil_branch_sales_state for all
+       using (auth.role()='authenticated') with check (auth.role()='authenticated');
+
+  2) منح صلاحية الدخول لهذه الشاشة للحسابات اللي بدها تشتغل عليها:
+     update profiles set allowed_apps = coalesce(allowed_apps, '{}') || '{mil-branch-sales}'
+       where id = (select id from auth.users where email = 'الحساب@مثال.com');
+-->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Kufi+Arabic:wght@500;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+:root{
+  --navy:#0F2F4F; --navy-light:#173F66; --bg:#F4F6F9; --card:#FFFFFF; --border:#E4E9F0;
+  --text:#1C2B3A; --muted:#6B7C8D;
+  --radius:14px;
+  --shadow:0 2px 10px rgba(15,47,79,0.06), 0 1px 2px rgba(15,47,79,0.08);
+  --elev-1:0 1px 2px rgba(15,47,79,.07), 0 1px 3px rgba(15,47,79,.06);
+  --elev-2:0 6px 18px rgba(15,47,79,.10), 0 2px 6px rgba(15,47,79,.07);
+  --glass:rgba(255,255,255,.7);
+  --good:#16A34A; --warn:#F59E0B; --bad:#DC2626;
+}
+:root{
+  --k-navy:#070B14; --k-navy-2:#0B1220; --k-surface:#0E1524; --k-surface-2:#131C2F; --k-ink:#E9EDF6; --k-muted:#A7B0C3; --k-faint:#6F7A93;
+  --k-border:rgba(148,163,199,.16); --k-border-strong:rgba(148,163,199,.32);
+  --k-gold:#CBA467; --k-gold-soft:rgba(203,164,103,.12); --k-gold-strong:#E2C48C; --k-azure:#4C86FF; --k-azure-soft:rgba(76,134,255,.14);
+  --k-good:#39C98F; --k-warn:#E8B14A; --k-bad:#EE6363;
+  --k-font-head:"Noto Kufi Arabic","IBM Plex Sans Arabic","Segoe UI",Tahoma,sans-serif; --k-font-body:"IBM Plex Sans Arabic","Noto Kufi Arabic","Segoe UI",Tahoma,sans-serif; --k-font-mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+  --k-dur-1:120ms; --k-dur-2:200ms; --k-ease:cubic-bezier(.2,.7,.2,1);
+  --k-hdr-h:58px; --k-sb-w:248px;
+}
+:root{ --kd-ink:#141A2A; --kd-muted:#4B5568; --kd-faint:#6B7486; --kd-line:#E2E6EE; --kd-surface:#FFFFFF; --kd-surface-2:#F4F6FA; --kd-gold:#B8924E; --kd-gold-ink:#8A6A2E; --kd-gold-soft:#F6EEDC; --kd-azure:#2F6BDB; --kd-good:#177552; --kd-warn:#8F5E12; --kd-bad:#C2410C; --kd-crit:#9F1D1D; --kd-radius:12px; --kd-radius-sm:9px; }
+*{box-sizing:border-box;}
+body{margin:0;font-family:"Segoe UI","Tahoma",Arial,sans-serif;background:
+  radial-gradient(1200px 600px at 100% -10%, rgba(15,47,79,.045), transparent 60%),
+  radial-gradient(900px 500px at -5% 10%, rgba(23,63,102,.04), transparent 55%),
+  var(--bg);
+  color:var(--text);}
+input,select,textarea,button{font-family:inherit;}
+.kd-en{font-family:var(--k-font-mono);font-size:9.5px;letter-spacing:1.6px;text-transform:uppercase;color:var(--kd-gold-ink);direction:ltr;unicode-bidi:isolate;}
+
+/* ==================== الهيدر ==================== */
+header.ksh-hdr{position:sticky;top:0;z-index:60;height:var(--k-hdr-h);min-height:0;padding:0 16px;display:flex;align-items:center;gap:12px;
+  background:var(--k-navy);color:var(--k-ink);border-bottom:1px solid var(--k-border);box-shadow:none;font-family:var(--k-font-body);position:sticky;}
+header.ksh-hdr::after{content:"";position:absolute;inset-inline:0;bottom:-1px;height:1px;background:linear-gradient(90deg,transparent,rgba(203,164,103,.55),transparent);}
+.ksh-icbtn{position:relative;width:34px;height:34px;border-radius:9px;background:transparent;border:1px solid var(--k-border);color:var(--k-muted);display:none;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
+.ksh-icbtn svg{width:18px;height:18px;}
+.ksh-brand{display:flex;align-items:center;gap:10px;min-width:0;}
+.ksh-mark{width:34px;height:34px;border-radius:10px;background:linear-gradient(145deg,#E2C48C,#B8924E);display:flex;align-items:center;justify-content:center;flex-shrink:0;box-shadow:0 0 0 1px rgba(203,164,103,.35);}
+.ksh-brand-txt{display:flex;flex-direction:column;line-height:1.15;min-width:0;}
+.ksh-brand-txt b{font-family:var(--k-font-head);font-size:13.5px;font-weight:700;color:var(--k-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ksh-brand-txt .ksh-en{font-size:8.5px;color:var(--k-gold);}
+.ksh-hdr .ksh-sp{flex:1;}
+.ksh-back{display:inline-flex; align-items:center; gap:6px; color:var(--k-muted); text-decoration:none; font-size:12px; border:1px solid var(--k-border); border-radius:9px; padding:6px 12px;}
+.ksh-back:hover{color:var(--k-ink); border-color:var(--k-border-strong);}
+.userbox{display:flex; align-items:center; gap:10px; background:rgba(255,255,255,.06); border:1px solid var(--k-border); border-radius:10px; padding:6px 12px; font-size:11.5px; color:var(--k-muted);}
+.userbox b{display:block; color:var(--k-ink); font-size:12.5px;}
+
+/* ==================== الشريط الجانبي ==================== */
+.app-shell{display:flex;align-items:stretch;min-height:calc(100vh - var(--k-hdr-h));}
+.ksh-sb{width:var(--k-sb-w);flex-shrink:0;position:sticky;top:var(--k-hdr-h);align-self:flex-start;height:calc(100vh - var(--k-hdr-h));overflow-y:auto;overflow-x:hidden;
+  background:var(--k-navy-2);border-inline-start:1px solid var(--k-border);padding:10px 10px 18px;font-family:var(--k-font-body);color:var(--k-ink);scrollbar-width:thin;}
+.ksh-sb::-webkit-scrollbar{width:6px;} .ksh-sb::-webkit-scrollbar-thumb{background:rgba(203,164,103,.3); border-radius:3px;}
+.ksh-sb-top{display:flex; align-items:center; justify-content:space-between; padding:6px 8px 12px; border-bottom:1px solid var(--k-border); margin-bottom:8px;}
+.ksh-sb-top .t{font-family:var(--k-font-mono); font-size:8.5px; letter-spacing:1.2px; color:var(--k-faint); direction:ltr;}
+.ksh-grp{margin-bottom:2px;}
+.ksh-grp-h{width:100%;display:flex;align-items:center;gap:9px;background:transparent;border:0;color:var(--k-muted);font-size:12.5px;font-weight:700;padding:9px 10px;border-radius:10px;cursor:pointer;}
+.ksh-grp-h:hover{background:rgba(148,163,199,.08);color:var(--k-ink);}
+.ksh-grp-h .gi{width:16px;height:16px;flex-shrink:0;color:var(--k-gold);opacity:.9;}
+.ksh-grp-h .car{width:11px;height:11px;color:var(--k-faint);transition:transform var(--k-dur-2) var(--k-ease); margin-inline-start:auto;}
+.ksh-grp.open>.ksh-grp-h .car{transform:rotate(90deg);}
+.ksh-grp-items{display:none;padding:2px 0 6px 0;border-inline-start:1px solid var(--k-border);margin-inline-start:18px;}
+.ksh-grp.open>.ksh-grp-items{display:block;}
+.ksh-nav{width:100%;display:flex;align-items:center;gap:8px;background:transparent;border:0;color:var(--k-muted);font-size:12.5px;font-weight:500;padding:7px 10px 7px 8px;margin-inline-start:-1px;border-inline-start:2px solid transparent;cursor:pointer;text-align:start;transition:background var(--k-dur-1),color var(--k-dur-1);}
+.ksh-nav:hover{color:var(--k-ink);background:rgba(148,163,199,.06);}
+.ksh-nav.active{color:var(--k-gold-strong);border-inline-start-color:var(--k-gold);background:var(--k-gold-soft);font-weight:700;}
+.ksh-nav .badge{margin-inline-start:auto;font-family:var(--k-font-mono);font-size:10px;padding:1px 7px;border-radius:999px;background:var(--k-surface-2);color:var(--k-muted);direction:ltr;}
+.ksh-nav .badge.warn{background:rgba(232,177,74,.16);color:var(--k-warn);}
+.ksh-sb-note{font-size:10px; color:var(--k-faint); line-height:1.7; padding:14px 10px 0; border-top:1px solid var(--k-border); margin-top:10px;}
+
+/* ==================== المحتوى الرئيسي ==================== */
+main{flex:1; min-width:0; max-width:1400px; margin:0 auto; padding:22px 24px 60px; font-family:var(--k-font-body);}
+.ksh-crumb{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--muted);margin:0 0 6px;font-family:var(--k-font-body);flex-wrap:wrap;}
+.ksh-crumb .sep{color:#B8C2CF;} .ksh-crumb .cur{color:var(--navy);font-weight:700;}
+.ksh-pg{display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin:0 0 18px;padding-bottom:12px;border-bottom:1px solid var(--border);flex-wrap:wrap;}
+.ksh-pg .ksh-eye{font-family:var(--k-font-mono);font-size:9.5px;letter-spacing:1.6px;color:#B8924E;direction:ltr;text-align:start;}
+.ksh-pg h2{margin:2px 0 3px;font-family:var(--k-font-head);font-size:20px;font-weight:800;color:var(--navy);line-height:1.35;}
+.ksh-pg p{margin:0;font-size:12.5px;color:var(--muted);max-width:70ch;}
+.view{display:none;} .view.active{display:block;}
+.kd-tier{display:flex;align-items:center;gap:10px;margin:22px 0 10px;font-size:12px;color:var(--kd-muted);}
+.kd-tier .ln{flex:1;height:1px;background:var(--kd-line);}
+.kd-tier:first-of-type{margin-top:0;}
+.kd-panel{background:var(--kd-surface);border:1px solid var(--kd-line);border-radius:var(--kd-radius);box-shadow:0 1px 2px rgba(20,26,42,.04); padding:16px 18px; margin-bottom:12px;}
+.kd-panel h3{font-family:var(--k-font-head);font-size:14px;color:var(--kd-ink);margin:0 0 12px;}
+.hint{font-size:12px; color:var(--kd-muted); line-height:1.8; margin:0 0 10px;}
+
+/* ==================== الفلاتر ==================== */
+.kd-filters{margin-bottom:14px;}
+.kd-ftoggle{display:inline-flex;align-items:center;gap:8px;background:var(--kd-surface);border:1px solid var(--kd-line);border-radius:10px;padding:7px 12px;font-size:12.5px;font-weight:600;color:var(--kd-ink);cursor:pointer;}
+.kd-ftoggle svg{width:15px;height:15px;color:var(--kd-gold);} .kd-ftoggle[aria-expanded="true"]{border-color:var(--kd-gold);}
+.kd-fcount{font-family:var(--k-font-mono);font-size:10.5px;background:var(--kd-gold-soft);color:var(--kd-gold);border-radius:999px;padding:1px 7px;direction:ltr;}
+.kd-fsum{font-size:11px;color:var(--kd-faint);max-width:52ch;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.dash-filters.kd-fbody{margin-top:8px;background:var(--kd-surface);border:1px solid var(--kd-line);box-shadow:none;border-radius:12px;}
+.dash-filters{background:linear-gradient(180deg,var(--glass),rgba(255,255,255,.92));border:1px solid rgba(15,47,79,.06);border-radius:var(--radius);box-shadow:var(--elev-1);padding:14px 18px;display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;}
+.dash-filters .field{margin:0;min-width:130px;}
+.dash-filters .field label{display:block;font-size:10.5px;font-weight:700;color:var(--muted);margin-bottom:4px;}
+.dash-filters select, .dash-filters input{border:1px solid var(--border);border-radius:9px;padding:7px 9px;font-size:12.5px;background:#fff;transition:box-shadow .15s; width:100%;}
+.dash-filters select:focus, .dash-filters input:focus{outline:none;box-shadow:0 0 0 3px rgba(15,47,79,.12);}
+.dash-filters .field.disabled{opacity:.55;}
+
+/* ==================== بطاقات KPI ==================== */
+.kd-kpis{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin:0 0 14px;}
+.kd-kpi{position:relative;background:var(--kd-surface);border:1px solid var(--kd-line);border-radius:var(--kd-radius);padding:12px 14px;display:flex;flex-direction:column;gap:6px;min-width:0;transition:border-color var(--k-dur-1),box-shadow var(--k-dur-1);}
+.kd-kpi::before{content:"";position:absolute;top:0;inset-inline:14px;height:3px;border-radius:0 0 3px 3px;background:var(--kk,var(--kd-gold));}
+.kd-kpi.clickable{cursor:pointer;}
+.kd-kpi.clickable:hover{border-color:var(--kk,var(--kd-gold));box-shadow:0 6px 18px rgba(20,26,42,.08);}
+.kd-kpi .l{display:flex;justify-content:space-between;align-items:flex-start;gap:6px;font-size:11.5px;font-weight:700;color:var(--kd-ink);}
+.kd-kpi .l .kd-en{font-size:8px;color:var(--kd-faint);white-space:nowrap;}
+.kd-kpi .v{font-family:var(--k-font-mono);font-size:24px;font-weight:600;line-height:1.05;direction:ltr;unicode-bidi:isolate;text-align:start;color:var(--kd-ink);}
+.kd-kpi .v small{font-size:11px;color:var(--kd-faint);font-weight:400;}
+.kd-kpi .s{font-size:10.5px;color:var(--kd-muted);line-height:1.45;}
+.kd-kpi .s b{color:var(--kd-ink);font-family:var(--k-font-mono);font-weight:500;direction:ltr;unicode-bidi:isolate;}
+
+/* ==================== الجداول ==================== */
+.kt-wrap{background:var(--kd-surface);border:1px solid var(--kd-line);border-radius:12px;overflow:auto;box-shadow:0 1px 2px rgba(20,26,42,.04); max-height:68vh;}
+table.kt{width:100%;border-collapse:collapse;font-size:12.5px;}
+table.kt th{position:sticky;top:0;z-index:1;background:var(--kd-surface-2);font-family:var(--k-font-head);font-size:11px;font-weight:700;color:var(--kd-muted);text-align:start;padding:9px 10px;border-bottom:1px solid var(--kd-line);white-space:nowrap;}
+table.kt th[data-sort]{cursor:pointer;}
+table.kt td{padding:8px 10px;border-bottom:1px solid var(--kd-line);vertical-align:top;white-space:nowrap;} table.kt tbody tr:last-child td{border-bottom:0;}
+table.kt tbody tr:hover td{background:var(--kd-surface-2);}
+table.kt tbody tr.rowlink{cursor:pointer;}
+table.kt td.n,table.kt th.n{text-align:end;font-family:var(--k-font-mono);direction:ltr;unicode-bidi:isolate;font-variant-numeric:tabular-nums;white-space:nowrap;}
+table.kt td.w,table.kt th.w{width:1%;white-space:nowrap;}
+table.kt td.mono{font-family:var(--k-font-mono);direction:ltr;unicode-bidi:isolate;white-space:nowrap;}
+table.kt .ttl{font-weight:600;color:var(--kd-ink);}
+table.kt tr.totalrow td{background:var(--kd-surface-2); font-weight:700; border-top:2px solid var(--kd-line);}
+table.kt tr.diffrow td:first-child{box-shadow:inset 3px 0 0 var(--kd-bad);}
+.empty-hint{padding:30px; text-align:center; color:var(--kd-muted); font-size:12.5px;}
+
+/* ==================== شارات وحالات ==================== */
+.kd-chip{display:inline-flex;align-items:center;gap:5px;border-radius:999px;padding:2px 9px;font-size:10.5px;font-weight:700;white-space:nowrap;}
+.kd-chip i{width:6px;height:6px;border-radius:50%;background:currentColor;display:inline-block;}
+.kd-chip.crit{background:rgba(159,29,29,.1);color:var(--kd-crit);}
+.kd-chip.bad{background:rgba(194,65,12,.1);color:var(--kd-bad);}
+.kd-chip.warn{background:rgba(183,121,31,.12);color:var(--kd-warn);}
+.kd-chip.good{background:rgba(30,143,99,.12);color:var(--kd-good);}
+.kd-chip.mut{background:var(--kd-surface-2);color:var(--kd-muted);}
+.kd-chip.az{background:rgba(47,107,219,.1);color:var(--kd-azure);}
+
+/* ==================== أزرار ==================== */
+.btn{border:none;border-radius:var(--kd-radius-sm);padding:8px 15px;font-size:12.5px;font-weight:600;cursor:pointer;transition:.15s;}
+.btn-primary{background:var(--k-navy-2);color:#fff;} .btn-primary:hover{background:var(--navy-light);}
+.btn-ghost{background:#fff;color:var(--kd-ink);border:1px solid var(--kd-line);} .btn-ghost:hover{background:#EEF2F7;}
+.btn-danger{background:#FEE2E2;color:#B91C1C;} .btn-danger:hover{background:#FCA5A5;}
+.btn-sm{padding:5px 10px;font-size:12px;border-radius:8px;}
+.btn[disabled]{opacity:.5; cursor:not-allowed;}
+.toolbar{display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px;}
+.status-msg{font-size:12px;} .status-msg.ok{color:var(--kd-good);} .status-msg.err{color:var(--kd-bad);}
+textarea.plain{width:100%; min-height:120px; font-family:var(--k-font-mono); direction:ltr; text-align:left; font-size:11.5px; border:1px solid var(--kd-line); border-radius:9px; padding:9px;}
+
+/* ==================== نافذة تفاصيل (Drill-down) ==================== */
+.overlay{display:none;position:fixed;inset:0;background:rgba(15,30,45,0.55);z-index:100;align-items:flex-start;justify-content:center;overflow-y:auto;padding:40px 16px;}
+.overlay.active{display:flex;}
+.modal{background:#fff;border-radius:16px;width:100%;max-width:920px;padding:22px 24px;box-shadow:0 10px 40px rgba(0,0,0,0.25);}
+.modal h2{margin:0 0 4px; font-family:var(--k-font-head); font-size:16px; color:var(--navy);}
+.modal .modal-sub{font-size:12px; color:var(--kd-muted); margin-bottom:14px;}
+.modal-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:14px; border-top:1px solid var(--kd-line); padding-top:12px;}
+
+/* ==================== لوحة تسجيل الدخول ==================== */
+#loginView{max-width:420px; margin:70px auto; background:#fff; border:1px solid var(--border); border-radius:16px; padding:34px 32px; box-shadow:var(--elev-2);}
+#loginView h2{margin:0 0 4px; font-size:19px; color:var(--navy); font-family:var(--k-font-head);}
+#loginView .hint{margin-bottom:18px;}
+#loginView label{display:block; font-size:12.5px; font-weight:600; margin:12px 0 5px;}
+#loginView input{width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:9px;}
+#loginView button{width:100%; margin-top:18px; padding:11px;}
+
+@media (max-width:900px){
+  .ksh-icbtn{display:inline-flex;}
+  .ksh-sb{position:fixed; top:var(--k-hdr-h); bottom:0; inset-inline-end:0; width:min(84vw,300px); transform:translateX(100%); transition:transform var(--k-dur-2) var(--k-ease); z-index:70; box-shadow:-10px 0 30px rgba(0,0,0,.25);}
+  .ksh-sb.mobile-open{transform:translateX(0);}
+  .kd-kpis{grid-template-columns:repeat(3,minmax(0,1fr));}
+  main{padding:16px 12px;}
+}
+@media (max-width:640px){
+  .ksh-pg h2{font-size:17px;}
+  .kd-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}
+}
+@media (max-width:480px){
+  .kd-kpis{grid-template-columns:1fr;}
+}
+@media print{ .ksh-sb,.ksh-hdr,.ksh-crumb,.kd-filters,.toolbar,.overlay{display:none !important;} }
+</style>
+</head>
+<body>
+
+<div id="loginView">
+  <h2>تسجيل الدخول</h2>
+  <div class="hint">مبيعات المؤسسة الاستهلاكية العسكرية حسب الفرع — مركز الكيلاني للأغذية. الدخول بالبريد وكلمة السر (لا يوجد تسجيل ذاتي — راجع المدير لإنشاء حساب أو منح صلاحية).</div>
+  <label>البريد الإلكتروني</label>
+  <input type="text" id="loginEmail" autocomplete="username" style="direction:ltr; text-align:left;">
+  <label>كلمة السر</label>
+  <input type="password" id="loginPass" autocomplete="current-password" onkeydown="if(event.key==='Enter') doLogin()">
+  <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">دخول</button>
+  <div class="status-msg" id="loginMsg" style="margin-top:10px;"></div>
+</div>
+
+<div id="appView" style="display:none;">
+<header class="ksh-hdr">
+  <button class="ksh-icbtn" id="kshMenuBtn" aria-label="فتح قائمة التنقل" aria-controls="kshSidebar" aria-expanded="false">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+  </button>
+  <div class="ksh-brand">
+    <div class="ksh-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" width="18" height="18"><path d="M4 20V9l8-5 8 5v11" stroke="#1B140A" stroke-width="2" stroke-linejoin="round"/><path d="M9 20v-6h6v6" stroke="#1B140A" stroke-width="2" stroke-linejoin="round"/></svg></div>
+    <div class="ksh-brand-txt"><span class="ksh-en">Kaylani Enterprise · Branch Sales</span><b>مبيعات المؤسسة العسكرية حسب الفرع</b></div>
+  </div>
+  <a class="ksh-back" href="index.html">↩ البوابة</a>
+  <div class="ksh-sp"></div>
+  <div class="userbox" id="userbox" style="display:none;">
+    <div><b id="uName"></b><span id="uRole"></span></div>
+    <span class="status-msg" id="cloudSyncMsg"></span>
+    <button class="btn btn-ghost btn-sm" onclick="pullStateFromCloud()" title="تحميل آخر نسخة من السيرفر المشترك">🔄</button>
+    <button class="btn btn-ghost btn-sm" onclick="doLogout()">خروج</button>
+  </div>
+</header>
+
+<div class="app-shell">
+<nav class="ksh-sb" id="kshSidebar" aria-label="التنقل الرئيسي">
+  <div class="ksh-sb-top"><span class="t">NAVIGATION · 3 GROUPS</span></div>
+  <div id="kshGroups"></div>
+  <div class="ksh-sb-note">العقبة (C0006751) مباشرة من فواتيرها — باقي الفروع (C0006588) بمتوسط سعر/كلفة مرجّح مطبّق على صافي كمية سندات التحويل.</div>
+</nav>
+
+<main>
+  <nav class="ksh-crumb" aria-label="مسار التنقل"><span>مبيعات المؤسسة العسكرية</span><span class="sep">/</span><span id="kshCrumbGrp"></span><span class="sep">/</span><span class="cur" id="kshCrumbCur"></span></nav>
+  <div class="ksh-pg"><div><div class="ksh-eye" id="kshPgEye"></div><h2 id="kshPgTitle"></h2><p id="kshPgDesc"></p></div></div>
+
+  <!-- ============ استيراد البيانات ============ -->
+  <div class="view" id="view-import">
+    <div class="kd-panel">
+      <h3>📥 سندات التحويل (كويري OWTR/WTR1 على مستودع 011)</h3>
+      <div class="hint">الصق نتيجة الكويري كاملة (مع صف العناوين) — أعمدة: رقم السند، تاريخ التسليم، من مستودع، الى مستودع، رمزنا، اسمنا، الكمية، الوحدة، اسم الفرع، رقم فاتورة الصرف، ريمارك 2. إعادة لصق سند برقم موجود بيستبدل سطوره القديمة.</div>
+      <textarea class="plain" id="trPasteArea" placeholder="الصق هنا نتيجة كويري سندات التحويل (مع صف العناوين)..."></textarea>
+      <div class="toolbar" style="margin-top:10px;">
+        <button class="btn btn-primary btn-sm" onclick="importTransfers()">استيراد سندات التحويل</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('trPasteArea').value=''">مسح المربع</button>
+        <span class="status-msg" id="trImportMsg"></span>
+      </div>
+    </div>
+
+    <div class="kd-panel">
+      <h3>🧾 فواتير المبيعات والكلفة (كويري KLN-SAL-000004 لعملاء C0006588 وC0006751)</h3>
+      <div class="hint">الصق نتيجة الكويري كاملة (مع صف العناوين). إعادة لصق فاتورة/مرتجع برقم موجود بينفس النوع بيستبدل سطوره القديمة.</div>
+      <textarea class="plain" id="slPasteArea" placeholder="الصق هنا نتيجة كويري المبيعات والكلفة (مع صف العناوين)..."></textarea>
+      <div class="toolbar" style="margin-top:10px;">
+        <button class="btn btn-primary btn-sm" onclick="importSales()">استيراد فواتير المبيعات</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('slPasteArea').value=''">مسح المربع</button>
+        <span class="status-msg" id="slImportMsg"></span>
+      </div>
+    </div>
+
+    <div class="kd-panel">
+      <h3>⚠️ فروع سندات لسا غير محددة (<span id="unresolvedCount">0</span>)</h3>
+      <div class="hint">هاي السندات ما قدرنا نحدد فرعها تلقائياً — حدد الفرع يدوياً لكل سند حتى ينضم لتقرير المبيعات. التحديد بينطبق على كل أسطر السند.</div>
+      <div class="kt-wrap" style="max-height:280px;">
+        <table class="kt">
+          <thead><tr><th>رقم السند</th><th>التاريخ</th><th>من مستودع</th><th class="w">الى مستودع</th><th class="n">عدد الأصناف</th><th>الريمارك</th><th class="w">حدد الفرع</th></tr></thead>
+          <tbody id="unresolvedTbody"></tbody>
+        </table>
+        <div class="empty-hint" id="unresolvedEmptyHint" style="display:none;">ما في سندات غير محددة الفرع 👍</div>
+      </div>
+    </div>
+
+    <div class="kd-panel">
+      <h3>🏷️ تصحيح/دمج أسماء فروع</h3>
+      <div class="hint">مثلاً "الهاشميه" و"الهاشمية" لنفس الفرع — اكتب الاسم كما ظهر بالتقرير، وبعده الاسم الصحيح اللي بدك توحّد عليه، سطر لكل فرع (مفصولين بـ Tab).</div>
+      <textarea class="plain" id="renamePasteArea" style="min-height:60px;" placeholder="الاسم كما ظهر [تاب] الاسم الصحيح، سطر لكل فرع..."></textarea>
+      <div class="toolbar" style="margin-top:10px;">
+        <button class="btn btn-ghost btn-sm" onclick="importBranchRenames()">حفظ التصحيح</button>
+        <span class="status-msg" id="renameMsg"></span>
+      </div>
+    </div>
+
+    <div class="kd-panel">
+      <div class="toolbar" style="justify-content:space-between;">
+        <div style="display:flex; gap:10px; flex-wrap:wrap;">
+          <span class="kd-chip mut">أسطر سندات التحويل: <b class="kd-en" id="trCountVal" style="color:inherit;">0</b></span>
+          <span class="kd-chip mut">أسطر فواتير المبيعات: <b class="kd-en" id="slCountVal" style="color:inherit;">0</b></span>
+          <span class="kd-chip mut">الفروع المكتشفة: <b class="kd-en" id="branchCountVal" style="color:inherit;">0</b></span>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn btn-ghost btn-sm" onclick="downloadBackup()">💾 نسخة احتياطية</button>
+          <label class="btn btn-ghost btn-sm" style="cursor:pointer;">📂 استرجاع نسخة<input type="file" id="restoreFileInput" accept=".json" style="display:none;" onchange="restoreBackup(event)"></label>
+          <button class="btn btn-danger btn-sm" onclick="clearAllData()">🗑️ حذف كل البيانات</button>
+        </div>
+      </div>
+      <span class="status-msg" id="backupStatusMsg"></span>
+    </div>
+  </div>
+
+  <!-- ============ فلاتر مشتركة لكل نماذج التقرير ============ -->
+  <div class="kd-filters" id="reportFiltersWrap">
+    <button type="button" class="kd-ftoggle" id="kdFiltersToggle" aria-expanded="true" aria-controls="kdFiltersBody">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+      الفلاتر <span class="kd-fcount" id="kdFiltersCount" hidden>0</span><span class="kd-fsum" id="kdFiltersSummary">الكل</span>
+    </button>
+    <div id="kdFiltersBody">
+      <div class="dash-filters kd-fbody">
+        <div class="field"><label>من تاريخ</label><input type="date" id="fFrom" onchange="onFiltersChanged()"></div>
+        <div class="field"><label>إلى تاريخ</label><input type="date" id="fTo" onchange="onFiltersChanged()"></div>
+        <div class="field"><label>الفرع</label><select id="fBranch" onchange="onFiltersChanged()"><option value="">الكل</option></select></div>
+        <div class="field"><label>الصنف</label><select id="fItem" onchange="onFiltersChanged()"><option value="">الكل</option></select></div>
+        <div class="field"><label>مجموعة الأصناف</label><select id="fItemGroup" onchange="onFiltersChanged()"><option value="">الكل</option></select></div>
+        <div class="field disabled" title="لا يوجد مصدر بيانات للمورّد بالكويريات الحالية"><label>المورّد</label><select id="fSupplier" disabled><option value="">غير متوفر بالبيانات</option></select></div>
+        <div class="field"><label>طريقة العرض</label><select id="fViewMode" onchange="onFiltersChanged()"><option value="summary">ملخص</option><option value="detail">تفصيلي</option></select></div>
+        <button class="btn btn-ghost btn-sm" id="dfResetBtn" onclick="resetFilters()">إعادة تعيين الفلاتر</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 1) ملخص الفروع ============ -->
+  <div class="view active" id="view-dash">
+    <div class="kd-kpis" id="dashKpis"></div>
+    <div class="kd-tier"><span class="kd-en">Branch Summary</span><span>المبيعات مجمّعة حسب الفرع</span><span class="ln"></span></div>
+    <div class="toolbar" style="justify-content:flex-end;">
+      <button class="btn btn-ghost btn-sm" onclick="exportTableToExcel('branchTable','مبيعات_حسب_الفرع','حسب الفرع')">📊 تصدير Excel</button>
+      <button class="btn btn-ghost btn-sm" onclick="printSection('branchTable','مبيعات المؤسسة العسكرية حسب الفرع')">🖨️ طباعة</button>
+    </div>
+    <div class="kt-wrap">
+      <table class="kt" id="branchTable">
+        <thead><tr>
+          <th class="w">#</th><th>الفرع</th><th class="n">عدد المستندات</th><th class="n">عدد الأصناف</th><th class="n">الكمية</th>
+          <th class="n">صافي المبيعات</th><th class="n">الخصم</th><th class="n">الضريبة</th><th class="n">إجمالي المبيعات</th><th class="n">% من الإجمالي</th>
+        </tr></thead>
+        <tbody id="branchTbody"></tbody>
+      </table>
+      <div class="empty-hint" id="dashEmptyHint" style="display:none;">ما في بيانات — استورد سندات التحويل وفواتير المبيعات أول من صفحة "استيراد البيانات".</div>
+    </div>
+  </div>
+
+  <!-- ============ 2) الفروع والأصناف ============ -->
+  <div class="view" id="view-branchitem">
+    <div class="kd-tier"><span class="kd-en">Branches × Items</span><span>مبيعات كل فرع حسب الصنف</span><span class="ln"></span></div>
+    <div class="toolbar" style="justify-content:flex-end;">
+      <button class="btn btn-ghost btn-sm" onclick="exportTableToExcel('branchItemTable','الفروع_والأصناف','الفروع والأصناف')">📊 تصدير Excel</button>
+      <button class="btn btn-ghost btn-sm" onclick="printSection('branchItemTable','مبيعات الفروع حسب الصنف')">🖨️ طباعة</button>
+    </div>
+    <div class="kt-wrap">
+      <table class="kt" id="branchItemTable">
+        <thead><tr><th>الفرع</th><th class="w">رمزنا</th><th>اسم الصنف</th><th>مجموعة الصنف</th><th class="n">الكمية</th><th class="n">متوسط السعر</th><th class="n">المبيعات</th><th class="n">الكلفة</th><th class="n">مجمل الربح</th><th class="n">نسبة الربح</th></tr></thead>
+        <tbody id="branchItemTbody"></tbody>
+      </table>
+      <div class="empty-hint" id="branchItemEmptyHint" style="display:none;">ما في بيانات مطابقة للفلاتر الحالية.</div>
+    </div>
+  </div>
+
+  <!-- ============ 3) مقارنة الفروع ============ -->
+  <div class="view" id="view-compare">
+    <div class="kd-tier"><span class="kd-en">Branch Comparison</span><span>مقارنة الفروع الأعلى مبيعاً</span><span class="ln"></span></div>
+    <div class="hint">أعلى 15 فرع مبيعاً بالفترة المحددة — طول الشريط نسبي لأعلى فرع.</div>
+    <div class="kd-panel" id="compareBars"></div>
+  </div>
+
+  <!-- ============ 4) تفاصيل المستندات ============ -->
+  <div class="view" id="view-docs">
+    <div class="kd-tier"><span class="kd-en">Documents</span><span>تفاصيل المستندات — فواتير العقبة أو سندات تحويل باقي الفروع</span><span class="ln"></span></div>
+    <div class="hint">اختر فرع من الفلاتر فوق لعرض مستنداته (فواتير مبيعات فعلية للعقبة، أو سندات تحويل 011 لباقي الفروع). بدون تحديد فرع بيوقف هون.</div>
+    <div id="docsContent"></div>
+  </div>
+
+  <!-- ============ 5) التحليل الشهري ============ -->
+  <div class="view" id="view-monthly">
+    <div class="kd-tier"><span class="kd-en">Monthly Trend</span><span>تطور المبيعات شهرياً</span><span class="ln"></span></div>
+    <div class="toolbar" style="justify-content:flex-end;">
+      <button class="btn btn-ghost btn-sm" onclick="exportTableToExcel('monthlyTable','التحليل_الشهري','شهري')">📊 تصدير Excel</button>
+    </div>
+    <div class="kt-wrap">
+      <table class="kt" id="monthlyTable">
+        <thead><tr><th>الشهر</th><th class="n">عدد الفروع</th><th class="n">الكمية</th><th class="n">صافي المبيعات</th><th class="n">الكلفة</th><th class="n">مجمل الربح</th><th class="n">نسبة الربح</th></tr></thead>
+        <tbody id="monthlyTbody"></tbody>
+      </table>
+      <div class="empty-hint" id="monthlyEmptyHint" style="display:none;">ما في بيانات كافية.</div>
+    </div>
+  </div>
+
+  <!-- ============ مطابقة الكميات ============ -->
+  <div class="view" id="view-recon">
+    <div class="kd-tier"><span class="kd-en">Reconciliation</span><span>مطابقة سندات التحويل مع فواتير المبيعات</span><span class="ln"></span></div>
+    <div class="hint">مجموع صافي كميات سندات التحويل لكل صنف لازم يساوي صافي كميته بفواتير المبيعات لنفس العميل ونفس الفترة — أي فرق بيدل على سند/فاتورة ناقصة أو فرع اتحدد غلط.</div>
+    <div class="toolbar">
+      <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="reconOnlyDiff" checked onchange="renderReconPage()"> بس الأصناف فيها فرق</label>
+      <span style="flex:1;"></span>
+      <button class="btn btn-ghost btn-sm" onclick="exportTableToExcel('reconTable','مطابقة_الكميات','المطابقة')">📊 تصدير Excel</button>
+    </div>
+    <div class="kt-wrap">
+      <table class="kt" id="reconTable">
+        <thead><tr><th>المجموعة</th><th class="w">رمزنا</th><th>اسم الصنف</th><th class="n">صافي كمية سندات التحويل</th><th class="n">صافي كمية فواتير المبيعات</th><th class="n">الفرق</th></tr></thead>
+        <tbody id="reconTbody"></tbody>
+      </table>
+      <div class="empty-hint" id="reconEmptyHint" style="display:none;">ما في بيانات كافية للمطابقة بهاي الفترة.</div>
+    </div>
+  </div>
+
+</main>
+</div>
+</div>
+
+<div class="overlay" id="branchDetailOverlay">
+  <div class="modal" style="max-width:960px;">
+    <h2 id="branchDetailTitle"></h2>
+    <div class="modal-sub" id="branchDetailSub"></div>
+    <div class="kt-wrap" style="max-height:60vh;">
+      <table class="kt" id="branchDetailTable">
+        <thead><tr><th class="w">رمزنا</th><th>اسم الصنف</th><th class="n">الكمية</th><th class="n">متوسط السعر</th><th class="n">المبيعات</th><th class="n">متوسط الكلفة/وحدة</th><th class="n">الكلفة</th><th class="n">مجمل الربح</th><th class="n">نسبة الربح</th></tr></thead>
+        <tbody id="branchDetailTbody"></tbody>
+      </table>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost btn-sm" onclick="exportTableToExcel('branchDetailTable','مبيعات_الفرع','تفاصيل الفرع')">📊 تصدير Excel</button>
+      <button class="btn btn-ghost btn-sm" onclick="printSection('branchDetailTable','مبيعات فرع')">🖨️ طباعة</button>
+      <button class="btn btn-primary btn-sm" onclick="closeBranchDetail()">إغلاق</button>
+    </div>
+  </div>
+</div>
+
+<div id="printOverlay" style="display:none; position:fixed; inset:0; background:#fff; z-index:999; overflow:auto;">
+  <div style="position:sticky; top:0; background:var(--bg); border-bottom:1px solid var(--border); padding:10px 16px; display:flex; gap:8px;">
+    <button class="btn btn-primary btn-sm" onclick="window.print()">🖨️ طباعة</button>
+    <button class="btn btn-ghost btn-sm" onclick="closePrintPreview()">✕ إغلاق</button>
+  </div>
+  <div id="printSheetContent"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+/* ==================== إعدادات عامة ==================== */
+const APP_ID = 'mil-branch-sales';
+const STORAGE_KEY = 'milBranchSales_v1';
+const SAVED_AT_KEY = STORAGE_KEY + '_savedAt';
+let IS_FRESH_LOAD = false;
+
+/* ==================== حالة البيانات ==================== */
+// {docNum, docDate(iso), fromWhs, toWhs, itemCode, itemDesc, qty(+توحيد الوحدة كما وردت)، uom, branchRaw, remarks, comments}
+let TRANSFERS = [];
+// {docType:'فاتورة'|'مرتجع', docNum, docDate(iso), cardCode, cardName, itemCode, itemName, qty, price, netUnitPrice, netSales, batchNo, unitCost, estCost, totalCost, grossProfit, deliveryStatus}
+let SALES = [];
+// كود الفرع الرقمي (من SAP، نفس نظام شاشة عميل المؤسسة) → اسمه
+const DEFAULT_BRANCH_CODE_MAP = {"1": "الكرامة", "10": "بني كنانة", "100": "الموقر", "101": "حي معصوم", "102": "عبد الله الرواحنة", "104": "القريقرة", "105": "الرئيسي", "106": "مغير الكرك", "107": "فقوع", "108": "محي", "109": "بصيرا", "11": "الرمثا", "110": "جرش الجديد", "111": "البادية الشمالية", "112": "الجفر", "12": "عجلون", "13": "سوف", "14": "الروابي", "15": "الطرة", "16": "سوق الفاروق", "17": "ساكب", "18": "عنجرة", "19": "مرج الحمام", "2": "اسواق طارق", "20": "السلط", "21": "السرو", "22": "صويلح", "23": "خالد", "24": "الحزام", "25": "ياجوز", "26": "المفرق", "27": "جعفر الطيار", "28": "القصر", "29": "هزاع المجالي", "3": "مجمع المقابلين", "30": "المزار الجنوبي", "31": "زيد بن الحارث", "32": "مؤتة", "33": "مادبا", "34": "سوق الرابية", "35": "سوق دير ابي سعيد", "36": "اسواق السلام", "37": "العيص", "38": "الطفيلة", "39": "القادسية", "4": "راس العين", "40": "وصفي التل الشهيد-اربد", "41": "الحارث بن عمير الازدي", "42": "اربد الشمالي", "43": "الشوبك", "44": "وادي موسى", "45": "الطيبة الشمالية", "46": "معان", "47": "خالد بن الوليد", "48": "العدنانية", "49": "راشد الزيود", "5": "شفا بدران", "50": "الصديق", "51": "الوفاء", "52": "كفرنجه", "53": "الوسطية", "54": "المزار الشمالي", "55": "منشية بني حسن", "56": "مثلث ارحابا", "57": "الاشرفية", "58": "الهاشمية", "59": "علان", "6": "مجمع الشهيد /سحاب", "60": "آيل", "61": "عوجان", "62": "الشونة الشمالية", "63": "غور الصافي", "64": "دير علا", "65": "الكريمة", "66": "الصبيحي", "67": "بلعما", "68": "القطرانة", "69": "الشونة الجنوبية", "7": "كفر يوبا", "70": "البتراء", "71": "النشامى-حسينية معان", "72": "الجيزة", "73": "ماركا", "74": "سوق مرصع", "75": "برما", "76": "الازرق", "77": "رحاب", "78": "مليح", "79": "ام العمد", "8": "الحصن", "80": "ام البساتين", "81": "ذيبان", "82": "الفاروق", "83": "الحسا", "84": "العقبة", "85": "جديتا", "86": "الطيبة", "87": "السعيدية", "88": "الخالدية", "89": "المنارة", "9": "عروس الشمال", "90": "سما السرحان", "91": "سوق صبحا", "92": "الريشة", "93": "القويرة", "94": "الديسة", "95": "اذرح", "96": "الفيصلية", "97": "الطيبة الجنوب", "98": "المدينة التدريبية -الزرقاء", "99": "سوق بدر الجديد"};
+let BRANCH_CODE_MAP = {};
+// تصحيح يدوي لفرع سند محدد بالرقم (لما ما نقدر نحدده تلقائياً): {docNum: 'اسم الفرع'}
+let BRANCH_DOC_OVERRIDES = {};
+// توحيد تهجئات مختلفة لنفس الفرع: {'الاسم كما ظهر':'الاسم الصحيح'}
+let BRANCH_RENAMES = {};
+
+const CUSTOMER_AQABA = 'C0006751';
+const CUSTOMER_AMMAN = 'C0006588';
+
+function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function fmtNum(n){ if(n==null||n==='') return '—'; return (+n).toLocaleString('en-US',{maximumFractionDigits:3}); }
+function fmt3(n){ return ((+n)||0).toFixed(3); }
+function fmt4(n){ return ((+n)||0).toFixed(4); }
+function parseNum(v){ if(v==null) return NaN; v=String(v).trim().replace(/,/g,''); if(v==='') return NaN; const n=parseFloat(v); return n; }
+function uid(){ return 'x'+Math.random().toString(36).slice(2,10); }
+function flash(elId, msg, ok){
+  const el = document.getElementById(elId);
+  if(!el) return;
+  el.textContent = msg; el.className = 'status-msg ' + (ok?'ok':'err');
+  setTimeout(()=>{ if(el.textContent===msg) el.textContent=''; }, 5000);
+}
+function normDocNum(v){ return String(v||'').replace(/[^0-9]/g,''); }
+function normDateToISO(v){
+  v = String(v||'').trim();
+  if(!v) return '';
+  if(/^\d{4}-\d{2}-\d{2}$/.test(v)) return v;
+  let m = v.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if(m) return m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
+  m = v.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if(m) return m[3]+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');
+  m = v.match(/^(\d{4})\/(\d{1,2})\/(\d{1,2})$/);
+  if(m) return m[1]+'-'+m[2].padStart(2,'0')+'-'+m[3].padStart(2,'0');
+  const d = new Date(v);
+  if(!isNaN(d.getTime())) return d.toISOString().slice(0,10);
+  return '';
+}
+function dateStr(iso){ return iso ? iso.split('-').reverse().join('/') : '—'; }
+
+/* ==================== تخزين محلي ==================== */
+function buildBackupObject(){
+  return {TRANSFERS, SALES, BRANCH_CODE_MAP, BRANCH_DOC_OVERRIDES, BRANCH_RENAMES};
+}
+function saveLocal(){
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(buildBackupObject()));
+    localStorage.setItem(SAVED_AT_KEY, new Date().toISOString());
+  }catch(e){ console.warn('تعذر الحفظ المحلي', e); }
+  queueCloudSave();
+}
+function loadLocal(){
+  IS_FRESH_LOAD = !localStorage.getItem(STORAGE_KEY);
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){
+      const d = JSON.parse(raw);
+      applyLoadedData(d);
+    }
+  }catch(e){ console.warn('تعذر قراءة النسخة المحلية', e); }
+  if(!Object.keys(BRANCH_CODE_MAP).length) BRANCH_CODE_MAP = {...DEFAULT_BRANCH_CODE_MAP};
+}
+function applyLoadedData(d){
+  if(Array.isArray(d.TRANSFERS)) TRANSFERS = d.TRANSFERS;
+  if(Array.isArray(d.SALES)) SALES = d.SALES;
+  if(d.BRANCH_CODE_MAP && typeof d.BRANCH_CODE_MAP==='object' && Object.keys(d.BRANCH_CODE_MAP).length) BRANCH_CODE_MAP = d.BRANCH_CODE_MAP;
+  if(d.BRANCH_DOC_OVERRIDES && typeof d.BRANCH_DOC_OVERRIDES==='object') BRANCH_DOC_OVERRIDES = d.BRANCH_DOC_OVERRIDES;
+  if(d.BRANCH_RENAMES && typeof d.BRANCH_RENAMES==='object') BRANCH_RENAMES = d.BRANCH_RENAMES;
+}
+function downloadBackup(){
+  const data = buildBackupObject();
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'نسخة_احتياطية_مبيعات_المؤسسة_حسب_الفرع_'+new Date().toISOString().slice(0,10)+'.json';
+  a.click();
+  flash('backupStatusMsg','تم تنزيل النسخة الاحتياطية.', true);
+}
+function restoreBackup(evt){
+  const file = evt.target.files[0];
+  evt.target.value = '';
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{
+      const d = JSON.parse(reader.result);
+      applyLoadedData(d);
+      saveLocal();
+      refreshAllFilters();
+      renderCurrentPage();
+      flash('backupStatusMsg','تم استرجاع النسخة الاحتياطية بنجاح.', true);
+    }catch(e){ flash('backupStatusMsg','ملف غير صالح — تأكد إنه نسخة احتياطية صحيحة.', false); }
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+function clearAllData(){
+  if(!confirm('حذف كل سندات التحويل وفواتير المبيعات المستوردة نهائياً؟ ما بيرجع إلا من نسخة احتياطية.')) return;
+  if(!confirm('تأكيد أخير — الحذف نهائي؟')) return;
+  TRANSFERS = []; SALES = []; BRANCH_DOC_OVERRIDES = {};
+  saveLocal();
+  refreshAllFilters();
+  renderCurrentPage();
+  flash('trImportMsg','تم حذف كل البيانات.', true);
+}
+
+/* ==================== استيراد سندات التحويل ==================== */
+const TR_HEADER_ALIASES = {
+  'رقم السند':'docNum', 'تاريخ التسليم':'docDate', 'تاريخ السند':'docDate',
+  'من مستودع':'fromWhs', 'الى مستودع':'toWhs', 'إلى مستودع':'toWhs',
+  'رمزنا':'itemCode', 'اسمنا':'itemDesc',
+  'الكمية':'qty', 'الوحدة':'uom',
+  'اسم الفرع':'branchRaw',
+  'رقم فاتورة الصرف':'remarks', 'Bill of Lading':'remarks',
+  'ريمارك 2':'comments', 'Comments':'comments'
+};
+function isWhs011(v){ return /(^|\D)011(\D|$)/.test(String(v||'').trim()); }
+function isWhs007(v){ return /(^|\D)007(\D|$)/.test(String(v||'').trim()); }
+
+function importTransfers(){
+  if(!roleEdit){ flash('trImportMsg','صلاحيتك مطالعة فقط — ما فيك تستورد بيانات.', false); return; }
+  const raw = document.getElementById('trPasteArea').value;
+  const lines = raw.split(/\r?\n/).filter(l=>l.trim().length>0);
+  if(lines.length<2){ flash('trImportMsg','لازم صف عناوين على الأقل + صف بيانات وحدة.', false); return; }
+  const headers = lines[0].split('\t').map(h=>h.trim());
+  const keys = headers.map(h=>TR_HEADER_ALIASES[h]||null);
+  if(!keys.includes('docNum') || !keys.includes('itemCode') || !keys.includes('qty')){
+    flash('trImportMsg','لازم يكون فيه أعمدة "رقم السند" و"رمزنا" و"الكمية" بالعناوين.', false); return;
+  }
+  const newRecords = [];
+  for(let i=1;i<lines.length;i++){
+    const cells = lines[i].split('\t');
+    const rec = {};
+    keys.forEach((k,idx)=>{ if(k) rec[k]=(cells[idx]||'').trim(); });
+    if(!rec.docNum || !rec.itemCode) continue;
+    rec.qty = parseNum(rec.qty); if(isNaN(rec.qty)) rec.qty = 0;
+    rec.docDate = normDateToISO(rec.docDate);
+    rec.fromWhs = rec.fromWhs || '';
+    rec.toWhs = rec.toWhs || '';
+    rec.itemDesc = rec.itemDesc || '';
+    rec.uom = rec.uom || '';
+    rec.branchRaw = rec.branchRaw || '';
+    rec.remarks = rec.remarks || '';
+    rec.comments = rec.comments || '';
+    newRecords.push(rec);
+  }
+  if(!newRecords.length){ flash('trImportMsg','ما لقيت أي سطر بيانات صالح.', false); return; }
+  const touchedDocNums = new Set(newRecords.map(r=>normDocNum(r.docNum)));
+  const before = TRANSFERS.length;
+  TRANSFERS = TRANSFERS.filter(t=> !touchedDocNums.has(normDocNum(t.docNum)));
+  TRANSFERS = TRANSFERS.concat(newRecords);
+  resolveAllBranches();
+  saveLocal();
+  refreshAllFilters();
+  renderCurrentPage();
+  document.getElementById('trPasteArea').value = '';
+  flash('trImportMsg', `تم استيراد ${newRecords.length} سطر (${touchedDocNums.size} سند) — استبدلنا ${before - (TRANSFERS.length-newRecords.length)} سطر قديم لنفس السندات.`, true);
+}
+
+/* ==================== استيراد فواتير المبيعات والكلفة ==================== */
+const SL_HEADER_ALIASES = {
+  'نوع المستند':'docType', 'رقم المستند':'docNum', 'التاريخ':'docDate',
+  'رمز العميل':'cardCode', 'اسم العميل':'cardName',
+  'كود الصنف':'itemCode', 'اسم الصنف':'itemName', 'الكمية':'qty',
+  'سعر البيع':'price', 'خصم السطر %':'discLine', 'خصم الوثيقة %':'discDoc',
+  'صافي السعر للوحدة':'netUnitPrice', 'صافي المبيعات':'netSales',
+  'رقم الديليفري المرتبط':'deliveryNo', 'رقم الباتش':'batchNo',
+  'كلفة الوحدة الحالية للباتش':'unitCost', 'كلفة تقديرية (غير مدلفرة)':'estCost',
+  'إجمالي الكلفة':'totalCost', 'مجمل الربح':'grossProfit',
+  'حالة التسليم':'deliveryStatus', 'نسبة الربح %':'profitPct'
+};
+function importSales(){
+  if(!roleEdit){ flash('slImportMsg','صلاحيتك مطالعة فقط — ما فيك تستورد بيانات.', false); return; }
+  const raw = document.getElementById('slPasteArea').value;
+  const lines = raw.split(/\r?\n/).filter(l=>l.trim().length>0);
+  if(lines.length<2){ flash('slImportMsg','لازم صف عناوين على الأقل + صف بيانات وحدة.', false); return; }
+  const headers = lines[0].split('\t').map(h=>h.trim());
+  const keys = headers.map(h=>SL_HEADER_ALIASES[h]||null);
+  if(!keys.includes('docNum') || !keys.includes('itemCode') || !keys.includes('cardCode')){
+    flash('slImportMsg','لازم يكون فيه أعمدة "رقم المستند" و"رمز العميل" و"كود الصنف" بالعناوين.', false); return;
+  }
+  const newRecords = [];
+  for(let i=1;i<lines.length;i++){
+    const cells = lines[i].split('\t');
+    const rec = {};
+    keys.forEach((k,idx)=>{ if(k) rec[k]=(cells[idx]||'').trim(); });
+    if(!rec.docNum || !rec.itemCode || !rec.cardCode) continue;
+    ['qty','price','discLine','discDoc','netUnitPrice','netSales','unitCost','estCost','totalCost','grossProfit','profitPct'].forEach(f=>{
+      const n = parseNum(rec[f]); rec[f] = isNaN(n) ? null : n;
+    });
+    rec.docType = rec.docType || 'فاتورة';
+    rec.docDate = normDateToISO(rec.docDate);
+    rec.cardName = rec.cardName || '';
+    rec.itemName = rec.itemName || '';
+    rec.batchNo = rec.batchNo || '';
+    rec.deliveryStatus = rec.deliveryStatus || (rec.batchNo ? 'مدلفرة' : 'غير مدلفرة');
+    newRecords.push(rec);
+  }
+  if(!newRecords.length){ flash('slImportMsg','ما لقيت أي سطر بيانات صالح.', false); return; }
+  const touchedKeys = new Set(newRecords.map(r=> r.docType+'|'+normDocNum(r.docNum)));
+  const before = SALES.length;
+  SALES = SALES.filter(s=> !touchedKeys.has(s.docType+'|'+normDocNum(s.docNum)));
+  SALES = SALES.concat(newRecords);
+  saveLocal();
+  refreshAllFilters();
+  renderCurrentPage();
+  document.getElementById('slPasteArea').value = '';
+  const docCount = new Set(newRecords.map(r=>r.docType+r.docNum)).size;
+  flash('slImportMsg', `تم استيراد ${newRecords.length} سطر (${docCount} مستند) — استبدلنا ${before - (SALES.length-newRecords.length)} سطر قديم لنفس المستندات.`, true);
+}
+
+/* ==================== تحديد الفرع لكل سند تحويل ====================
+   سلسلة احتياط بالترتيب:
+   1) اسم الفرع (U_Branch) كود رقمي من SAP → جدول الترجمة (BRANCH_CODE_MAP، نفس نظام شاشة عميل المؤسسة)
+   2) ريمارك 2 (Comments) بنمط: "<كود> || <اسم الفرع> Based on ... Request <رقم>"
+   3) عمود "رقم فاتورة الصرف" لو فيه نص عربي (مو رقم) — أول كلمة/كلمتين كتخمين منخفض الثقة
+   4) غير محدد — يحتاج تصحيح يدوي (BRANCH_DOC_OVERRIDES) */
+const BRANCH_COMMENT_RE = /\|\|\s*(.+?)\s+Based\s+[Oo]n\b/;
+function applyBranchRename(name){
+  if(!name) return name;
+  let n = name.trim();
+  return BRANCH_RENAMES[n] || n;
+}
+function resolveBranchRaw(rec){
+  // 1) كود رقمي بعمود اسم الفرع
+  const codeRaw = String(rec.branchRaw||'').trim();
+  if(codeRaw && /^\d+$/.test(codeRaw) && BRANCH_CODE_MAP[codeRaw]){
+    return {name: applyBranchRename(BRANCH_CODE_MAP[codeRaw]), confidence:'code'};
+  }
+  // 2) نمط الريمارك 2
+  let m = String(rec.comments||'').match(BRANCH_COMMENT_RE);
+  if(m && m[1].trim()){
+    return {name: applyBranchRename(m[1].trim()), confidence:'comment'};
+  }
+  // اسم الفرع كنص مباشر (مو رقم) — أحياناً بيجي مكتوب بدل الكود
+  if(codeRaw && !/^\d+$/.test(codeRaw)){
+    return {name: applyBranchRename(codeRaw), confidence:'code-text'};
+  }
+  // 3) تخمين من "رقم فاتورة الصرف" لو نص عربي واضح (بدون أرقام كتيرة)
+  const remarksRaw = String(rec.remarks||'').trim();
+  if(remarksRaw){
+    const stripped = remarksRaw.replace(/[0-9]+/g,'').trim();
+    if(stripped && stripped.length>=2 && stripped.length<=30 && /[؀-ۿ]/.test(stripped)){
+      return {name: applyBranchRename(stripped), confidence:'guess'};
+    }
+  }
+  return {name:null, confidence:'none'};
+}
+function resolveAllBranches(){
+  TRANSFERS.forEach(rec=>{
+    if(BRANCH_DOC_OVERRIDES[rec.docNum]){
+      rec.branch = applyBranchRename(BRANCH_DOC_OVERRIDES[rec.docNum]);
+      rec.branchConfidence = 'override';
+      return;
+    }
+    const r = resolveBranchRaw(rec);
+    rec.branch = r.name;
+    rec.branchConfidence = r.confidence;
+  });
+}
+function setBranchOverride(docNum, name){
+  name = (name||'').trim();
+  if(!name) return;
+  BRANCH_DOC_OVERRIDES[docNum] = name;
+  resolveAllBranches();
+  saveLocal();
+  refreshAllFilters();
+  renderCurrentPage();
+}
+function importBranchRenames(){
+  if(!roleEdit){ flash('renameMsg','صلاحيتك مطالعة فقط.', false); return; }
+  const raw = document.getElementById('renamePasteArea').value;
+  const lines = raw.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  let n = 0;
+  lines.forEach(l=>{
+    const parts = l.split('\t').map(s=>s.trim()).filter(Boolean);
+    if(parts.length<2) return;
+    BRANCH_RENAMES[parts[0]] = parts[1];
+    n++;
+  });
+  if(!n){ flash('renameMsg','ما لقيت أسطر صالحة — لازم الاسم القديم [تاب] الاسم الصحيح.', false); return; }
+  resolveAllBranches();
+  saveLocal();
+  refreshAllFilters();
+  renderCurrentPage();
+  document.getElementById('renamePasteArea').value = '';
+  flash('renameMsg', `تم حفظ ${n} تصحيح اسم فرع.`, true);
+}
+// كل السندات (مجمّعة برقم السند) اللي فرعها لسا مو محدد
+function getUnresolvedDocs(){
+  const byDoc = new Map();
+  TRANSFERS.forEach(t=>{
+    if(t.branch) return;
+    const k = t.docNum;
+    if(!byDoc.has(k)) byDoc.set(k, {docNum:t.docNum, docDate:t.docDate, fromWhs:t.fromWhs, toWhs:t.toWhs, lines:0, remarks:t.remarks||t.comments||''});
+    byDoc.get(k).lines++;
+  });
+  return Array.from(byDoc.values()).sort((a,b)=> String(a.docDate||'').localeCompare(String(b.docDate||'')));
+}
+function renderUnresolvedTable(){
+  const docs = getUnresolvedDocs();
+  document.getElementById('unresolvedCount').textContent = docs.length;
+  const tbody = document.getElementById('unresolvedTbody');
+  const hint = document.getElementById('unresolvedEmptyHint');
+  if(!docs.length){ tbody.innerHTML=''; hint.style.display='block'; return; }
+  hint.style.display = 'none';
+  const branchNames = [...new Set(Object.values(BRANCH_CODE_MAP))].sort((a,b)=>a.localeCompare(b,'ar'));
+  tbody.innerHTML = docs.map(d=>`<tr>
+    <td class="mono">${esc(d.docNum)}</td>
+    <td>${dateStr(d.docDate)}</td>
+    <td class="mono">${esc(d.fromWhs)}</td>
+    <td class="mono">${esc(d.toWhs)}</td>
+    <td class="mono">${d.lines}</td>
+    <td style="max-width:220px; white-space:normal; font-size:11px; color:var(--ink-soft);">${esc(d.remarks)||'—'}</td>
+    <td>
+      <select onchange="if(this.value==='__manual__'){const v=prompt('اكتب اسم الفرع:'); if(v) setBranchOverride('${esc(d.docNum)}', v);} else if(this.value) setBranchOverride('${esc(d.docNum)}', this.value);">
+        <option value="">— اختر —</option>
+        ${branchNames.map(b=>`<option value="${esc(b)}">${esc(b)}</option>`).join('')}
+        <option value="__manual__">+ اسم آخر يدوياً...</option>
+      </select>
+    </td>
+  </tr>`).join('');
+}
+
+/* ==================== تجميع البيانات: مبيعات كل فرع ====================
+   المبدأ: العقبة (C0006751) مباشرة من فواتيرها (سعر وكلفة فعليين).
+   باقي الفروع (١٠٠+ فرع) بتنفوتر كلها سوا بفاتورة تجميعية واحدة لعميل C0006588 آخر الشهر —
+   فمصدر تقسيمها الوحيد هو صافي كمية كل فرع بسندات التحويل، مضروبة بمتوسط سعر/كلفة الصنف
+   المرجّح المحسوب من فاتورة C0006588 لنفس الفترة. */
+const AQABA_BRANCH_NAME = 'العقبة';
+const ITEM_GROUP_NAMES = {
+  FVL:'خضار وفواكه مجمدة', CHS:'أجبان ومنتجات ألبان', CFC:'معكرونة وحبوب', DAR:'كريمات للطبخ',
+  PFS:'أسماك ومأكولات بحرية', FOD:'زبدة ومواد غذائية عامة'
+};
+function itemGroupFromCode(code){
+  const m = String(code||'').match(/^([A-Za-z]+)/);
+  const prefix = m ? m[1].toUpperCase() : '؟';
+  return ITEM_GROUP_NAMES[prefix] || prefix;
+}
+function monthKey(iso){ return iso ? iso.slice(0,7) : ''; }
+function inMonthRange(iso, from, to){
+  if(!iso) return false;
+  if(from && iso < from) return false;
+  if(to && iso > to) return false;
+  return true;
+}
+function getAllMonths(){
+  const set = new Set();
+  TRANSFERS.forEach(t=>{ const m=monthKey(t.docDate); if(m) set.add(m); });
+  SALES.forEach(s=>{ const m=monthKey(s.docDate); if(m) set.add(m); });
+  return Array.from(set).sort();
+}
+function monthLabel(m){
+  if(!m) return '—';
+  const [y,mo] = m.split('-');
+  const names = ['','يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+  return (names[+mo]||mo)+' '+y;
+}
+
+// صافي كل صنف من فواتير عميل معيّن (مع طرح المرتجعات) — بفترة/شهر معيّن (أو null لكل الفترات)
+// يرجع Map(itemCode -> {itemName, qty, netSales, totalCost, grossValue, docNums:Set, deliveredQty, deliveredCost})
+function aggCustomerByItem(cardCode, from, to){
+  const m = new Map();
+  SALES.forEach(s=>{
+    if(s.cardCode!==cardCode) return;
+    if(!inMonthRange(s.docDate, from, to)) return;
+    if(!m.has(s.itemCode)) m.set(s.itemCode, {itemCode:s.itemCode, itemName:s.itemName||'', qty:0, netSales:0, totalCost:0, grossValue:0, docNums:new Set(), deliveredQty:0, deliveredCost:0});
+    const r = m.get(s.itemCode);
+    const qty = s.qty||0;
+    r.qty += qty;
+    r.netSales += s.netSales||0;
+    r.grossValue += qty*(s.price||0);
+    r.docNums.add(s.docType+'#'+s.docNum);
+    if(!r.itemName && s.itemName) r.itemName = s.itemName;
+    if(s.totalCost!=null){ r.totalCost += s.totalCost; r.deliveredQty += qty; r.deliveredCost += s.totalCost; }
+  });
+  return m;
+}
+// متوسط سعر وكلفة مرجّح لكل صنف من فاتورة عمان التجميعية (C0006588) بفترة معيّنة
+function ammanWeightedByItem(from, to){
+  const agg = aggCustomerByItem(CUSTOMER_AMMAN, from, to);
+  const out = new Map();
+  agg.forEach((r, code)=>{
+    const avgPrice = r.qty ? r.netSales/r.qty : 0;
+    const avgCost = r.deliveredQty ? r.deliveredCost/r.deliveredQty : 0;
+    const discountRate = r.grossValue ? Math.max(0, (r.grossValue-r.netSales)/r.grossValue) : 0;
+    out.set(code, {itemName:r.itemName, avgPrice, avgCost, discountRate, totalQty:r.qty});
+  });
+  return out;
+}
+// صافي كمية سندات التحويل لكل (فرع، صنف) بفترة معيّنة — يستثني تحويلات 007 الداخلية، ويطرح المرتجعات من 011
+function transferNetByBranchItem(from, to){
+  const out = new Map(); // branch -> Map(itemCode -> {qty, itemName, docNums:Set})
+  TRANSFERS.forEach(t=>{
+    if(!inMonthRange(t.docDate, from, to)) return;
+    if(!t.branch) return;
+    const from011 = isWhs011(t.fromWhs), to011 = isWhs011(t.toWhs);
+    if(from011===to011) return;
+    let sign;
+    if(to011){ if(isWhs007(t.fromWhs)) return; sign = 1; }
+    else { if(isWhs007(t.toWhs)) return; sign = -1; }
+    const qty = sign*(t.qty||0);
+    if(!out.has(t.branch)) out.set(t.branch, new Map());
+    const bm = out.get(t.branch);
+    if(!bm.has(t.itemCode)) bm.set(t.itemCode, {itemCode:t.itemCode, itemName:t.itemDesc||'', qty:0, docNums:new Set()});
+    const r = bm.get(t.itemCode);
+    r.qty += qty;
+    r.docNums.add(t.docNum);
+    if(!r.itemName && t.itemDesc) r.itemName = t.itemDesc;
+  });
+  return out;
+}
+
+// التقرير الرئيسي: صف لكل فرع (العقبة مباشرة من فواتيرها، الباقي من الكمية × متوسط عمان)
+function buildBranchReport(from, to){
+  const branches = new Map(); // name -> {branch, items:Map(code->{itemCode,itemName,qty,netSales,cost,grossProfit,discount,docCount}), docNums:Set}
+  function ensure(name){
+    if(!branches.has(name)) branches.set(name, {branch:name, items:new Map(), docNums:new Set()});
+    return branches.get(name);
+  }
+  // العقبة مباشرة
+  const aqItems = aggCustomerByItem(CUSTOMER_AQABA, from, to);
+  if(aqItems.size){
+    const b = ensure(AQABA_BRANCH_NAME);
+    aqItems.forEach((r, code)=>{
+      b.items.set(code, {itemCode:code, itemName:r.itemName, qty:r.qty, netSales:r.netSales, cost:r.totalCost, grossProfit:r.netSales-r.totalCost, discount:Math.max(0,r.grossValue-r.netSales)});
+      r.docNums.forEach(d=>b.docNums.add(d));
+    });
+  }
+  // باقي الفروع من سندات التحويل × متوسط عمان
+  const weighted = ammanWeightedByItem(from, to);
+  const trByBranch = transferNetByBranchItem(from, to);
+  trByBranch.forEach((itemsMap, branchName)=>{
+    if(branchName===AQABA_BRANCH_NAME) return; // احتياط: لو غلط اتحدد فرع سند بالعقبة، ما نكرره فوق مصدرها المباشر
+    const b = ensure(branchName);
+    itemsMap.forEach((r, code)=>{
+      const w = weighted.get(code) || {avgPrice:0, avgCost:0, discountRate:0};
+      const netSales = r.qty*w.avgPrice;
+      const cost = r.qty*w.avgCost;
+      // تقدير قيمة الخصم بافتراض نفس نسبة الخصم المرجّحة لهذا الصنف بفاتورة عمان التجميعية
+      const grossEst = (w.discountRate<1 && w.discountRate>0) ? netSales/(1-w.discountRate) : netSales;
+      const discount = Math.max(0, grossEst-netSales);
+      b.items.set(code, {itemCode:code, itemName:r.itemName || (w.itemName||''), qty:r.qty, netSales, cost, grossProfit:netSales-cost, discount});
+      r.docNums.forEach(d=>b.docNums.add(d));
+    });
+  });
+  return Array.from(branches.values());
+}
+function branchTotals(b){
+  let qty=0, netSales=0, cost=0, grossProfit=0, discount=0, itemCount=0;
+  b.items.forEach(it=>{ qty+=it.qty; netSales+=it.netSales; cost+=it.cost||0; grossProfit+=it.grossProfit||0; discount+=it.discount||0; itemCount++; });
+  return {qty, netSales, cost, grossProfit, discount, itemCount, docCount:b.docNums.size, profitPct: netSales? (grossProfit/netSales*100):0};
+}
+
+/* ==================== مطابقة الكميات: سندات التحويل مقابل فواتير المبيعات ==================== */
+function buildReconciliation(from, to){
+  const rows = [];
+  // مجموعة عمان: مجموع كل الفروع (غير العقبة) من سندات التحويل مقابل صافي فاتورة C0006588
+  const trByBranch = transferNetByBranchItem(from, to);
+  const trAmmanTotals = new Map(); // item -> {qty, itemName}
+  trByBranch.forEach((itemsMap, branchName)=>{
+    if(branchName===AQABA_BRANCH_NAME) return;
+    itemsMap.forEach((r, code)=>{
+      if(!trAmmanTotals.has(code)) trAmmanTotals.set(code, {itemCode:code, itemName:r.itemName, qty:0});
+      trAmmanTotals.get(code).qty += r.qty;
+    });
+  });
+  const salesAmman = aggCustomerByItem(CUSTOMER_AMMAN, from, to);
+  const allAmmanCodes = new Set([...trAmmanTotals.keys(), ...salesAmman.keys()]);
+  allAmmanCodes.forEach(code=>{
+    const tr = trAmmanTotals.get(code); const sl = salesAmman.get(code);
+    rows.push({group:'باقي المملكة', itemCode:code, itemName:(tr&&tr.itemName)||(sl&&sl.itemName)||'', trQty:tr?tr.qty:0, slQty:sl?sl.qty:0});
+  });
+  // العقبة: سندات تحويل الفرع "العقبة" مقابل صافي فاتورة C0006751
+  const trAqaba = trByBranch.get(AQABA_BRANCH_NAME) || new Map();
+  const salesAqaba = aggCustomerByItem(CUSTOMER_AQABA, from, to);
+  const allAqabaCodes = new Set([...trAqaba.keys(), ...salesAqaba.keys()]);
+  allAqabaCodes.forEach(code=>{
+    const tr = trAqaba.get(code); const sl = salesAqaba.get(code);
+    rows.push({group:'العقبة', itemCode:code, itemName:(tr&&tr.itemName)||(sl&&sl.itemName)||'', trQty:tr?tr.qty:0, slQty:sl?sl.qty:0});
+  });
+  rows.forEach(r=> r.diff = r.trQty - r.slQty);
+  return rows.sort((a,b)=> (a.group===b.group?0:(a.group==='العقبة'?1:-1)) || String(a.itemCode).localeCompare(String(b.itemCode),'ar'));
+}
+
+/* ==================== أدوات عامة: تصدير Excel وطباعة لأي جدول ==================== */
+function exportTableToExcel(tableId, filename, sheetName){
+  const tableEl = typeof tableId === 'string' ? document.getElementById(tableId) : tableId;
+  if(!tableEl || !tableEl.querySelector('tr')){ alert('ما في بيانات بالجدول للتصدير — اعمل العملية/البحث أول.'); return; }
+  if(!window.XLSX){ alert('مكتبة تصدير Excel ما تحمّلت — تحقق من الإنترنت وحدّث الصفحة.'); return; }
+  const ws = XLSX.utils.table_to_sheet(tableEl, {raw:false});
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, (sheetName||'بيانات').slice(0,31));
+  XLSX.writeFile(wb, (filename||'تصدير').replace(/\.xlsx$/,'') + '.xlsx');
+}
+function printSection(elId, title){
+  const el = typeof elId === 'string' ? document.getElementById(elId) : elId;
+  if(!el){ alert('ما في محتوى للطباعة.'); return; }
+  const w = window.open('', '_blank');
+  if(!w){ alert('المتصفح منع فتح نافذة الطباعة — اسمح بالنوافذ المنبثقة لهذا الموقع.'); return; }
+  w.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>${esc(title||'طباعة')}</title>
+    <style>
+      body{font-family:Tahoma,Arial,sans-serif; padding:16px; font-size:12px;}
+      table{width:100%; border-collapse:collapse;} th,td{border:1px solid #ccc; padding:5px 7px; text-align:right; font-size:11px;}
+      th{background:#152A4A; color:#fff;}
+      h2{font-size:15px; margin-bottom:10px;}
+    </style></head><body><h2>${esc(title||'')}</h2>${el.outerHTML}</body></html>`);
+  w.document.close();
+  setTimeout(()=>{ w.focus(); w.print(); }, 300);
+}
+function closePrintPreview(){ document.getElementById('printOverlay').classList.remove('active'); }
+function pct(part, whole){ return whole ? (part*100/whole) : 0; }
+
+/* ==================== ملخصات KPI عامة (مستقلة عن شكل العرض) ==================== */
+function computeKpis(branches){
+  const totals = branches.map(b=>({name:b.branch, ...branchTotals(b)}));
+  const grand = totals.reduce((acc,t)=>{ acc.qty+=t.qty; acc.netSales+=t.netSales; acc.cost+=t.cost; acc.grossProfit+=t.grossProfit; acc.discount+=t.discount; return acc; }, {qty:0, netSales:0, cost:0, grossProfit:0, discount:0});
+  const top = totals.slice().sort((a,b)=>b.netSales-a.netSales)[0] || null;
+  return {
+    totalSales: grand.netSales,
+    branchCount: totals.length,
+    totalQty: grand.qty,
+    avgBranchSales: totals.length ? grand.netSales/totals.length : 0,
+    topBranch: top,
+    topBranchPct: top ? pct(top.netSales, grand.netSales) : 0,
+    totalCost: grand.cost,
+    totalProfit: grand.grossProfit,
+    totalDiscount: grand.discount,
+    profitPct: grand.netSales ? pct(grand.grossProfit, grand.netSales) : 0
+  };
+}
+/* ==================== تسجيل الدخول (Supabase Auth) — نفس المشروع المستخدم بباقي شاشات المستودع ==================== */
+const SUPABASE_URL = 'https://fxjdmqqmcgccocfbgopm.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_NGtGX9SN8hXSoq-JRidGcQ_NfAyYCP5'; // مفتاح عام — الحماية عبر RLS
+let sb = null, curUser = null, curProfile = null, roleEdit = false, isAdmin = false;
+
+async function doLogin(){
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass = document.getElementById('loginPass').value;
+  if(!email || !pass){ flash('loginMsg','أدخل البريد وكلمة السر', false); return; }
+  document.getElementById('loginBtn').disabled = true;
+  flash('loginMsg','جارٍ الدخول...', true);
+  const {data, error} = await sb.auth.signInWithPassword({email, password: pass});
+  document.getElementById('loginBtn').disabled = false;
+  if(error){ flash('loginMsg','فشل الدخول: تحقق من البريد وكلمة السر', false); return; }
+  await onSignedIn(data.user);
+}
+async function doLogout(){ await sb.auth.signOut(); location.reload(); }
+async function onSignedIn(user){
+  curUser = user;
+  const {data:prof} = await sb.from('profiles').select('*').eq('id', user.id).single();
+  curProfile = prof || {full_name:user.email, role:'viewer', allowed_apps:[]};
+  if(!(curProfile.allowed_apps||[]).includes(APP_ID)){
+    await sb.auth.signOut();
+    flash('loginMsg','هذا الحساب ما إله صلاحية الدخول على هاي الشاشة — تواصل مع المدير.', false);
+    return;
+  }
+  roleEdit = ['admin','editor'].includes(curProfile.role);
+  isAdmin = curProfile.role === 'admin';
+  const roleAr = {admin:'مدير', editor:'مدخل بيانات', viewer:'مطالع'}[curProfile.role] || curProfile.role;
+  document.getElementById('uName').textContent = curProfile.full_name || user.email;
+  document.getElementById('uRole').textContent = user.email + ' · ' + roleAr + (roleEdit ? '' : ' · 👁 مطالعة فقط');
+  document.getElementById('userbox').style.display = 'flex';
+  document.getElementById('loginView').style.display = 'none';
+  loadLocal();
+  await pullStateFromCloud();
+  document.getElementById('appView').style.display = 'block';
+  refreshAllFilters();
+  switchPage('import');
+}
+(async function bootAuth(){
+  if(!window.supabase){ flash('loginMsg','تعذر تحميل مكتبة الاتصال — تحقق من الإنترنت وحدّث الصفحة', false); return; }
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  const {data:{session}} = await sb.auth.getSession();
+  if(session && session.user) await onSignedIn(session.user);
+})();
+
+/* ==================== مزامنة سحابية (جدول مستقل مخصص لهاي الشاشة) ==================== */
+let cloudSaveTimer = null;
+let cloudSynced = false;
+function queueCloudSave(){
+  if(!sb || !curUser || !roleEdit) return;
+  if(!cloudSynced) return;
+  clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = setTimeout(pushStateToCloud, 1500);
+}
+async function pushStateToCloud(){
+  if(!sb || !curUser || !roleEdit || !cloudSynced) return;
+  try{
+    const data = buildBackupObject();
+    await sb.from('mil_branch_sales_state').upsert({id:'main', data, updated_by:curUser.id, updated_at:new Date().toISOString()});
+    const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ محفوظ على السيرفر المشترك · '+new Date().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}); el.className='status-msg ok'; }
+  }catch(e){
+    const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '⚠ تعذر الحفظ على السيرفر المشترك — البيانات محفوظة محلياً بس'; el.className='status-msg err'; }
+  }
+}
+async function pullStateFromCloud(){
+  if(!sb || !curUser) return;
+  try{
+    const {data, error} = await sb.from('mil_branch_sales_state').select('data, updated_at').eq('id','main').maybeSingle();
+    if(error || !data || !data.data){ cloudSynced = true; return; }
+    let localSavedAt = null;
+    try{ localSavedAt = localStorage.getItem(SAVED_AT_KEY); }catch(e){}
+    if(localSavedAt && data.updated_at && new Date(localSavedAt) > new Date(data.updated_at)){
+      cloudSynced = true;
+      queueCloudSave();
+      const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ عندك تعديلات محلية أحدث من السيرفر — رح تترفع بدل ما تنمسح'; el.className='status-msg ok'; }
+      return;
+    }
+    applyLoadedData(data.data);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(buildBackupObject()));
+    localStorage.setItem(SAVED_AT_KEY, new Date().toISOString());
+    refreshAllFilters();
+    renderCurrentPage();
+    cloudSynced = true;
+    const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ تم تحميل آخر نسخة من السيرفر المشترك'; el.className='status-msg ok'; }
+  }catch(e){
+    cloudSynced = true;
+    const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '⚠ تعذر الاتصال بالسيرفر المشترك — بتشتغل بالنسخة المحلية'; el.className='status-msg err'; }
+  }
+}
+
+/* ==================== الشريط الجانبي والتنقل بين النماذج ==================== */
+const NAV_GROUPS = [
+  {key:'overview', ar:'نظرة عامة', en:'OVERVIEW', items:[
+    {v:'dash', ar:'ملخص الفروع', eye:'OVERVIEW · BRANCH SUMMARY', desc:'المبيعات مجمّعة حسب كل فرع من فروع المؤسسة العسكرية — الكمية، الصافي، الخصم، الضريبة، والإجمالي.'}
+  ]},
+  {key:'reports', ar:'التقارير', en:'REPORTS', items:[
+    {v:'branchitem', ar:'الفروع والأصناف', eye:'REPORTS · BRANCHES × ITEMS', desc:'مبيعات كل فرع مفصّلة حسب الصنف — الكمية، السعر، الكلفة، ومجمل الربح.'},
+    {v:'compare', ar:'مقارنة الفروع', eye:'REPORTS · COMPARISON', desc:'مقارنة بصرية بين أعلى الفروع مبيعاً بالفترة المحددة.'},
+    {v:'docs', ar:'تفاصيل المستندات', eye:'REPORTS · DOCUMENTS', desc:'المستندات الأصلية وراء أرقام فرع معيّن — فواتير مبيعات فعلية للعقبة، أو سندات تحويل 011 لباقي الفروع.'},
+    {v:'monthly', ar:'التحليل الشهري', eye:'REPORTS · MONTHLY TREND', desc:'تطور المبيعات والكلفة والربح شهر بشهر.'}
+  ]},
+  {key:'data', ar:'البيانات والجودة', en:'DATA & QUALITY', items:[
+    {v:'import', ar:'استيراد البيانات', eye:'DATA · IMPORT', desc:'استيراد سندات التحويل وفواتير المبيعات، وتصحيح الفروع غير المحددة.'},
+    {v:'recon', ar:'مطابقة الكميات', eye:'QUALITY · RECONCILIATION', desc:'تدقيق نهائي: مقارنة صافي كميات سندات التحويل مع فواتير المبيعات لكل صنف.'}
+  ]}
+];
+let currentView = 'dash';
+function iconSvg(){ return '<svg class="gi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/></svg>'; }
+function renderSidebar(){
+  const host = document.getElementById('kshGroups');
+  host.innerHTML = NAV_GROUPS.map((g,gi)=>`
+    <div class="ksh-grp ${gi===0?'open':''}" data-g="${g.key}">
+      <button type="button" class="ksh-grp-h" onclick="toggleGroup('${g.key}')">
+        ${iconSvg()}<span>${esc(g.ar)}</span>
+        <svg class="car" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M9 6l6 6-6 6"/></svg>
+      </button>
+      <div class="ksh-grp-items">
+        ${g.items.map(it=>`<button type="button" class="ksh-nav" data-v="${it.v}" onclick="activateTab('${it.v}')">${esc(it.ar)}</button>`).join('')}
+      </div>
+    </div>`).join('');
+}
+function toggleGroup(key){
+  const el = document.querySelector(`.ksh-grp[data-g="${key}"]`);
+  if(!el) return;
+  const willOpen = !el.classList.contains('open');
+  document.querySelectorAll('.ksh-grp').forEach(g=>g.classList.remove('open'));
+  if(willOpen) el.classList.add('open');
+}
+function findNavItem(v){
+  for(const g of NAV_GROUPS){ const it = g.items.find(x=>x.v===v); if(it) return {group:g, item:it}; }
+  return null;
+}
+function activateTab(v){
+  const found = findNavItem(v);
+  if(!found) return;
+  currentView = v;
+  document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
+  const view = document.getElementById('view-'+v);
+  if(view) view.classList.add('active');
+  document.querySelectorAll('.ksh-grp').forEach(g=>g.classList.remove('open'));
+  const grpEl = document.querySelector(`.ksh-grp[data-g="${found.group.key}"]`);
+  if(grpEl) grpEl.classList.add('open');
+  document.querySelectorAll('.ksh-nav').forEach(b=>b.classList.toggle('active', b.dataset.v===v));
+  document.getElementById('kshCrumbGrp').textContent = found.group.ar;
+  document.getElementById('kshCrumbCur').textContent = found.item.ar;
+  document.getElementById('kshPgEye').textContent = found.item.eye;
+  document.getElementById('kshPgTitle').textContent = found.item.ar;
+  document.getElementById('kshPgDesc').textContent = found.item.desc;
+  document.getElementById('reportFiltersWrap').style.display = (v==='import') ? 'none' : '';
+  closeMobileDrawer();
+  renderCurrentPage();
+}
+function renderCurrentPage(){
+  if(currentView==='import'){ renderImportPage(); return; }
+  if(currentView==='dash'){ renderDashPage(); return; }
+  if(currentView==='branchitem'){ renderBranchItemPage(); return; }
+  if(currentView==='compare'){ renderComparePage(); return; }
+  if(currentView==='docs'){ renderDocsPage(); return; }
+  if(currentView==='monthly'){ renderMonthlyPage(); return; }
+  if(currentView==='recon'){ renderReconPage(); return; }
+}
+function openMobileDrawer(){ document.getElementById('kshSidebar').classList.add('mobile-open'); }
+function closeMobileDrawer(){ document.getElementById('kshSidebar').classList.remove('mobile-open'); }
+
+/* ==================== الفلاتر المشتركة ==================== */
+function getActiveFilters(){
+  return {
+    from: document.getElementById('fFrom').value || '',
+    to: document.getElementById('fTo').value || '',
+    branch: document.getElementById('fBranch').value || '',
+    item: document.getElementById('fItem').value || '',
+    itemGroup: document.getElementById('fItemGroup').value || '',
+    mode: document.getElementById('fViewMode').value || 'summary'
+  };
+}
+function refreshAllFilters(){
+  const branchSel = document.getElementById('fBranch');
+  const itemSel = document.getElementById('fItem');
+  const groupSel = document.getElementById('fItemGroup');
+  const prevBranch = branchSel.value, prevItem = itemSel.value, prevGroup = groupSel.value;
+
+  const branches = new Set(TRANSFERS.map(t=>t.branch).filter(Boolean));
+  branches.add(AQABA_BRANCH_NAME);
+  const branchList = Array.from(branches).sort((a,b)=>a.localeCompare(b,'ar'));
+  branchSel.innerHTML = '<option value="">الكل</option>' + branchList.map(b=>`<option value="${esc(b)}">${esc(b)}</option>`).join('');
+  branchSel.value = branchList.includes(prevBranch) ? prevBranch : '';
+
+  const itemsMap = new Map();
+  TRANSFERS.forEach(t=>{ if(t.itemCode && !itemsMap.has(t.itemCode)) itemsMap.set(t.itemCode, t.itemDesc||''); });
+  SALES.forEach(s=>{ if(s.itemCode && !itemsMap.has(s.itemCode)) itemsMap.set(s.itemCode, s.itemName||''); });
+  const itemList = Array.from(itemsMap.entries()).sort((a,b)=>String(a[0]).localeCompare(String(b[0]),'ar'));
+  itemSel.innerHTML = '<option value="">الكل</option>' + itemList.map(([code,name])=>`<option value="${esc(code)}">${esc(code)} — ${esc(name)}</option>`).join('');
+  itemSel.value = itemsMap.has(prevItem) ? prevItem : '';
+
+  const groups = new Set(Array.from(itemsMap.keys()).map(itemGroupFromCode));
+  const groupList = Array.from(groups).sort((a,b)=>a.localeCompare(b,'ar'));
+  groupSel.innerHTML = '<option value="">الكل</option>' + groupList.map(g=>`<option value="${esc(g)}">${esc(g)}</option>`).join('');
+  groupSel.value = groupList.includes(prevGroup) ? prevGroup : '';
+
+  document.getElementById('trCountVal').textContent = fmtNum(TRANSFERS.length);
+  document.getElementById('slCountVal').textContent = fmtNum(SALES.length);
+  document.getElementById('branchCountVal').textContent = fmtNum(branchList.length);
+  updateFiltersSummary();
+}
+function updateFiltersSummary(){
+  const f = getActiveFilters();
+  const parts = [];
+  if(f.from) parts.push('من '+dateStr(f.from));
+  if(f.to) parts.push('إلى '+dateStr(f.to));
+  if(f.branch) parts.push('الفرع: '+f.branch);
+  if(f.item) parts.push('الصنف: '+f.item);
+  if(f.itemGroup) parts.push('المجموعة: '+f.itemGroup);
+  const summaryEl = document.getElementById('kdFiltersSummary');
+  const countEl = document.getElementById('kdFiltersCount');
+  summaryEl.textContent = parts.length ? parts.join(' · ') : 'الكل';
+  if(parts.length){ countEl.hidden = false; countEl.textContent = parts.length; } else { countEl.hidden = true; }
+}
+function onFiltersChanged(){
+  updateFiltersSummary();
+  renderCurrentPage();
+}
+function resetFilters(){
+  document.getElementById('fFrom').value = '';
+  document.getElementById('fTo').value = '';
+  document.getElementById('fBranch').value = '';
+  document.getElementById('fItem').value = '';
+  document.getElementById('fItemGroup').value = '';
+  document.getElementById('fViewMode').value = 'summary';
+  onFiltersChanged();
+}
+document.getElementById && document.addEventListener('DOMContentLoaded', ()=>{
+  const toggle = document.getElementById('kdFiltersToggle');
+  const body = document.getElementById('kdFiltersBody');
+  if(toggle && body){
+    toggle.addEventListener('click', ()=>{
+      const open = toggle.getAttribute('aria-expanded')==='true';
+      toggle.setAttribute('aria-expanded', open ? 'false' : 'true');
+      body.hidden = open;
+    });
+  }
+  const menuBtn = document.getElementById('kshMenuBtn');
+  if(menuBtn) menuBtn.addEventListener('click', openMobileDrawer);
+});
+
+/* ==================== صفحة الاستيراد ==================== */
+function renderImportPage(){
+  renderUnresolvedTable();
+}
+
+/* ==================== لوحة 1: ملخص الفروع ==================== */
+function filteredBranches(f){
+  let branches = buildBranchReport(f.from||null, f.to||null);
+  branches = branches.map(b=>{
+    const filteredItems = new Map();
+    b.items.forEach((it,code)=>{
+      if(f.item && code!==f.item) return;
+      if(f.itemGroup && itemGroupFromCode(code)!==f.itemGroup) return;
+      filteredItems.set(code, it);
+    });
+    return {branch:b.branch, items:filteredItems, docNums:b.docNums};
+  }).filter(b=>b.items.size>0);
+  if(f.branch) branches = branches.filter(b=>b.branch===f.branch);
+  return branches;
+}
+function renderKpiCards(k){
+  const host = document.getElementById('dashKpis');
+  const cards = [
+    {label:'إجمالي مبيعات المؤسسة', en:'TOTAL SALES', value:fmt3(k.totalSales), color:'#2563EB'},
+    {label:'عدد الفروع', en:'BRANCHES', value:fmtNum(k.branchCount), color:'#7C3AED'},
+    {label:'إجمالي الكميات', en:'TOTAL QTY', value:fmtNum(k.totalQty), color:'#0891B2'},
+    {label:'متوسط مبيعات الفرع', en:'AVG / BRANCH', value:fmt3(k.avgBranchSales), color:'#16A34A'},
+    {label:'أعلى فرع مبيعاً', en:'TOP BRANCH', value: k.topBranch? k.topBranch.name : '—', sub: k.topBranch? ('صافي مبيعاته: '+fmt3(k.topBranch.netSales)) : '', color:'#B8924E'},
+    {label:'نسبة مساهمة أعلى فرع', en:'TOP SHARE', value: k.topBranchPct.toFixed(1)+'%', color:'#F59E0B'}
+  ];
+  host.innerHTML = cards.map(c=>`<div class="kd-kpi" style="--kk:${c.color};"><div class="l"><span>${esc(c.label)}</span><span class="kd-en">${c.en}</span></div><div class="v">${esc(String(c.value))}</div>${c.sub?`<div class="s">${esc(c.sub)}</div>`:''}</div>`).join('');
+}
+const DASH_THEAD_SUMMARY = `<tr>
+  <th class="w">#</th><th>الفرع</th><th class="n">عدد المستندات</th><th class="n">عدد الأصناف</th><th class="n">الكمية</th>
+  <th class="n">صافي المبيعات</th><th class="n">الخصم</th><th class="n">الضريبة</th><th class="n">إجمالي المبيعات</th><th class="n">% من الإجمالي</th>
+</tr>`;
+const DASH_THEAD_DETAIL = `<tr>
+  <th>الفرع</th><th class="w">رمزنا</th><th>اسم الصنف</th><th class="n">الكمية</th><th class="n">متوسط السعر</th>
+  <th class="n">صافي المبيعات</th><th class="n">الكلفة</th><th class="n">مجمل الربح</th><th class="n">نسبة الربح</th>
+</tr>`;
+function renderDashPage(){
+  const f = getActiveFilters();
+  const branches = filteredBranches(f);
+  renderKpiCards(computeKpis(branches));
+  const thead = document.querySelector('#branchTable thead');
+  const tbody = document.getElementById('branchTbody');
+  const hint = document.getElementById('dashEmptyHint');
+  if(!branches.length){ tbody.innerHTML=''; hint.style.display='block'; return; }
+  hint.style.display = 'none';
+
+  if(f.mode==='detail'){
+    thead.innerHTML = DASH_THEAD_DETAIL;
+    const rows = [];
+    branches.forEach(b=> b.items.forEach((it,code)=> rows.push({branch:b.branch, itemCode:code, itemName:it.itemName, qty:it.qty, netSales:it.netSales, cost:it.cost, grossProfit:it.grossProfit})));
+    rows.sort((a,b)=>b.netSales-a.netSales);
+    tbody.innerHTML = rows.map(r=>`<tr class="rowlink" onclick="openBranchDetail('${esc(r.branch).replace(/'/g,"\\'")}')">
+      <td>${esc(r.branch)}</td><td class="n w">${esc(r.itemCode)}</td><td>${esc(r.itemName)}</td>
+      <td class="n">${fmtNum(r.qty)}</td><td class="n">${fmt4(r.qty? r.netSales/r.qty:0)}</td>
+      <td class="n">${fmt3(r.netSales)}</td><td class="n">${fmt3(r.cost)}</td><td class="n">${fmt3(r.grossProfit)}</td>
+      <td class="n">${r.netSales? (r.grossProfit/r.netSales*100).toFixed(1):'0.0'}%</td>
+    </tr>`).join('');
+    return;
+  }
+  thead.innerHTML = DASH_THEAD_SUMMARY;
+  const totalsArr = branches.map(b=>({branch:b.branch, ...branchTotals(b)})).sort((a,b)=>b.netSales-a.netSales);
+  const grandNetSales = totalsArr.reduce((s,t)=>s+t.netSales,0);
+  const grand = totalsArr.reduce((acc,t)=>{acc.qty+=t.qty;acc.netSales+=t.netSales;acc.discount+=t.discount;acc.docCount+=t.docCount;acc.itemCount+=t.itemCount;return acc;},{qty:0,netSales:0,discount:0,docCount:0,itemCount:0});
+  let html = totalsArr.map((t,i)=>`<tr class="rowlink" onclick="openBranchDetail('${esc(t.branch).replace(/'/g,"\\'")}')">
+    <td class="n w">${i+1}</td>
+    <td class="ttl">${esc(t.branch)}</td>
+    <td class="n">${fmtNum(t.docCount)}</td>
+    <td class="n">${fmtNum(t.itemCount)}</td>
+    <td class="n">${fmtNum(t.qty)}</td>
+    <td class="n">${fmt3(t.netSales)}</td>
+    <td class="n">${fmt3(t.discount)}</td>
+    <td class="n" title="لا يوجد عمود ضريبة بمصدر البيانات الحالي">—</td>
+    <td class="n">${fmt3(t.netSales)}</td>
+    <td class="n">${pct(t.netSales,grandNetSales).toFixed(1)}%</td>
+  </tr>`).join('');
+  html += `<tr class="totalrow"><td></td><td>الإجمالي (${totalsArr.length} فرع)</td><td class="n">${fmtNum(grand.docCount)}</td><td class="n">${fmtNum(grand.itemCount)}</td><td class="n">${fmtNum(grand.qty)}</td><td class="n">${fmt3(grand.netSales)}</td><td class="n">${fmt3(grand.discount)}</td><td class="n">—</td><td class="n">${fmt3(grand.netSales)}</td><td class="n">100%</td></tr>`;
+  tbody.innerHTML = html;
+}
+
+/* ==================== لوحة 2: الفروع والأصناف ==================== */
+function renderBranchItemPage(){
+  const f = getActiveFilters();
+  const branches = filteredBranches(f);
+  const rows = [];
+  branches.forEach(b=>{
+    b.items.forEach((it,code)=>{
+      rows.push({branch:b.branch, itemCode:code, itemName:it.itemName, group:itemGroupFromCode(code), qty:it.qty, netSales:it.netSales, cost:it.cost, grossProfit:it.grossProfit});
+    });
+  });
+  rows.sort((a,b)=> b.netSales-a.netSales);
+  const tbody = document.getElementById('branchItemTbody');
+  const hint = document.getElementById('branchItemEmptyHint');
+  if(!rows.length){ tbody.innerHTML=''; hint.style.display='block'; return; }
+  hint.style.display = 'none';
+  tbody.innerHTML = rows.map(r=>`<tr>
+    <td>${esc(r.branch)}</td><td class="n w">${esc(r.itemCode)}</td><td>${esc(r.itemName)}</td><td>${esc(r.group)}</td>
+    <td class="n">${fmtNum(r.qty)}</td><td class="n">${fmt4(r.qty? r.netSales/r.qty:0)}</td><td class="n">${fmt3(r.netSales)}</td>
+    <td class="n">${fmt3(r.cost)}</td><td class="n">${fmt3(r.grossProfit)}</td><td class="n">${r.netSales? (r.grossProfit/r.netSales*100).toFixed(1):'0.0'}%</td>
+  </tr>`).join('');
+}
+
+/* ==================== لوحة 3: مقارنة الفروع ==================== */
+function renderComparePage(){
+  const f = getActiveFilters();
+  const branches = filteredBranches(f);
+  const totals = branches.map(b=>({branch:b.branch, ...branchTotals(b)})).sort((a,b)=>b.netSales-a.netSales).slice(0,15);
+  const host = document.getElementById('compareBars');
+  if(!totals.length){ host.innerHTML = '<div class="empty-hint">ما في بيانات كافية للمقارنة.</div>'; return; }
+  const max = totals[0].netSales || 1;
+  host.innerHTML = totals.map(t=>{
+    const w = Math.max(2, t.netSales/max*100);
+    return `<div style="display:flex; align-items:center; gap:10px; margin-bottom:10px; cursor:pointer;" onclick="openBranchDetail('${esc(t.branch).replace(/'/g,"\\'")}')">
+      <div style="width:150px; font-size:12px; font-weight:600; color:var(--kd-ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(t.branch)}</div>
+      <div style="flex:1; background:var(--kd-surface-2); border-radius:6px; height:22px; position:relative; overflow:hidden;">
+        <div style="width:${w}%; background:linear-gradient(90deg,#2F6BDB,#4C86FF); height:100%; border-radius:6px;"></div>
+      </div>
+      <div style="width:110px; font-family:var(--k-font-mono); font-size:12px; direction:ltr; text-align:left;">${fmt3(t.netSales)}</div>
+    </div>`;
+  }).join('');
+}
+
+/* ==================== لوحة 4: تفاصيل المستندات ==================== */
+function renderDocsPage(){
+  const f = getActiveFilters();
+  const host = document.getElementById('docsContent');
+  if(!f.branch){ host.innerHTML = '<div class="empty-hint">اختر فرع من الفلاتر فوق أول.</div>'; return; }
+  if(f.branch===AQABA_BRANCH_NAME){
+    const rows = SALES.filter(s=>s.cardCode===CUSTOMER_AQABA && inMonthRange(s.docDate, f.from||null, f.to||null) && (!f.item || s.itemCode===f.item) && (!f.itemGroup || itemGroupFromCode(s.itemCode)===f.itemGroup));
+    const byDoc = new Map();
+    rows.forEach(s=>{
+      const k = s.docType+'#'+s.docNum;
+      if(!byDoc.has(k)) byDoc.set(k, {docType:s.docType, docNum:s.docNum, docDate:s.docDate, itemCount:0, qty:0, netSales:0});
+      const d = byDoc.get(k); d.itemCount++; d.qty+=s.qty||0; d.netSales+=s.netSales||0;
+    });
+    const docs = Array.from(byDoc.values()).sort((a,b)=>String(a.docDate).localeCompare(String(b.docDate)));
+    if(!docs.length){ host.innerHTML='<div class="empty-hint">ما في مستندات لهاي الفترة.</div>'; return; }
+    host.innerHTML = `<div class="kt-wrap"><table class="kt" id="docsTable"><thead><tr><th>النوع</th><th class="n">رقم المستند</th><th>التاريخ</th><th class="n">عدد الأصناف</th><th class="n">الكمية</th><th class="n">صافي المبيعات</th></tr></thead><tbody>`+
+      docs.map(d=>`<tr><td>${esc(d.docType)}</td><td class="n">${esc(d.docNum)}</td><td>${dateStr(d.docDate)}</td><td class="n">${fmtNum(d.itemCount)}</td><td class="n">${fmtNum(d.qty)}</td><td class="n">${fmt3(d.netSales)}</td></tr>`).join('')
+      +`</tbody></table></div>`;
+  } else {
+    const rows = TRANSFERS.filter(t=>t.branch===f.branch && inMonthRange(t.docDate, f.from||null, f.to||null) && (!f.item || t.itemCode===f.item) && (!f.itemGroup || itemGroupFromCode(t.itemCode)===f.itemGroup));
+    const byDoc = new Map();
+    rows.forEach(t=>{
+      if(!byDoc.has(t.docNum)) byDoc.set(t.docNum, {docNum:t.docNum, docDate:t.docDate, fromWhs:t.fromWhs, toWhs:t.toWhs, itemCount:0, qty:0});
+      const d = byDoc.get(t.docNum); d.itemCount++; d.qty += (isWhs011(t.toWhs)?1:-1)*(t.qty||0);
+    });
+    const docs = Array.from(byDoc.values()).sort((a,b)=>String(a.docDate).localeCompare(String(b.docDate)));
+    if(!docs.length){ host.innerHTML='<div class="empty-hint">ما في مستندات لهاي الفترة.</div>'; return; }
+    host.innerHTML = `<div class="kt-wrap"><table class="kt" id="docsTable"><thead><tr><th class="n">رقم السند</th><th>التاريخ</th><th>من مستودع</th><th>الى مستودع</th><th class="n">عدد الأصناف</th><th class="n">الكمية الصافية</th></tr></thead><tbody>`+
+      docs.map(d=>`<tr><td class="n">${esc(d.docNum)}</td><td>${dateStr(d.docDate)}</td><td>${esc(d.fromWhs)}</td><td>${esc(d.toWhs)}</td><td class="n">${fmtNum(d.itemCount)}</td><td class="n">${fmtNum(d.qty)}</td></tr>`).join('')
+      +`</tbody></table></div>`;
+  }
+}
+
+/* ==================== لوحة 5: التحليل الشهري ==================== */
+function renderMonthlyPage(){
+  const months = getAllMonths();
+  const f = getActiveFilters();
+  const tbody = document.getElementById('monthlyTbody');
+  const hint = document.getElementById('monthlyEmptyHint');
+  if(!months.length){ tbody.innerHTML=''; hint.style.display='block'; return; }
+  hint.style.display = 'none';
+  let grand = {qty:0, netSales:0, cost:0, grossProfit:0};
+  const rows = months.map(m=>{
+    const from=m+'-01', to=m+'-31';
+    let branches = buildBranchReport(from, to);
+    if(f.branch) branches = branches.filter(b=>b.branch===f.branch);
+    branches = branches.map(b=>{
+      const filteredItems = new Map();
+      b.items.forEach((it,code)=>{
+        if(f.item && code!==f.item) return;
+        if(f.itemGroup && itemGroupFromCode(code)!==f.itemGroup) return;
+        filteredItems.set(code, it);
+      });
+      return {branch:b.branch, items:filteredItems};
+    }).filter(b=>b.items.size>0);
+    const totals = branches.map(b=>branchTotals(b)).reduce((acc,t)=>{acc.qty+=t.qty;acc.netSales+=t.netSales;acc.cost+=t.cost;acc.grossProfit+=t.grossProfit;return acc;},{qty:0,netSales:0,cost:0,grossProfit:0});
+    grand.qty+=totals.qty; grand.netSales+=totals.netSales; grand.cost+=totals.cost; grand.grossProfit+=totals.grossProfit;
+    return {month:m, branchCount:branches.length, ...totals};
+  });
+  let html = rows.map(r=>`<tr><td>${esc(monthLabel(r.month))}</td><td class="n">${fmtNum(r.branchCount)}</td><td class="n">${fmtNum(r.qty)}</td><td class="n">${fmt3(r.netSales)}</td><td class="n">${fmt3(r.cost)}</td><td class="n">${fmt3(r.grossProfit)}</td><td class="n">${r.netSales?(r.grossProfit/r.netSales*100).toFixed(1):'0.0'}%</td></tr>`).join('');
+  html += `<tr class="totalrow"><td>الإجمالي</td><td></td><td class="n">${fmtNum(grand.qty)}</td><td class="n">${fmt3(grand.netSales)}</td><td class="n">${fmt3(grand.cost)}</td><td class="n">${fmt3(grand.grossProfit)}</td><td class="n">${grand.netSales?(grand.grossProfit/grand.netSales*100).toFixed(1):'0.0'}%</td></tr>`;
+  tbody.innerHTML = html;
+}
+
+/* ==================== مطابقة الكميات ==================== */
+function renderReconPage(){
+  const f = getActiveFilters();
+  const onlyDiffEl = document.getElementById('reconOnlyDiff');
+  const onlyDiff = onlyDiffEl ? onlyDiffEl.checked : true;
+  let rows = buildReconciliation(f.from||null, f.to||null);
+  if(f.item) rows = rows.filter(r=>r.itemCode===f.item);
+  if(f.itemGroup) rows = rows.filter(r=>itemGroupFromCode(r.itemCode)===f.itemGroup);
+  if(onlyDiff) rows = rows.filter(r=>Math.abs(r.diff)>0.01);
+  const tbody = document.getElementById('reconTbody');
+  const hint = document.getElementById('reconEmptyHint');
+  if(!rows.length){ tbody.innerHTML=''; hint.style.display='block'; return; }
+  hint.style.display = 'none';
+  tbody.innerHTML = rows.map(r=>`<tr class="${Math.abs(r.diff)>0.01?'diffrow':''}"><td>${esc(r.group)}</td><td class="w">${esc(r.itemCode)}</td><td>${esc(r.itemName)}</td><td class="n">${fmtNum(r.trQty)}</td><td class="n">${fmtNum(r.slQty)}</td><td class="n">${Math.abs(r.diff)>0.01?`<span class="kd-chip bad"><i></i>${fmtNum(r.diff)}</span>`:fmtNum(r.diff)}</td></tr>`).join('');
+}
+
+/* ==================== نافذة تفاصيل الفرع (Drill-down) ==================== */
+function openBranchDetail(branchName){
+  const f = getActiveFilters();
+  const branches = filteredBranches({...f, branch:''});
+  const b = branches.find(x=>x.branch===branchName);
+  document.getElementById('branchDetailTitle').textContent = branchName;
+  const tbody = document.getElementById('branchDetailTbody');
+  if(!b || !b.items.size){
+    tbody.innerHTML = '';
+    document.getElementById('branchDetailSub').textContent = 'ما في بيانات لهاي الفترة.';
+    document.getElementById('branchDetailOverlay').classList.add('active');
+    return;
+  }
+  const items = Array.from(b.items.values()).sort((a,b2)=>b2.netSales-a.netSales);
+  const t = branchTotals(b);
+  document.getElementById('branchDetailSub').textContent = `${items.length} صنف · الكمية ${fmtNum(t.qty)} · المبيعات ${fmt3(t.netSales)} · مجمل الربح ${fmt3(t.grossProfit)} (${t.profitPct.toFixed(1)}%)`;
+  tbody.innerHTML = items.map(it=>`<tr><td class="w">${esc(it.itemCode)}</td><td>${esc(it.itemName)}</td><td class="n">${fmtNum(it.qty)}</td><td class="n">${fmt4(it.qty?it.netSales/it.qty:0)}</td><td class="n">${fmt3(it.netSales)}</td><td class="n">${fmt4(it.qty?it.cost/it.qty:0)}</td><td class="n">${fmt3(it.cost)}</td><td class="n">${fmt3(it.grossProfit)}</td><td class="n">${it.netSales?(it.grossProfit/it.netSales*100).toFixed(1):'0.0'}%</td></tr>`).join('');
+  document.getElementById('branchDetailOverlay').classList.add('active');
+}
+function closeBranchDetail(){ document.getElementById('branchDetailOverlay').classList.remove('active'); }
+
+/* ==================== الإقلاع ==================== */
+document.addEventListener('DOMContentLoaded', ()=>{ renderSidebar(); });
+</script>
+</body>
+</html>
