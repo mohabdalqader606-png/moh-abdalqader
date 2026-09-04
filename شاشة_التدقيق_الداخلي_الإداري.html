@@ -451,6 +451,9 @@
     .ksh-status .hstat:nth-child(n+4){display:none;}
   }
   @media (max-width:640px){ .ksh-pg h2{font-size:17px;} .ksh-status .hstat:nth-child(n+3){display:none;} .ksh-status .ksh-mode-lbl{display:none;} }
+  /* P3: keyboard focus inside the production dialogs */
+  .overlay :focus-visible{outline:2px solid var(--navy);outline-offset:2px;}
+  .overlay .modal:focus-visible{outline:2px solid var(--navy);outline-offset:-3px;border-radius:16px;}
   @media print{ .ksh-sb,.ksh-status,.ksh-crumb,.ksh-pg,.ksh-scrim,#kshMenuBtn{display:none!important;} body{padding-bottom:0;} }
 </style>
 </head>
@@ -1254,7 +1257,7 @@
 <!-- QUERY PICKER MODAL (used from task link editor) -->
 <div class="overlay" id="qPickerOverlay">
   <div class="modal">
-    <h2>اختر كويري من المكتبة</h2>
+    <h2 id="qPickerTitle">اختر كويري من المكتبة</h2>
     <div class="field">
       <input type="text" id="qPickerSearch" placeholder="بحث..." style="width:100%;border:1px solid var(--border);border-radius:9px;padding:9px 11px;font-size:13.5px;">
     </div>
@@ -1773,7 +1776,7 @@
 <!-- FINDING CLOSE SELF-REVIEW CHECKLIST -->
 <div class="overlay" id="closeCheckOverlay">
   <div class="modal" style="max-width:520px;">
-    <h2>مراجعة ذاتية قبل الإغلاق</h2>
+    <h2 id="closeCheckTitle">مراجعة ذاتية قبل الإغلاق</h2>
     <p style="color:var(--muted);font-size:12.5px;margin-top:0;">بما إنك المدقق الوحيد، هاي القائمة بمثابة مراجع الجودة البديل — تأكد من كل بند قبل تأكيد إغلاق الملاحظة.</p>
     <div id="closeChecklistItems"></div>
     <div class="modal-actions">
@@ -5683,6 +5686,83 @@ renderDashboard();
   document.addEventListener("keydown", function(e){ if(e.key==="Escape" && document.getElementById("kshSidebar").classList.contains("mobile-open")){ e.preventDefault(); closeDrawer(); } });
   setMode("op");
   var active = document.querySelector(".view.active"); kshSync(active ? active.id.replace("view-","") : "dashboard");
+})();
+</script>
+<script id="kaylani-dialog-a11y">
+/* ===================== KAYLANI DIALOG ACCESSIBILITY LAYER (P3) =====================
+   Additive. Production dialogs keep opening/closing by toggling .overlay.active; this layer only observes that
+   class and adds: role/aria, focus into the dialog, a Tab focus trap on the topmost dialog, Escape = the dialog's
+   own cancel/close button, and focus restoration to the element that opened it. No field, handler or payload changes. */
+(function(){
+  var CLOSE_BTN = { taskOverlay:"cancelModal", recOverlay:"cancelRecModal", queryOverlay:"cancelQModal", qPickerOverlay:"cancelQPicker",
+    findingOverlay:"cancelFindingModal", riskOverlay:"cancelRiskModal", universeOverlay:"cancelUniverseModal", policyOverlay:"cancelPolicyModal",
+    authorityOverlay:"cancelAuthorityModal", kpiOverlay:"cancelKpiModal", meetingOverlay:"cancelMeetingModal", impOverlay:"cancelImpModal",
+    emailOverlay:"cancelEmailModal", samplingOverlay:"cancelSamplingModal", closeCheckOverlay:"cancelCloseCheck", linkOverlay:"closeLinkModal",
+    engagementOverlay:"cancelEngagementModal", evidenceOverlay:"cancelEvidenceModal" };
+  var FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
+  var stack = [];            /* open dialogs, bottom → top: {el, trigger} */
+  var lastPointer = null;    /* last element the user interacted with (fallback trigger for non-focusable triggers such as cards) */
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function visible(el){ return !!(el && el.offsetParent !== null && !el.hidden && getComputedStyle(el).visibility !== "hidden"); }
+  function focusables(ov){ return Array.prototype.filter.call(ov.querySelectorAll(FOCUSABLE), visible); }
+  function firstField(ov){
+    /* first appropriate interactive element: prefer a form control in the body, then any focusable, then the modal container */
+    var list = focusables(ov);
+    var field = list.filter(function(e){ return /^(INPUT|SELECT|TEXTAREA)$/.test(e.tagName) && !e.readOnly; })[0];
+    return field || list[0] || ov.querySelector(".modal") || ov;
+  }
+  function top(){ return stack.length ? stack[stack.length - 1] : null; }
+  function safeFocus(el){ if(!el || !document.contains(el)) return false; try{ el.focus({preventScroll: reduce}); }catch(e){ try{ el.focus(); }catch(e2){ return false; } } return document.activeElement === el; }
+
+  function decorate(ov){
+    ov.setAttribute("role", "dialog"); ov.setAttribute("aria-modal", "true");
+    var h = ov.querySelector("h1[id],h2[id],h3[id],h4[id]") || ov.querySelector("h1,h2,h3,h4");
+    if(h){ if(!h.id) h.id = ov.id + "Title"; ov.setAttribute("aria-labelledby", h.id); }
+    var modal = ov.querySelector(".modal"); if(modal && !modal.hasAttribute("tabindex")) modal.setAttribute("tabindex", "-1");
+    Array.prototype.forEach.call(ov.querySelectorAll("button"), function(b){ var t = b.textContent.replace(/[\s✕×✖]/g, ""); if(!t && !b.getAttribute("aria-label")) b.setAttribute("aria-label", "إغلاق"); });
+  }
+  function onOpen(ov){
+    if(stack.some(function(s){ return s.el === ov; })) return;
+    var ae = document.activeElement;
+    var trigger = (ae && ae !== document.body && ae !== document.documentElement && !ov.contains(ae)) ? ae : (lastPointer && !ov.contains(lastPointer) ? lastPointer : null);
+    stack.push({ el: ov, trigger: trigger });
+    safeFocus(firstField(ov));
+  }
+  function onClose(ov){
+    var i = -1; for(var k = stack.length - 1; k >= 0; k--){ if(stack[k].el === ov){ i = k; break; } }
+    if(i < 0) return;
+    var entry = stack.splice(i, 1)[0];
+    var t = top();
+    if(t && t.el.contains(entry.trigger)){ safeFocus(entry.trigger); return; }          /* nested: return to the button inside the parent dialog */
+    if(t){ safeFocus(firstField(t.el)); return; }                                          /* parent dialog still open, trigger was elsewhere */
+    if(entry.trigger && document.contains(entry.trigger) && visible(entry.trigger) && safeFocus(entry.trigger)) return;
+    var v = document.querySelector(".view.active"); if(v){ if(!v.hasAttribute("tabindex")) v.setAttribute("tabindex", "-1"); safeFocus(v); }
+  }
+  var overlays = Array.prototype.slice.call(document.querySelectorAll(".overlay"));
+  overlays.forEach(function(ov){
+    decorate(ov);
+    new MutationObserver(function(recs){ recs.forEach(function(r){ var was = /(^|\s)active(\s|$)/.test(r.oldValue || ""), is = ov.classList.contains("active"); if(is && !was) onOpen(ov); else if(was && !is) onClose(ov); }); })
+      .observe(ov, { attributes: true, attributeFilter: ["class"], attributeOldValue: true });
+  });
+  document.addEventListener("pointerdown", function(e){ lastPointer = e.target && e.target.closest ? (e.target.closest("button,a,[tabindex],.task-card,.card,.chip,tr,li,div") || e.target) : e.target; }, true);
+  document.addEventListener("keydown", function(e){
+    var t = top(); if(!t) return;
+    if(e.key === "Escape"){
+      e.preventDefault(); e.stopPropagation();
+      var btn = document.getElementById(CLOSE_BTN[t.el.id]);
+      if(btn) btn.click(); else t.el.classList.remove("active");     /* Escape ≡ the dialog's own cancel/close action */
+      return;
+    }
+    if(e.key === "Tab"){
+      var list = focusables(t.el); if(!list.length){ e.preventDefault(); safeFocus(t.el.querySelector(".modal") || t.el); return; }
+      var first = list[0], last = list[list.length - 1], cur = document.activeElement, inside = t.el.contains(cur);
+      if(!inside){ e.preventDefault(); safeFocus(e.shiftKey ? last : first); return; }
+      if(e.shiftKey && (cur === first || cur === t.el.querySelector(".modal"))){ e.preventDefault(); safeFocus(last); }
+      else if(!e.shiftKey && cur === last){ e.preventDefault(); safeFocus(first); }
+    }
+  }, true);
+  document.addEventListener("focusin", function(e){ var t = top(); if(t && !t.el.contains(e.target)){ safeFocus(firstField(t.el)); } }, true);
 })();
 </script>
 </body>
