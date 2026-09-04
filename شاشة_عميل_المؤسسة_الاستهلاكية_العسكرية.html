@@ -526,6 +526,7 @@ ORDER BY T0."DocNum"</code>
       <div class="hint">كل سند استوردته بسطر: من وين لوين، تاريخه، فرعه وعدد أسطره. أول ما تطبع فواتير عقبة لسند من قسم المطابقة تحت بينعلّم <b style="color:var(--teal);">✓ تم</b> تلقائياً — فالسندات يلي ضلت بدون ✓ هي يلي لسا ما وصلتك/ما طبعت عنها فواتير. وكمان تقدر تكتب <b>رقم فاتورة الصرف الوهمي</b> جنب السند: لو الرقم موجود بسجل الفواتير (القسم 6 آخر الصفحة) بينعلّم ✓ مرتبط تلقائياً.</div>
       <div id="trRegSummary" class="row-actions" style="margin:4px 0;"></div>
       <div class="row-actions" style="margin:0 0 4px;">
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="trRegFilterByMonth" checked onchange="renderVoucherRegistry()"> فلترة الجدول حسب "شهر العمل" (<span id="trRegFilterMonthLabel"></span>) فقط</label>
         <button class="btn-ghost btn-sm" onclick="exportVoucherRegistryToExcel()">⬇ تصدير Excel</button>
         <button class="btn-ghost btn-sm" onclick="printSection('trRegTable','سجل السندات المستوردة')">🖨️ طباعة</button>
       </div>
@@ -942,6 +943,7 @@ function switchWorkMonth(mk){
   saveState();
   renderStatementPage();
   renderPrintPage();
+  renderVoucherRegistry();
   const picker = document.getElementById('workMonthPicker'); if(picker) picker.value = mk;
   flash('stStatusMsg', `تم التبديل لشهر ${mk} — كشف وكميات شهرك القديم محفوظين، رح تلاقيهم زي ما تركتهم لو رجعت لشهرهم.`, true);
 }
@@ -2841,7 +2843,13 @@ function buildVoucherRegistryRows(){
 function renderVoucherRegistry(){
   const tbody = document.getElementById('trRegTbody');
   if(!tbody) return;
-  const vs = buildVoucherRegistryRows();
+  let vs = buildVoucherRegistryRows();
+  const monthLabelEl = document.getElementById('trRegFilterMonthLabel');
+  if(monthLabelEl) monthLabelEl.textContent = CURRENT_MONTH || '—';
+  const filterCb = document.getElementById('trRegFilterByMonth');
+  if(filterCb && filterCb.checked && CURRENT_MONTH){
+    vs = vs.filter(v=> normDateToISO(v.docDate).slice(0,7) === CURRENT_MONTH);
+  }
   let doneCount = 0;
   tbody.innerHTML = vs.map(v=>{
     const m = v.m;
@@ -2859,7 +2867,7 @@ function renderVoucherRegistry(){
       <td>${status}</td>
       <td><button class="btn-ghost tiny-btn" title="تعليم / إلغاء تعليم «تم» يدوياً" onclick="toggleVoucherDone('${v.n}')">${m.done?'↺':'✓'}</button></td>
     </tr>`;
-  }).join('') || '<tr><td colspan="9" class="muted" style="padding:10px;">ما في سندات مستوردة بعد.</td></tr>';
+  }).join('') || `<tr><td colspan="9" class="muted" style="padding:10px;">${(filterCb && filterCb.checked) ? 'ما في سندات لشهر '+esc(CURRENT_MONTH)+' — جرب تفضّي "فلترة حسب شهر العمل" فوق لتشوف كل السندات.' : 'ما في سندات مستوردة بعد.'}</td></tr>`;
   const total = vs.length, pending = total - doneCount;
   const sm = document.getElementById('trRegSummary');
   if(sm) sm.innerHTML = total ? `
