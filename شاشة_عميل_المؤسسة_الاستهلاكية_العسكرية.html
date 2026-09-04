@@ -695,13 +695,13 @@ ORDER BY T0."DocNum"</code>
         <div class="hint">بتتعبّى تلقائياً من فواتير الصرف الوهمي يلي تعتمدها/تستوردها فوق (قسم 5) — رقم/تاريخ/سوق/قيمة/مستودع كل فاتورة. تقدر كمان تضيف أو تعدّل يدوياً، وبعدين تصدّرهم كشف Excel لأي فترة تختارها.</div>
         <div class="tbl-wrap" style="max-height:260px; padding:0; margin-top:6px;">
           <table class="grid" id="dummyInvTable">
-            <thead><tr><th>رقم الفاتورة</th><th>التاريخ</th><th>اسم الفرع</th><th>المبلغ</th><th>مستودع</th><th></th><th></th></tr></thead>
+            <thead><tr><th><input type="checkbox" id="dummyInvSelectAll" onchange="toggleAllDummyInvSelect(this.checked)" title="تحديد/إلغاء تحديد الكل"></th><th>رقم الفاتورة</th><th>التاريخ</th><th>اسم الفرع</th><th>المبلغ</th><th>مستودع</th><th></th><th></th></tr></thead>
             <tbody id="dummyInvTbody"></tbody>
           </table>
         </div>
         <div class="row-actions">
           <button class="btn-ghost btn-sm" onclick="addDummyInvoiceRow()">+ إضافة فاتورة يدوياً</button>
-          <button class="btn-danger btn-sm" onclick="deleteAllDummyInvoices()" title="بترجع كل الفواتير لقائمة المراجعة فوق عشان تعتمدها من جديد — بدون إعادة قراءتها بالذكاء الاصطناعي">↺ إرجاع الكل للمراجعة</button>
+          <button class="btn-danger btn-sm" onclick="returnSelectedDummyInvoicesToReview()" title="بترجع الفواتير المحددة (بالـcheckbox جنب كل وحدة) لقائمة المراجعة فوق عشان تعتمدها من جديد — بدون إعادة قراءتها بالذكاء الاصطناعي. حدد الكل من الـcheckbox براس الجدول لو بدك ترجعهم كلهم.">↺ إرجاع المحدد للمراجعة</button>
         </div>
         <div id="dummyInvItemsDetailBox"></div>
         <div class="hint" style="margin-top:10px;">تصدير كشف Excel (تسلسل / تاريخ / رقم الفاتورة / السوق / قيمة الفاتورة / مستودع) — اختياري لفترة معيّنة:</div>
@@ -3778,16 +3778,18 @@ async function deleteDummyInvoiceRow(id){
   document.getElementById('dummyInvItemsDetailBox').innerHTML = '';
 }
 // حذف كل فواتير الصرف الوهمي دفعة وحدة (السجل + كل الأصناف محلياً وعلى السيرفر المشترك) — عشان تقدر تبلش المطابقة من الصفر. تأكيد مرتين لأنه إجراء نهائي وشامل.
-// إزالة اعتماد كل الفواتير وإرجاعهم لقائمة المراجعة (فوق، قسم 5) — بدون إعادة قراءتهم بالذكاء الاصطناعي من جديد (يعني بلا أي تكلفة إضافية).
-// كل فاتورة برجع تصير "قيد المراجعة" متل أول ما اتقرأت، وتقدر تعتمدها من جديد وحدة وحدة (أو دفعة وحدة) وتشوف المطابقة والفرق بأول اعتماد.
-async function deleteAllDummyInvoices(){
-  if(!DUMMY_INVOICES.length && !DUMMY_INV_ITEMS.length){ flash('dummyExportMsg','ما في فواتير لإرجاعها للمراجعة أصلاً.', false); return; }
-  if(!confirm(`تأكيد: بدك ترجع كل الفواتير المعتمدة (${DUMMY_INVOICES.length}) لقائمة المراجعة عشان تعتمدها من جديد؟ (بياناتها المقروءة رح تتحفظ، بس رح تفقد صفة "معتمدة" لحد ما تعتمدها ثانية)`)) return;
+// إزالة اعتماد الفواتير المحددة (بالـcheckbox جنب كل وحدة، أو الكل لو حددت الكل من رأس الجدول) وإرجاعهم لقائمة المراجعة (فوق، قسم 5) — بدون إعادة قراءتهم بالذكاء الاصطناعي من جديد (يعني بلا أي تكلفة إضافية).
+// كل فاتورة محددة برجع تصير "قيد المراجعة" متل أول ما اتقرأت، وتقدر تعتمدها من جديد وحدة وحدة (أو دفعة وحدة) وتشوف المطابقة والفرق بأول اعتماد.
+async function returnSelectedDummyInvoicesToReview(){
+  const selectedDocNums = Array.from(document.querySelectorAll('.dummyInvRowSelect:checked')).map(cb=>cb.dataset.docnum);
+  if(!selectedDocNums.length){ flash('dummyExportMsg','حدد فاتورة وحدة عالأقل بالـcheckbox جنبها أول (أو حدد الكل من رأس الجدول).', false); return; }
+  if(!confirm(`تأكيد: بدك ترجع ${selectedDocNums.length} فاتورة محددة لقائمة المراجعة عشان تعتمدها من جديد؟ (بياناتها المقروءة رح تتحفظ، بس رح تفقد صفة "معتمدة" لحد ما تعتمدها ثانية)`)) return;
   if(!confirm('تأكيد أخير — رح ينمسحوا من المطابقة اليومية ومن السيرفر المشترك لحد ما تعتمدهم من جديد. متابعة؟')) return;
 
-  // نبني عناصر مراجعة من الأصناف الحالية (DUMMY_INV_ITEMS) مجمّعة برقم الفاتورة — بدون فقدان أي بيانات مقروءة أو دفع تكلفة قراءة إضافية
+  const selectedNorm = new Set(selectedDocNums.map(normDocNum));
+  // نبني عناصر مراجعة من أصناف الفواتير المحددة بس (DUMMY_INV_ITEMS) مجمّعة برقم الفاتورة — بدون فقدان أي بيانات مقروءة أو دفع تكلفة قراءة إضافية
   const byInv = new Map();
-  DUMMY_INV_ITEMS.forEach(r=>{
+  DUMMY_INV_ITEMS.filter(r=>selectedNorm.has(normDocNum(r.invoiceNo))).forEach(r=>{
     if(!byInv.has(r.invoiceNo)) byInv.set(r.invoiceNo, {invoiceNo:r.invoiceNo, date:r.date||'', market:r.market||'', warehouse:'', totalAmount:null, items:[], srcFile:'(معاد من فواتير اتعمدت سابقاً)'});
     byInv.get(r.invoiceNo).items.push({code:r.theirCode, name:r.theirName||null, qty:r.qty, price:r.price, value:r.value});
   });
@@ -3797,10 +3799,10 @@ async function deleteAllDummyInvoices(){
   });
   DI_READ.invoices.push(...Array.from(byInv.values()));
 
-  DUMMY_INVOICES = [];
-  DUMMY_INV_ITEMS = [];
+  DUMMY_INVOICES = DUMMY_INVOICES.filter(d=>!selectedNorm.has(normDocNum(d.docNum)));
+  DUMMY_INV_ITEMS = DUMMY_INV_ITEMS.filter(r=>!selectedNorm.has(normDocNum(r.invoiceNo)));
   if(sb && curUser && roleEdit){
-    try{ await sb.from('mil_dummy_invoice_items').delete().neq('invoice_no', '__none__'); }
+    try{ await sb.from('mil_dummy_invoice_items').delete().in('invoice_no', selectedDocNums); }
     catch(e){ flash('dummyExportMsg','تم محلياً بس تعذّر تحديث السيرفر المشترك: '+e.message, false); }
   }
   saveState();
@@ -3808,11 +3810,12 @@ async function deleteAllDummyInvoices(){
   renderDailyInvoiceMatch();
   diRenderReview();
   document.getElementById('dummyInvItemsDetailBox').innerHTML = '';
-  flash('dummyExportMsg', `تم إرجاع ${byInv.size} فاتورة لقائمة المراجعة فوق (قسم 5) — راجعها واعتمدها من جديد.`, true);
+  flash('dummyExportMsg', `تم إرجاع ${byInv.size} فاتورة محددة لقائمة المراجعة فوق (قسم 5) — راجعها واعتمدها من جديد.`, true);
 }
 function renderDummyInvoices(){
   const tbody = document.getElementById('dummyInvTbody');
   tbody.innerHTML = DUMMY_INVOICES.map(r=>`<tr>
+    <td><input type="checkbox" class="dummyInvRowSelect" data-id="${r.id}" data-docnum="${esc(r.docNum)}"></td>
     <td><input type="text" value="${esc(r.docNum)}" onchange="updateDummyInvoiceField('${r.id}','docNum',this.value)" style="width:100px;"></td>
     <td><input type="date" value="${esc(r.date)}" onchange="updateDummyInvoiceField('${r.id}','date',this.value)"></td>
     <td><select onchange="handleBranchSelect(this,'${r.id}')" style="width:130px;">
@@ -3824,7 +3827,11 @@ function renderDummyInvoices(){
     <td><input type="text" value="${esc(r.warehouse||'')}" onchange="updateDummyInvoiceField('${r.id}','warehouse',this.value)" style="width:60px; direction:ltr; text-align:left;"></td>
     <td><button class="btn-ghost tiny-btn" onclick="diShowInvoiceItems('${esc(r.docNum)}')">🔍 الأصناف</button></td>
     <td><button class="btn-danger tiny-btn" onclick="deleteDummyInvoiceRow('${r.id}')">حذف</button></td>
-  </tr>`).join('') || '<tr><td colspan="7" class="muted" style="padding:10px;">ما في فواتير مسجلة بعد — رح تتعبى تلقائياً لما تعتمد فواتير من قسم "مطابقة يومية" فوق، أو اضغط "إضافة فاتورة يدوياً".</td></tr>';
+  </tr>`).join('') || '<tr><td colspan="8" class="muted" style="padding:10px;">ما في فواتير مسجلة بعد — رح تتعبى تلقائياً لما تعتمد فواتير من قسم "مطابقة يومية" فوق، أو اضغط "إضافة فاتورة يدوياً".</td></tr>';
+  const selectAll = document.getElementById('dummyInvSelectAll'); if(selectAll) selectAll.checked = false;
+}
+function toggleAllDummyInvSelect(checked){
+  document.querySelectorAll('.dummyInvRowSelect').forEach(cb=> cb.checked = checked);
 }
 // عرض أصناف فاتورة صرف وهمي معتمدة (خام، سطر سطر) مع إمكانية حذف سطر غلط (مثلاً صنف قرأه الذكاء الاصطناعي خطأ) — الحذف بيحدّث السيرفر المشترك كمان لو مسجل دخول، حتى ما يرجع السطر لما حد يسحب من السيرفر
 function diShowInvoiceItems(docNum){
