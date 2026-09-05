@@ -958,6 +958,7 @@
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn btn-ghost" id="execSummaryBtn">📄 ملخص تنفيذي</button>
+        <button class="btn btn-ghost" id="respReportBtn" title="تقرير الملاحظات لكل مسؤول — بدون درجة الخطورة، للطباعة أو الإرسال بالبريد">👤 تقرير المسؤول</button>
         <button class="btn btn-ghost" id="repeatFindingsBtn">🔁 الملاحظات المتكررة</button>
         <button class="btn btn-primary" id="addFindingBtn">+ إضافة ملاحظة</button>
       </div>
@@ -1209,6 +1210,7 @@
       <button type="button" data-t="ksMaterial"><span class="kd-en">02</span>الحدود المادية</button>
       <button type="button" data-t="ksHealth"><span class="kd-en">03</span>أوزان درجة الصحة</button>
       <button type="button" data-t="ksSampling"><span class="kd-en">04</span>طرق أخذ العينات</button>
+      <button type="button" data-t="ksCategories"><span class="kd-en">05</span>الأقسام</button>
     </nav>
     <div class="kg-setbody">
     <div class="lib-card kg-set" id="ksBackup" style="padding:20px;margin-bottom:20px;">
@@ -1270,6 +1272,22 @@
       <button class="btn btn-ghost btn-sm" id="addSamplingBtn" style="margin-bottom:14px;">+ إضافة طريقة عينة</button>
       <div id="samplingList" class="task-list kt-host"></div>
     </div>
+
+    <div class="lib-card kg-set" id="ksCategories" style="padding:20px;margin-top:20px;">
+      <div class="lib-head kg-head" style="background:var(--navy);margin:-20px -20px 20px -20px;display:flex;justify-content:space-between;align-items:center;">
+        <span>الأقسام <span class="kd-en">Categories</span></span>
+      </div>
+      <p style="color:var(--muted);font-size:12.5px;margin-top:0;">الأقسام تُستعمل في المهام والملاحظات والمخاطر والخطة السنوية والسياسات والصلاحيات والمؤشرات والتحسينات والمراسلات ومهام التدقيق وأداء الأقسام. عدّل الاسم واللون، أخفِ ما لا تستعمله، أو أضف أقساماً جديدة. الأقسام الأصلية لا تُحذف (تُخفى فقط)، والقسم المخصص يُحذف فقط إذا لم يكن مستعملاً في أي سجل. القسم المخفي يبقى ظاهراً على سجلاته القديمة.</p>
+      <div class="tw" style="overflow-x:auto;"><table class="kt" id="categoriesTbl" style="width:100%;font-size:12.5px;"></table></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:12px;">
+        <input type="text" id="newCatName" placeholder="اسم القسم الجديد (مثال: العمولة)" style="min-width:220px;">
+        <input type="color" id="newCatColor" value="#0F766E" title="لون القسم" aria-label="لون القسم الجديد">
+        <button class="btn btn-ghost" id="addCategoryBtn">+ إضافة قسم</button>
+        <span style="flex:1"></span>
+        <button class="btn btn-primary" id="saveCategoriesBtn">حفظ الأقسام</button>
+      </div>
+      <div id="categoriesMsg" style="font-size:12px;color:var(--muted);margin-top:8px;"></div>
+    </div>
     </div>
   </div>
 
@@ -1309,7 +1327,7 @@
   </div>
 </div>
 
-<footer>عمل بلا اتصال بالإنترنت — البيانات محفوظة محلياً على هذا الجهاز فقط عبر المتصفح. — الإصدار v2.1 (Internal Audit Management System + GRC + Executive Analytics Dashboard)</footer>
+<footer>عمل بلا اتصال بالإنترنت — البيانات محفوظة محلياً على هذا الجهاز فقط عبر المتصفح. — الإصدار v2.3 (Internal Audit Management System + GRC + Executive Analytics Dashboard — تقرير المسؤول · أقسام قابلة للتعديل)</footer>
 <div class="ksh-scrim" id="kshScrim" aria-hidden="true"></div>
 <div class="ksh-status" role="contentinfo" aria-label="شريط الحالة">
   <span class="ksh-dot" aria-hidden="true"></span><span>حفظ محلي</span>
@@ -1593,6 +1611,48 @@
     <div class="modal-actions">
       <div></div>
       <button class="btn btn-ghost" id="cancelQPicker">إغلاق</button>
+    </div>
+  </div>
+</div>
+
+<!-- RESPONSIBLE REPORT MODAL -->
+<div class="overlay" id="respReportOverlay">
+  <div class="modal">
+    <h2>تقرير الملاحظات لكل مسؤول</h2>
+    <p class="hint" style="margin:0 0 12px;color:var(--muted);font-size:12.5px;">تقرير رسمي بالملاحظات الموجهة لمسؤول واحد، بدون درجة الخطورة، للطباعة/حفظ PDF أو إرساله بالبريد وتسجيله في المراسلات.</p>
+    <div class="row2">
+      <div class="field">
+        <label>المسؤول</label>
+        <select id="rrResponsible"></select>
+      </div>
+      <div class="field">
+        <label>بريد المسؤول (يُحفظ للمرة القادمة)</label>
+        <input type="email" id="rrEmail" placeholder="name@example.com" dir="ltr">
+      </div>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>نطاق الملاحظات</label>
+        <select id="rrScope">
+          <option value="open">المفتوحة فقط (مفتوحة / قيد المعالجة / بانتظار إعادة الاختبار)</option>
+          <option value="all">كل الملاحظات بما فيها المغلقة</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>موعد الرد المطلوب (لتسجيل المتابعة)</label>
+        <input type="date" id="rrDue">
+      </div>
+    </div>
+    <div class="field">
+      <label>ملاحظة تمهيدية في التقرير والبريد (اختياري)</label>
+      <textarea id="rrIntro" rows="2" placeholder="مثال: نرجو الرد على الملاحظات أدناه خلال المدة المحددة مع إرفاق المستندات المؤيدة."></textarea>
+    </div>
+    <div id="rrPreview" style="font-size:12.5px;color:var(--muted);margin:4px 0 10px;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="rrCloseBtn">إغلاق</button>
+      <button class="btn btn-ghost" id="rrLogBtn" title="يسجّل المراسلة في شاشة المراسلات مع أرقام الملاحظات وموعد الرد">📝 تسجيل في المراسلات</button>
+      <button class="btn btn-ghost" id="rrMailBtn" title="يفتح برنامج البريد برسالة جاهزة (أرفق ملف PDF المحفوظ من الطباعة)">✉️ فتح البريد</button>
+      <button class="btn btn-primary" id="rrPrintBtn">🖨️ طباعة / حفظ PDF</button>
     </div>
   </div>
 </div>
@@ -2313,7 +2373,7 @@ async function onSignedIn(user){
 /* ===================== DATA MODEL ===================== */
 const STORAGE_KEY = "kaylani_audit_planner_v1";
 
-const CATEGORIES = [
+const DEFAULT_CATEGORIES = [
   {id:"sales", name:"المبيعات", color:"var(--sales)", hex:"#2563EB"},
   {id:"returns", name:"المرتجعات", color:"var(--returns)", hex:"#DC2626"},
   {id:"collect", name:"التحصيل", color:"var(--collect)", hex:"#16A34A"},
@@ -2323,6 +2383,30 @@ const CATEGORIES = [
   {id:"gov", name:"حوكمة وسياسات", color:"var(--gov)", hex:"#4F46E5"},
   {id:"other", name:"أخرى", color:"var(--other)", hex:"#64748B"},
 ];
+/* الأقسام قابلة للتعديل من الإعدادات: الأقسام الثمانية الأصلية تبقى بمعرّفاتها (يمكن إعادة تسميتها/تلوينها/إخفاؤها)، وتُضاف أقسام مخصصة تُحفظ في DB.settings */
+let CATEGORIES = DEFAULT_CATEGORIES.map(c=>({...c, builtin:true, hidden:false}));
+function rebuildCategories(){
+  const st = (typeof DB!=="undefined" && DB && DB.settings) ? DB.settings : {};
+  const ov = st.categoryOverrides || {}, custom = st.customCategories || [], order = st.categoryOrder || [];
+  const all = DEFAULT_CATEGORIES.map(c=>{ const o = ov[c.id]||{}; const hex = o.hex||c.hex; return {...c, name:(o.name||c.name), hex, color:(o.hex? hex : c.color), hidden:!!o.hidden, builtin:true}; })
+    .concat(custom.filter(c=>c&&c.id&&c.name).map(c=>({id:c.id, name:c.name, hex:c.hex||"#64748B", color:c.hex||"#64748B", hidden:!!c.hidden, builtin:false})));
+  const pos = id=>{ const i = order.indexOf(id); return i<0 ? 1000 + all.findIndex(x=>x.id===id) : i; };
+  all.sort((a,b)=>pos(a.id)-pos(b.id));
+  CATEGORIES = all;
+}
+function activeCategories(){ return CATEGORIES.filter(c=>!c.hidden); }
+function categoryUsage(id){
+  const arrs = ["tasks","findings","risks","universe","policies","authority","kpis","improvements","emails","engagements","recurring","queries"];
+  let n = 0; if(typeof DB==="undefined"||!DB) return 0;
+  arrs.forEach(k=>{ (DB[k]||[]).forEach(x=>{ if(x && x.category===id) n++; }); });
+  return n;
+}
+function catsForAnalytics(){ return CATEGORIES.filter(c=>!c.hidden || categoryUsage(c.id)>0); }
+function catOptions(kind, selected){
+  /* kind = "form": كل الأقسام (المخفية تظهر بوسم حتى لا يتغير تصنيف سجل قديم عند التعديل) · "filter": الظاهرة فقط */
+  const list = kind==="filter" ? activeCategories() : CATEGORIES;
+  return list.map(c=>`<option value="${c.id}"${selected===c.id?' selected':''}>${escapeHtml(c.name)}${c.hidden?' (مخفي)':''}</option>`).join("");
+}
 
 const STATUS_META = {
   not_started:{label:"لم تبدأ", color:"var(--st-notstarted)"},
@@ -2419,10 +2503,11 @@ const LIBRARY = [
 
 const DEFAULT_HEALTH_WEIGHTS = { planExec:25, findingsClosure:20, riskTreatment:20, timeliness:15, coverage:10, docQuality:10 };
 function defaultSettings(){
-  return {materialityGlobal:null, materialityByCategory:{}, materialityBasis:"", materialityNotes:"", healthScoreWeights: {...DEFAULT_HEALTH_WEIGHTS}};
+  return {materialityGlobal:null, materialityByCategory:{}, materialityBasis:"", materialityNotes:"", healthScoreWeights: {...DEFAULT_HEALTH_WEIGHTS}, responsibleEmails:{}, categoryOverrides:{}, customCategories:[], categoryOrder:[]};
 }
 
 let DB = loadDB();
+rebuildCategories();
 
 function loadDB(){
   try{
@@ -2447,6 +2532,10 @@ function loadDB(){
       if(!db.evidence) db.evidence = [];
       if(!db.settings) db.settings = defaultSettings();
       if(!db.settings.healthScoreWeights) db.settings.healthScoreWeights = {...DEFAULT_HEALTH_WEIGHTS};
+      if(!db.settings.responsibleEmails) db.settings.responsibleEmails = {};
+      if(!db.settings.categoryOverrides) db.settings.categoryOverrides = {};
+      if(!Array.isArray(db.settings.customCategories)) db.settings.customCategories = [];
+      if(!Array.isArray(db.settings.categoryOrder)) db.settings.categoryOrder = [];
       return db;
     }
   }catch(e){}
@@ -2467,7 +2556,7 @@ function fmtDate(s){
   const months=["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
   return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
 }
-function catMeta(id){ return CATEGORIES.find(c=>c.id===id) || CATEGORIES[CATEGORIES.length-1]; }
+function catMeta(id){ return CATEGORIES.find(c=>c.id===id) || CATEGORIES.find(c=>c.id==="other") || CATEGORIES[CATEGORIES.length-1] || {id:"other",name:"أخرى",hex:"#64748B",color:"#64748B"}; }
 function nextRefCode(prefix, counterKey){
   DB.counters[counterKey] = (DB.counters[counterKey]||0) + 1;
   return `${prefix}-${new Date().getFullYear()}-${String(DB.counters[counterKey]).padStart(3,"0")}`;
@@ -2706,25 +2795,15 @@ function activateTab(viewName){
 
 /* ===================== CATEGORY SELECT OPTIONS ===================== */
 function fillCategorySelects(){
-  const sel = document.getElementById("taskCategory");
-  sel.innerHTML = CATEGORIES.map(c=>`<option value="${c.id}">${c.name}</option>`).join("");
-  const filt = document.getElementById("filterCat");
-  filt.innerHTML = `<option value="">كل الأقسام</option>` + CATEGORIES.map(c=>`<option value="${c.id}">${c.name}</option>`).join("");
-
-  const qsel = document.getElementById("qCategory");
-  qsel.innerHTML = CATEGORIES.map(c=>`<option value="${c.id}">${c.name}</option>`).join("");
-  const qfilt = document.getElementById("filterQCat");
-  qfilt.innerHTML = `<option value="">كل الأقسام</option>` + CATEGORIES.map(c=>`<option value="${c.id}">${c.name}</option>`).join("");
-
-  const ffilt = document.getElementById("filterFCategory");
-  ffilt.innerHTML = `<option value="">كل الأقسام</option>` + CATEGORIES.map(c=>`<option value="${c.id}">${c.name}</option>`).join("");
-
-  const recsel = document.getElementById("recCategory");
-  recsel.innerHTML = CATEGORIES.map(c=>`<option value="${c.id}">${c.name}</option>`).join("");
-
-  ["fCategory","rCategory","uCategory","polCategory","authCategory","kpiCategory","impCategory","emCategory","engCategory"].forEach(id=>{
-    document.getElementById(id).innerHTML = CATEGORIES.map(c=>`<option value="${c.id}">${c.name}</option>`).join("");
-  });
+  const set = (id, html)=>{ const el = document.getElementById(id); if(!el) return; const keep = el.value; el.innerHTML = html; if(keep && [...el.options].some(o=>o.value===keep)) el.value = keep; };
+  set("taskCategory", catOptions("form"));
+  set("filterCat", `<option value="">كل الأقسام</option>` + catOptions("filter"));
+  set("qCategory", catOptions("form"));
+  set("filterQCat", `<option value="">كل الأقسام</option>` + catOptions("filter"));
+  set("filterFCategory", `<option value="">كل الأقسام</option>` + catOptions("filter"));
+  set("recCategory", catOptions("form"));
+  ["fCategory","rCategory","uCategory","polCategory","authCategory","kpiCategory","impCategory","emCategory","engCategory"].forEach(id=> set(id, catOptions("form")));
+  const dp = document.getElementById("deptFilterSelect"); if(dp){ const keep = dp.value; dp.innerHTML = `<option value="">كل الأقسام</option>` + catOptions("filter"); if(keep && [...dp.options].some(o=>o.value===keep)) dp.value = keep; }
 }
 
 function fillSamplingSelect(){
@@ -3179,7 +3258,7 @@ function renderStats(){
   `;
 
   const catBox = document.getElementById("catStatsBox");
-  const catItems = CATEGORIES.map(c=>({key:c.id, label:c.name, value:DB.tasks.filter(t=>t.category===c.id).length, color:c.hex}));
+  const catItems = catsForAnalytics().map(c=>({key:c.id, label:c.name, value:DB.tasks.filter(t=>t.category===c.id).length, color:c.hex}));
   catBox.innerHTML = kgBars(catItems);
   wireChartClicks(catBox, key=> drillTo("all", {category:key, status:""}));
 
@@ -3192,7 +3271,7 @@ function renderStats(){
   if(tblBox){
     if(!total){ tblBox.innerHTML = ""; return; }
     const tbody = ktTable(tblBox, [{l:"القسم"},{l:"المهام",cls:"n",k:"n"},{l:"مكتملة",cls:"n",k:"n"},{l:"الإنجاز",cls:"n",k:"pct"},{l:"متأخرة",cls:"n",k:"n"},{l:"ساعات مخططة",cls:"n",k:"val"},{l:"ساعات فعلية",cls:"n",k:"val"}], {ariaLabel:"تحليل المهام حسب القسم", minWidth:720});
-    CATEGORIES.forEach(c=>{
+    catsForAnalytics().forEach(c=>{
       const ts = DB.tasks.filter(t=>t.category===c.id); if(!ts.length) return;
       const d = ts.filter(t=>t.status==="done").length;
       const od = ts.filter(t=>t.mode==="single" && t.date<todayStr() && t.status!=="done").length;
@@ -4221,6 +4300,162 @@ document.getElementById("execSummaryBtn").onclick = ()=>{
   w.document.close();
 };
 
+/* ===================== تقرير المسؤول — ملاحظات كل مسؤول بدون درجة الخطورة (طباعة / بريد / تسجيل مراسلة) ===================== */
+const RR_UNASSIGNED = "— غير محدد —";
+function rrGroups(scope){
+  const src = scope==="all" ? DB.findings : DB.findings.filter(f=>f.status!=="closed");
+  const g = {};
+  src.forEach(f=>{ const k=(f.responsible||"").trim()||RR_UNASSIGNED; (g[k]=g[k]||[]).push(f); });
+  Object.values(g).forEach(list=>list.sort((a,b)=>(a.targetDate||"9999").localeCompare(b.targetDate||"9999") || a.refCode.localeCompare(b.refCode)));
+  return g;
+}
+function rrSelection(){
+  const name = document.getElementById("rrResponsible").value;
+  const scope = document.getElementById("rrScope").value;
+  const list = rrGroups(scope)[name]||[];
+  return {name, scope, list, email:document.getElementById("rrEmail").value.trim(), due:document.getElementById("rrDue").value, intro:document.getElementById("rrIntro").value.trim()};
+}
+function rrFillResponsibles(){
+  const sel = document.getElementById("rrResponsible");
+  const keep = sel.value;
+  const g = rrGroups(document.getElementById("rrScope").value);
+  const names = Object.keys(g).sort((a,b)=> a===RR_UNASSIGNED?1: b===RR_UNASSIGNED?-1: a.localeCompare(b,"ar"));
+  sel.innerHTML = names.length ? names.map(n=>`<option value="${escapeHtml(n)}">${escapeHtml(n)} (${g[n].length})</option>`).join("") : `<option value="">لا توجد ملاحظات في هذا النطاق</option>`;
+  if(keep && names.includes(keep)) sel.value = keep;
+  rrOnResponsibleChange();
+}
+function rrOnResponsibleChange(){
+  const {name, list} = rrSelection();
+  const saved = (DB.settings.responsibleEmails||{})[name];
+  document.getElementById("rrEmail").value = saved||"";
+  const earliest = list.map(f=>f.targetDate).filter(Boolean).sort()[0];
+  if(!document.getElementById("rrDue").value && earliest) document.getElementById("rrDue").value = earliest;
+  const pv = document.getElementById("rrPreview");
+  pv.innerHTML = list.length
+    ? `سيتضمن التقرير <b>${list.length}</b> ملاحظة: ${list.slice(0,8).map(f=>escapeHtml(f.refCode)).join("، ")}${list.length>8?" …":""} — <b>بدون عمود الخطورة</b>.`
+    : "لا توجد ملاحظات لهذا المسؤول في النطاق المحدد.";
+}
+function rrSaveEmail(name,email){
+  if(!name) return;
+  DB.settings.responsibleEmails = DB.settings.responsibleEmails||{};
+  if(email) DB.settings.responsibleEmails[name]=email; else delete DB.settings.responsibleEmails[name];
+  saveDB();
+}
+function rrReportHTML(sel){
+  const {name, list, intro, due} = sel;
+  const rows = list.map((f,i)=>`<tr>
+      <td>${i+1}</td>
+      <td class="ref">${escapeHtml(f.refCode)}</td>
+      <td><b>${escapeHtml(f.title)}</b>${f.desc? `<div class="d">${escapeHtml(f.desc)}</div>`:""}</td>
+      <td>${escapeHtml(f.recommendation||"—")}</td>
+      <td>${escapeHtml(f.managementResponse||"—")}</td>
+      <td>${catMeta(f.category).name}</td>
+      <td class="dt">${f.targetDate? fmtDate(f.targetDate):"—"}</td>
+      <td>${FINDING_STATUS_META[f.status]? FINDING_STATUS_META[f.status].label : escapeHtml(f.status||"")}</td>
+    </tr>`).join("");
+  return `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8">
+  <title>ملاحظات التدقيق — ${escapeHtml(name)}</title>
+  <style>
+    body{font-family:"Segoe UI",Tahoma,Arial,sans-serif;padding:32px;color:#1C2B3A;}
+    h1{color:#0F2F4F;font-size:20px;margin:0 0 2px 0;}
+    .sub{color:#6B7C8D;font-size:13px;margin-bottom:4px;}
+    .meta{display:flex;gap:22px;flex-wrap:wrap;margin:16px 0 6px;font-size:13px;}
+    .meta b{color:#0F2F4F;}
+    .intro{background:#F4F6F9;border-right:4px solid #CBA467;border-radius:8px;padding:10px 14px;margin:14px 0;font-size:13.5px;line-height:1.8;}
+    table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px;}
+    th,td{border:1px solid #CBD5E1;padding:7px 9px;text-align:right;vertical-align:top;}
+    th{background:#0F2F4F;color:#fff;font-weight:600;}
+    tr:nth-child(even) td{background:#F4F6F9;}
+    td .d{color:#4B5B6B;font-size:12px;margin-top:3px;line-height:1.6;}
+    td.ref{font-family:Consolas,Menlo,monospace;direction:ltr;text-align:right;white-space:nowrap;}
+    td.dt{white-space:nowrap;}
+    .sign{display:flex;justify-content:space-between;margin-top:40px;font-size:13px;}
+    .sign div{width:40%;border-top:1px solid #94A3B8;padding-top:6px;text-align:center;color:#475569;}
+    .printbar{margin-bottom:20px;display:flex;gap:10px;}
+    .printbar button{background:#0F2F4F;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13.5px;cursor:pointer;font-weight:600;}
+    @media print{ .printbar{display:none;} body{padding:12px;} }
+  </style></head><body>
+  <div class="printbar"><button onclick="window.print()">🖨️ طباعة / حفظ PDF</button></div>
+  <h1>ملاحظات التدقيق الداخلي الموجهة إلى: ${escapeHtml(name)}</h1>
+  <div class="sub">مركز الكيلاني للأغذية — قسم التدقيق الداخلي</div>
+  <div class="meta"><span>تاريخ التقرير: <b>${fmtDate(todayStr())}</b></span><span>عدد الملاحظات: <b>${list.length}</b></span>${due? `<span>موعد الرد المطلوب: <b>${fmtDate(due)}</b></span>`:""}</div>
+  ${intro? `<div class="intro">${escapeHtml(intro).replace(/\n/g,"<br>")}</div>`:""}
+  <table><thead><tr><th>#</th><th>المرجع</th><th>الملاحظة</th><th>التوصية</th><th>رد الإدارة</th><th>القسم</th><th>الموعد المستهدف</th><th>الحالة</th></tr></thead>
+  <tbody>${rows || `<tr><td colspan="8" style="text-align:center;color:#6B7C8D;">لا توجد ملاحظات</td></tr>`}</tbody></table>
+  <div class="sign"><div>المدقق الداخلي</div><div>المسؤول: ${escapeHtml(name)}</div></div>
+  </body></html>`;
+}
+function rrMailText(sel){
+  const {name, list, intro, due} = sel;
+  const lines = [];
+  lines.push(`السلام عليكم ${name===RR_UNASSIGNED?"":name}،`.trim());
+  lines.push("");
+  if(intro) { lines.push(intro); lines.push(""); }
+  lines.push(`نرفق لكم ملاحظات التدقيق الداخلي الموجهة إليكم (${list.length} ملاحظة)${due? ` — موعد الرد المطلوب: ${fmtDate(due)}`:""}:`);
+  lines.push("");
+  list.forEach((f,i)=>{
+    lines.push(`${i+1}) ${f.refCode} — ${f.title}`);
+    if(f.recommendation) lines.push(`   التوصية: ${f.recommendation}`);
+    if(f.targetDate) lines.push(`   الموعد المستهدف: ${fmtDate(f.targetDate)}`);
+    lines.push("");
+  });
+  lines.push("التقرير الكامل مرفق بصيغة PDF.");
+  lines.push("");
+  lines.push("قسم التدقيق الداخلي — مركز الكيلاني للأغذية");
+  return lines.join("\n");
+}
+function rrMailto(sel){
+  const subject = `ملاحظات التدقيق الداخلي — ${sel.name} — ${fmtDate(todayStr())}`;
+  let body = rrMailText(sel);
+  if(body.length>1800) body = body.slice(0,1750)+"\n… (بقية الملاحظات في ملف PDF المرفق)";
+  return `mailto:${encodeURIComponent(sel.email||"")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+function rrLogEmail(sel){
+  const subject = `ملاحظات التدقيق الداخلي — ${sel.name}`;
+  const payload = {
+    id: uid(), refCode: nextRefCode("EM","email"), subject, type:"finding",
+    to: sel.email ? `${sel.name} <${sel.email}>` : sel.name, cc:"", date: todayStr(), due: sel.due||"", status:"sent", category:"gov",
+    refs: sel.list.map(f=>f.refCode).join(", "),
+    summary: `إبلاغ ${sel.list.length} ملاحظة بدون درجة الخطورة (تقرير المسؤول).${sel.intro? " "+sel.intro:""}`,
+    reply:"", replyDate:"", link:"",
+  };
+  DB.emails.push(payload); saveDB();
+  if(typeof renderEmails==="function"){ try{ renderEmails(); }catch(_){ } }
+  return payload;
+}
+document.getElementById("respReportBtn").onclick = ()=>{
+  document.getElementById("rrDue").value = "";
+  document.getElementById("rrIntro").value = "";
+  rrFillResponsibles();
+  document.getElementById("respReportOverlay").classList.add("active");
+};
+document.getElementById("rrScope").onchange = rrFillResponsibles;
+document.getElementById("rrResponsible").onchange = rrOnResponsibleChange;
+document.getElementById("rrCloseBtn").onclick = ()=> document.getElementById("respReportOverlay").classList.remove("active");
+document.getElementById("rrPrintBtn").onclick = ()=>{
+  const sel = rrSelection();
+  if(!sel.list.length){ alert("لا توجد ملاحظات لهذا المسؤول في النطاق المحدد"); return; }
+  rrSaveEmail(sel.name, sel.email);
+  const w = window.open("", "_blank");
+  if(!w){ alert("المتصفح منع فتح نافذة التقرير — اسمح بالنوافذ المنبثقة لهذه الصفحة"); return; }
+  w.document.write(rrReportHTML(sel)); w.document.close();
+};
+document.getElementById("rrMailBtn").onclick = ()=>{
+  const sel = rrSelection();
+  if(!sel.list.length){ alert("لا توجد ملاحظات لهذا المسؤول في النطاق المحدد"); return; }
+  if(!sel.email && !confirm("لم يُدخل بريد المسؤول — فتح رسالة بدون عنوان مستلم؟")) return;
+  rrSaveEmail(sel.name, sel.email);
+  window.location.href = rrMailto(sel);
+};
+document.getElementById("rrLogBtn").onclick = ()=>{
+  const sel = rrSelection();
+  if(!sel.list.length){ alert("لا توجد ملاحظات لهذا المسؤول في النطاق المحدد"); return; }
+  rrSaveEmail(sel.name, sel.email);
+  const p = rrLogEmail(sel);
+  alert(`تم تسجيل المراسلة ${p.refCode} في شاشة المراسلات (${sel.list.length} ملاحظة${sel.due? "، موعد الرد "+fmtDate(sel.due):""}).`);
+};
+
+
 /* ===================== SETTINGS: MATERIALITY ===================== */
 function renderSettings(){
   renderBackupInfo();
@@ -4229,7 +4464,7 @@ function renderSettings(){
   document.getElementById("materialityNotes").value = DB.settings.materialityNotes || "";
 
   const box = document.getElementById("materialityByCatBox");
-  box.innerHTML = CATEGORIES.map(c=>`
+  box.innerHTML = catsForAnalytics().map(c=>`
     <div class="field" style="margin-bottom:8px;">
       <label style="font-size:11.5px;">${c.name}</label>
       <input type="text" inputmode="decimal" class="mat-cat-input" data-cat="${c.id}" placeholder="—" value="${DB.settings.materialityByCategory[c.id] ?? ''}">
@@ -4237,9 +4472,82 @@ function renderSettings(){
 
   renderHealthWeightsBox();
   renderSamplingList();
+  renderCategoriesBox();
   const nav = document.querySelector("#view-settings .kg-setnav");
   if(nav && !nav.__kg){ nav.__kg = true; nav.querySelectorAll("button[data-t]").forEach(b=>{ b.onclick = ()=>{ nav.querySelectorAll("button").forEach(x=>x.removeAttribute("aria-current")); b.setAttribute("aria-current","true"); const el = document.getElementById(b.dataset.t); if(el) el.scrollIntoView({behavior: (window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches) ? "auto" : "smooth", block:"start"}); }; }); }
 }
+
+
+/* ===================== CATEGORIES EDITOR (settings) ===================== */
+let catDraft = null; /* نسخة عمل: [{id,name,hex,hidden,builtin}] بترتيب العرض */
+function catDraftInit(){ catDraft = CATEGORIES.map(c=>({id:c.id, name:c.name, hex:c.hex, hidden:!!c.hidden, builtin:!!c.builtin})); }
+function renderCategoriesBox(){
+  const tbl = document.getElementById("categoriesTbl"); if(!tbl) return;
+  if(!catDraft) catDraftInit();
+  const rows = catDraft.map((c,i)=>{
+    const used = categoryUsage(c.id);
+    return `<tr data-i="${i}" style="${c.hidden?'opacity:.6;':''}">
+      <td style="width:34px;"><input type="color" class="cat-hex" value="${escapeHtml(c.hex||'#64748B')}" aria-label="لون ${escapeHtml(c.name)}" style="width:30px;height:26px;padding:0;border:1px solid var(--border);border-radius:6px;background:none;"></td>
+      <td><input type="text" class="cat-name" value="${escapeHtml(c.name)}" aria-label="اسم القسم" style="min-width:160px;"></td>
+      <td class="n"><code style="font-size:11px;color:var(--muted);">${escapeHtml(c.id)}</code>${c.builtin?'':' <span class="badge-outline">مخصص</span>'}</td>
+      <td class="n" title="عدد السجلات المرتبطة بهذا القسم">${used}</td>
+      <td><label style="display:inline-flex;gap:6px;align-items:center;font-size:12px;cursor:pointer;"><input type="checkbox" class="cat-show" ${c.hidden?'':'checked'}> ظاهر</label></td>
+      <td style="white-space:nowrap;">
+        <button type="button" class="btn btn-ghost btn-sm cat-up" ${i===0?'disabled':''} aria-label="تحريك لأعلى">▲</button>
+        <button type="button" class="btn btn-ghost btn-sm cat-down" ${i===catDraft.length-1?'disabled':''} aria-label="تحريك لأسفل">▼</button>
+        ${c.builtin? '' : `<button type="button" class="btn btn-ghost btn-sm cat-del" ${used?'disabled title="القسم مستعمل في '+used+' سجل — أخفِه بدل حذفه"':''} aria-label="حذف القسم">🗑</button>`}
+      </td></tr>`;
+  }).join("");
+  tbl.innerHTML = `<thead><tr><th>اللون</th><th>الاسم</th><th class="n">المعرّف</th><th class="n">مستعمل</th><th>الظهور</th><th>ترتيب / حذف</th></tr></thead><tbody>${rows}</tbody>`;
+  tbl.querySelectorAll("tbody tr").forEach(tr=>{
+    const i = +tr.dataset.i;
+    tr.querySelector(".cat-name").oninput = e=>{ catDraft[i].name = e.target.value; };
+    tr.querySelector(".cat-hex").oninput = e=>{ catDraft[i].hex = e.target.value; };
+    tr.querySelector(".cat-show").onchange = e=>{ catDraft[i].hidden = !e.target.checked; renderCategoriesBox(); };
+    tr.querySelector(".cat-up").onclick = ()=>{ if(i>0){ [catDraft[i-1],catDraft[i]] = [catDraft[i],catDraft[i-1]]; renderCategoriesBox(); } };
+    tr.querySelector(".cat-down").onclick = ()=>{ if(i<catDraft.length-1){ [catDraft[i+1],catDraft[i]] = [catDraft[i],catDraft[i+1]]; renderCategoriesBox(); } };
+    const del = tr.querySelector(".cat-del"); if(del) del.onclick = ()=>{ if(categoryUsage(catDraft[i].id)) return; if(confirm(`حذف القسم "${catDraft[i].name}"؟`)){ catDraft.splice(i,1); renderCategoriesBox(); } };
+  });
+}
+function catSlug(name){
+  const base = "c_" + Math.random().toString(36).slice(2,8);
+  return base;
+}
+document.getElementById("addCategoryBtn").onclick = ()=>{
+  const name = document.getElementById("newCatName").value.trim();
+  const hex = document.getElementById("newCatColor").value || "#64748B";
+  const msg = document.getElementById("categoriesMsg");
+  if(!name){ msg.textContent = "اكتب اسم القسم أولاً."; return; }
+  if(!catDraft) catDraftInit();
+  if(catDraft.some(c=>c.name.trim()===name)){ msg.textContent = "يوجد قسم بهذا الاسم."; return; }
+  catDraft.push({id:catSlug(name), name, hex, hidden:false, builtin:false});
+  document.getElementById("newCatName").value = "";
+  msg.textContent = `أُضيف "${name}" إلى القائمة — اضغط "حفظ الأقسام" لتثبيته.`;
+  renderCategoriesBox();
+};
+document.getElementById("saveCategoriesBtn").onclick = ()=>{
+  if(!catDraft) catDraftInit();
+  const msg = document.getElementById("categoriesMsg");
+  if(catDraft.some(c=>!c.name.trim())){ msg.textContent = "كل قسم يحتاج اسماً."; return; }
+  if(!catDraft.some(c=>!c.hidden)){ msg.textContent = "يجب أن يبقى قسم واحد ظاهر على الأقل."; return; }
+  const overrides = {}, custom = [];
+  catDraft.forEach(c=>{
+    if(c.builtin){
+      const d = DEFAULT_CATEGORIES.find(x=>x.id===c.id);
+      const o = {}; if(c.name.trim()!==d.name) o.name = c.name.trim(); if((c.hex||"").toLowerCase()!==d.hex.toLowerCase()) o.hex = c.hex; if(c.hidden) o.hidden = true;
+      if(Object.keys(o).length) overrides[c.id] = o;
+    } else custom.push({id:c.id, name:c.name.trim(), hex:c.hex, hidden:!!c.hidden});
+  });
+  DB.settings.categoryOverrides = overrides;
+  DB.settings.customCategories = custom;
+  DB.settings.categoryOrder = catDraft.map(c=>c.id);
+  saveDB();
+  rebuildCategories(); catDraft = null;
+  fillCategorySelects();
+  if(typeof dashCache!=="undefined") dashCache = null;
+  renderSettings();
+  msg.textContent = `تم حفظ ${CATEGORIES.length} أقسام (${activeCategories().length} ظاهر). القوائم والتحليلات محدَّثة.`;
+};
 
 document.getElementById("saveMaterialityBtn").onclick = ()=>{
   DB.settings.materialityGlobal = parseFloat(document.getElementById("materialityGlobal").value) || null;
@@ -5619,7 +5927,7 @@ function renderRepeatFindingsPanel(){
 
 /* ===================== DEPARTMENT PERFORMANCE ===================== */
 function computeDeptPerf(filterCat){
-  const cats = filterCat ? CATEGORIES.filter(c=>c.id===filterCat) : CATEGORIES;
+  const cats = filterCat ? CATEGORIES.filter(c=>c.id===filterCat) : catsForAnalytics();
   const repeatGroups = detectRepeatFindings();
   const today = todayStr();
   return cats.map(c=>{
@@ -5660,7 +5968,7 @@ function deptPerfTableHtml(rows){
   </tbody></table></div>`;
 }
 function fillDeptFilterSelect(sel){
-  if(sel.options.length<=1) sel.innerHTML = `<option value="">كل الأقسام</option>` + CATEGORIES.map(c=>`<option value="${c.id}">${c.name}</option>`).join("");
+  if(sel.options.length<=1) sel.innerHTML = `<option value="">كل الأقسام</option>` + catOptions("filter");
 }
 function renderDeptPerf(){
   const sel = document.getElementById("deptFilterSelect");
@@ -5685,7 +5993,7 @@ function computeTimeAnalysis(){
   const totalPlanned = tasks.reduce((s,t)=>s+(t.plannedHours||0),0);
   const totalActual = tasks.reduce((s,t)=>s+(t.actualHours||0),0);
   const efficiencyPct = totalPlanned ? Math.round(totalActual/totalPlanned*100) : null;
-  const byCat = CATEGORIES.map(c=>{
+  const byCat = catsForAnalytics().map(c=>{
     const ct = tasks.filter(t=>t.category===c.id);
     return {cat:c, planned: ct.reduce((s,t)=>s+(t.plannedHours||0),0), actual: ct.reduce((s,t)=>s+(t.actualHours||0),0)};
   }).filter(r=>r.planned||r.actual);
@@ -5769,7 +6077,7 @@ function initDashFilters(){
   years.add(curYear);
   yearSel.innerHTML = `<option value="">الكل</option>` + [...years].sort().reverse().map(y=>`<option value="${y}">${y}</option>`).join("");
   const catSel = document.getElementById("dfCategory");
-  catSel.innerHTML = `<option value="">الكل</option>` + CATEGORIES.map(c=>`<option value="${c.id}">${c.name}</option>`).join("");
+  { const keepC = catSel.value; catSel.innerHTML = `<option value="">الكل</option>` + catOptions("filter"); if(keepC && [...catSel.options].some(o=>o.value===keepC)) catSel.value = keepC; }
 
   ["dfYear","dfMonth","dfFrom","dfTo","dfCategory","dfSeverity","dfFindingStatus","dfTaskStatus"].forEach(id=>{
     document.getElementById(id).onchange = ()=>{
@@ -5915,7 +6223,7 @@ function buildChartC(stats){
   return chartDonut(items, {centerLabel:"الملاحظات"});
 }
 function buildChartD(stats){
-  const items = CATEGORIES.map(c=>({key:c.id, label:c.name, value:stats.findings.filter(f=>f.category===c.id).length, color:c.hex})).filter(i=>i.value>0).sort((a,b)=>b.value-a.value);
+  const items = catsForAnalytics().map(c=>({key:c.id, label:c.name, value:stats.findings.filter(f=>f.category===c.id).length, color:c.hex})).filter(i=>i.value>0).sort((a,b)=>b.value-a.value);
   return chartBarH(items);
 }
 function buildChartE(stats){
@@ -5947,7 +6255,7 @@ function buildChartG(stats){
   return chartBarH(items, {padL:160});
 }
 function buildChartH(stats){
-  const items = CATEGORIES.map(c=>{
+  const items = catsForAnalytics().map(c=>{
     const u = stats.universe.filter(x=>x.category===c.id);
     if(!u.length) return null;
     return {key:c.id, label:c.name, value:Math.round(u.filter(x=>x.lastAudit).length/u.length*100), color:c.hex};
@@ -5955,7 +6263,7 @@ function buildChartH(stats){
   return chartBarH(items, {padL:120});
 }
 function buildChartI(stats){
-  const rows = CATEGORIES.map(c=>{
+  const rows = catsForAnalytics().map(c=>{
     const t = stats.tasks.filter(x=>x.category===c.id);
     return {cat:c, planned:t.reduce((s,x)=>s+(x.plannedHours||0),0), actual:t.reduce((s,x)=>s+(x.actualHours||0),0)};
   }).filter(r=>r.planned||r.actual);
