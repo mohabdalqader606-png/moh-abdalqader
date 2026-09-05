@@ -1505,12 +1505,15 @@ function renderDashPage(){
     const rows = [];
     branches.forEach(b=> b.items.forEach((it,code)=> rows.push({branch:b.branch, itemCode:code, itemName:it.itemName, qty:it.qty, netSales:it.netSales, cost:it.cost, grossProfit:it.grossProfit})));
     rows.sort((a,b)=>b.netSales-a.netSales);
-    tbody.innerHTML = rows.map(r=>`<tr class="rowlink" onclick="openBranchDetail('${esc(r.branch).replace(/'/g,"\\'")}')">
+    let dhtml = rows.map(r=>`<tr class="rowlink" onclick="openBranchDetail('${esc(r.branch).replace(/'/g,"\\'")}')">
       <td>${esc(r.branch)}</td><td class="n w">${esc(r.itemCode)}</td><td>${esc(r.itemName)}</td>
       <td class="n">${fmtNum(r.qty)}</td><td class="n">${fmt4(r.qty? r.netSales/r.qty:0)}</td>
       <td class="n">${fmt3(r.netSales)}</td><td class="n">${fmt3(r.cost)}</td><td class="n">${fmt3(r.grossProfit)}</td>
       <td class="n">${r.netSales? (r.grossProfit/r.netSales*100).toFixed(1):'0.0'}%</td>
     </tr>`).join('');
+    const dgrand = rows.reduce((acc,r)=>{acc.qty+=r.qty;acc.netSales+=r.netSales;acc.cost+=r.cost;acc.grossProfit+=r.grossProfit;return acc;},{qty:0,netSales:0,cost:0,grossProfit:0});
+    dhtml += `<tr class="totalrow"><td colspan="3">الإجمالي (${rows.length} سطر)</td><td class="n">${fmtNum(dgrand.qty)}</td><td class="n"></td><td class="n">${fmt3(dgrand.netSales)}</td><td class="n">${fmt3(dgrand.cost)}</td><td class="n">${fmt3(dgrand.grossProfit)}</td><td class="n">${dgrand.netSales?(dgrand.grossProfit/dgrand.netSales*100).toFixed(1):'0.0'}%</td></tr>`;
+    tbody.innerHTML = dhtml;
     return;
   }
   thead.innerHTML = DASH_THEAD_SUMMARY;
@@ -1548,22 +1551,28 @@ function renderBranchItemPage(){
   const hint = document.getElementById('branchItemEmptyHint');
   if(!rows.length){ tbody.innerHTML=''; hint.style.display='block'; return; }
   hint.style.display = 'none';
-  tbody.innerHTML = rows.map(r=>`<tr>
+  let html = rows.map(r=>`<tr>
     <td>${esc(r.branch)}</td><td class="n w">${esc(r.itemCode)}</td><td>${esc(r.itemName)}</td><td>${esc(r.group)}</td>
     <td class="n">${fmtNum(r.qty)}</td><td class="n">${fmt4(r.qty? r.netSales/r.qty:0)}</td><td class="n">${fmt3(r.netSales)}</td>
     <td class="n">${fmt3(r.cost)}</td><td class="n">${fmt3(r.grossProfit)}</td><td class="n">${r.netSales? (r.grossProfit/r.netSales*100).toFixed(1):'0.0'}%</td>
   </tr>`).join('');
+  const grand = rows.reduce((acc,r)=>{acc.qty+=r.qty;acc.netSales+=r.netSales;acc.cost+=r.cost;acc.grossProfit+=r.grossProfit;return acc;},{qty:0,netSales:0,cost:0,grossProfit:0});
+  html += `<tr class="totalrow"><td colspan="4">الإجمالي (${rows.length} سطر)</td><td class="n">${fmtNum(grand.qty)}</td><td class="n"></td><td class="n">${fmt3(grand.netSales)}</td><td class="n">${fmt3(grand.cost)}</td><td class="n">${fmt3(grand.grossProfit)}</td><td class="n">${grand.netSales?(grand.grossProfit/grand.netSales*100).toFixed(1):'0.0'}%</td></tr>`;
+  tbody.innerHTML = html;
 }
 
 /* ==================== لوحة 3: مقارنة الفروع ==================== */
 function renderComparePage(){
   const f = getActiveFilters();
   const branches = filteredBranches(f);
-  const totals = branches.map(b=>({branch:b.branch, ...branchTotals(b)})).sort((a,b)=>b.netSales-a.netSales).slice(0,15);
+  const allTotals = branches.map(b=>({branch:b.branch, ...branchTotals(b)})).sort((a,b)=>b.netSales-a.netSales);
+  const totals = allTotals.slice(0,15);
   const host = document.getElementById('compareBars');
   if(!totals.length){ host.innerHTML = '<div class="empty-hint">ما في بيانات كافية للمقارنة.</div>'; return; }
   const max = totals[0].netSales || 1;
-  host.innerHTML = totals.map(t=>{
+  const shownSum = totals.reduce((s,t)=>s+t.netSales,0);
+  const grandSum = allTotals.reduce((s,t)=>s+t.netSales,0);
+  let html = totals.map(t=>{
     const w = Math.max(2, t.netSales/max*100);
     return `<div style="display:flex; align-items:center; gap:10px; margin-bottom:10px; cursor:pointer;" onclick="openBranchDetail('${esc(t.branch).replace(/'/g,"\\'")}')">
       <div style="width:150px; font-size:12px; font-weight:600; color:var(--kd-ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(t.branch)}</div>
@@ -1573,6 +1582,11 @@ function renderComparePage(){
       <div style="width:110px; font-family:var(--k-font-mono); font-size:12px; direction:ltr; text-align:left;">${fmt3(t.netSales)}</div>
     </div>`;
   }).join('');
+  html += `<div style="display:flex; justify-content:space-between; margin-top:14px; padding-top:10px; border-top:1px solid var(--kd-line); font-size:12px; color:var(--kd-muted);">
+    <span>إجمالي ${totals.length} فرع الظاهرين: <b class="kd-en" style="color:var(--kd-ink);">${fmt3(shownSum)}</b></span>
+    <span>إجمالي كل الفروع (${allTotals.length}): <b class="kd-en" style="color:var(--kd-ink);">${fmt3(grandSum)}</b></span>
+  </div>`;
+  host.innerHTML = html;
 }
 
 /* ==================== لوحة 4: تفاصيل المستندات ==================== */
@@ -1590,11 +1604,23 @@ function renderDocsPage(){
     });
     const docs = Array.from(byDoc.values()).sort((a,b)=>String(a.docDate).localeCompare(String(b.docDate)));
     if(!docs.length){ host.innerHTML='<div class="empty-hint">ما في مستندات لهاي الفترة.</div>'; return; }
+    const dg = docs.reduce((acc,d)=>{acc.qty+=d.qty;acc.netSales+=d.netSales;return acc;},{qty:0,netSales:0});
     host.innerHTML = `<div class="kt-wrap"><table class="kt" id="docsTable"><thead><tr><th>النوع</th><th class="n">رقم المستند</th><th>التاريخ</th><th class="n">عدد الأصناف</th><th class="n">الكمية</th><th class="n">صافي المبيعات</th></tr></thead><tbody>`+
       docs.map(d=>`<tr><td>${esc(d.docType)}</td><td class="n">${esc(d.docNum)}</td><td>${dateStr(d.docDate)}</td><td class="n">${fmtNum(d.itemCount)}</td><td class="n">${fmtNum(d.qty)}</td><td class="n">${fmt3(d.netSales)}</td></tr>`).join('')
+      +`<tr class="totalrow"><td colspan="3">الإجمالي (${docs.length} مستند)</td><td class="n"></td><td class="n">${fmtNum(dg.qty)}</td><td class="n">${fmt3(dg.netSales)}</td></tr>`
       +`</tbody></table></div>`;
   } else {
-    const rows = TRANSFERS.filter(t=>t.branch===f.branch && inMonthRange(t.docDate, f.from||null, f.to||null) && (!f.item || t.itemCode===f.item) && (!f.itemGroup || itemGroupFromCode(t.itemCode)===f.itemGroup));
+    const rows = TRANSFERS.filter(t=>{
+      if(t.branch!==f.branch) return false;
+      if(!inMonthRange(t.docDate, f.from||null, f.to||null)) return false;
+      if(f.item && t.itemCode!==f.item) return false;
+      if(f.itemGroup && itemGroupFromCode(t.itemCode)!==f.itemGroup) return false;
+      const from011 = isWhs011(t.fromWhs), to011 = isWhs011(t.toWhs);
+      if(from011===to011) return false; // ولا واحد منهم 011، أو كلاهما 011 (سند غير متعلق فعلياً)
+      if(to011 && isWhs007(t.fromWhs)) return false; // تحويل تسوية 011↔007 — محصلة مستودع، مش تسليم فرع فعلي
+      if(!to011 && isWhs007(t.toWhs)) return false;
+      return true;
+    });
     const byDoc = new Map();
     rows.forEach(t=>{
       if(!byDoc.has(t.docNum)) byDoc.set(t.docNum, {docNum:t.docNum, docDate:t.docDate, fromWhs:t.fromWhs, toWhs:t.toWhs, itemCount:0, qty:0});
@@ -1602,8 +1628,10 @@ function renderDocsPage(){
     });
     const docs = Array.from(byDoc.values()).sort((a,b)=>String(a.docDate).localeCompare(String(b.docDate)));
     if(!docs.length){ host.innerHTML='<div class="empty-hint">ما في مستندات لهاي الفترة.</div>'; return; }
+    const dg = docs.reduce((acc,d)=>{acc.qty+=d.qty; acc.itemCount+=d.itemCount; return acc;},{qty:0,itemCount:0});
     host.innerHTML = `<div class="kt-wrap"><table class="kt" id="docsTable"><thead><tr><th class="n">رقم السند</th><th>التاريخ</th><th>من مستودع</th><th>الى مستودع</th><th class="n">عدد الأصناف</th><th class="n">الكمية الصافية</th></tr></thead><tbody>`+
       docs.map(d=>`<tr><td class="n">${esc(d.docNum)}</td><td>${dateStr(d.docDate)}</td><td>${esc(d.fromWhs)}</td><td>${esc(d.toWhs)}</td><td class="n">${fmtNum(d.itemCount)}</td><td class="n">${fmtNum(d.qty)}</td></tr>`).join('')
+      +`<tr class="totalrow"><td colspan="4">الإجمالي (${docs.length} سند)</td><td class="n">${fmtNum(dg.itemCount)}</td><td class="n">${fmtNum(dg.qty)}</td></tr>`
       +`</tbody></table></div>`;
   }
 }
@@ -1652,7 +1680,10 @@ function renderReconPage(){
   const hint = document.getElementById('reconEmptyHint');
   if(!rows.length){ tbody.innerHTML=''; hint.style.display='block'; return; }
   hint.style.display = 'none';
-  tbody.innerHTML = rows.map(r=>`<tr class="${Math.abs(r.diff)>0.01?'diffrow':''}"><td>${esc(r.group)}</td><td class="w">${esc(r.itemCode)}</td><td>${esc(r.itemName)}</td><td class="n">${fmtNum(r.trQty)}</td><td class="n">${fmtNum(r.slQty)}</td><td class="n">${Math.abs(r.diff)>0.01?`<span class="kd-chip bad"><i></i>${fmtNum(r.diff)}</span>`:fmtNum(r.diff)}</td></tr>`).join('');
+  let html = rows.map(r=>`<tr class="${Math.abs(r.diff)>0.01?'diffrow':''}"><td>${esc(r.group)}</td><td class="w">${esc(r.itemCode)}</td><td>${esc(r.itemName)}</td><td class="n">${fmtNum(r.trQty)}</td><td class="n">${fmtNum(r.slQty)}</td><td class="n">${Math.abs(r.diff)>0.01?`<span class="kd-chip bad"><i></i>${fmtNum(r.diff)}</span>`:fmtNum(r.diff)}</td></tr>`).join('');
+  const grand = rows.reduce((acc,r)=>{acc.trQty+=r.trQty; acc.slQty+=r.slQty; acc.diff+=r.diff; return acc;},{trQty:0,slQty:0,diff:0});
+  html += `<tr class="totalrow"><td colspan="3">الإجمالي (${rows.length} صنف)</td><td class="n">${fmtNum(grand.trQty)}</td><td class="n">${fmtNum(grand.slQty)}</td><td class="n">${fmtNum(grand.diff)}</td></tr>`;
+  tbody.innerHTML = html;
 }
 
 /* ==================== نافذة تفاصيل الفرع (Drill-down) ==================== */
