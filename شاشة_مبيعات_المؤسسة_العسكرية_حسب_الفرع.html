@@ -147,6 +147,13 @@ table.kt td.mono{font-family:var(--k-font-mono);direction:ltr;unicode-bidi:isola
 table.kt .ttl{font-weight:600;color:var(--kd-ink);}
 table.kt tr.totalrow td{background:var(--kd-surface-2); font-weight:700; border-top:2px solid var(--kd-line);}
 table.kt tr.diffrow td:first-child{box-shadow:inset 3px 0 0 var(--kd-bad);}
+/* فريز رمز الصنف واسم الصنف (أول عامودين) أثناء التمرير الأفقي — بعرض ثابت حتى يكون الإزاحة الجانبية دقيقة */
+table.kt th.freeze1, table.kt td.freeze1{position:sticky; right:0; z-index:2; width:88px; min-width:88px; max-width:88px; background:var(--kd-surface); box-shadow:-2px 0 4px rgba(20,26,42,.06);}
+table.kt th.freeze2, table.kt td.freeze2{position:sticky; right:88px; z-index:2; width:210px; min-width:210px; max-width:210px; white-space:normal; background:var(--kd-surface); box-shadow:-2px 0 4px rgba(20,26,42,.06);}
+table.kt th.freeze1, table.kt th.freeze2{z-index:3; background:var(--kd-surface-2);}
+table.kt tbody tr:hover td.freeze1, table.kt tbody tr:hover td.freeze2{background:var(--kd-surface-2);}
+table.kt tr.totalrow td.freeze1, table.kt tr.totalrow td.freeze2, table.kt tr.totalrow td.freeze12{background:var(--kd-surface-2);}
+table.kt td.freeze12{position:sticky; right:0; z-index:2; width:298px; min-width:298px; background:var(--kd-surface-2); box-shadow:-2px 0 4px rgba(20,26,42,.06);}
 .empty-hint{padding:30px; text-align:center; color:var(--kd-muted); font-size:12.5px;}
 
 /* ==================== شارات وحالات ==================== */
@@ -158,6 +165,17 @@ table.kt tr.diffrow td:first-child{box-shadow:inset 3px 0 0 var(--kd-bad);}
 .kd-chip.good{background:rgba(30,143,99,.12);color:var(--kd-good);}
 .kd-chip.mut{background:var(--kd-surface-2);color:var(--kd-muted);}
 .kd-chip.az{background:rgba(47,107,219,.1);color:var(--kd-azure);}
+
+/* ==================== مخطط ترتيب الفروع (Top/Bottom 10) ==================== */
+.rbar-row{display:flex;align-items:center;gap:10px;padding:5px 2px;border-radius:8px;cursor:pointer;}
+.rbar-row:hover{background:var(--kd-surface-2);}
+.rbar-row:focus-visible{outline:2px solid var(--kd-azure);outline-offset:1px;}
+.rbar-rank{flex:0 0 16px;font-family:var(--k-font-mono);font-size:10px;color:var(--kd-faint);text-align:center;}
+.rbar-name{flex:0 0 112px;font-size:12px;color:var(--kd-ink);text-align:end;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.rbar-track{flex:1;position:relative;height:22px;background:var(--kd-surface-2);border-radius:6px;min-width:0;}
+.rbar-fill{position:absolute;top:0;right:0;height:100%;border-radius:4px 0 0 4px;transition:width .5s cubic-bezier(.2,.7,.2,1);}
+.rbar-row:hover .rbar-fill{filter:brightness(1.1);}
+.rbar-value{position:absolute;top:50%;transform:translateY(-50%);font-family:var(--k-font-mono);font-size:10.5px;font-variant-numeric:tabular-nums;color:var(--kd-ink);white-space:nowrap;direction:ltr;unicode-bidi:isolate;pointer-events:none;}
 
 /* ==================== أزرار ==================== */
 .btn{border:none;border-radius:var(--kd-radius-sm);padding:8px 15px;font-size:12.5px;font-weight:600;cursor:pointer;transition:.15s;}
@@ -286,7 +304,7 @@ ORDER BY T0."DocNum"</pre>
 
     <div class="kd-panel">
       <h3>🧾 فواتير المبيعات والكلفة (كويري KLN-SAL-000004 لعملاء C0006588 وC0006751)</h3>
-      <div class="hint">الصق نتيجة الكويري كاملة (مع صف العناوين). إعادة لصق فاتورة/مرتجع برقم موجود بينفس النوع بيستبدل سطوره القديمة.</div>
+      <div class="hint">الصق نتيجة الكويري كاملة (مع صف العناوين). إعادة لصق فاتورة/مرتجع برقم موجود بينفس النوع بيستبدل سطوره القديمة. الكويري مستثني تلقائياً المرتجعات المباشرة غير المرتبطة بفاتورة أصلية (Copy From) — ما بتدخل بحساب المبيعات.</div>
       <details class="opt">
         <summary>عرض/نسخ كويري SAP</summary>
         <div class="toolbar" style="margin:8px 0;">
@@ -420,7 +438,7 @@ FROM (
 
     UNION ALL
 
-    -- ============ المرتجعات (مباشرة دائماً) ============
+    -- ============ المرتجعات (فقط المرتبطة بفاتورة أصلية Copy From — استثناء المرتجعات المباشرة غير المرتبطة بفاتورة) ============
     SELECT
         'مرتجع',
         T0."DocNum",
@@ -460,6 +478,7 @@ FROM (
     WHERE T0."DocDate" BETWEEN [%0] AND [%1]
       AND T0."CANCELED" = 'N'
       AND T0."CardCode" IN ('C0006588','C0006751')
+      AND T1."BaseType" = 13 -- استثناء المرتجعات المباشرة (مش Copy From فاتورة) — لا تدخل بحساب المبيعات
 
 ) X
 
@@ -470,6 +489,17 @@ ORDER BY "التاريخ", "نوع المستند", "رقم المستند"</pre
         <button class="btn btn-primary btn-sm" onclick="importSales()">استيراد فواتير المبيعات</button>
         <button class="btn btn-ghost btn-sm" onclick="document.getElementById('slPasteArea').value=''">مسح المربع</button>
         <span class="status-msg" id="slImportMsg"></span>
+      </div>
+    </div>
+
+    <div class="kd-panel" id="pendingGuessWrap" style="display:none;">
+      <h3>🔎 فروع مقترحة تلقائياً — تحتاج تأكيدك (<span id="pendingGuessCount">0</span>)</h3>
+      <div class="hint">استخرجنا هاي الأسماء تلقائياً من ريمارك السند، بس هي مش من لائحة الفروع الثابتة المعروفة — لهيك ما اعتمدناها كفرع نهائي بالتقرير. أكّد الفرع الصحيح (اقترحنا الأقرب شكلاً له) أو ارفض لو الاسم غلط — التأكيد بيغطي كل السندات الحالية والمستقبلية بنفس الاسم مباشرة.</div>
+      <div class="kt-wrap" style="max-height:260px;">
+        <table class="kt">
+          <thead><tr><th>الاسم المستخرج تلقائياً</th><th class="n">عدد السندات</th><th class="n">عدد الأسطر</th><th class="w">الفرع الصحيح</th><th class="w">إجراء</th></tr></thead>
+          <tbody id="pendingGuessTbody"></tbody>
+        </table>
       </div>
     </div>
 
@@ -660,12 +690,14 @@ let TRANSFERS = [];
 // {docType:'فاتورة'|'مرتجع', docNum, docDate(iso), cardCode, cardName, itemCode, itemName, qty, price, netUnitPrice, netSales, batchNo, unitCost, estCost, totalCost, grossProfit, deliveryStatus}
 let SALES = [];
 // كود الفرع الرقمي (من SAP، نفس نظام شاشة عميل المؤسسة) → اسمه
-const DEFAULT_BRANCH_CODE_MAP = {"1": "الكرامة", "10": "بني كنانة", "100": "الموقر", "101": "حي معصوم", "102": "عبد الله الرواحنة", "104": "القريقرة", "105": "الرئيسي", "106": "مغير الكرك", "107": "فقوع", "108": "محي", "109": "بصيرا", "11": "الرمثا", "110": "جرش الجديد", "111": "البادية الشمالية", "112": "الجفر", "12": "عجلون", "13": "سوف", "14": "الروابي", "15": "الطرة", "16": "سوق الفاروق", "17": "ساكب", "18": "عنجرة", "19": "مرج الحمام", "2": "اسواق طارق", "20": "السلط", "21": "السرو", "22": "صويلح", "23": "خالد", "24": "الحزام", "25": "ياجوز", "26": "المفرق", "27": "جعفر الطيار", "28": "القصر", "29": "هزاع المجالي", "3": "مجمع المقابلين", "30": "المزار الجنوبي", "31": "زيد بن الحارث", "32": "مؤتة", "33": "مادبا", "34": "سوق الرابية", "35": "سوق دير ابي سعيد", "36": "اسواق السلام", "37": "العيص", "38": "الطفيلة", "39": "القادسية", "4": "راس العين", "40": "وصفي التل الشهيد-اربد", "41": "الحارث بن عمير الازدي", "42": "اربد الشمالي", "43": "الشوبك", "44": "وادي موسى", "45": "الطيبة الشمالية", "46": "معان", "47": "خالد بن الوليد", "48": "العدنانية", "49": "راشد الزيود", "5": "شفا بدران", "50": "الصديق", "51": "الوفاء", "52": "كفرنجه", "53": "الوسطية", "54": "المزار الشمالي", "55": "منشية بني حسن", "56": "مثلث ارحابا", "57": "الاشرفية", "58": "الهاشمية", "59": "علان", "6": "مجمع الشهيد /سحاب", "60": "آيل", "61": "عوجان", "62": "الشونة الشمالية", "63": "غور الصافي", "64": "دير علا", "65": "الكريمة", "66": "الصبيحي", "67": "بلعما", "68": "القطرانة", "69": "الشونة الجنوبية", "7": "كفر يوبا", "70": "البتراء", "71": "النشامى-حسينية معان", "72": "الجيزة", "73": "ماركا", "74": "سوق مرصع", "75": "برما", "76": "الازرق", "77": "رحاب", "78": "مليح", "79": "ام العمد", "8": "الحصن", "80": "ام البساتين", "81": "ذيبان", "82": "الفاروق", "83": "الحسا", "84": "العقبة", "85": "جديتا", "86": "الطيبة", "87": "السعيدية", "88": "الخالدية", "89": "المنارة", "9": "عروس الشمال", "90": "سما السرحان", "91": "سوق صبحا", "92": "الريشة", "93": "القويرة", "94": "الديسة", "95": "اذرح", "96": "الفيصلية", "97": "الطيبة الجنوب", "98": "المدينة التدريبية -الزرقاء", "99": "سوق بدر الجديد"};
+const DEFAULT_BRANCH_CODE_MAP = {"1": "الكرامة", "10": "بني كنانة", "100": "الموقر", "101": "حي معصوم", "102": "عبد الله الرواحنة", "104": "القريقرة", "105": "الرئيسي", "106": "مغير الكرك", "107": "فقوع", "108": "محي", "109": "بصيرا", "11": "الرمثا", "110": "جرش الجديد", "111": "البادية الشمالية", "112": "الجفر", "12": "عجلون", "13": "سوف", "14": "الروابي", "15": "الطرة", "16": "سوق الفاروق", "17": "ساكب", "18": "عنجرة", "19": "مرج الحمام", "2": "اسواق طارق", "20": "السلط", "21": "السرو", "22": "صويلح", "23": "خالد", "24": "الحزام", "25": "ياجوز", "26": "المفرق", "27": "جعفر الطيار", "28": "القصر", "29": "هزاع المجالي", "3": "مجمع المقابلين", "30": "المزار الجنوبي", "31": "زيد بن الحارث", "32": "مؤتة", "33": "مادبا", "34": "سوق الرابية", "35": "سوق دير ابي سعيد", "36": "اسواق السلام", "37": "العيص", "38": "الطفيلة", "39": "القادسية", "4": "راس العين", "40": "وصفي التل الشهيد-اربد", "41": "الحارث بن عمير الازدي", "42": "اربد الشمالي", "43": "الشوبك", "44": "وادي موسى", "45": "الطيبة الشمالية", "46": "معان", "47": "خالد بن الوليد", "48": "العدنانية", "49": "راشد الزيود", "5": "شفا بدران", "50": "الصديق", "51": "الوفاء", "52": "كفرنجه", "53": "الوسطية", "54": "المزار الشمالي", "55": "منشية بني حسن", "56": "مثلث ارحابا", "57": "الاشرفية", "58": "الهاشمية", "59": "علان", "6": "مجمع الشهيد /سحاب", "60": "آيل", "61": "عوجان", "62": "الشونة الشمالية", "63": "غور الصافي", "64": "دير علا", "65": "الكريمة", "66": "الصبيحي", "67": "بلعما", "68": "القطرانة", "69": "الشونة الجنوبية", "7": "كفر يوبا", "70": "البتراء", "71": "النشامى-حسينية معان", "72": "الجيزة", "73": "ماركا", "74": "سوق مرصع", "75": "برما", "76": "الازرق", "77": "رحاب", "78": "مليح", "79": "ام العمد", "8": "الحصن", "80": "ام البساتين", "81": "ذيبان", "82": "الفاروق", "83": "الحسا", "84": "العقبة", "85": "جديتا", "86": "الطيبة", "87": "السعيدية", "88": "الخالدية", "89": "المنارة", "9": "عروس الشمال", "90": "سما السرحان", "91": "سوق صبحا", "92": "الريشة", "93": "القويرة", "94": "الديسة", "95": "اذرح", "96": "الفيصلية", "97": "الطيبة الجنوب", "98": "المدينة التدريبية -الزرقاء", "99": "سوق بدر الجديد", "113": "جاردنز"};
 let BRANCH_CODE_MAP = {};
 // تصحيح يدوي لفرع سند محدد بالرقم (لما ما نقدر نحدده تلقائياً): {docNum: 'اسم الفرع'}
 let BRANCH_DOC_OVERRIDES = {};
 // توحيد تهجئات مختلفة لنفس الفرع: {'الاسم كما ظهر':'الاسم الصحيح'}
 let BRANCH_RENAMES = {};
+// أسماء استُخرجت تلقائياً من الريمارك بس المستخدم رفضها (مش فرع صحيح) — ما نعيد اقتراحها
+let BRANCH_GUESS_REJECTED = {};
 
 const CUSTOMER_AQABA = 'C0006751';
 const CUSTOMER_AMMAN = 'C0006588';
@@ -701,7 +733,7 @@ function dateStr(iso){ return iso ? iso.split('-').reverse().join('/') : '—'; 
 
 /* ==================== تخزين محلي ==================== */
 function buildBackupObject(){
-  return {TRANSFERS, SALES, BRANCH_CODE_MAP, BRANCH_DOC_OVERRIDES, BRANCH_RENAMES};
+  return {TRANSFERS, SALES, BRANCH_CODE_MAP, BRANCH_DOC_OVERRIDES, BRANCH_RENAMES, BRANCH_GUESS_REJECTED};
 }
 // فحص فعلي (كتابة + قراءة + مقارنة) — بعض المتصفحات (خصوصاً بفتح الملف مباشرة file:// أو
 // بوضع التصفح الخاص) بتمنع localStorage بصمت، فما نعتمد على try/catch وبس، لازم نتأكد فعلاً
@@ -779,6 +811,7 @@ function applyLoadedData(d){
   if(d.BRANCH_CODE_MAP && typeof d.BRANCH_CODE_MAP==='object' && Object.keys(d.BRANCH_CODE_MAP).length) BRANCH_CODE_MAP = d.BRANCH_CODE_MAP;
   if(d.BRANCH_DOC_OVERRIDES && typeof d.BRANCH_DOC_OVERRIDES==='object') BRANCH_DOC_OVERRIDES = d.BRANCH_DOC_OVERRIDES;
   if(d.BRANCH_RENAMES && typeof d.BRANCH_RENAMES==='object') BRANCH_RENAMES = d.BRANCH_RENAMES;
+  if(d.BRANCH_GUESS_REJECTED && typeof d.BRANCH_GUESS_REJECTED==='object') BRANCH_GUESS_REJECTED = d.BRANCH_GUESS_REJECTED;
 }
 function downloadBackup(){
   const data = buildBackupObject();
@@ -958,17 +991,126 @@ function resolveBranchRaw(rec){
   }
   return {name:null, confidence:'none'};
 }
+// لائحة الفروع الثابتة المعروفة (من BRANCH_CODE_MAP) — النظام ما بيعتمد أي اسم فرع تلقائياً
+// خارج هاي اللائحة؛ أي اسم مستخرج من الريمارك ومو منها بيروح لطابور "يحتاج تأكيد"
+function getCanonicalBranchNames(){
+  return [...new Set(Object.values(BRANCH_CODE_MAP))];
+}
+// مسافة Levenshtein (عدد التعديلات الأدنى لتحويل a إلى b) — لاقتراح أقرب اسم فرع معروف
+function levenshtein(a,b){
+  a=String(a||''); b=String(b||'');
+  const m=a.length, n=b.length;
+  if(!m) return n; if(!n) return m;
+  const dp = Array.from({length:m+1}, (_,i)=>{ const row=new Array(n+1); row[0]=i; return row; });
+  for(let j=0;j<=n;j++) dp[0][j]=j;
+  for(let i=1;i<=m;i++) for(let j=1;j<=n;j++){
+    dp[i][j] = a[i-1]===b[j-1] ? dp[i-1][j-1] : 1+Math.min(dp[i-1][j], dp[i][j-1], dp[i-1][j-1]);
+  }
+  return dp[m][n];
+}
+function closestBranchMatch(name){
+  const norm = String(name||'').trim();
+  if(!norm) return null;
+  let best=null, bestDist=Infinity;
+  getCanonicalBranchNames().forEach(c=>{
+    const d = levenshtein(norm, c);
+    if(d<bestDist){ bestDist=d; best=c; }
+  });
+  if(!best) return null;
+  const ratio = bestDist / Math.max(norm.length, best.length, 1);
+  return ratio<=0.4 ? {name:best, distance:bestDist} : null;
+}
 function resolveAllBranches(){
+  const canonical = new Set(getCanonicalBranchNames());
   TRANSFERS.forEach(rec=>{
     if(BRANCH_DOC_OVERRIDES[rec.docNum]){
       rec.branch = applyBranchRename(BRANCH_DOC_OVERRIDES[rec.docNum]);
       rec.branchConfidence = 'override';
+      rec.branchGuess = null;
       return;
     }
     const r = resolveBranchRaw(rec);
-    rec.branch = r.name;
-    rec.branchConfidence = r.confidence;
+    if(r.name && (r.confidence==='code' || canonical.has(r.name))){
+      // اسم مؤكد: كود رقمي مباشر من الجدول، أو نص مطابق (أو مصحَّح برينيم) لاسم فرع معروف بالضبط
+      rec.branch = r.name;
+      rec.branchConfidence = r.confidence;
+      rec.branchGuess = null;
+    } else if(r.name){
+      // اسم استُخرج تلقائياً بس مش من لائحة الفروع المعروفة — ما نعتمده كفرع نهائي، يحتاج تأكيدك أول
+      rec.branch = null;
+      rec.branchGuess = r.name;
+      rec.branchConfidence = 'pending';
+    } else {
+      rec.branch = null;
+      rec.branchGuess = null;
+      rec.branchConfidence = 'none';
+    }
   });
+}
+// كل الأسماء المستخرجة تلقائياً (من الريمارك) اللي لسا محتاجة تأكيدك — مجمّعة حسب الاسم نفسه
+// (تأكيد واحد بيغطي كل السندات الحالية والمستقبلية بنفس الاسم، عبر BRANCH_RENAMES)
+function getPendingGuesses(){
+  const byGuess = new Map();
+  TRANSFERS.forEach(t=>{
+    if(t.branch || !t.branchGuess) return;
+    if(BRANCH_GUESS_REJECTED[t.branchGuess]) return;
+    const from011 = isWhs011(t.fromWhs), to011 = isWhs011(t.toWhs);
+    if(from011===to011) return;
+    if(to011 && isWhs007(t.fromWhs)) return;
+    if(!to011 && isWhs007(t.toWhs)) return;
+    if(!byGuess.has(t.branchGuess)) byGuess.set(t.branchGuess, {guess:t.branchGuess, docNums:new Set(), lines:0});
+    const g = byGuess.get(t.branchGuess);
+    g.docNums.add(t.docNum);
+    g.lines++;
+  });
+  return Array.from(byGuess.values())
+    .map(g=>({guess:g.guess, docCount:g.docNums.size, lines:g.lines, suggestion:closestBranchMatch(g.guess)}))
+    .sort((a,b)=> b.docCount-a.docCount);
+}
+function confirmBranchGuess(guess, chosenName){
+  chosenName = (chosenName||'').trim();
+  if(!chosenName){ alert('اختر الفرع الصحيح من اللائحة أول.'); return; }
+  BRANCH_RENAMES[guess] = chosenName;
+  resolveAllBranches();
+  saveLocal();
+  refreshAllFilters();
+  renderCurrentPage();
+}
+function rejectBranchGuess(guess){
+  BRANCH_GUESS_REJECTED[guess] = true;
+  resolveAllBranches();
+  saveLocal();
+  refreshAllFilters();
+  renderCurrentPage();
+}
+function renderPendingGuessTable(){
+  const wrap = document.getElementById('pendingGuessWrap');
+  const tbody = document.getElementById('pendingGuessTbody');
+  const countEl = document.getElementById('pendingGuessCount');
+  if(!wrap || !tbody) return;
+  const rows = getPendingGuesses();
+  countEl.textContent = rows.length;
+  wrap.style.display = rows.length ? 'block' : 'none';
+  if(!rows.length){ tbody.innerHTML=''; return; }
+  const branchNames = getCanonicalBranchNames().sort((a,b)=>a.localeCompare(b,'ar'));
+  tbody.innerHTML = rows.map(r=>{
+    const gEsc = esc(r.guess).replace(/'/g,"\\'");
+    return `<tr>
+    <td>${esc(r.guess)}</td>
+    <td class="n">${r.docCount}</td>
+    <td class="n">${r.lines}</td>
+    <td>
+      <select class="pgSelect">
+        <option value="">— اختر الفرع الصحيح —</option>
+        ${branchNames.map(b=>`<option value="${esc(b)}" ${r.suggestion && r.suggestion.name===b?'selected':''}>${esc(b)}${r.suggestion && r.suggestion.name===b?' (اقتراحنا)':''}</option>`).join('')}
+      </select>
+    </td>
+    <td style="white-space:nowrap;">
+      <button class="btn btn-primary btn-sm" onclick="confirmBranchGuess('${gEsc}', this.closest('tr').querySelector('.pgSelect').value)">✓ تأكيد</button>
+      <button class="btn btn-ghost btn-sm" onclick="rejectBranchGuess('${gEsc}')">✕ رفض</button>
+    </td>
+  </tr>`;
+  }).join('');
 }
 function setBranchOverride(docNum, name){
   name = (name||'').trim();
@@ -1003,6 +1145,7 @@ function getUnresolvedDocs(){
   const byDoc = new Map();
   TRANSFERS.forEach(t=>{
     if(t.branch) return;
+    if(t.branchGuess && !BRANCH_GUESS_REJECTED[t.branchGuess]) return; // له اقتراح لسا قيد التأكيد — بيظهر بطابور "فروع مقترحة" لا هون
     const from011 = isWhs011(t.fromWhs), to011 = isWhs011(t.toWhs);
     if(from011===to011) return; // ولا واحد منهم 011، أو كلاهما 011 (سند غير متعلق فعلياً)
     if(to011 && isWhs007(t.fromWhs)) return; // تحويل تسوية 011↔007 — محصلة مستودع، مش تسليم فرع فعلي، لا يحتاج تحديد فرع
@@ -1029,7 +1172,7 @@ function renderUnresolvedTable(){
     <td class="mono">${d.lines}</td>
     <td style="max-width:220px; white-space:normal; font-size:11px; color:var(--ink-soft);">${esc(d.remarks)||'—'}</td>
     <td>
-      <select onchange="if(this.value==='__manual__'){const v=prompt('اكتب اسم الفرع:'); if(v) setBranchOverride('${esc(d.docNum)}', v);} else if(this.value) setBranchOverride('${esc(d.docNum)}', this.value);">
+      <select onchange="if(this.value==='__manual__'){const v=(prompt('اكتب اسم الفرع:')||'').trim(); if(v && (getCanonicalBranchNames().includes(v) || confirm('هذا الاسم مش من لائحة الفروع المعروفة — متأكد إنه فرع صحيح ومش خطأ إملائي؟'))) setBranchOverride('${esc(d.docNum)}', v);} else if(this.value) setBranchOverride('${esc(d.docNum)}', this.value);">
         <option value="">— اختر —</option>
         ${branchNames.map(b=>`<option value="${esc(b)}">${esc(b)}</option>`).join('')}
         <option value="__manual__">+ اسم آخر يدوياً...</option>
@@ -1205,7 +1348,7 @@ function buildBranchReport(from, to){
 function branchTotals(b){
   let qty=0, netSales=0, cost=0, grossProfit=0, discount=0, itemCount=0, hasEstimated=false;
   b.items.forEach(it=>{ qty+=it.qty; netSales+=it.netSales; cost+=it.cost||0; grossProfit+=it.grossProfit||0; discount+=it.discount||0; itemCount++; if(it.estimated) hasEstimated=true; });
-  return {qty, netSales, cost, grossProfit, discount, itemCount, docCount:b.docNums.size, profitPct: netSales? (grossProfit/netSales*100):0, hasEstimated};
+  return {qty, netSales, cost, grossProfit, discount, itemCount, docCount: b.docNums ? b.docNums.size : 0, profitPct: netSales? (grossProfit/netSales*100):0, hasEstimated};
 }
 
 /* ==================== مطابقة الكميات: سندات التحويل مقابل فواتير المبيعات ==================== */
@@ -1531,6 +1674,7 @@ document.getElementById && document.addEventListener('DOMContentLoaded', ()=>{
 
 /* ==================== صفحة الاستيراد ==================== */
 function renderImportPage(){
+  renderPendingGuessTable();
   renderUnresolvedTable();
 }
 function copyQueryText(preId, msgId){
@@ -1685,6 +1829,19 @@ function renderDashPage(){
   html += `<tr class="totalrow"><td></td><td>الإجمالي (${totalsArr.length} فرع)</td><td class="n">${fmtNum(grand.docCount)}</td><td class="n">${fmtNum(grand.itemCount)}</td><td class="n">${fmtNum(grand.qty)}</td><td class="n">${fmt3(grand.netSales)}</td><td class="n">${fmt3(grand.discount)}</td><td class="n">—</td><td class="n">${fmt3(grand.netSales)}</td><td class="n">${fmt3(grand.cost)}</td><td class="n">${fmt3(grand.grossProfit)}</td><td class="n">${grand.netSales?(grand.grossProfit/grand.netSales*100).toFixed(1):'0.0'}%</td><td class="n">100%</td></tr>`;
   tbody.innerHTML = html;
 }
+function rbarRowHtml(rank, item, colorVar, maxVal){
+  // نحدد سقف 78% لأطول عمود حتى تضمن القيمة مساحة فاضية تعرض فيها بدون ما تنقص أو تتغطى
+  const pct = maxVal>0 ? Math.max(3, item.netSales/maxVal*78) : 0;
+  const title = esc(item.branch)+': '+fmt3(item.netSales);
+  return `<div class="rbar-row" tabindex="0" title="${title}" onclick="openBranchDetail('${esc(item.branch).replace(/'/g,"\\'")}')">
+    <span class="rbar-rank">${rank}</span>
+    <span class="rbar-name">${esc(item.branch)}</span>
+    <span class="rbar-track">
+      <span class="rbar-fill" style="width:${pct.toFixed(2)}%; background:${colorVar};"></span>
+      <span class="rbar-value" style="right:calc(${pct.toFixed(2)}% + 6px);">${fmt3(item.netSales)}</span>
+    </span>
+  </div>`;
+}
 function renderTopBottom(totalsArr){
   const host = document.getElementById('topBottomWrap');
   if(!host) return;
@@ -1692,14 +1849,13 @@ function renderTopBottom(totalsArr){
   const sorted = totalsArr.slice().sort((a,b)=>b.netSales-a.netSales);
   const top10 = sorted.slice(0,10);
   const bottom10 = sorted.slice(-10).reverse();
-  function listHtml(title, en, items, colorVar){
-    const rows = items.map((t,i)=>`<div class="rowlink" style="display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--kd-line); cursor:pointer;" onclick="openBranchDetail('${esc(t.branch).replace(/'/g,"\\'")}')">
-      <span style="font-size:12.5px; color:var(--kd-ink);">${i+1}. ${esc(t.branch)}</span>
-      <span class="kd-en" style="color:${colorVar};">${fmt3(t.netSales)}</span>
-    </div>`).join('') || '<div class="empty-hint" style="padding:10px;">لا يوجد</div>';
+  const maxTop = top10.reduce((m,t)=>Math.max(m,t.netSales),0);
+  const maxBottom = bottom10.reduce((m,t)=>Math.max(m,t.netSales),0);
+  function cardHtml(title, en, items, colorVar, maxVal){
+    const rows = items.map((t,i)=>rbarRowHtml(i+1, t, colorVar, maxVal)).join('') || '<div class="empty-hint" style="padding:10px;">لا يوجد</div>';
     return `<div class="kd-panel"><h3>${esc(title)} <span class="kd-en" style="margin-inline-start:6px;">${en}</span></h3>${rows}</div>`;
   }
-  host.innerHTML = listHtml('أعلى 10 فروع مبيعاً', 'TOP 10', top10, 'var(--kd-good)') + listHtml('أقل 10 فروع مبيعاً', 'BOTTOM 10', bottom10, 'var(--kd-bad)');
+  host.innerHTML = cardHtml('أعلى 10 فروع مبيعاً', 'TOP 10', top10, 'var(--kd-good)', maxTop) + cardHtml('أقل 10 فروع مبيعاً', 'BOTTOM 10', bottom10, 'var(--kd-bad)', maxBottom);
 }
 
 /* ==================== لوحة 2: الفروع والأصناف ==================== */
@@ -1911,7 +2067,7 @@ function openBranchDetail(branchName){
   document.getElementById('branchDetailTitle').textContent = branchName;
   const thead = document.querySelector('#branchDetailTable thead');
   thead.innerHTML = '<tr>'
-    + '<th class="w">رمزنا</th><th>اسم الصنف</th>'
+    + '<th class="w freeze1">رمزنا</th><th class="freeze2">اسم الصنف</th>'
     + sortTh('الكمية','branchDetailTable','qty','n')
     + '<th class="n">متوسط السعر</th>'
     + sortTh('المبيعات','branchDetailTable','netSales','n')
@@ -1931,8 +2087,8 @@ function openBranchDetail(branchName){
   items = applySort(items, 'branchDetailTable', (a,b2)=>b2.netSales-a.netSales);
   const t = branchTotals(b);
   document.getElementById('branchDetailSub').textContent = `${items.length} صنف · الكمية ${fmtNum(t.qty)} · المبيعات ${fmt3(t.netSales)} · الكلفة ${fmt3(t.cost)} · مجمل الربح ${fmt3(t.grossProfit)} (${t.profitPct.toFixed(1)}%)`;
-  let dhtml = items.map(it=>`<tr><td class="w">${esc(it.itemCode)}</td><td>${esc(it.itemName)}${it.estimated?estBadge('سعر تقديري (آخر سعر معروف) — فاتورة عمان لسا ما انسجلت لهاي الفترة'):''}</td><td class="n">${fmtNum(it.qty)}</td><td class="n">${fmt4(it.qty?it.netSales/it.qty:0)}</td><td class="n">${fmt3(it.netSales)}</td><td class="n">${fmt4(it.qty?it.cost/it.qty:0)}</td><td class="n">${fmt3(it.cost)}</td><td class="n">${fmt3(it.grossProfit)}</td><td class="n">${it.netSales?(it.grossProfit/it.netSales*100).toFixed(1):'0.0'}%</td></tr>`).join('');
-  dhtml += `<tr class="totalrow"><td colspan="2">الإجمالي (${items.length} صنف)</td><td class="n">${fmtNum(t.qty)}</td><td class="n"></td><td class="n">${fmt3(t.netSales)}</td><td class="n"></td><td class="n">${fmt3(t.cost)}</td><td class="n">${fmt3(t.grossProfit)}</td><td class="n">${t.profitPct.toFixed(1)}%</td></tr>`;
+  let dhtml = items.map(it=>`<tr><td class="w freeze1">${esc(it.itemCode)}</td><td class="freeze2">${esc(it.itemName)}${it.estimated?estBadge('سعر تقديري (آخر سعر معروف) — فاتورة عمان لسا ما انسجلت لهاي الفترة'):''}</td><td class="n">${fmtNum(it.qty)}</td><td class="n">${fmt4(it.qty?it.netSales/it.qty:0)}</td><td class="n">${fmt3(it.netSales)}</td><td class="n">${fmt4(it.qty?it.cost/it.qty:0)}</td><td class="n">${fmt3(it.cost)}</td><td class="n">${fmt3(it.grossProfit)}</td><td class="n">${it.netSales?(it.grossProfit/it.netSales*100).toFixed(1):'0.0'}%</td></tr>`).join('');
+  dhtml += `<tr class="totalrow"><td colspan="2" class="freeze12">الإجمالي (${items.length} صنف)</td><td class="n">${fmtNum(t.qty)}</td><td class="n"></td><td class="n">${fmt3(t.netSales)}</td><td class="n"></td><td class="n">${fmt3(t.cost)}</td><td class="n">${fmt3(t.grossProfit)}</td><td class="n">${t.profitPct.toFixed(1)}%</td></tr>`;
   tbody.innerHTML = dhtml;
   document.getElementById('branchDetailOverlay').classList.add('active');
 }
