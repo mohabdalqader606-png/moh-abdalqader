@@ -318,6 +318,21 @@ footer .mono{display:block; margin-top:6px; font-size:9.5px;}
 </head>
 <body>
 
+<div id="portalGate" style="position:fixed;inset:0;z-index:999;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:20px;">
+  <div style="width:100%;max-width:380px;background:linear-gradient(165deg,var(--surface),var(--surface-2));border:1px solid var(--border-strong);border-radius:var(--radius-lg);padding:32px 28px;box-shadow:var(--shadow-4);">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:22px;">
+      <div class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 20V9l8-5 8 5v11" stroke="#1B140A" stroke-width="2" stroke-linejoin="round"/><path d="M9 20v-6h6v6" stroke="#1B140A" stroke-width="2" stroke-linejoin="round"/></svg></div>
+      <div class="brand-text"><b>بوابة الكيلاني المؤسسية</b><span>KAYLANI · ENTERPRISE PLATFORM</span></div>
+    </div>
+    <div id="portalGateStatus" style="font-size:12px;color:var(--muted);margin-bottom:14px;line-height:1.7;">سجّل دخولك لعرض الأنظمة المتاحة لحسابك — كل مستخدم بيشوف بس الشاشات المصرّح له فيها.</div>
+    <label style="display:block;font-size:11.5px;color:var(--muted);margin-bottom:5px;">البريد الإلكتروني</label>
+    <input type="text" id="portalEmail" autocomplete="username" style="width:100%;box-sizing:border-box;background:var(--surface-2);border:1px solid var(--border);color:var(--ink);border-radius:9px;padding:9px 12px;font-size:13px;direction:ltr;text-align:left;margin-bottom:12px;">
+    <label style="display:block;font-size:11.5px;color:var(--muted);margin-bottom:5px;">كلمة السر</label>
+    <input type="password" id="portalPass" autocomplete="current-password" style="width:100%;box-sizing:border-box;background:var(--surface-2);border:1px solid var(--border);color:var(--ink);border-radius:9px;padding:9px 12px;font-size:13px;margin-bottom:16px;">
+    <button id="portalLoginBtn" style="width:100%;background:linear-gradient(120deg,var(--gold-strong),var(--gold) 55%,#A9814B);color:#1B140A;border:none;border-radius:11px;padding:11px;font-size:13px;font-weight:700;cursor:pointer;">دخول</button>
+  </div>
+</div>
+
 <canvas id="bgCanvas" aria-hidden="true"></canvas>
 <div class="bg-glow" aria-hidden="true"></div>
 <div class="bg-grid" aria-hidden="true"></div>
@@ -336,6 +351,7 @@ footer .mono{display:block; margin-top:6px; font-size:9.5px;}
     <button class="nav-search-btn" id="navSearchBtn" aria-label="فتح البحث السريع"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>ابحث عن تطبيق…<span class="kbd">Ctrl K</span></button>
     <div class="nav-actions">
       <button class="lib-btn" id="libBtnTop" aria-label="فتح مكتبة التطبيقات"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg>كل التطبيقات</button>
+      <button class="lib-btn" id="portalLogoutBtn" aria-label="تسجيل الخروج">خروج</button>
     </div>
   </div>
 </header>
@@ -435,8 +451,9 @@ footer .mono{display:block; margin-top:6px; font-size:9.5px;}
 
 <div class="toast-host" id="toastHost" aria-live="polite"></div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
-(function(){
+(async function(){
 "use strict";
 /* ============================================================
    APPLICATION REGISTRY — single source of truth.
@@ -485,6 +502,68 @@ var APPS = [
 ];
 var HOME_LIMIT = 12;
 
+/* ============ بوابة الدخول والصلاحيات (Supabase — نفس المشروع المستخدم بكل الشاشات) ============
+   كل مستخدم لازم يسجّل دخول قبل ما يشوف أي شي بالبوابة، وبعد الدخول بنعرضله بس التطبيقات
+   يلي عنده صلاحية عليها (allowed_apps بجدول profiles) — الباقي ما بيظهر إطلاقاً، حتى بالبحث
+   أو الخريطة أو "كل التطبيقات". لإعطاء مستخدم صلاحية شاشة معينة، ضيف قيمتها لعمود allowed_apps:
+     mil, mil-branch-sales, debt-aging, financials, procurement-intelligence, internal-audit-portal
+   ملاحظة أمان: هاي الشاشة (وكل شاشات المستودع) مواقع ثابتة (GitHub Pages) بدون سيرفر خلفي —
+   هاد التصفية بمستوى الواجهة فقط (تمنع التصفح العادي)، مش حماية مطلقة ضد شخص يفحص كود الصفحة
+   مباشرة. الحماية الحقيقية الوحيدة لكل شاشة هي نظام الدخول والصلاحيات الخاص فيها هي (4 من 6
+   شاشات عندها هيك نظام حالياً؛ شاشة التدقيق الداخلي و"قوائم الأعمال" ما عندهم أي تسجيل دخول
+   لسا — بالتالي فتح رابطها مباشرة بيدخل بدون قيد حتى لو مخفية عن البوابة). */
+var SUPABASE_URL = 'https://fxjdmqqmcgccocfbgopm.supabase.co';
+var SUPABASE_KEY = 'sb_publishable_NGtGX9SN8hXSoq-JRidGcQ_NfAyYCP5'; // مفتاح عام — الحماية عبر RLS
+var PORTAL_APP_GATE = {
+  "APP-SLS-01": "mil",
+  "APP-SLS-02": "mil-branch-sales",
+  "APP-FIN-02": "debt-aging",
+  "APP-FIN-01": "financials",
+  "APP-FIN-03": false, // مشروع خارجي منفصل (kfc-tax) بنظام دخول وصلاحيات خاص فيه — دائماً ظاهر بالبوابة
+  "APP-PRC-01": "procurement-intelligence",
+  "APP-AUD-01": "internal-audit-portal"
+};
+var portalSb = null;
+function gateStatus(msg, isErr){ var el=document.getElementById("portalGateStatus"); if(el){ el.textContent=msg; el.style.color = isErr? "var(--bad)" : "var(--muted)"; } }
+function hidePortalGate(){ var g=document.getElementById("portalGate"); if(g) g.style.display="none"; }
+function applyPortalGate(allowedApps){
+  var allowed = new Set(allowedApps||[]);
+  APPS = APPS.filter(function(a){
+    var gid = PORTAL_APP_GATE[a.id];
+    if(gid===false) return true;
+    if(!gid) return false;
+    return allowed.has(gid);
+  });
+}
+async function onPortalSignedIn(user){
+  gateStatus("جارٍ تحميل الأنظمة المتاحة لحسابك...");
+  var profQ = await portalSb.from("profiles").select("allowed_apps").eq("id", user.id).single();
+  applyPortalGate(profQ.data ? profQ.data.allowed_apps : []);
+  hidePortalGate();
+  portalBoot();
+}
+async function doPortalLogin(){
+  if(!portalSb){ gateStatus("تعذر الاتصال — تحقق من الإنترنت وحدّث الصفحة", true); return; }
+  var email=(document.getElementById("portalEmail").value||"").trim(), pass=document.getElementById("portalPass").value;
+  if(!email||!pass){ gateStatus("أدخل البريد وكلمة السر", true); return; }
+  var btn=document.getElementById("portalLoginBtn"); btn.disabled=true;
+  gateStatus("جارٍ الدخول...");
+  var res = await portalSb.auth.signInWithPassword({email:email, password:pass});
+  btn.disabled=false;
+  if(res.error){ gateStatus("فشل الدخول: تحقق من البريد وكلمة السر", true); return; }
+  await onPortalSignedIn(res.data.user);
+}
+document.getElementById("portalLoginBtn").onclick=doPortalLogin;
+document.getElementById("portalPass").addEventListener("keydown", function(e){ if(e.key==="Enter") doPortalLogin(); });
+document.getElementById("portalLogoutBtn").onclick=async function(){ if(portalSb) await portalSb.auth.signOut(); location.reload(); };
+if(window.supabase){
+  portalSb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  var sessQ = await portalSb.auth.getSession();
+  if(sessQ.data.session && sessQ.data.session.user){ await onPortalSignedIn(sessQ.data.session.user); }
+} else {
+  gateStatus("تعذر تحميل مكتبة الاتصال — تحقق من الإنترنت وحدّث الصفحة", true);
+}
+
 /* ============ local state: ONLY this key is used by the portal ============ */
 var STORAGE_KEY = "kaylani_portal_v1";
 function loadState(){ try{ var s = JSON.parse(localStorage.getItem(STORAGE_KEY)||"{}"); return { favorites:Array.isArray(s.favorites)?s.favorites:[], recents:Array.isArray(s.recents)?s.recents:[], usage:(s.usage&&typeof s.usage==="object")?s.usage:{} }; }catch(e){ return {favorites:[],recents:[],usage:{}}; } }
@@ -513,10 +592,13 @@ function iconSvg(key){ return '<svg viewBox="0 0 24 24" fill="none" stroke="curr
 var STAR = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 17.3l-5.6 3 1.1-6.2L3 9.5l6.3-.9L12 3l2.7 5.6 6.3.9-4.5 4.6 1.1 6.2z"/></svg>';
 var EYE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12z"/></svg>';
 var reduceMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-var primaryCats = Object.keys(CATEGORIES).filter(function(k){ return APPS.some(function(a){return a.category===k;}); });
-document.getElementById("metaAppCount").textContent = APPS.length;
-document.getElementById("metaCatCount").textContent = primaryCats.length;
-document.getElementById("appCountLabel").textContent = APPS.length + " تطبيقات متاحة — مصنّفة حسب مجال العمل";
+var primaryCats = [];
+function refreshPortalMeta(){
+  primaryCats = Object.keys(CATEGORIES).filter(function(k){ return APPS.some(function(a){return a.category===k;}); });
+  document.getElementById("metaAppCount").textContent = APPS.length;
+  document.getElementById("metaCatCount").textContent = primaryCats.length;
+  document.getElementById("appCountLabel").textContent = APPS.length + " تطبيقات متاحة — مصنّفة حسب مجال العمل";
+}
 function timeAgo(t){ var d=Date.now()-t, m=Math.floor(d/60000); if(m<1) return "الآن"; if(m<60) return "قبل "+m+" د"; var h=Math.floor(m/60); if(h<24) return "قبل "+h+" س"; var dd=Math.floor(h/24); return dd===1?"أمس":"قبل "+dd+" يوم"; }
 
 /* ============ card markup (shared by Application Center & Library) ============ */
@@ -749,8 +831,10 @@ document.addEventListener("visibilitychange", function(){ setRunning(!document.h
 window.addEventListener("scroll", function(){ setRunning(window.scrollY<window.innerHeight*1.5); }, {passive:true});
 if(!reduceMotion) requestAnimationFrame(draw); else draw(0);
 
-/* boot */
-refreshChips(); renderAppCenter(); renderQuickAccess(); renderMyApps(); renderNavigator();
+/* boot — بينفّذ فقط بعد ما بوابة الدخول تتأكد من صلاحيات المستخدم وتصفّي APPS (شوف onPortalSignedIn فوق) */
+function portalBoot(){
+  refreshPortalMeta(); refreshChips(); renderAppCenter(); renderQuickAccess(); renderMyApps(); renderNavigator();
+}
 })();
 </script>
 </body>
