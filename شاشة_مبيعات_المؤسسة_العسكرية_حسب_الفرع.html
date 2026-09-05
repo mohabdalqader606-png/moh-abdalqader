@@ -239,6 +239,9 @@ details.opt summary{cursor:pointer; font-weight:700; font-size:12.5px; color:var
   </div>
 </header>
 
+<div id="storageBanner" style="display:none; background:#7A1622; color:#fff; padding:10px 20px; font-size:12.5px; text-align:center; line-height:1.7;"></div>
+<div id="storageOkBar" style="display:none; background:var(--kd-surface-2); color:var(--kd-muted); padding:5px 20px; font-size:11px; text-align:center;"></div>
+
 <div class="app-shell">
 <nav class="ksh-sb" id="kshSidebar" aria-label="التنقل الرئيسي">
   <div class="ksh-sb-top"><span class="t">NAVIGATION · 3 GROUPS</span></div>
@@ -699,14 +702,49 @@ function dateStr(iso){ return iso ? iso.split('-').reverse().join('/') : '—'; 
 function buildBackupObject(){
   return {TRANSFERS, SALES, BRANCH_CODE_MAP, BRANCH_DOC_OVERRIDES, BRANCH_RENAMES};
 }
+// فحص فعلي (كتابة + قراءة + مقارنة) — بعض المتصفحات (خصوصاً بفتح الملف مباشرة file:// أو
+// بوضع التصفح الخاص) بتمنع localStorage بصمت، فما نعتمد على try/catch وبس، لازم نتأكد فعلاً
+function checkStorageAvailable(){
+  try{
+    const k = '__storage_test__'+Date.now();
+    localStorage.setItem(k, '1');
+    const ok = localStorage.getItem(k) === '1';
+    localStorage.removeItem(k);
+    return ok;
+  }catch(e){ return false; }
+}
+function showStorageBanner(msg){
+  const el = document.getElementById('storageBanner');
+  if(!el) return;
+  el.textContent = msg;
+  el.style.display = msg ? 'block' : 'none';
+}
+function showStorageOk(msg){
+  const el = document.getElementById('storageOkBar');
+  if(!el) return;
+  el.textContent = msg;
+  el.style.display = 'block';
+}
 function saveLocal(){
+  if(!checkStorageAvailable()){
+    showStorageBanner('⚠ تعذر حفظ البيانات محلياً بهالمتصفح — التخزين المحلي (localStorage) محجوب. الأسباب الشائعة: فتحت الملف بوضع تصفح خاص/متخفي، أو متصفحك (خصوصاً Safari) بيمنع التخزين لملف مفتوح مباشرة من الجهاز (file://). الحل: افتح الملف بوضع عادي (مو خاص)، أو جرّب متصفح Chrome، أو أنجز إعداد الحساب السحابي (Supabase) حتى يصير الحفظ عالسيرفر مباشرة بدل المتصفح.');
+    return;
+  }
+  showStorageBanner('');
   try{
     localStorage.setItem(STORAGE_KEY, JSON.stringify(buildBackupObject()));
     localStorage.setItem(SAVED_AT_KEY, new Date().toISOString());
-  }catch(e){ console.warn('تعذر الحفظ المحلي', e); }
+    showStorageOk('✔ آخر حفظ محلي بهالمتصفح: '+new Date().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit',second:'2-digit'})+' — '+TRANSFERS.length+' سطر تحويل، '+SALES.length+' سطر مبيعات');
+  }catch(e){
+    showStorageBanner('⚠ فشل الحفظ المحلي فعلياً رغم توفر التخزين — على الأغلب المساحة المخصصة للمتصفح امتلأت (بيانات كبيرة جداً). جرّب صدّر نسخة احتياطية (زر "💾 نسخة احتياطية") فوراً قبل ما تكمّل، وامسح بيانات قديمة إذا أمكن.');
+    console.warn('تعذر الحفظ المحلي', e);
+  }
   queueCloudSave();
 }
 function loadLocal(){
+  if(!checkStorageAvailable()){
+    showStorageBanner('⚠ التخزين المحلي (localStorage) محجوب بهالمتصفح — أي بيانات تستوردها ما رح تتحفظ بعد إغلاق الصفحة إلا إذا أنجزت إعداد الحساب السحابي (Supabase). راجع تعليق أعلى الملف لخطوات الإعداد.');
+  }
   IS_FRESH_LOAD = !localStorage.getItem(STORAGE_KEY);
   try{
     const raw = localStorage.getItem(STORAGE_KEY);
