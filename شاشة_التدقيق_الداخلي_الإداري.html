@@ -690,6 +690,7 @@
       </div>
       <div style="display:flex;gap:8px;">
         <button class="btn btn-ghost" id="execSummaryBtn">📄 ملخص تنفيذي</button>
+        <button class="btn btn-ghost" id="respReportBtn" title="تقرير الملاحظات لكل مسؤول — بدون درجة الخطورة، للطباعة أو الإرسال بالبريد">👤 تقرير المسؤول</button>
         <button class="btn btn-ghost" id="repeatFindingsBtn">🔁 الملاحظات المتكررة</button>
         <button class="btn btn-primary" id="addFindingBtn">+ إضافة ملاحظة</button>
       </div>
@@ -1015,7 +1016,7 @@
   </div>
 </div>
 
-<footer>عمل بلا اتصال بالإنترنت — البيانات محفوظة محلياً على هذا الجهاز فقط عبر المتصفح. — الإصدار v2.0 (Internal Audit Management System + GRC + Executive Analytics Dashboard)</footer>
+<footer>عمل بلا اتصال بالإنترنت — البيانات محفوظة محلياً على هذا الجهاز فقط عبر المتصفح. — الإصدار v2.1 (Internal Audit Management System + GRC + Executive Analytics Dashboard — تقرير المسؤول)</footer>
 
 <!-- TASK MODAL -->
 <div class="overlay" id="taskOverlay">
@@ -1286,6 +1287,48 @@
     <div class="modal-actions">
       <div></div>
       <button class="btn btn-ghost" id="cancelQPicker">إغلاق</button>
+    </div>
+  </div>
+</div>
+
+<!-- RESPONSIBLE REPORT MODAL -->
+<div class="overlay" id="respReportOverlay">
+  <div class="modal">
+    <h2>تقرير الملاحظات لكل مسؤول</h2>
+    <p class="hint" style="margin:0 0 12px;color:var(--muted);font-size:12.5px;">تقرير رسمي بالملاحظات الموجهة لمسؤول واحد، بدون درجة الخطورة، للطباعة/حفظ PDF أو إرساله بالبريد وتسجيله في المراسلات.</p>
+    <div class="row2">
+      <div class="field">
+        <label>المسؤول</label>
+        <select id="rrResponsible"></select>
+      </div>
+      <div class="field">
+        <label>بريد المسؤول (يُحفظ للمرة القادمة)</label>
+        <input type="email" id="rrEmail" placeholder="name@example.com" dir="ltr">
+      </div>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>نطاق الملاحظات</label>
+        <select id="rrScope">
+          <option value="open">المفتوحة فقط (مفتوحة / قيد المعالجة / بانتظار إعادة الاختبار)</option>
+          <option value="all">كل الملاحظات بما فيها المغلقة</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>موعد الرد المطلوب (لتسجيل المتابعة)</label>
+        <input type="date" id="rrDue">
+      </div>
+    </div>
+    <div class="field">
+      <label>ملاحظة تمهيدية في التقرير والبريد (اختياري)</label>
+      <textarea id="rrIntro" rows="2" placeholder="مثال: نرجو الرد على الملاحظات أدناه خلال المدة المحددة مع إرفاق المستندات المؤيدة."></textarea>
+    </div>
+    <div id="rrPreview" style="font-size:12.5px;color:var(--muted);margin:4px 0 10px;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" id="rrCloseBtn">إغلاق</button>
+      <button class="btn btn-ghost" id="rrLogBtn" title="يسجّل المراسلة في شاشة المراسلات مع أرقام الملاحظات وموعد الرد">📝 تسجيل في المراسلات</button>
+      <button class="btn btn-ghost" id="rrMailBtn" title="يفتح برنامج البريد برسالة جاهزة (أرفق ملف PDF المحفوظ من الطباعة)">✉️ فتح البريد</button>
+      <button class="btn btn-primary" id="rrPrintBtn">🖨️ طباعة / حفظ PDF</button>
     </div>
   </div>
 </div>
@@ -2063,7 +2106,7 @@ const LIBRARY = [
 
 const DEFAULT_HEALTH_WEIGHTS = { planExec:25, findingsClosure:20, riskTreatment:20, timeliness:15, coverage:10, docQuality:10 };
 function defaultSettings(){
-  return {materialityGlobal:null, materialityByCategory:{}, materialityBasis:"", materialityNotes:"", healthScoreWeights: {...DEFAULT_HEALTH_WEIGHTS}};
+  return {materialityGlobal:null, materialityByCategory:{}, materialityBasis:"", materialityNotes:"", healthScoreWeights: {...DEFAULT_HEALTH_WEIGHTS}, responsibleEmails:{}};
 }
 
 let DB = loadDB();
@@ -2091,6 +2134,7 @@ function loadDB(){
       if(!db.evidence) db.evidence = [];
       if(!db.settings) db.settings = defaultSettings();
       if(!db.settings.healthScoreWeights) db.settings.healthScoreWeights = {...DEFAULT_HEALTH_WEIGHTS};
+      if(!db.settings.responsibleEmails) db.settings.responsibleEmails = {};
       return db;
     }
   }catch(e){}
@@ -3820,6 +3864,162 @@ document.getElementById("execSummaryBtn").onclick = ()=>{
   w.document.write(html);
   w.document.close();
 };
+
+/* ===================== تقرير المسؤول — ملاحظات كل مسؤول بدون درجة الخطورة (طباعة / بريد / تسجيل مراسلة) ===================== */
+const RR_UNASSIGNED = "— غير محدد —";
+function rrGroups(scope){
+  const src = scope==="all" ? DB.findings : DB.findings.filter(f=>f.status!=="closed");
+  const g = {};
+  src.forEach(f=>{ const k=(f.responsible||"").trim()||RR_UNASSIGNED; (g[k]=g[k]||[]).push(f); });
+  Object.values(g).forEach(list=>list.sort((a,b)=>(a.targetDate||"9999").localeCompare(b.targetDate||"9999") || a.refCode.localeCompare(b.refCode)));
+  return g;
+}
+function rrSelection(){
+  const name = document.getElementById("rrResponsible").value;
+  const scope = document.getElementById("rrScope").value;
+  const list = rrGroups(scope)[name]||[];
+  return {name, scope, list, email:document.getElementById("rrEmail").value.trim(), due:document.getElementById("rrDue").value, intro:document.getElementById("rrIntro").value.trim()};
+}
+function rrFillResponsibles(){
+  const sel = document.getElementById("rrResponsible");
+  const keep = sel.value;
+  const g = rrGroups(document.getElementById("rrScope").value);
+  const names = Object.keys(g).sort((a,b)=> a===RR_UNASSIGNED?1: b===RR_UNASSIGNED?-1: a.localeCompare(b,"ar"));
+  sel.innerHTML = names.length ? names.map(n=>`<option value="${escapeHtml(n)}">${escapeHtml(n)} (${g[n].length})</option>`).join("") : `<option value="">لا توجد ملاحظات في هذا النطاق</option>`;
+  if(keep && names.includes(keep)) sel.value = keep;
+  rrOnResponsibleChange();
+}
+function rrOnResponsibleChange(){
+  const {name, list} = rrSelection();
+  const saved = (DB.settings.responsibleEmails||{})[name];
+  document.getElementById("rrEmail").value = saved||"";
+  const earliest = list.map(f=>f.targetDate).filter(Boolean).sort()[0];
+  if(!document.getElementById("rrDue").value && earliest) document.getElementById("rrDue").value = earliest;
+  const pv = document.getElementById("rrPreview");
+  pv.innerHTML = list.length
+    ? `سيتضمن التقرير <b>${list.length}</b> ملاحظة: ${list.slice(0,8).map(f=>escapeHtml(f.refCode)).join("، ")}${list.length>8?" …":""} — <b>بدون عمود الخطورة</b>.`
+    : "لا توجد ملاحظات لهذا المسؤول في النطاق المحدد.";
+}
+function rrSaveEmail(name,email){
+  if(!name) return;
+  DB.settings.responsibleEmails = DB.settings.responsibleEmails||{};
+  if(email) DB.settings.responsibleEmails[name]=email; else delete DB.settings.responsibleEmails[name];
+  saveDB();
+}
+function rrReportHTML(sel){
+  const {name, list, intro, due} = sel;
+  const rows = list.map((f,i)=>`<tr>
+      <td>${i+1}</td>
+      <td class="ref">${escapeHtml(f.refCode)}</td>
+      <td><b>${escapeHtml(f.title)}</b>${f.desc? `<div class="d">${escapeHtml(f.desc)}</div>`:""}</td>
+      <td>${escapeHtml(f.recommendation||"—")}</td>
+      <td>${escapeHtml(f.managementResponse||"—")}</td>
+      <td>${catMeta(f.category).name}</td>
+      <td class="dt">${f.targetDate? fmtDate(f.targetDate):"—"}</td>
+      <td>${FINDING_STATUS_META[f.status]? FINDING_STATUS_META[f.status].label : escapeHtml(f.status||"")}</td>
+    </tr>`).join("");
+  return `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8">
+  <title>ملاحظات التدقيق — ${escapeHtml(name)}</title>
+  <style>
+    body{font-family:"Segoe UI",Tahoma,Arial,sans-serif;padding:32px;color:#1C2B3A;}
+    h1{color:#0F2F4F;font-size:20px;margin:0 0 2px 0;}
+    .sub{color:#6B7C8D;font-size:13px;margin-bottom:4px;}
+    .meta{display:flex;gap:22px;flex-wrap:wrap;margin:16px 0 6px;font-size:13px;}
+    .meta b{color:#0F2F4F;}
+    .intro{background:#F4F6F9;border-right:4px solid #CBA467;border-radius:8px;padding:10px 14px;margin:14px 0;font-size:13.5px;line-height:1.8;}
+    table{width:100%;border-collapse:collapse;font-size:12.5px;margin-top:10px;}
+    th,td{border:1px solid #CBD5E1;padding:7px 9px;text-align:right;vertical-align:top;}
+    th{background:#0F2F4F;color:#fff;font-weight:600;}
+    tr:nth-child(even) td{background:#F4F6F9;}
+    td .d{color:#4B5B6B;font-size:12px;margin-top:3px;line-height:1.6;}
+    td.ref{font-family:Consolas,Menlo,monospace;direction:ltr;text-align:right;white-space:nowrap;}
+    td.dt{white-space:nowrap;}
+    .sign{display:flex;justify-content:space-between;margin-top:40px;font-size:13px;}
+    .sign div{width:40%;border-top:1px solid #94A3B8;padding-top:6px;text-align:center;color:#475569;}
+    .printbar{margin-bottom:20px;display:flex;gap:10px;}
+    .printbar button{background:#0F2F4F;color:#fff;border:none;border-radius:8px;padding:9px 18px;font-size:13.5px;cursor:pointer;font-weight:600;}
+    @media print{ .printbar{display:none;} body{padding:12px;} }
+  </style></head><body>
+  <div class="printbar"><button onclick="window.print()">🖨️ طباعة / حفظ PDF</button></div>
+  <h1>ملاحظات التدقيق الداخلي الموجهة إلى: ${escapeHtml(name)}</h1>
+  <div class="sub">مركز الكيلاني للأغذية — قسم التدقيق الداخلي</div>
+  <div class="meta"><span>تاريخ التقرير: <b>${fmtDate(todayStr())}</b></span><span>عدد الملاحظات: <b>${list.length}</b></span>${due? `<span>موعد الرد المطلوب: <b>${fmtDate(due)}</b></span>`:""}</div>
+  ${intro? `<div class="intro">${escapeHtml(intro).replace(/\n/g,"<br>")}</div>`:""}
+  <table><thead><tr><th>#</th><th>المرجع</th><th>الملاحظة</th><th>التوصية</th><th>رد الإدارة</th><th>القسم</th><th>الموعد المستهدف</th><th>الحالة</th></tr></thead>
+  <tbody>${rows || `<tr><td colspan="8" style="text-align:center;color:#6B7C8D;">لا توجد ملاحظات</td></tr>`}</tbody></table>
+  <div class="sign"><div>المدقق الداخلي</div><div>المسؤول: ${escapeHtml(name)}</div></div>
+  </body></html>`;
+}
+function rrMailText(sel){
+  const {name, list, intro, due} = sel;
+  const lines = [];
+  lines.push(`السلام عليكم ${name===RR_UNASSIGNED?"":name}،`.trim());
+  lines.push("");
+  if(intro) { lines.push(intro); lines.push(""); }
+  lines.push(`نرفق لكم ملاحظات التدقيق الداخلي الموجهة إليكم (${list.length} ملاحظة)${due? ` — موعد الرد المطلوب: ${fmtDate(due)}`:""}:`);
+  lines.push("");
+  list.forEach((f,i)=>{
+    lines.push(`${i+1}) ${f.refCode} — ${f.title}`);
+    if(f.recommendation) lines.push(`   التوصية: ${f.recommendation}`);
+    if(f.targetDate) lines.push(`   الموعد المستهدف: ${fmtDate(f.targetDate)}`);
+    lines.push("");
+  });
+  lines.push("التقرير الكامل مرفق بصيغة PDF.");
+  lines.push("");
+  lines.push("قسم التدقيق الداخلي — مركز الكيلاني للأغذية");
+  return lines.join("\n");
+}
+function rrMailto(sel){
+  const subject = `ملاحظات التدقيق الداخلي — ${sel.name} — ${fmtDate(todayStr())}`;
+  let body = rrMailText(sel);
+  if(body.length>1800) body = body.slice(0,1750)+"\n… (بقية الملاحظات في ملف PDF المرفق)";
+  return `mailto:${encodeURIComponent(sel.email||"")}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+}
+function rrLogEmail(sel){
+  const subject = `ملاحظات التدقيق الداخلي — ${sel.name}`;
+  const payload = {
+    id: uid(), refCode: nextRefCode("EM","email"), subject, type:"finding",
+    to: sel.email ? `${sel.name} <${sel.email}>` : sel.name, cc:"", date: todayStr(), due: sel.due||"", status:"sent", category:"gov",
+    refs: sel.list.map(f=>f.refCode).join(", "),
+    summary: `إبلاغ ${sel.list.length} ملاحظة بدون درجة الخطورة (تقرير المسؤول).${sel.intro? " "+sel.intro:""}`,
+    reply:"", replyDate:"", link:"",
+  };
+  DB.emails.push(payload); saveDB();
+  if(typeof renderEmails==="function"){ try{ renderEmails(); }catch(_){ } }
+  return payload;
+}
+document.getElementById("respReportBtn").onclick = ()=>{
+  document.getElementById("rrDue").value = "";
+  document.getElementById("rrIntro").value = "";
+  rrFillResponsibles();
+  document.getElementById("respReportOverlay").classList.add("active");
+};
+document.getElementById("rrScope").onchange = rrFillResponsibles;
+document.getElementById("rrResponsible").onchange = rrOnResponsibleChange;
+document.getElementById("rrCloseBtn").onclick = ()=> document.getElementById("respReportOverlay").classList.remove("active");
+document.getElementById("rrPrintBtn").onclick = ()=>{
+  const sel = rrSelection();
+  if(!sel.list.length){ alert("لا توجد ملاحظات لهذا المسؤول في النطاق المحدد"); return; }
+  rrSaveEmail(sel.name, sel.email);
+  const w = window.open("", "_blank");
+  if(!w){ alert("المتصفح منع فتح نافذة التقرير — اسمح بالنوافذ المنبثقة لهذه الصفحة"); return; }
+  w.document.write(rrReportHTML(sel)); w.document.close();
+};
+document.getElementById("rrMailBtn").onclick = ()=>{
+  const sel = rrSelection();
+  if(!sel.list.length){ alert("لا توجد ملاحظات لهذا المسؤول في النطاق المحدد"); return; }
+  if(!sel.email && !confirm("لم يُدخل بريد المسؤول — فتح رسالة بدون عنوان مستلم؟")) return;
+  rrSaveEmail(sel.name, sel.email);
+  window.location.href = rrMailto(sel);
+};
+document.getElementById("rrLogBtn").onclick = ()=>{
+  const sel = rrSelection();
+  if(!sel.list.length){ alert("لا توجد ملاحظات لهذا المسؤول في النطاق المحدد"); return; }
+  rrSaveEmail(sel.name, sel.email);
+  const p = rrLogEmail(sel);
+  alert(`تم تسجيل المراسلة ${p.refCode} في شاشة المراسلات (${sel.list.length} ملاحظة${sel.due? "، موعد الرد "+fmtDate(sel.due):""}).`);
+};
+
 
 /* ===================== SETTINGS: MATERIALITY ===================== */
 function renderSettings(){
