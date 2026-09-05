@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>قوائم الأعمال — إدارة المهام</title>
+<!--
+  إعداد Supabase مطلوب مرة وحدة قبل ما هاي الشاشة تشتغل (نفس مشروع باقي شاشات المستودع):
+  update profiles set allowed_apps = coalesce(allowed_apps, '{}') || '{business-lists}'
+    where id = (select id from auth.users where email = 'الحساب@مثال.com');
+-->
 <style>
   :root{
     --navy:#152A4A; --navy-deep:#0E1E36; --paper:#F4F6F9; --card:#FFFFFF; --line:#E1E6EE;
@@ -91,16 +96,43 @@
   .list-chip .x:hover{color:var(--crimson);}
   .add-list{display:flex; gap:6px; align-items:center;}
   .add-list input{width:150px;}
+  #loginView{max-width:400px; margin:70px auto; background:#fff; border:1px solid var(--line); border-radius:14px; padding:32px 30px; box-shadow:0 10px 30px -18px rgba(21,42,74,.25);}
+  #loginView h2{margin:0 0 4px; font-size:18px; color:var(--navy);}
+  #loginView .hint{color:var(--ink-soft); font-size:12.5px; line-height:1.7; margin-bottom:16px;}
+  #loginView label{display:block; font-size:12px; font-weight:600; margin:12px 0 5px;}
+  #loginView input{width:100%; padding:8px 10px; border:1.5px solid var(--line); border-radius:9px; font-family:var(--disp); font-size:13px;}
+  #loginView button{width:100%; margin-top:16px; padding:11px;}
+  .status-msg{font-size:12px; display:block;}
+  .status-msg.ok{color:var(--teal);} .status-msg.err{color:var(--crimson);}
+  .userbox{display:flex; align-items:center; gap:10px; color:#B8C4DA; font-size:11.5px;}
+  .userbox b{display:block; color:#fff; font-size:12.5px;}
+  .userbox button{background:rgba(255,255,255,.08); color:#fff; border:1px solid rgba(255,255,255,.2); padding:6px 12px; font-size:11.5px;}
 </style>
 </head>
 <body>
 
+<div id="loginView">
+  <h2>تسجيل الدخول</h2>
+  <div class="hint">قوائم الأعمال — مركز الكيلاني للأغذية. الدخول بالبريد وكلمة السر (لا يوجد تسجيل ذاتي — راجع المدير لإنشاء حساب أو منح صلاحية).</div>
+  <label>البريد الإلكتروني</label>
+  <input type="text" id="loginEmail" autocomplete="username" style="direction:ltr; text-align:left;">
+  <label>كلمة السر</label>
+  <input type="password" id="loginPass" autocomplete="current-password" onkeydown="if(event.key==='Enter') doLogin()">
+  <button class="btn-primary" id="loginBtn" onclick="doLogin()">دخول</button>
+  <div class="status-msg" id="loginMsg" style="margin-top:10px;"></div>
+</div>
+
+<div id="appView" style="display:none;">
 <header class="topbar">
   <div class="topbar-inner">
     <div>
       <div class="eyebrow">إدارة المهام اليومية</div>
       <h1>قوائم الأعمال</h1>
       <div class="sub">أضف، رتّب، وتابع مهامك ضمن قوائم متعددة — مع أولوية وتاريخ استحقاق وحالة إنجاز.</div>
+    </div>
+    <div class="userbox" id="userbox" style="display:none;">
+      <div><b id="uName"></b><span id="uRole"></span></div>
+      <button onclick="doLogout()">خروج</button>
     </div>
   </div>
 </header>
@@ -169,7 +201,57 @@
 
   </section>
 </main>
+</div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+/* ==================== تسجيل الدخول (Supabase Auth) — نفس المشروع المستخدم بباقي شاشات المستودع ==================== */
+const APP_ID = 'business-lists';
+const SUPABASE_URL = 'https://fxjdmqqmcgccocfbgopm.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_NGtGX9SN8hXSoq-JRidGcQ_NfAyYCP5'; // مفتاح عام — الحماية عبر RLS
+let sb = null, curUser = null, curProfile = null, roleEdit = false, isAdmin = false;
+function flash(elId, msg, ok){
+  const el = document.getElementById(elId);
+  if(!el) return;
+  el.textContent = msg; el.className = 'status-msg ' + (ok?'ok':'err');
+}
+async function doLogin(){
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass = document.getElementById('loginPass').value;
+  if(!email || !pass){ flash('loginMsg','أدخل البريد وكلمة السر', false); return; }
+  document.getElementById('loginBtn').disabled = true;
+  flash('loginMsg','جارٍ الدخول...', true);
+  const {data, error} = await sb.auth.signInWithPassword({email, password: pass});
+  document.getElementById('loginBtn').disabled = false;
+  if(error){ flash('loginMsg','فشل الدخول: تحقق من البريد وكلمة السر', false); return; }
+  await onSignedIn(data.user);
+}
+async function doLogout(){ await sb.auth.signOut(); location.reload(); }
+async function onSignedIn(user){
+  curUser = user;
+  const {data:prof} = await sb.from('profiles').select('*').eq('id', user.id).single();
+  curProfile = prof || {full_name:user.email, role:'viewer', allowed_apps:[]};
+  if(!(curProfile.allowed_apps||[]).includes(APP_ID)){
+    await sb.auth.signOut();
+    flash('loginMsg','هذا الحساب ما إله صلاحية الدخول على هاي الشاشة — تواصل مع المدير.', false);
+    return;
+  }
+  roleEdit = ['admin','editor'].includes(curProfile.role);
+  isAdmin = curProfile.role === 'admin';
+  const roleAr = {admin:'مدير', editor:'مدخل بيانات', viewer:'مطالع'}[curProfile.role] || curProfile.role;
+  document.getElementById('uName').textContent = curProfile.full_name || user.email;
+  document.getElementById('uRole').textContent = user.email + ' · ' + roleAr;
+  document.getElementById('userbox').style.display = 'flex';
+  document.getElementById('loginView').style.display = 'none';
+  document.getElementById('appView').style.display = 'block';
+}
+(async function bootAuth(){
+  if(!window.supabase){ flash('loginMsg','تعذر تحميل مكتبة الاتصال — تحقق من الإنترنت وحدّث الصفحة', false); return; }
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  const {data:{session}} = await sb.auth.getSession();
+  if(session && session.user) await onSignedIn(session.user);
+})();
+</script>
 <script>
 (function(){
   const STORAGE_KEY = 'amal_task_lists_v1';
