@@ -624,7 +624,7 @@ ORDER BY "التاريخ", "نوع المستند", "رقم المستند"</pre
     <div class="modal-sub" id="branchDetailSub"></div>
     <div class="kt-wrap" style="max-height:60vh;">
       <table class="kt" id="branchDetailTable">
-        <thead><tr><th class="w">رمزنا</th><th>اسم الصنف</th><th class="n">الكمية</th><th class="n">متوسط السعر</th><th class="n">المبيعات</th><th class="n">متوسط الكلفة/وحدة</th><th class="n">الكلفة</th><th class="n">مجمل الربح</th><th class="n">نسبة الربح</th></tr></thead>
+        <thead></thead>
         <tbody id="branchDetailTbody"></tbody>
       </table>
     </div>
@@ -1571,7 +1571,7 @@ function sortTh(label, tableId, key, cls){
   const arrow = (st && st.key===key) ? (st.dir===1?' ▲':' ▼') : '';
   return `<th class="${cls||''}" data-sort onclick="toggleSort('${tableId}','${key}', ${SORT_RENDER_FN[tableId]})">${label}${arrow}</th>`;
 }
-const SORT_RENDER_FN = {branchTable:'renderDashPage', branchItemTable:'renderBranchItemPage', reconTable:'renderReconPage', monthlyTable:'renderMonthlyPage'};
+const SORT_RENDER_FN = {branchTable:'renderDashPage', branchItemTable:'renderBranchItemPage', reconTable:'renderReconPage', monthlyTable:'renderMonthlyPage', branchDetailTable:'rerenderBranchDetail'};
 function renderKpiCards(k){
   const host = document.getElementById('dashKpis');
   const cards = [
@@ -1864,11 +1864,25 @@ function renderReconPage(){
 }
 
 /* ==================== نافذة تفاصيل الفرع (Drill-down) ==================== */
+let currentDetailBranch = null;
+function rerenderBranchDetail(){ if(currentDetailBranch) openBranchDetail(currentDetailBranch); }
 function openBranchDetail(branchName){
+  currentDetailBranch = branchName;
   const f = getActiveFilters();
   const branches = filteredBranches({...f, branch:''});
   const b = branches.find(x=>x.branch===branchName);
   document.getElementById('branchDetailTitle').textContent = branchName;
+  const thead = document.querySelector('#branchDetailTable thead');
+  thead.innerHTML = '<tr>'
+    + '<th class="w">رمزنا</th><th>اسم الصنف</th>'
+    + sortTh('الكمية','branchDetailTable','qty','n')
+    + '<th class="n">متوسط السعر</th>'
+    + sortTh('المبيعات','branchDetailTable','netSales','n')
+    + '<th class="n">متوسط الكلفة/وحدة</th>'
+    + sortTh('الكلفة','branchDetailTable','cost','n')
+    + sortTh('مجمل الربح','branchDetailTable','grossProfit','n')
+    + '<th class="n">نسبة الربح</th>'
+    + '</tr>';
   const tbody = document.getElementById('branchDetailTbody');
   if(!b || !b.items.size){
     tbody.innerHTML = '';
@@ -1876,10 +1890,13 @@ function openBranchDetail(branchName){
     document.getElementById('branchDetailOverlay').classList.add('active');
     return;
   }
-  const items = Array.from(b.items.values()).sort((a,b2)=>b2.netSales-a.netSales);
+  let items = Array.from(b.items.values());
+  items = applySort(items, 'branchDetailTable', (a,b2)=>b2.netSales-a.netSales);
   const t = branchTotals(b);
-  document.getElementById('branchDetailSub').textContent = `${items.length} صنف · الكمية ${fmtNum(t.qty)} · المبيعات ${fmt3(t.netSales)} · مجمل الربح ${fmt3(t.grossProfit)} (${t.profitPct.toFixed(1)}%)`;
-  tbody.innerHTML = items.map(it=>`<tr><td class="w">${esc(it.itemCode)}</td><td>${esc(it.itemName)}</td><td class="n">${fmtNum(it.qty)}</td><td class="n">${fmt4(it.qty?it.netSales/it.qty:0)}</td><td class="n">${fmt3(it.netSales)}</td><td class="n">${fmt4(it.qty?it.cost/it.qty:0)}</td><td class="n">${fmt3(it.cost)}</td><td class="n">${fmt3(it.grossProfit)}</td><td class="n">${it.netSales?(it.grossProfit/it.netSales*100).toFixed(1):'0.0'}%</td></tr>`).join('');
+  document.getElementById('branchDetailSub').textContent = `${items.length} صنف · الكمية ${fmtNum(t.qty)} · المبيعات ${fmt3(t.netSales)} · الكلفة ${fmt3(t.cost)} · مجمل الربح ${fmt3(t.grossProfit)} (${t.profitPct.toFixed(1)}%)`;
+  let dhtml = items.map(it=>`<tr><td class="w">${esc(it.itemCode)}</td><td>${esc(it.itemName)}${it.estimated?estBadge('سعر تقديري (آخر سعر معروف) — فاتورة عمان لسا ما انسجلت لهاي الفترة'):''}</td><td class="n">${fmtNum(it.qty)}</td><td class="n">${fmt4(it.qty?it.netSales/it.qty:0)}</td><td class="n">${fmt3(it.netSales)}</td><td class="n">${fmt4(it.qty?it.cost/it.qty:0)}</td><td class="n">${fmt3(it.cost)}</td><td class="n">${fmt3(it.grossProfit)}</td><td class="n">${it.netSales?(it.grossProfit/it.netSales*100).toFixed(1):'0.0'}%</td></tr>`).join('');
+  dhtml += `<tr class="totalrow"><td colspan="2">الإجمالي (${items.length} صنف)</td><td class="n">${fmtNum(t.qty)}</td><td class="n"></td><td class="n">${fmt3(t.netSales)}</td><td class="n"></td><td class="n">${fmt3(t.cost)}</td><td class="n">${fmt3(t.grossProfit)}</td><td class="n">${t.profitPct.toFixed(1)}%</td></tr>`;
+  tbody.innerHTML = dhtml;
   document.getElementById('branchDetailOverlay').classList.add('active');
 }
 function closeBranchDetail(){ document.getElementById('branchDetailOverlay').classList.remove('active'); }
