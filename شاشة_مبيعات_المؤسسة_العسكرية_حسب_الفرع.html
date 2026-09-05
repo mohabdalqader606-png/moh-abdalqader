@@ -804,6 +804,9 @@ function loadLocal(){
     if(d) applyLoadedData(d);
   }catch(e){ console.warn('تعذر قراءة النسخة المحلية', e); }
   if(!Object.keys(BRANCH_CODE_MAP).length) BRANCH_CODE_MAP = {...DEFAULT_BRANCH_CODE_MAP};
+  // نعيد تحديد الفروع دايماً عند التحميل — بيانات قديمة محفوظة قبل تفعيل تقييد لائحة الفروع
+  // (أو قبل أي تصحيح/رفض اسم لاحق) ممكن يكون فيها rec.branch بقيمة قديمة غير معتمدة الآن
+  if(TRANSFERS.length) resolveAllBranches();
 }
 function applyLoadedData(d){
   if(Array.isArray(d.TRANSFERS)) TRANSFERS = d.TRANSFERS;
@@ -831,6 +834,8 @@ function restoreBackup(evt){
     try{
       const d = JSON.parse(reader.result);
       applyLoadedData(d);
+      if(!Object.keys(BRANCH_CODE_MAP).length) BRANCH_CODE_MAP = {...DEFAULT_BRANCH_CODE_MAP};
+      if(TRANSFERS.length) resolveAllBranches();
       saveLocal();
       refreshAllFilters();
       renderCurrentPage();
@@ -1509,7 +1514,9 @@ async function pullStateFromCloud(){
       return;
     }
     applyLoadedData(data.data);
+    if(TRANSFERS.length) resolveAllBranches();
     try{ saveBackupToLocalStorage(); }catch(e){ console.warn('تعذر تخزين نسخة السيرفر محلياً (مساحة التخزين ممتلئة)', e); }
+    queueCloudSave(); // نرفع التصحيح (لو انصحح شي بإعادة تحديد الفروع) رجوع للسيرفر المشترك
     refreshAllFilters();
     renderCurrentPage();
     cloudSynced = true;
@@ -1744,7 +1751,6 @@ function renderKpiCards(k){
   const cards = [
     {label:'إجمالي مبيعات المؤسسة', en:'TOTAL SALES', value:fmt3(k.totalSales), color:'#2563EB'},
     {label:'عدد الفروع', en:'BRANCHES', value:fmtNum(k.branchCount), color:'#7C3AED'},
-    {label:'إجمالي الكميات', en:'TOTAL QTY', value:fmtNum(k.totalQty), color:'#0891B2'},
     {label:'متوسط مبيعات الفرع', en:'AVG / BRANCH', value:fmt3(k.avgBranchSales), color:'#16A34A'},
     {label:'أعلى فرع مبيعاً', en:'TOP BRANCH', value: k.topBranch? k.topBranch.name : '—', sub: k.topBranch? ('صافي مبيعاته: '+fmt3(k.topBranch.netSales)) : '', color:'#B8924E'},
     {label:'نسبة مساهمة أعلى فرع', en:'TOP SHARE', value: k.topBranchPct.toFixed(1)+'%', color:'#F59E0B'}
