@@ -646,6 +646,7 @@ ORDER BY "التاريخ", "نوع المستند", "رقم المستند"</pre
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
 <script>
 /* ==================== إعدادات عامة ==================== */
 const APP_ID = 'mil-branch-sales';
@@ -725,6 +726,26 @@ function showStorageOk(msg){
   el.textContent = msg;
   el.style.display = 'block';
 }
+// نضغط JSON قبل تخزينه بـ localStorage (LZString) لأن حجم البيانات (عشرات آلاف سطور التحويل/المبيعات)
+// بيتعدى مساحة المتصفح المسموحة (~5-10 ميجا) لو خزّناه كنص خام
+function saveBackupToLocalStorage(){
+  const json = JSON.stringify(buildBackupObject());
+  const toStore = (window.LZString ? LZString.compressToUTF16(json) : json);
+  localStorage.setItem(STORAGE_KEY, toStore);
+  localStorage.setItem(SAVED_AT_KEY, new Date().toISOString());
+}
+// نجرب فك الضغط أول؛ إذا الأمر مو مضغوط (نسخة قديمة محفوظة قبل تفعيل الضغط) بيرجع JSON.parse مباشرة
+function loadBackupFromLocalStorage(raw){
+  if(!raw) return null;
+  try{ return JSON.parse(raw); }catch(e){}
+  if(window.LZString){
+    try{
+      const decompressed = LZString.decompressFromUTF16(raw);
+      if(decompressed) return JSON.parse(decompressed);
+    }catch(e){}
+  }
+  return null;
+}
 function saveLocal(){
   if(!checkStorageAvailable()){
     showStorageBanner('⚠ تعذر حفظ البيانات محلياً بهالمتصفح — التخزين المحلي (localStorage) محجوب. الأسباب الشائعة: فتحت الملف بوضع تصفح خاص/متخفي، أو متصفحك (خصوصاً Safari) بيمنع التخزين لملف مفتوح مباشرة من الجهاز (file://). الحل: افتح الملف بوضع عادي (مو خاص)، أو جرّب متصفح Chrome، أو أنجز إعداد الحساب السحابي (Supabase) حتى يصير الحفظ عالسيرفر مباشرة بدل المتصفح.');
@@ -732,8 +753,7 @@ function saveLocal(){
   }
   showStorageBanner('');
   try{
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(buildBackupObject()));
-    localStorage.setItem(SAVED_AT_KEY, new Date().toISOString());
+    saveBackupToLocalStorage();
     showStorageOk('✔ آخر حفظ محلي بهالمتصفح: '+new Date().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit',second:'2-digit'})+' — '+TRANSFERS.length+' سطر تحويل، '+SALES.length+' سطر مبيعات');
   }catch(e){
     showStorageBanner('⚠ فشل الحفظ المحلي فعلياً رغم توفر التخزين — على الأغلب المساحة المخصصة للمتصفح امتلأت (بيانات كبيرة جداً). جرّب صدّر نسخة احتياطية (زر "💾 نسخة احتياطية") فوراً قبل ما تكمّل، وامسح بيانات قديمة إذا أمكن.');
@@ -745,13 +765,11 @@ function loadLocal(){
   if(!checkStorageAvailable()){
     showStorageBanner('⚠ التخزين المحلي (localStorage) محجوب بهالمتصفح — أي بيانات تستوردها ما رح تتحفظ بعد إغلاق الصفحة إلا إذا أنجزت إعداد الحساب السحابي (Supabase). راجع تعليق أعلى الملف لخطوات الإعداد.');
   }
-  IS_FRESH_LOAD = !localStorage.getItem(STORAGE_KEY);
+  const raw = localStorage.getItem(STORAGE_KEY);
+  IS_FRESH_LOAD = !raw;
   try{
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if(raw){
-      const d = JSON.parse(raw);
-      applyLoadedData(d);
-    }
+    const d = loadBackupFromLocalStorage(raw);
+    if(d) applyLoadedData(d);
   }catch(e){ console.warn('تعذر قراءة النسخة المحلية', e); }
   if(!Object.keys(BRANCH_CODE_MAP).length) BRANCH_CODE_MAP = {...DEFAULT_BRANCH_CODE_MAP};
 }
@@ -1346,8 +1364,7 @@ async function pullStateFromCloud(){
       return;
     }
     applyLoadedData(data.data);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(buildBackupObject()));
-    localStorage.setItem(SAVED_AT_KEY, new Date().toISOString());
+    try{ saveBackupToLocalStorage(); }catch(e){ console.warn('تعذر تخزين نسخة السيرفر محلياً (مساحة التخزين ممتلئة)', e); }
     refreshAllFilters();
     renderCurrentPage();
     cloudSynced = true;
