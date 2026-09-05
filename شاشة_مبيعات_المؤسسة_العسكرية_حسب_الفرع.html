@@ -570,6 +570,7 @@ ORDER BY "التاريخ", "نوع المستند", "رقم المستند"</pre
           <span class="kd-chip mut">أسطر سندات التحويل: <b class="kd-en" id="trCountVal" style="color:inherit;">0</b></span>
           <span class="kd-chip mut">أسطر فواتير المبيعات: <b class="kd-en" id="slCountVal" style="color:inherit;">0</b></span>
           <span class="kd-chip mut">الفروع المكتشفة: <b class="kd-en" id="branchCountVal" style="color:inherit;">0</b></span>
+          <span class="kd-chip mut" title="أقدم وأحدث تاريخ مستند موجود فعلياً بكل البيانات المستوردة (سندات تحويل + طلبات تحويل + فواتير مبيعات)">نطاق تواريخ البيانات المستوردة: <b class="kd-en" id="dataDateRangeVal" style="color:inherit;">—</b></span>
         </div>
         <div style="display:flex; gap:8px;">
           <button class="btn btn-ghost btn-sm" onclick="downloadBackup()">💾 نسخة احتياطية</button>
@@ -603,6 +604,7 @@ ORDER BY "التاريخ", "نوع المستند", "رقم المستند"</pre
 
   <!-- ============ 1) ملخص الفروع ============ -->
   <div class="view active" id="view-dash">
+    <div class="hint" id="dashRangeDiag" style="margin-bottom:8px;"></div>
     <div class="kd-kpis" id="dashKpis"></div>
     <div class="kd-tier"><span class="kd-en">Top / Bottom</span><span>أعلى وأقل 10 فروع مبيعاً بالفترة المحددة</span><span class="ln"></span></div>
     <div id="topBottomWrap" style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:6px;"></div>
@@ -1820,6 +1822,8 @@ function refreshAllFilters(){
   document.getElementById('trCountVal').textContent = fmtNum(TRANSFERS.length);
   document.getElementById('slCountVal').textContent = fmtNum(SALES.length);
   document.getElementById('branchCountVal').textContent = fmtNum(branchList.length);
+  const allDates = [...TRANSFERS, ...SALES, ...REQUESTS].map(r=>r.docDate).filter(Boolean).sort();
+  document.getElementById('dataDateRangeVal').textContent = allDates.length ? (dateStr(allDates[0])+' → '+dateStr(allDates[allDates.length-1])) : '—';
   updateFiltersSummary();
 }
 // إذا الفترة تطابق شهر كامل بالضبط (أول يوم لآخر يوم بنفس الشهر)، منرجع اسم الشهر بدل التاريخين — وإلا null
@@ -1987,6 +1991,11 @@ function estBadge(title){ return ` <span class="kd-chip warn" title="${esc(title
 function renderDashPage(){
   const f = getActiveFilters();
   const branches = filteredBranches(f);
+  const trIn = TRANSFERS.filter(t=>inMonthRange(t.docDate, f.from||null, f.to||null)).length;
+  const slIn = SALES.filter(s=>inMonthRange(s.docDate, f.from||null, f.to||null)).length;
+  const reqIn = REQUESTS.filter(r=>inMonthRange(r.docDate, f.from||null, f.to||null)).length;
+  document.getElementById('dashRangeDiag').textContent =
+    `الأرقام أدناه مبنية على: ${fmtNum(trIn)} سطر تحويل (من أصل ${fmtNum(TRANSFERS.length)}) · ${fmtNum(slIn)} سطر مبيعات (من أصل ${fmtNum(SALES.length)}) · ${fmtNum(reqIn)} سطر طلب تحويل (من أصل ${fmtNum(REQUESTS.length)}) — ضمن الفترة المحددة بالفلاتر.`;
   renderKpiCards(computeKpis(branches));
   renderTopBottom(branches.map(b=>({branch:b.branch, ...branchTotals(b)})));
   const thead = document.querySelector('#branchTable thead');
