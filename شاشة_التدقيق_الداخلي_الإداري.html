@@ -4,6 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>نظام إدارة التدقيق الداخلي والحوكمة — مركز الكيلاني للأغذية</title>
+<!--
+  إعداد Supabase مطلوب مرة وحدة قبل ما هاي الشاشة تشتغل (نفس مشروع باقي شاشات المستودع):
+  update profiles set allowed_apps = coalesce(allowed_apps, '{}') || '{internal-audit-portal}'
+    where id = (select id from auth.users where email = 'الحساب@مثال.com');
+-->
 <style>
   :root{
     --navy:#0F2F4F;
@@ -690,10 +695,43 @@
   .overlay :focus-visible{outline:2px solid var(--navy);outline-offset:2px;}
   .overlay .modal:focus-visible{outline:2px solid var(--navy);outline-offset:-3px;border-radius:16px;}
   @media print{ .ksh-sb,.ksh-status,.ksh-crumb,.ksh-pg,.ksh-scrim,#kshMenuBtn{display:none!important;} body{padding-bottom:0;} }
+
+  /* ==================== لوحة تسجيل الدخول ==================== */
+  #loginView{max-width:420px; margin:70px auto; background:#fff; border:1px solid var(--border); border-radius:16px; padding:34px 32px; box-shadow:var(--elev-2);}
+  #loginView h2{margin:0 0 4px; font-size:19px; color:var(--navy); font-family:var(--k-font-head);}
+  #loginView .hint{margin-bottom:18px; font-size:12px; color:var(--muted); line-height:1.8;}
+  #loginView label{display:block; font-size:12.5px; font-weight:600; margin:12px 0 5px;}
+  #loginView input{width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:9px; font-family:inherit;}
+  #loginView button{width:100%; margin-top:18px; padding:11px;}
+  .status-msg{font-size:12px;}
+  .status-msg.ok{color:var(--good);}
+  .status-msg.err{color:var(--bad);}
+
+  /* صندوق المستخدم بالهيدر */
+  .userbox{display:flex; align-items:center; gap:10px; background:rgba(255,255,255,.06); border:1px solid var(--k-border); border-radius:10px; padding:6px 12px; font-size:11.5px; color:var(--k-muted); min-width:0;}
+  .userbox b{display:block; color:var(--k-ink); font-size:12.5px;}
+  @media (max-width:640px){
+    .userbox{gap:6px; padding:5px 8px;}
+    .userbox>div{min-width:0; max-width:34vw; overflow:hidden;}
+    .userbox>div b, .userbox>div span{display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  }
+  @media print{ #loginView,.userbox{display:none!important;} }
 </style>
 </head>
 <body>
 
+<div id="loginView">
+  <h2>تسجيل الدخول</h2>
+  <div class="hint">نظام إدارة التدقيق الداخلي والحوكمة — مركز الكيلاني للأغذية. الدخول بالبريد وكلمة السر (لا يوجد تسجيل ذاتي — راجع المدير لإنشاء حساب أو منح صلاحية).</div>
+  <label>البريد الإلكتروني</label>
+  <input type="text" id="loginEmail" autocomplete="username" style="direction:ltr; text-align:left;">
+  <label>كلمة السر</label>
+  <input type="password" id="loginPass" autocomplete="current-password" onkeydown="if(event.key==='Enter') doLogin()">
+  <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">دخول</button>
+  <div class="status-msg" id="loginMsg" style="margin-top:10px;"></div>
+</div>
+
+<div id="appView" style="display:none;">
 <header class="ksh-hdr">
   <button class="ksh-icbtn" id="kshMenuBtn" aria-label="فتح قائمة التنقل" aria-controls="kshSidebar" aria-expanded="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
   <div class="ksh-brand"><div class="ksh-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 20V9l8-5 8 5v11" stroke="#1B140A" stroke-width="2" stroke-linejoin="round"/><path d="M9 20v-6h6v6" stroke="#1B140A" stroke-width="2" stroke-linejoin="round"/></svg></div>
@@ -702,6 +740,10 @@
   <div class="ksh-sp"></div>
   <div class="ksh-seg" role="group" aria-label="نمط العرض"><button type="button" id="kshModeExec" aria-pressed="false">تنفيذي <span class="ksh-en">Executive</span></button><button type="button" id="kshModeOp" class="on" aria-pressed="true">تشغيلي <span class="ksh-en">Operational</span></button></div>
   <button class="ksh-icbtn" id="kshAlertBtn" aria-label="مركز الإنذار"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 8a6 6 0 10-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 01-3.4 0"/></svg><span class="ksh-cnt zero" id="kshAlertCnt">0</span></button>
+  <div class="userbox" id="userbox" style="display:none;">
+    <div><b id="authUName"></b><span id="authURole"></span></div>
+    <button class="btn btn-ghost btn-sm" onclick="doLogout()">خروج</button>
+  </div>
 </header>
 
 <div class="app-shell">
@@ -1267,7 +1309,7 @@
   </div>
 </div>
 
-<footer>عمل بلا اتصال بالإنترنت — البيانات محفوظة محلياً على هذا الجهاز فقط عبر المتصفح. — الإصدار v2.0 (Internal Audit Management System + GRC + Executive Analytics Dashboard)</footer>
+<footer>عمل بلا اتصال بالإنترنت — البيانات محفوظة محلياً على هذا الجهاز فقط عبر المتصفح. — الإصدار v2.1 (Internal Audit Management System + GRC + Executive Analytics Dashboard)</footer>
 <div class="ksh-scrim" id="kshScrim" aria-hidden="true"></div>
 <div class="ksh-status" role="contentinfo" aria-label="شريط الحالة">
   <span class="ksh-dot" aria-hidden="true"></span><span>حفظ محلي</span>
@@ -2217,7 +2259,56 @@
     </div>
   </div>
 </div>
+</div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+const APP_ID = 'internal-audit-portal';
+const SUPABASE_URL = 'https://fxjdmqqmcgccocfbgopm.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_NGtGX9SN8hXSoq-JRidGcQ_NfAyYCP5';
+let sb = null, curUser = null, curProfile = null, roleEdit = false, isAdmin = false;
+function flash(elId, msg, ok){
+  const el = document.getElementById(elId);
+  if(!el) return;
+  el.textContent = msg; el.className = 'status-msg ' + (ok?'ok':'err');
+}
+async function doLogin(){
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass = document.getElementById('loginPass').value;
+  if(!email || !pass){ flash('loginMsg','أدخل البريد وكلمة السر', false); return; }
+  document.getElementById('loginBtn').disabled = true;
+  flash('loginMsg','جارٍ الدخول...', true);
+  const {data, error} = await sb.auth.signInWithPassword({email, password: pass});
+  document.getElementById('loginBtn').disabled = false;
+  if(error){ flash('loginMsg','فشل الدخول: تحقق من البريد وكلمة السر', false); return; }
+  await onSignedIn(data.user);
+}
+async function doLogout(){ await sb.auth.signOut(); location.reload(); }
+async function onSignedIn(user){
+  curUser = user;
+  const {data:prof} = await sb.from('profiles').select('*').eq('id', user.id).single();
+  curProfile = prof || {full_name:user.email, role:'viewer', allowed_apps:[]};
+  if(!(curProfile.allowed_apps||[]).includes(APP_ID)){
+    await sb.auth.signOut();
+    flash('loginMsg','هذا الحساب ما إله صلاحية الدخول على هاي الشاشة — تواصل مع المدير.', false);
+    return;
+  }
+  roleEdit = ['admin','editor'].includes(curProfile.role);
+  isAdmin = curProfile.role === 'admin';
+  const roleAr = {admin:'مدير', editor:'مدخل بيانات', viewer:'مطالع'}[curProfile.role] || curProfile.role;
+  document.getElementById('authUName').textContent = curProfile.full_name || user.email;
+  document.getElementById('authURole').textContent = user.email + ' · ' + roleAr;
+  document.getElementById('userbox').style.display = 'flex';
+  document.getElementById('loginView').style.display = 'none';
+  document.getElementById('appView').style.display = 'block';
+}
+(async function bootAuth(){
+  if(!window.supabase){ flash('loginMsg','تعذر تحميل مكتبة الاتصال — تحقق من الإنترنت وحدّث الصفحة', false); return; }
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  const {data:{session}} = await sb.auth.getSession();
+  if(session && session.user) await onSignedIn(session.user);
+})();
+</script>
 <script>
 /* ===================== DATA MODEL ===================== */
 const STORAGE_KEY = "kaylani_audit_planner_v1";
