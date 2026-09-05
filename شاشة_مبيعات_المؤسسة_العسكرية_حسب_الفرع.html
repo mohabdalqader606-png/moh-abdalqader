@@ -2028,7 +2028,7 @@ function renderBranchItemPage(){
   let rows = [];
   branches.forEach(b=>{
     b.items.forEach((it,code)=>{
-      rows.push({branch:b.branch, itemCode:code, itemName:it.itemName, group:itemGroupFromCode(code), qty:it.qty, netSales:it.netSales, cost:it.cost, grossProfit:it.grossProfit, profitPct: it.netSales? (it.grossProfit/it.netSales*100):0, estimated:it.estimated});
+      rows.push({branch:b.branch, itemCode:code, itemName:it.itemName, group:itemGroupFromCode(code), qty:it.qty, netSales:it.netSales, cost:it.cost, grossProfit:it.grossProfit, profitPct: it.netSales? (it.grossProfit/it.netSales*100):0, estimated:it.estimated, reqQty:it.reqQty||0, reqNetSales:it.reqNetSales||0, reqProfit:it.reqProfit||0});
     });
   });
   const thead = document.querySelector('#branchItemTable thead');
@@ -2041,6 +2041,9 @@ function renderBranchItemPage(){
     + sortTh('الكلفة','branchItemTable','cost','n')
     + sortTh('مجمل الربح','branchItemTable','grossProfit','n')
     + sortTh('نسبة الربح','branchItemTable','profitPct','n')
+    + sortTh('كمية مطلوبة','branchItemTable','reqQty','n')
+    + sortTh('قيمة الكمية المطلوبة','branchItemTable','reqNetSales','n')
+    + sortTh('ربح الكمية المطلوبة','branchItemTable','reqProfit','n')
     + '</tr>';
   rows = applySort(rows, 'branchItemTable', (a,b)=> b.netSales-a.netSales);
   const tbody = document.getElementById('branchItemTbody');
@@ -2051,9 +2054,10 @@ function renderBranchItemPage(){
     <td>${esc(r.branch)}</td><td class="n w">${esc(r.itemCode)}</td><td>${esc(r.itemName)}${r.estimated?estBadge('سعر تقديري (آخر سعر معروف) — فاتورة عمان لسا ما انسجلت لهاي الفترة'):''}</td><td>${esc(r.group)}</td>
     <td class="n">${fmtNum(r.qty)}</td><td class="n">${fmt4(r.qty? r.netSales/r.qty:0)}</td><td class="n">${fmt3(r.netSales)}</td>
     <td class="n">${fmt3(r.cost)}</td><td class="n">${fmt3(r.grossProfit)}</td><td class="n">${r.profitPct.toFixed(1)}%</td>
+    <td class="n">${fmtNum(r.reqQty)}</td><td class="n">${fmt3(r.reqNetSales)}</td><td class="n">${fmt3(r.reqProfit)}</td>
   </tr>`).join('');
-  const grand = rows.reduce((acc,r)=>{acc.qty+=r.qty;acc.netSales+=r.netSales;acc.cost+=r.cost;acc.grossProfit+=r.grossProfit;return acc;},{qty:0,netSales:0,cost:0,grossProfit:0});
-  html += `<tr class="totalrow"><td colspan="4">الإجمالي (${rows.length} سطر)</td><td class="n">${fmtNum(grand.qty)}</td><td class="n"></td><td class="n">${fmt3(grand.netSales)}</td><td class="n">${fmt3(grand.cost)}</td><td class="n">${fmt3(grand.grossProfit)}</td><td class="n">${grand.netSales?(grand.grossProfit/grand.netSales*100).toFixed(1):'0.0'}%</td></tr>`;
+  const grand = rows.reduce((acc,r)=>{acc.qty+=r.qty;acc.netSales+=r.netSales;acc.cost+=r.cost;acc.grossProfit+=r.grossProfit;acc.reqQty+=r.reqQty;acc.reqNetSales+=r.reqNetSales;acc.reqProfit+=r.reqProfit;return acc;},{qty:0,netSales:0,cost:0,grossProfit:0,reqQty:0,reqNetSales:0,reqProfit:0});
+  html += `<tr class="totalrow"><td colspan="4">الإجمالي (${rows.length} سطر)</td><td class="n">${fmtNum(grand.qty)}</td><td class="n"></td><td class="n">${fmt3(grand.netSales)}</td><td class="n">${fmt3(grand.cost)}</td><td class="n">${fmt3(grand.grossProfit)}</td><td class="n">${grand.netSales?(grand.grossProfit/grand.netSales*100).toFixed(1):'0.0'}%</td><td class="n">${fmtNum(grand.reqQty)}</td><td class="n">${fmt3(grand.reqNetSales)}</td><td class="n">${fmt3(grand.reqProfit)}</td></tr>`;
   tbody.innerHTML = html;
 }
 
@@ -2070,12 +2074,13 @@ function renderComparePage(){
   const grandSum = allTotals.reduce((s,t)=>s+t.netSales,0);
   let html = totals.map(t=>{
     const w = Math.max(2, t.netSales/max*100);
+    const reqNote = t.reqNetSales ? ` <span dir="rtl" style="color:var(--kd-muted); font-size:10.5px; unicode-bidi:isolate;" title="قيمة الكمية المطلوبة (طلبات تحويل لسا ما انحوّلت)">(+<span class="kd-en" style="color:inherit;">${fmt3(t.reqNetSales)}</span> مطلوب)</span>` : '';
     return `<div style="display:flex; align-items:center; gap:10px; margin-bottom:10px; cursor:pointer;" onclick="openBranchDetail('${esc(t.branch).replace(/'/g,"\\'")}')">
       <div style="width:150px; font-size:12px; font-weight:600; color:var(--kd-ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${esc(t.branch)}</div>
       <div style="flex:1; background:var(--kd-surface-2); border-radius:6px; height:22px; position:relative; overflow:hidden;">
         <div style="width:${w}%; background:linear-gradient(90deg,#2F6BDB,#4C86FF); height:100%; border-radius:6px;"></div>
       </div>
-      <div style="width:110px; font-family:var(--k-font-mono); font-size:12px; direction:ltr; text-align:left;">${fmt3(t.netSales)}</div>
+      <div style="width:190px; font-family:var(--k-font-mono); font-size:12px; direction:ltr; text-align:left; white-space:nowrap;">${fmt3(t.netSales)}${reqNote}</div>
     </div>`;
   }).join('');
   html += `<div style="display:flex; justify-content:space-between; margin-top:14px; padding-top:10px; border-top:1px solid var(--kd-line); font-size:12px; color:var(--kd-muted);">
@@ -2161,12 +2166,15 @@ function renderMonthlyPage(){
     + sortTh('الكلفة','monthlyTable','cost','n')
     + sortTh('مجمل الربح','monthlyTable','grossProfit','n')
     + sortTh('نسبة الربح','monthlyTable','profitPct','n')
+    + sortTh('كمية مطلوبة','monthlyTable','reqQty','n')
+    + sortTh('قيمة الكمية المطلوبة','monthlyTable','reqNetSales','n')
+    + sortTh('ربح الكمية المطلوبة','monthlyTable','reqProfit','n')
     + '</tr>';
   const tbody = document.getElementById('monthlyTbody');
   const hint = document.getElementById('monthlyEmptyHint');
   if(!months.length){ tbody.innerHTML=''; hint.style.display='block'; return; }
   hint.style.display = 'none';
-  let grand = {qty:0, netSales:0, cost:0, grossProfit:0};
+  let grand = {qty:0, netSales:0, cost:0, grossProfit:0, reqQty:0, reqNetSales:0, reqProfit:0};
   let rows = months.map(m=>{
     const from=m+'-01', to=m+'-31';
     let branches = buildBranchReport(from, to);
@@ -2180,13 +2188,13 @@ function renderMonthlyPage(){
       });
       return {branch:b.branch, items:filteredItems};
     }).filter(b=>b.items.size>0);
-    const totals = branches.map(b=>branchTotals(b)).reduce((acc,t)=>{acc.qty+=t.qty;acc.netSales+=t.netSales;acc.cost+=t.cost;acc.grossProfit+=t.grossProfit;return acc;},{qty:0,netSales:0,cost:0,grossProfit:0});
-    grand.qty+=totals.qty; grand.netSales+=totals.netSales; grand.cost+=totals.cost; grand.grossProfit+=totals.grossProfit;
+    const totals = branches.map(b=>branchTotals(b)).reduce((acc,t)=>{acc.qty+=t.qty;acc.netSales+=t.netSales;acc.cost+=t.cost;acc.grossProfit+=t.grossProfit;acc.reqQty+=t.reqQty;acc.reqNetSales+=t.reqNetSales;acc.reqProfit+=t.reqProfit;return acc;},{qty:0,netSales:0,cost:0,grossProfit:0,reqQty:0,reqNetSales:0,reqProfit:0});
+    grand.qty+=totals.qty; grand.netSales+=totals.netSales; grand.cost+=totals.cost; grand.grossProfit+=totals.grossProfit; grand.reqQty+=totals.reqQty; grand.reqNetSales+=totals.reqNetSales; grand.reqProfit+=totals.reqProfit;
     return {month:m, branchCount:branches.length, ...totals, profitPct: totals.netSales? (totals.grossProfit/totals.netSales*100):0};
   });
   rows = applySort(rows, 'monthlyTable', (a,b)=> a.month.localeCompare(b.month));
-  let html = rows.map(r=>`<tr><td>${esc(monthLabel(r.month))}</td><td class="n">${fmtNum(r.branchCount)}</td><td class="n">${fmtNum(r.qty)}</td><td class="n">${fmt3(r.netSales)}</td><td class="n">${fmt3(r.cost)}</td><td class="n">${fmt3(r.grossProfit)}</td><td class="n">${r.profitPct.toFixed(1)}%</td></tr>`).join('');
-  html += `<tr class="totalrow"><td>الإجمالي</td><td></td><td class="n">${fmtNum(grand.qty)}</td><td class="n">${fmt3(grand.netSales)}</td><td class="n">${fmt3(grand.cost)}</td><td class="n">${fmt3(grand.grossProfit)}</td><td class="n">${grand.netSales?(grand.grossProfit/grand.netSales*100).toFixed(1):'0.0'}%</td></tr>`;
+  let html = rows.map(r=>`<tr><td>${esc(monthLabel(r.month))}</td><td class="n">${fmtNum(r.branchCount)}</td><td class="n">${fmtNum(r.qty)}</td><td class="n">${fmt3(r.netSales)}</td><td class="n">${fmt3(r.cost)}</td><td class="n">${fmt3(r.grossProfit)}</td><td class="n">${r.profitPct.toFixed(1)}%</td><td class="n">${fmtNum(r.reqQty)}</td><td class="n">${fmt3(r.reqNetSales)}</td><td class="n">${fmt3(r.reqProfit)}</td></tr>`).join('');
+  html += `<tr class="totalrow"><td>الإجمالي</td><td></td><td class="n">${fmtNum(grand.qty)}</td><td class="n">${fmt3(grand.netSales)}</td><td class="n">${fmt3(grand.cost)}</td><td class="n">${fmt3(grand.grossProfit)}</td><td class="n">${grand.netSales?(grand.grossProfit/grand.netSales*100).toFixed(1):'0.0'}%</td><td class="n">${fmtNum(grand.reqQty)}</td><td class="n">${fmt3(grand.reqNetSales)}</td><td class="n">${fmt3(grand.reqProfit)}</td></tr>`;
   tbody.innerHTML = html;
 }
 
