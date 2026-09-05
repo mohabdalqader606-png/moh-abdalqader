@@ -1638,12 +1638,14 @@ async function onSignedIn(user){
 function applyDefaultMonthFilter(){
   const fromEl = document.getElementById('fFrom'), toEl = document.getElementById('fTo');
   if(fromEl.value || toEl.value) return;
+  // نبني نص التاريخ يدوياً من مكوّنات التاريخ المحلي — toISOString() بيحوّل لتوقيت UTC
+  // وبينزّح التاريخ يوم لورا بمناطق زمنية +GMT متل الأردن
   const now = new Date();
-  const first = new Date(now.getFullYear(), now.getMonth(), 1);
-  const last = new Date(now.getFullYear(), now.getMonth()+1, 0);
-  const iso = d => d.toISOString().slice(0,10);
-  fromEl.value = iso(first);
-  toEl.value = iso(last);
+  const y = now.getFullYear(), m = now.getMonth();
+  const lastDay = new Date(y, m+1, 0).getDate();
+  const pad = n => String(n).padStart(2,'0');
+  fromEl.value = `${y}-${pad(m+1)}-01`;
+  toEl.value = `${y}-${pad(m+1)}-${pad(lastDay)}`;
 }
 (async function bootAuth(){
   if(!window.supabase){ flash('loginMsg','تعذر تحميل مكتبة الاتصال — تحقق من الإنترنت وحدّث الصفحة', false); return; }
@@ -1820,11 +1822,26 @@ function refreshAllFilters(){
   document.getElementById('branchCountVal').textContent = fmtNum(branchList.length);
   updateFiltersSummary();
 }
+// إذا الفترة تطابق شهر كامل بالضبط (أول يوم لآخر يوم بنفس الشهر)، منرجع اسم الشهر بدل التاريخين — وإلا null
+function fullMonthLabelIfMatches(from, to){
+  if(!from || !to) return null;
+  const m = from.slice(0,7);
+  if(to.slice(0,7)!==m) return null;
+  const [y,mo] = m.split('-').map(Number);
+  const lastDay = new Date(y, mo, 0).getDate();
+  if(from!==`${m}-01` || to!==`${m}-${String(lastDay).padStart(2,'0')}`) return null;
+  return monthLabel(m);
+}
 function updateFiltersSummary(){
   const f = getActiveFilters();
   const parts = [];
-  if(f.from) parts.push('من '+dateStr(f.from));
-  if(f.to) parts.push('إلى '+dateStr(f.to));
+  const monthOnly = fullMonthLabelIfMatches(f.from, f.to);
+  if(monthOnly){
+    parts.push('الشهر: '+monthOnly);
+  } else {
+    if(f.from) parts.push('من '+dateStr(f.from));
+    if(f.to) parts.push('إلى '+dateStr(f.to));
+  }
   if(f.branch) parts.push('الفرع: '+f.branch);
   if(f.item) parts.push('الصنف: '+f.item);
   if(f.itemGroup) parts.push('المجموعة: '+f.itemGroup);
