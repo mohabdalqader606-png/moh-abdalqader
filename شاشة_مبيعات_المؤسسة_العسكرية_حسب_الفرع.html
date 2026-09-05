@@ -1571,7 +1571,7 @@ function sortTh(label, tableId, key, cls){
   const arrow = (st && st.key===key) ? (st.dir===1?' ▲':' ▼') : '';
   return `<th class="${cls||''}" data-sort onclick="toggleSort('${tableId}','${key}', ${SORT_RENDER_FN[tableId]})">${label}${arrow}</th>`;
 }
-const SORT_RENDER_FN = {branchTable:'renderDashPage', branchItemTable:'renderBranchItemPage', reconTable:'renderReconPage', monthlyTable:'renderMonthlyPage', branchDetailTable:'rerenderBranchDetail'};
+const SORT_RENDER_FN = {branchTable:'renderDashPage', branchItemTable:'renderBranchItemPage', reconTable:'renderReconPage', monthlyTable:'renderMonthlyPage', branchDetailTable:'rerenderBranchDetail', docsTable:'renderDocsPage'};
 function renderKpiCards(k){
   const host = document.getElementById('dashKpis');
   const cards = [
@@ -1758,10 +1758,18 @@ function renderDocsPage(){
       if(!byDoc.has(k)) byDoc.set(k, {docType:s.docType, docNum:s.docNum, docDate:s.docDate, itemCount:0, qty:0, netSales:0});
       const d = byDoc.get(k); d.itemCount++; d.qty+=s.qty||0; d.netSales+=s.netSales||0;
     });
-    const docs = Array.from(byDoc.values()).sort((a,b)=>String(a.docDate).localeCompare(String(b.docDate)));
+    let docs = Array.from(byDoc.values());
+    docs = applySort(docs, 'docsTable', (a,b)=>String(a.docDate).localeCompare(String(b.docDate)));
     if(!docs.length){ host.innerHTML='<div class="empty-hint">ما في مستندات لهاي الفترة.</div>'; return; }
     const dg = docs.reduce((acc,d)=>{acc.qty+=d.qty;acc.netSales+=d.netSales;return acc;},{qty:0,netSales:0});
-    host.innerHTML = `<div class="kt-wrap"><table class="kt" id="docsTable"><thead><tr><th>النوع</th><th class="n">رقم المستند</th><th>التاريخ</th><th class="n">عدد الأصناف</th><th class="n">الكمية</th><th class="n">صافي المبيعات</th></tr></thead><tbody>`+
+    host.innerHTML = `<div class="kt-wrap"><table class="kt" id="docsTable"><thead><tr>`
+      + sortTh('النوع','docsTable','docType')
+      + sortTh('رقم المستند','docsTable','docNum','n')
+      + sortTh('التاريخ','docsTable','docDate')
+      + sortTh('عدد الأصناف','docsTable','itemCount','n')
+      + sortTh('الكمية','docsTable','qty','n')
+      + sortTh('صافي المبيعات','docsTable','netSales','n')
+      + `</tr></thead><tbody>`+
       docs.map(d=>`<tr><td>${esc(d.docType)}</td><td class="n">${esc(d.docNum)}</td><td>${dateStr(d.docDate)}</td><td class="n">${fmtNum(d.itemCount)}</td><td class="n">${fmtNum(d.qty)}</td><td class="n">${fmt3(d.netSales)}</td></tr>`).join('')
       +`<tr class="totalrow"><td colspan="3">الإجمالي (${docs.length} مستند)</td><td class="n"></td><td class="n">${fmtNum(dg.qty)}</td><td class="n">${fmt3(dg.netSales)}</td></tr>`
       +`</tbody></table></div>`;
@@ -1782,10 +1790,18 @@ function renderDocsPage(){
       if(!byDoc.has(t.docNum)) byDoc.set(t.docNum, {docNum:t.docNum, docDate:t.docDate, fromWhs:t.fromWhs, toWhs:t.toWhs, itemCount:0, qty:0});
       const d = byDoc.get(t.docNum); d.itemCount++; d.qty += (isWhs011(t.toWhs)?1:-1)*(t.qty||0);
     });
-    const docs = Array.from(byDoc.values()).sort((a,b)=>String(a.docDate).localeCompare(String(b.docDate)));
+    let docs = Array.from(byDoc.values());
+    docs = applySort(docs, 'docsTable', (a,b)=>String(a.docDate).localeCompare(String(b.docDate)));
     if(!docs.length){ host.innerHTML='<div class="empty-hint">ما في مستندات لهاي الفترة.</div>'; return; }
     const dg = docs.reduce((acc,d)=>{acc.qty+=d.qty; acc.itemCount+=d.itemCount; return acc;},{qty:0,itemCount:0});
-    host.innerHTML = `<div class="kt-wrap"><table class="kt" id="docsTable"><thead><tr><th class="n">رقم السند</th><th>التاريخ</th><th>من مستودع</th><th>الى مستودع</th><th class="n">عدد الأصناف</th><th class="n">الكمية الصافية</th></tr></thead><tbody>`+
+    host.innerHTML = `<div class="kt-wrap"><table class="kt" id="docsTable"><thead><tr>`
+      + sortTh('رقم السند','docsTable','docNum','n')
+      + sortTh('التاريخ','docsTable','docDate')
+      + sortTh('من مستودع','docsTable','fromWhs')
+      + sortTh('الى مستودع','docsTable','toWhs')
+      + sortTh('عدد الأصناف','docsTable','itemCount','n')
+      + sortTh('الكمية الصافية','docsTable','qty','n')
+      + `</tr></thead><tbody>`+
       docs.map(d=>`<tr><td class="n">${esc(d.docNum)}</td><td>${dateStr(d.docDate)}</td><td>${esc(d.fromWhs)}</td><td>${esc(d.toWhs)}</td><td class="n">${fmtNum(d.itemCount)}</td><td class="n">${fmtNum(d.qty)}</td></tr>`).join('')
       +`<tr class="totalrow"><td colspan="4">الإجمالي (${docs.length} سند)</td><td class="n">${fmtNum(dg.itemCount)}</td><td class="n">${fmtNum(dg.qty)}</td></tr>`
       +`</tbody></table></div>`;
