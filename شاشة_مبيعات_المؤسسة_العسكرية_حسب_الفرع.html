@@ -303,6 +303,36 @@ ORDER BY T0."DocNum"</pre>
     </div>
 
     <div class="kd-panel">
+      <h3>📋 طلبات تحويل لسا ما انحوّلت لسند فعلي (كويري OWTQ/WTQ1 على مستودع 011)</h3>
+      <div class="hint">كمية "مطلوبة" لسا ما انسلمت (الطلب موجود بس ما تحوّل لسند تحويل فعلي بعد) — بتظهر بعامود منفصل تماماً عن الكمية الفعلية بالتقارير، مع تقدير قيمتها وربحها بنفس آلية الأسعار. تأكد من أعمدة الجدول (خصوصاً <span class="mono">U_Branch</span>/<span class="mono">Comments</span>) لو مختلفة عن سندات التحويل بجدول الطلبات عندكم بـ SAP.</div>
+      <details class="opt">
+        <summary>عرض/نسخ كويري SAP</summary>
+        <div class="toolbar" style="margin:8px 0;">
+          <button class="btn btn-ghost btn-sm" onclick="copyQueryText('reqQuerySql','reqQueryMsg')">📋 نسخ الكويري</button>
+          <span class="status-msg" id="reqQueryMsg"></span>
+        </div>
+        <pre class="sql-block" id="reqQuerySql">SELECT T0."DocNum" AS "رقم السند", T0."DocDate" AS "تاريخ التسليم",
+T1."FromWhsCod" AS "من مستودع", T1."WhsCode" AS "الى مستودع",
+T1."ItemCode" AS "رمزنا", T1."Dscription" AS "اسمنا",
+T1."Quantity" AS "الكمية", T1."UomCode" AS "الوحدة",
+T0."U_Branch" AS "اسم الفرع",
+T0."U_ST_Remarks" AS "رقم فاتورة الصرف",
+T0."Comments" AS "ريمارك 2"
+FROM OWTQ T0 INNER JOIN WTQ1 T1 ON T0."DocEntry" = T1."DocEntry"
+WHERE (T1."FromWhsCod" = '011' OR T1."WhsCode" = '011')
+AND T0."DocDate" BETWEEN [%0] AND [%1]
+AND T1."LineStatus" = 'O'
+ORDER BY T0."DocNum"</pre>
+      </details>
+      <textarea class="plain" id="reqPasteArea" placeholder="الصق هنا نتيجة كويري طلبات التحويل (مع صف العناوين)..."></textarea>
+      <div class="toolbar" style="margin-top:10px;">
+        <button class="btn btn-primary btn-sm" onclick="importRequests()">استيراد طلبات التحويل</button>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('reqPasteArea').value=''">مسح المربع</button>
+        <span class="status-msg" id="reqImportMsg"></span>
+      </div>
+    </div>
+
+    <div class="kd-panel">
       <h3>🧾 فواتير المبيعات والكلفة (كويري KLN-SAL-000004 لعملاء C0006588 وC0006751)</h3>
       <div class="hint">الصق نتيجة الكويري كاملة (مع صف العناوين). إعادة لصق فاتورة/مرتجع برقم موجود بينفس النوع بيستبدل سطوره القديمة. الكويري مستثني تلقائياً المرتجعات المباشرة غير المرتبطة بفاتورة أصلية (Copy From) — ما بتدخل بحساب المبيعات.</div>
       <details class="opt">
@@ -504,11 +534,11 @@ ORDER BY "التاريخ", "نوع المستند", "رقم المستند"</pre
     </div>
 
     <div class="kd-panel">
-      <h3>⚠️ فروع سندات لسا غير محددة (<span id="unresolvedCount">0</span>)</h3>
-      <div class="hint">هاي السندات ما قدرنا نحدد فرعها تلقائياً — حدد الفرع يدوياً لكل سند حتى ينضم لتقرير المبيعات. التحديد بينطبق على كل أسطر السند.</div>
+      <h3>⚠️ سندات/طلبات لسا فرعها غير محدد (<span id="unresolvedCount">0</span>)</h3>
+      <div class="hint">هاي السندات وطلبات التحويل ما قدرنا نحدد فرعها تلقائياً — حدد الفرع يدوياً لكل واحد حتى ينضم لتقرير المبيعات. التحديد بينطبق على كل أسطر المستند.</div>
       <div class="kt-wrap" style="max-height:280px;">
         <table class="kt">
-          <thead><tr><th>رقم السند</th><th>التاريخ</th><th>من مستودع</th><th class="w">الى مستودع</th><th class="n">عدد الأصناف</th><th>الريمارك</th><th class="w">حدد الفرع</th></tr></thead>
+          <thead><tr><th>النوع</th><th>رقم المستند</th><th>التاريخ</th><th>من مستودع</th><th class="w">الى مستودع</th><th class="n">عدد الأصناف</th><th>الريمارك</th><th class="w">حدد الفرع</th></tr></thead>
           <tbody id="unresolvedTbody"></tbody>
         </table>
         <div class="empty-hint" id="unresolvedEmptyHint" style="display:none;">ما في سندات غير محددة الفرع 👍</div>
@@ -689,11 +719,15 @@ let IS_FRESH_LOAD = false;
 let TRANSFERS = [];
 // {docType:'فاتورة'|'مرتجع', docNum, docDate(iso), cardCode, cardName, itemCode, itemName, qty, price, netUnitPrice, netSales, batchNo, unitCost, estCost, totalCost, grossProfit, deliveryStatus}
 let SALES = [];
+// طلبات تحويل (ST-Request) لسا ما انحوّلت لسند تحويل فعلي — نفس شكل TRANSFERS بالضبط، كمية "مطلوبة" منفصلة عن الكمية الفعلية
+let REQUESTS = [];
 // كود الفرع الرقمي (من SAP، نفس نظام شاشة عميل المؤسسة) → اسمه
 const DEFAULT_BRANCH_CODE_MAP = {"1": "الكرامة", "10": "بني كنانة", "100": "الموقر", "101": "حي معصوم", "102": "عبد الله الرواحنة", "104": "القريقرة", "105": "الرئيسي", "106": "مغير الكرك", "107": "فقوع", "108": "محي", "109": "بصيرا", "11": "الرمثا", "110": "جرش الجديد", "111": "البادية الشمالية", "112": "الجفر", "12": "عجلون", "13": "سوف", "14": "الروابي", "15": "الطرة", "16": "سوق الفاروق", "17": "ساكب", "18": "عنجرة", "19": "مرج الحمام", "2": "اسواق طارق", "20": "السلط", "21": "السرو", "22": "صويلح", "23": "خالد", "24": "الحزام", "25": "ياجوز", "26": "المفرق", "27": "جعفر الطيار", "28": "القصر", "29": "هزاع المجالي", "3": "مجمع المقابلين", "30": "المزار الجنوبي", "31": "زيد بن الحارث", "32": "مؤتة", "33": "مادبا", "34": "سوق الرابية", "35": "سوق دير ابي سعيد", "36": "اسواق السلام", "37": "العيص", "38": "الطفيلة", "39": "القادسية", "4": "راس العين", "40": "وصفي التل الشهيد-اربد", "41": "الحارث بن عمير الازدي", "42": "اربد الشمالي", "43": "الشوبك", "44": "وادي موسى", "45": "الطيبة الشمالية", "46": "معان", "47": "خالد بن الوليد", "48": "العدنانية", "49": "راشد الزيود", "5": "شفا بدران", "50": "الصديق", "51": "الوفاء", "52": "كفرنجه", "53": "الوسطية", "54": "المزار الشمالي", "55": "منشية بني حسن", "56": "مثلث ارحابا", "57": "الاشرفية", "58": "الهاشمية", "59": "علان", "6": "مجمع الشهيد /سحاب", "60": "آيل", "61": "عوجان", "62": "الشونة الشمالية", "63": "غور الصافي", "64": "دير علا", "65": "الكريمة", "66": "الصبيحي", "67": "بلعما", "68": "القطرانة", "69": "الشونة الجنوبية", "7": "كفر يوبا", "70": "البتراء", "71": "النشامى-حسينية معان", "72": "الجيزة", "73": "ماركا", "74": "سوق مرصع", "75": "برما", "76": "الازرق", "77": "رحاب", "78": "مليح", "79": "ام العمد", "8": "الحصن", "80": "ام البساتين", "81": "ذيبان", "82": "الفاروق", "83": "الحسا", "84": "العقبة", "85": "جديتا", "86": "الطيبة", "87": "السعيدية", "88": "الخالدية", "89": "المنارة", "9": "عروس الشمال", "90": "سما السرحان", "91": "سوق صبحا", "92": "الريشة", "93": "القويرة", "94": "الديسة", "95": "اذرح", "96": "الفيصلية", "97": "الطيبة الجنوب", "98": "المدينة التدريبية -الزرقاء", "99": "سوق بدر الجديد", "113": "جاردنز"};
 let BRANCH_CODE_MAP = {};
 // تصحيح يدوي لفرع سند محدد بالرقم (لما ما نقدر نحدده تلقائياً): {docNum: 'اسم الفرع'}
 let BRANCH_DOC_OVERRIDES = {};
+// نفس الفكرة، لكن لطلبات التحويل (REQUESTS) — مفصولة عن BRANCH_DOC_OVERRIDES لأن رقم الطلب وسند التحويل تسلسلين مختلفين وممكن يتشابهوا رقمياً
+let REQUEST_BRANCH_OVERRIDES = {};
 // توحيد تهجئات مختلفة لنفس الفرع: {'الاسم كما ظهر':'الاسم الصحيح'}
 let BRANCH_RENAMES = {};
 // أسماء استُخرجت تلقائياً من الريمارك بس المستخدم رفضها (مش فرع صحيح) — ما نعيد اقتراحها
@@ -733,7 +767,7 @@ function dateStr(iso){ return iso ? iso.split('-').reverse().join('/') : '—'; 
 
 /* ==================== تخزين محلي ==================== */
 function buildBackupObject(){
-  return {TRANSFERS, SALES, BRANCH_CODE_MAP, BRANCH_DOC_OVERRIDES, BRANCH_RENAMES, BRANCH_GUESS_REJECTED};
+  return {TRANSFERS, SALES, REQUESTS, BRANCH_CODE_MAP, BRANCH_DOC_OVERRIDES, REQUEST_BRANCH_OVERRIDES, BRANCH_RENAMES, BRANCH_GUESS_REJECTED};
 }
 // فحص فعلي (كتابة + قراءة + مقارنة) — بعض المتصفحات (خصوصاً بفتح الملف مباشرة file:// أو
 // بوضع التصفح الخاص) بتمنع localStorage بصمت، فما نعتمد على try/catch وبس، لازم نتأكد فعلاً
@@ -786,7 +820,7 @@ function saveLocal(){
   showStorageBanner('');
   try{
     saveBackupToLocalStorage();
-    showStorageOk('✔ آخر حفظ محلي بهالمتصفح: '+new Date().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit',second:'2-digit'})+' — '+TRANSFERS.length+' سطر تحويل، '+SALES.length+' سطر مبيعات');
+    showStorageOk('✔ آخر حفظ محلي بهالمتصفح: '+new Date().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit',second:'2-digit'})+' — '+TRANSFERS.length+' سطر تحويل، '+REQUESTS.length+' سطر طلب تحويل، '+SALES.length+' سطر مبيعات');
   }catch(e){
     showStorageBanner('⚠ فشل الحفظ المحلي فعلياً رغم توفر التخزين — على الأغلب المساحة المخصصة للمتصفح امتلأت (بيانات كبيرة جداً). جرّب صدّر نسخة احتياطية (زر "💾 نسخة احتياطية") فوراً قبل ما تكمّل، وامسح بيانات قديمة إذا أمكن.');
     console.warn('تعذر الحفظ المحلي', e);
@@ -806,13 +840,15 @@ function loadLocal(){
   if(!Object.keys(BRANCH_CODE_MAP).length) BRANCH_CODE_MAP = {...DEFAULT_BRANCH_CODE_MAP};
   // نعيد تحديد الفروع دايماً عند التحميل — بيانات قديمة محفوظة قبل تفعيل تقييد لائحة الفروع
   // (أو قبل أي تصحيح/رفض اسم لاحق) ممكن يكون فيها rec.branch بقيمة قديمة غير معتمدة الآن
-  if(TRANSFERS.length) resolveAllBranches();
+  if(TRANSFERS.length || REQUESTS.length) resolveAllBranches();
 }
 function applyLoadedData(d){
   if(Array.isArray(d.TRANSFERS)) TRANSFERS = d.TRANSFERS;
   if(Array.isArray(d.SALES)) SALES = d.SALES;
+  if(Array.isArray(d.REQUESTS)) REQUESTS = d.REQUESTS;
   if(d.BRANCH_CODE_MAP && typeof d.BRANCH_CODE_MAP==='object' && Object.keys(d.BRANCH_CODE_MAP).length) BRANCH_CODE_MAP = d.BRANCH_CODE_MAP;
   if(d.BRANCH_DOC_OVERRIDES && typeof d.BRANCH_DOC_OVERRIDES==='object') BRANCH_DOC_OVERRIDES = d.BRANCH_DOC_OVERRIDES;
+  if(d.REQUEST_BRANCH_OVERRIDES && typeof d.REQUEST_BRANCH_OVERRIDES==='object') REQUEST_BRANCH_OVERRIDES = d.REQUEST_BRANCH_OVERRIDES;
   if(d.BRANCH_RENAMES && typeof d.BRANCH_RENAMES==='object') BRANCH_RENAMES = d.BRANCH_RENAMES;
   if(d.BRANCH_GUESS_REJECTED && typeof d.BRANCH_GUESS_REJECTED==='object') BRANCH_GUESS_REJECTED = d.BRANCH_GUESS_REJECTED;
 }
@@ -835,7 +871,7 @@ function restoreBackup(evt){
       const d = JSON.parse(reader.result);
       applyLoadedData(d);
       if(!Object.keys(BRANCH_CODE_MAP).length) BRANCH_CODE_MAP = {...DEFAULT_BRANCH_CODE_MAP};
-      if(TRANSFERS.length) resolveAllBranches();
+      if(TRANSFERS.length || REQUESTS.length) resolveAllBranches();
       saveLocal();
       refreshAllFilters();
       renderCurrentPage();
@@ -845,9 +881,9 @@ function restoreBackup(evt){
   reader.readAsText(file, 'UTF-8');
 }
 function clearAllData(){
-  if(!confirm('حذف كل سندات التحويل وفواتير المبيعات المستوردة نهائياً؟ ما بيرجع إلا من نسخة احتياطية.')) return;
+  if(!confirm('حذف كل سندات التحويل وطلبات التحويل وفواتير المبيعات المستوردة نهائياً؟ ما بيرجع إلا من نسخة احتياطية.')) return;
   if(!confirm('تأكيد أخير — الحذف نهائي؟')) return;
-  TRANSFERS = []; SALES = []; BRANCH_DOC_OVERRIDES = {};
+  TRANSFERS = []; SALES = []; REQUESTS = []; BRANCH_DOC_OVERRIDES = {}; REQUEST_BRANCH_OVERRIDES = {};
   saveLocal();
   refreshAllFilters();
   renderCurrentPage();
@@ -905,6 +941,48 @@ function importTransfers(){
   renderCurrentPage();
   document.getElementById('trPasteArea').value = '';
   flash('trImportMsg', `تم استيراد ${newRecords.length} سطر (${touchedDocNums.size} سند) — استبدلنا ${before - (TRANSFERS.length-newRecords.length)} سطر قديم لنفس السندات.`, true);
+}
+
+/* ==================== استيراد طلبات التحويل (ST-Request) غير المحوّلة لسند فعلي ==================== */
+// نفس أعمدة سندات التحويل بالضبط — كمية "مطلوبة" لسا ما انسلمت، بتُحسب وتُقيّم بعامود منفصل عن الكمية الفعلية
+function importRequests(){
+  if(!roleEdit){ flash('reqImportMsg','صلاحيتك مطالعة فقط — ما فيك تستورد بيانات.', false); return; }
+  const raw = document.getElementById('reqPasteArea').value;
+  const lines = raw.split(/\r?\n/).filter(l=>l.trim().length>0);
+  if(lines.length<2){ flash('reqImportMsg','لازم صف عناوين على الأقل + صف بيانات وحدة.', false); return; }
+  const headers = lines[0].split('\t').map(h=>h.trim());
+  const keys = headers.map(h=>TR_HEADER_ALIASES[h]||null);
+  if(!keys.includes('docNum') || !keys.includes('itemCode') || !keys.includes('qty')){
+    flash('reqImportMsg','لازم يكون فيه أعمدة "رقم السند" و"رمزنا" و"الكمية" بالعناوين.', false); return;
+  }
+  const newRecords = [];
+  for(let i=1;i<lines.length;i++){
+    const cells = lines[i].split('\t');
+    const rec = {};
+    keys.forEach((k,idx)=>{ if(k) rec[k]=(cells[idx]||'').trim(); });
+    if(!rec.docNum || !rec.itemCode) continue;
+    rec.qty = parseNum(rec.qty); if(isNaN(rec.qty)) rec.qty = 0;
+    rec.docDate = normDateToISO(rec.docDate);
+    rec.fromWhs = rec.fromWhs || '';
+    rec.toWhs = rec.toWhs || '';
+    rec.itemDesc = rec.itemDesc || '';
+    rec.uom = rec.uom || '';
+    rec.branchRaw = rec.branchRaw || '';
+    rec.remarks = rec.remarks || '';
+    rec.comments = rec.comments || '';
+    newRecords.push(rec);
+  }
+  if(!newRecords.length){ flash('reqImportMsg','ما لقيت أي سطر بيانات صالح.', false); return; }
+  const touchedDocNums = new Set(newRecords.map(r=>normDocNum(r.docNum)));
+  const before = REQUESTS.length;
+  REQUESTS = REQUESTS.filter(t=> !touchedDocNums.has(normDocNum(t.docNum)));
+  REQUESTS = REQUESTS.concat(newRecords);
+  resolveAllBranches();
+  saveLocal();
+  refreshAllFilters();
+  renderCurrentPage();
+  document.getElementById('reqPasteArea').value = '';
+  flash('reqImportMsg', `تم استيراد ${newRecords.length} سطر (${touchedDocNums.size} طلب) — استبدلنا ${before - (REQUESTS.length-newRecords.length)} سطر قديم لنفس الطلبات.`, true);
 }
 
 /* ==================== استيراد فواتير المبيعات والكلفة ==================== */
@@ -1025,11 +1103,18 @@ function closestBranchMatch(name){
   const ratio = bestDist / Math.max(norm.length, best.length, 1);
   return ratio<=0.4 ? {name:best, distance:bestDist} : null;
 }
-function resolveAllBranches(){
-  const canonical = new Set(getCanonicalBranchNames());
-  TRANSFERS.forEach(rec=>{
-    if(BRANCH_DOC_OVERRIDES[rec.docNum]){
-      rec.branch = applyBranchRename(BRANCH_DOC_OVERRIDES[rec.docNum]);
+// سند تحويل داخلي بحت بين 011↔007 (محصلة مستودع) — لا يحتاج فرع ولا يدخل بأي تجميع فرعي
+function isInternalConsolidation(rec){
+  const from011 = isWhs011(rec.fromWhs), to011 = isWhs011(rec.toWhs);
+  if(from011===to011) return true;
+  if(to011 && isWhs007(rec.fromWhs)) return true;
+  if(!to011 && isWhs007(rec.toWhs)) return true;
+  return false;
+}
+function resolveBranchesForArray(arr, overrides, canonical){
+  arr.forEach(rec=>{
+    if(overrides[rec.docNum]){
+      rec.branch = applyBranchRename(overrides[rec.docNum]);
       rec.branchConfidence = 'override';
       rec.branchGuess = null;
       return;
@@ -1052,22 +1137,28 @@ function resolveAllBranches(){
     }
   });
 }
-// كل الأسماء المستخرجة تلقائياً (من الريمارك) اللي لسا محتاجة تأكيدك — مجمّعة حسب الاسم نفسه
-// (تأكيد واحد بيغطي كل السندات الحالية والمستقبلية بنفس الاسم، عبر BRANCH_RENAMES)
+function resolveAllBranches(){
+  const canonical = new Set(getCanonicalBranchNames());
+  resolveBranchesForArray(TRANSFERS, BRANCH_DOC_OVERRIDES, canonical);
+  resolveBranchesForArray(REQUESTS, REQUEST_BRANCH_OVERRIDES, canonical);
+}
+// كل الأسماء المستخرجة تلقائياً (من الريمارك، بسندات التحويل وطلبات التحويل معاً) اللي لسا محتاجة تأكيدك —
+// مجمّعة حسب الاسم نفسه (تأكيد واحد بيغطي كل السندات/الطلبات الحالية والمستقبلية بنفس الاسم، عبر BRANCH_RENAMES)
 function getPendingGuesses(){
   const byGuess = new Map();
-  TRANSFERS.forEach(t=>{
-    if(t.branch || !t.branchGuess) return;
-    if(BRANCH_GUESS_REJECTED[t.branchGuess]) return;
-    const from011 = isWhs011(t.fromWhs), to011 = isWhs011(t.toWhs);
-    if(from011===to011) return;
-    if(to011 && isWhs007(t.fromWhs)) return;
-    if(!to011 && isWhs007(t.toWhs)) return;
-    if(!byGuess.has(t.branchGuess)) byGuess.set(t.branchGuess, {guess:t.branchGuess, docNums:new Set(), lines:0});
-    const g = byGuess.get(t.branchGuess);
-    g.docNums.add(t.docNum);
-    g.lines++;
-  });
+  function scan(arr, tag){
+    arr.forEach(t=>{
+      if(t.branch || !t.branchGuess) return;
+      if(BRANCH_GUESS_REJECTED[t.branchGuess]) return;
+      if(isInternalConsolidation(t)) return;
+      if(!byGuess.has(t.branchGuess)) byGuess.set(t.branchGuess, {guess:t.branchGuess, docNums:new Set(), lines:0});
+      const g = byGuess.get(t.branchGuess);
+      g.docNums.add(tag+'#'+t.docNum);
+      g.lines++;
+    });
+  }
+  scan(TRANSFERS, 'tr');
+  scan(REQUESTS, 'req');
   return Array.from(byGuess.values())
     .map(g=>({guess:g.guess, docCount:g.docNums.size, lines:g.lines, suggestion:closestBranchMatch(g.guess)}))
     .sort((a,b)=> b.docCount-a.docCount);
@@ -1117,10 +1208,11 @@ function renderPendingGuessTable(){
   </tr>`;
   }).join('');
 }
-function setBranchOverride(docNum, name){
+function setBranchOverride(kind, docNum, name){
   name = (name||'').trim();
   if(!name) return;
-  BRANCH_DOC_OVERRIDES[docNum] = name;
+  const overrides = kind==='request' ? REQUEST_BRANCH_OVERRIDES : BRANCH_DOC_OVERRIDES;
+  overrides[docNum] = name;
   resolveAllBranches();
   saveLocal();
   refreshAllFilters();
@@ -1145,20 +1237,21 @@ function importBranchRenames(){
   document.getElementById('renamePasteArea').value = '';
   flash('renameMsg', `تم حفظ ${n} تصحيح اسم فرع.`, true);
 }
-// كل السندات (مجمّعة برقم السند) اللي فرعها لسا مو محدد
+// كل السندات/الطلبات (مجمّعة برقم المستند ونوعه) اللي فرعها لسا مو محدد
 function getUnresolvedDocs(){
   const byDoc = new Map();
-  TRANSFERS.forEach(t=>{
-    if(t.branch) return;
-    if(t.branchGuess && !BRANCH_GUESS_REJECTED[t.branchGuess]) return; // له اقتراح لسا قيد التأكيد — بيظهر بطابور "فروع مقترحة" لا هون
-    const from011 = isWhs011(t.fromWhs), to011 = isWhs011(t.toWhs);
-    if(from011===to011) return; // ولا واحد منهم 011، أو كلاهما 011 (سند غير متعلق فعلياً)
-    if(to011 && isWhs007(t.fromWhs)) return; // تحويل تسوية 011↔007 — محصلة مستودع، مش تسليم فرع فعلي، لا يحتاج تحديد فرع
-    if(!to011 && isWhs007(t.toWhs)) return;
-    const k = t.docNum;
-    if(!byDoc.has(k)) byDoc.set(k, {docNum:t.docNum, docDate:t.docDate, fromWhs:t.fromWhs, toWhs:t.toWhs, lines:0, remarks:t.remarks||t.comments||''});
-    byDoc.get(k).lines++;
-  });
+  function scan(arr, kind, kindAr){
+    arr.forEach(t=>{
+      if(t.branch) return;
+      if(t.branchGuess && !BRANCH_GUESS_REJECTED[t.branchGuess]) return; // له اقتراح لسا قيد التأكيد — بيظهر بطابور "فروع مقترحة" لا هون
+      if(isInternalConsolidation(t)) return; // تحويل تسوية 011↔007 — محصلة مستودع، مش تسليم فرع فعلي، لا يحتاج تحديد فرع
+      const k = kind+'#'+t.docNum;
+      if(!byDoc.has(k)) byDoc.set(k, {kind, kindAr, docNum:t.docNum, docDate:t.docDate, fromWhs:t.fromWhs, toWhs:t.toWhs, lines:0, remarks:t.remarks||t.comments||''});
+      byDoc.get(k).lines++;
+    });
+  }
+  scan(TRANSFERS, 'transfer', 'سند تحويل');
+  scan(REQUESTS, 'request', 'طلب تحويل');
   return Array.from(byDoc.values()).sort((a,b)=> String(a.docDate||'').localeCompare(String(b.docDate||'')));
 }
 function renderUnresolvedTable(){
@@ -1170,6 +1263,7 @@ function renderUnresolvedTable(){
   hint.style.display = 'none';
   const branchNames = [...new Set(Object.values(BRANCH_CODE_MAP))].sort((a,b)=>a.localeCompare(b,'ar'));
   tbody.innerHTML = docs.map(d=>`<tr>
+    <td class="mono">${esc(d.kindAr)}</td>
     <td class="mono">${esc(d.docNum)}</td>
     <td>${dateStr(d.docDate)}</td>
     <td class="mono">${esc(d.fromWhs)}</td>
@@ -1177,7 +1271,7 @@ function renderUnresolvedTable(){
     <td class="mono">${d.lines}</td>
     <td style="max-width:220px; white-space:normal; font-size:11px; color:var(--ink-soft);">${esc(d.remarks)||'—'}</td>
     <td>
-      <select onchange="if(this.value==='__manual__'){const v=(prompt('اكتب اسم الفرع:')||'').trim(); if(v && (getCanonicalBranchNames().includes(v) || confirm('هذا الاسم مش من لائحة الفروع المعروفة — متأكد إنه فرع صحيح ومش خطأ إملائي؟'))) setBranchOverride('${esc(d.docNum)}', v);} else if(this.value) setBranchOverride('${esc(d.docNum)}', this.value);">
+      <select onchange="if(this.value==='__manual__'){const v=(prompt('اكتب اسم الفرع:')||'').trim(); if(v && (getCanonicalBranchNames().includes(v) || confirm('هذا الاسم مش من لائحة الفروع المعروفة — متأكد إنه فرع صحيح ومش خطأ إملائي؟'))) setBranchOverride('${d.kind}','${esc(d.docNum)}', v);} else if(this.value) setBranchOverride('${d.kind}','${esc(d.docNum)}', this.value);">
         <option value="">— اختر —</option>
         ${branchNames.map(b=>`<option value="${esc(b)}">${esc(b)}</option>`).join('')}
         <option value="__manual__">+ اسم آخر يدوياً...</option>
@@ -1240,9 +1334,9 @@ function aggCustomerByItem(cardCode, from, to){
   });
   return m;
 }
-// متوسط سعر وكلفة مرجّح لكل صنف من فاتورة عمان التجميعية (C0006588) بفترة معيّنة
-function ammanWeightedByItem(from, to){
-  const agg = aggCustomerByItem(CUSTOMER_AMMAN, from, to);
+// متوسط سعر وكلفة مرجّح لكل صنف من فواتير عميل معيّن بفترة معيّنة (معمّمة — تُستخدم لعمان وللعقبة كمان)
+function weightedByItemForCustomer(cardCode, from, to){
+  const agg = aggCustomerByItem(cardCode, from, to);
   const out = new Map();
   agg.forEach((r, code)=>{
     const avgPrice = r.qty ? r.netSales/r.qty : 0;
@@ -1252,12 +1346,14 @@ function ammanWeightedByItem(from, to){
   });
   return out;
 }
-// آخر سعر/كلفة معروفين لكل صنف من فاتورة عمان التجميعية عبر كل التاريخ المستورد (بغض النظر عن الفترة)
-// — يُستخدم لما فاتورة الشهر الحالي لسا ما انطبعت/ما انسجلت بعد، فنقدّر المبيعات بآخر سعر متوفر بدل الصفر
-function ammanPriceHistory(){
+// متوسط سعر وكلفة مرجّح لكل صنف من فاتورة عمان التجميعية (C0006588) بفترة معيّنة
+function ammanWeightedByItem(from, to){ return weightedByItemForCustomer(CUSTOMER_AMMAN, from, to); }
+// آخر سعر/كلفة معروفين لكل صنف من فواتير عميل معيّن عبر كل التاريخ المستورد (بغض النظر عن الفترة) — معمّمة
+// — تُستخدم لما فاتورة الشهر الحالي لسا ما انطبعت/ما انسجلت بعد، فنقدّر المبيعات بآخر سعر متوفر بدل الصفر
+function customerPriceHistory(cardCode){
   const byItem = new Map(); // itemCode -> Map(date -> {qty, netSales, cost, deliveredQty})
   SALES.forEach(s=>{
-    if(s.cardCode!==CUSTOMER_AMMAN) return;
+    if(s.cardCode!==cardCode) return;
     if(!byItem.has(s.itemCode)) byItem.set(s.itemCode, new Map());
     const byDate = byItem.get(s.itemCode);
     const d = s.docDate || '';
@@ -1274,6 +1370,7 @@ function ammanPriceHistory(){
   });
   return out;
 }
+function ammanPriceHistory(){ return customerPriceHistory(CUSTOMER_AMMAN); }
 // آخر سعر/كلفة معروفين لصنف معيّن بتاريخ لا يتجاوز cutoff (أو أقرب سجل متوفر لو ما في شي قبله)
 function lastKnownAmmanPrice(history, itemCode, cutoff){
   const arr = history.get(itemCode);
@@ -1307,10 +1404,34 @@ function transferNetByBranchItem(from, to){
   });
   return out;
 }
+// صافي كمية طلبات التحويل (لسا ما انحوّلت لسند فعلي) لكل (فرع، صنف) بفترة معيّنة — نفس منطق سندات التحويل بالضبط
+function requestNetByBranchItem(from, to){
+  const out = new Map(); // branch -> Map(itemCode -> {qty, itemName, docNums:Set})
+  REQUESTS.forEach(t=>{
+    if(!inMonthRange(t.docDate, from, to)) return;
+    if(!t.branch) return;
+    const from011 = isWhs011(t.fromWhs), to011 = isWhs011(t.toWhs);
+    if(from011===to011) return;
+    let sign;
+    if(to011){ if(isWhs007(t.fromWhs)) return; sign = 1; }
+    else { if(isWhs007(t.toWhs)) return; sign = -1; }
+    const qty = sign*(t.qty||0);
+    if(!out.has(t.branch)) out.set(t.branch, new Map());
+    const bm = out.get(t.branch);
+    if(!bm.has(t.itemCode)) bm.set(t.itemCode, {itemCode:t.itemCode, itemName:t.itemDesc||'', qty:0, docNums:new Set()});
+    const r = bm.get(t.itemCode);
+    r.qty += qty;
+    r.docNums.add(t.docNum);
+    if(!r.itemName && t.itemDesc) r.itemName = t.itemDesc;
+  });
+  return out;
+}
 
+const EMPTY_REQ_FIELDS = {reqQty:0, reqNetSales:0, reqCost:0, reqProfit:0};
 // التقرير الرئيسي: صف لكل فرع (العقبة مباشرة من فواتيرها، الباقي من الكمية × متوسط عمان)
+// + عامود منفصل "كمية مطلوبة" (reqQty/reqNetSales/reqCost/reqProfit) من طلبات التحويل اللي لسا ما انحوّلت لسند فعلي
 function buildBranchReport(from, to){
-  const branches = new Map(); // name -> {branch, items:Map(code->{itemCode,itemName,qty,netSales,cost,grossProfit,discount,docCount}), docNums:Set}
+  const branches = new Map(); // name -> {branch, items:Map(code->{itemCode,itemName,qty,netSales,cost,grossProfit,discount,reqQty,reqNetSales,reqCost,reqProfit}), docNums:Set}
   function ensure(name){
     if(!branches.has(name)) branches.set(name, {branch:name, items:new Map(), docNums:new Set()});
     return branches.get(name);
@@ -1320,7 +1441,7 @@ function buildBranchReport(from, to){
   if(aqItems.size){
     const b = ensure(AQABA_BRANCH_NAME);
     aqItems.forEach((r, code)=>{
-      b.items.set(code, {itemCode:code, itemName:r.itemName, qty:r.qty, netSales:r.netSales, cost:r.totalCost, grossProfit:r.netSales-r.totalCost, discount:Math.max(0,r.grossValue-r.netSales)});
+      b.items.set(code, {itemCode:code, itemName:r.itemName, qty:r.qty, netSales:r.netSales, cost:r.totalCost, grossProfit:r.netSales-r.totalCost, discount:Math.max(0,r.grossValue-r.netSales), ...EMPTY_REQ_FIELDS});
       r.docNums.forEach(d=>b.docNums.add(d));
     });
   }
@@ -1346,7 +1467,31 @@ function buildBranchReport(from, to){
       const discount = Math.max(0, grossEst-netSales);
       // شارة "تقديري" بلا معنى لو الكمية صفر (السعر التقديري ما أثر فعلياً على أي رقم ظاهر)
       const estimatedShown = estimated && r.qty!==0;
-      b.items.set(code, {itemCode:code, itemName:r.itemName || (w.itemName||''), qty:r.qty, netSales, cost, grossProfit:netSales-cost, discount, estimated:estimatedShown, asOfDate});
+      b.items.set(code, {itemCode:code, itemName:r.itemName || (w.itemName||''), qty:r.qty, netSales, cost, grossProfit:netSales-cost, discount, estimated:estimatedShown, asOfDate, ...EMPTY_REQ_FIELDS});
+      r.docNums.forEach(d=>b.docNums.add(d));
+    });
+  });
+  // الكمية المطلوبة (طلبات تحويل لسا ما انحوّلت) — بعامود منفصل، مقيّمة بنفس آلية الأسعار (العقبة من متوسط فواتيرها هي، الباقي من متوسط عمان)
+  const aqWeighted = weightedByItemForCustomer(CUSTOMER_AQABA, from, to);
+  const aqPriceHistory = customerPriceHistory(CUSTOMER_AQABA);
+  const reqByBranch = requestNetByBranchItem(from, to);
+  reqByBranch.forEach((itemsMap, branchName)=>{
+    const b = ensure(branchName);
+    const isAqaba = branchName===AQABA_BRANCH_NAME;
+    itemsMap.forEach((r, code)=>{
+      let w = isAqaba ? aqWeighted.get(code) : weighted.get(code);
+      if(!w || !w.totalQty){
+        const lk = lastKnownAmmanPrice(isAqaba ? aqPriceHistory : priceHistory, code, to);
+        w = lk ? {avgPrice:lk.price, avgCost:lk.cost, itemName:''} : {avgPrice:0, avgCost:0, itemName:''};
+      }
+      const reqNetSales = r.qty*w.avgPrice;
+      const reqCost = r.qty*w.avgCost;
+      let it = b.items.get(code);
+      if(!it){
+        it = {itemCode:code, itemName:r.itemName||w.itemName||'', qty:0, netSales:0, cost:0, grossProfit:0, discount:0, estimated:false, asOfDate:null, ...EMPTY_REQ_FIELDS};
+        b.items.set(code, it);
+      }
+      it.reqQty = r.qty; it.reqNetSales = reqNetSales; it.reqCost = reqCost; it.reqProfit = reqNetSales-reqCost;
       r.docNums.forEach(d=>b.docNums.add(d));
     });
   });
@@ -1354,8 +1499,12 @@ function buildBranchReport(from, to){
 }
 function branchTotals(b){
   let qty=0, netSales=0, cost=0, grossProfit=0, discount=0, itemCount=0, hasEstimated=false;
-  b.items.forEach(it=>{ qty+=it.qty; netSales+=it.netSales; cost+=it.cost||0; grossProfit+=it.grossProfit||0; discount+=it.discount||0; itemCount++; if(it.estimated) hasEstimated=true; });
-  return {qty, netSales, cost, grossProfit, discount, itemCount, docCount: b.docNums ? b.docNums.size : 0, profitPct: netSales? (grossProfit/netSales*100):0, hasEstimated};
+  let reqQty=0, reqNetSales=0, reqCost=0, reqProfit=0;
+  b.items.forEach(it=>{
+    qty+=it.qty; netSales+=it.netSales; cost+=it.cost||0; grossProfit+=it.grossProfit||0; discount+=it.discount||0; itemCount++; if(it.estimated) hasEstimated=true;
+    reqQty+=it.reqQty||0; reqNetSales+=it.reqNetSales||0; reqCost+=it.reqCost||0; reqProfit+=it.reqProfit||0;
+  });
+  return {qty, netSales, cost, grossProfit, discount, itemCount, docCount: b.docNums ? b.docNums.size : 0, profitPct: netSales? (grossProfit/netSales*100):0, hasEstimated, reqQty, reqNetSales, reqCost, reqProfit};
 }
 
 /* ==================== مطابقة الكميات: سندات التحويل مقابل فواتير المبيعات ==================== */
@@ -1514,7 +1663,7 @@ async function pullStateFromCloud(){
       return;
     }
     applyLoadedData(data.data);
-    if(TRANSFERS.length) resolveAllBranches();
+    if(TRANSFERS.length || REQUESTS.length) resolveAllBranches();
     try{ saveBackupToLocalStorage(); }catch(e){ console.warn('تعذر تخزين نسخة السيرفر محلياً (مساحة التخزين ممتلئة)', e); }
     queueCloudSave(); // نرفع التصحيح (لو انصحح شي بإعادة تحديد الفروع) رجوع للسيرفر المشترك
     refreshAllFilters();
@@ -1772,6 +1921,9 @@ function dashTheadSummaryHtml(){
     + sortTh('مجمل الربح','branchTable','grossProfit','n')
     + sortTh('نسبة الربح','branchTable','profitPct','n')
     + '<th class="n">% من الإجمالي</th>'
+    + sortTh('كمية مطلوبة (لسا لم تُحوَّل)','branchTable','reqQty','n')
+    + sortTh('قيمة الكمية المطلوبة','branchTable','reqNetSales','n')
+    + sortTh('ربح الكمية المطلوبة (تقديري)','branchTable','reqProfit','n')
     + '</tr>';
 }
 function dashTheadDetailHtml(){
@@ -1818,7 +1970,7 @@ function renderDashPage(){
   let totalsArr = branches.map(b=>({branch:b.branch, ...branchTotals(b)}));
   totalsArr = applySort(totalsArr, 'branchTable', (a,b)=>b.netSales-a.netSales);
   const grandNetSales = totalsArr.reduce((s,t)=>s+t.netSales,0);
-  const grand = totalsArr.reduce((acc,t)=>{acc.qty+=t.qty;acc.netSales+=t.netSales;acc.discount+=t.discount;acc.docCount+=t.docCount;acc.itemCount+=t.itemCount;acc.cost+=t.cost;acc.grossProfit+=t.grossProfit;return acc;},{qty:0,netSales:0,discount:0,docCount:0,itemCount:0,cost:0,grossProfit:0});
+  const grand = totalsArr.reduce((acc,t)=>{acc.qty+=t.qty;acc.netSales+=t.netSales;acc.discount+=t.discount;acc.docCount+=t.docCount;acc.itemCount+=t.itemCount;acc.cost+=t.cost;acc.grossProfit+=t.grossProfit;acc.reqQty+=t.reqQty;acc.reqNetSales+=t.reqNetSales;acc.reqProfit+=t.reqProfit;return acc;},{qty:0,netSales:0,discount:0,docCount:0,itemCount:0,cost:0,grossProfit:0,reqQty:0,reqNetSales:0,reqProfit:0});
   let html = totalsArr.map((t,i)=>`<tr class="rowlink" onclick="openBranchDetail('${esc(t.branch).replace(/'/g,"\\'")}')">
     <td class="n w">${i+1}</td>
     <td class="ttl">${esc(t.branch)}${t.hasEstimated?estBadge('بعض أصناف هالفرع بسعر تقديري (آخر سعر معروف) — فاتورة عمان لسا ما انسجلت لهاي الفترة'):''}</td>
@@ -1833,8 +1985,11 @@ function renderDashPage(){
     <td class="n">${fmt3(t.grossProfit)}</td>
     <td class="n">${t.profitPct.toFixed(1)}%</td>
     <td class="n">${pct(t.netSales,grandNetSales).toFixed(1)}%</td>
+    <td class="n">${fmtNum(t.reqQty)}</td>
+    <td class="n">${fmt3(t.reqNetSales)}</td>
+    <td class="n">${fmt3(t.reqProfit)}</td>
   </tr>`).join('');
-  html += `<tr class="totalrow"><td></td><td>الإجمالي (${totalsArr.length} فرع)</td><td class="n">${fmtNum(grand.docCount)}</td><td class="n">${fmtNum(grand.itemCount)}</td><td class="n">${fmtNum(grand.qty)}</td><td class="n">${fmt3(grand.netSales)}</td><td class="n">${fmt3(grand.discount)}</td><td class="n">—</td><td class="n">${fmt3(grand.netSales)}</td><td class="n">${fmt3(grand.cost)}</td><td class="n">${fmt3(grand.grossProfit)}</td><td class="n">${grand.netSales?(grand.grossProfit/grand.netSales*100).toFixed(1):'0.0'}%</td><td class="n">100%</td></tr>`;
+  html += `<tr class="totalrow"><td></td><td>الإجمالي (${totalsArr.length} فرع)</td><td class="n">${fmtNum(grand.docCount)}</td><td class="n">${fmtNum(grand.itemCount)}</td><td class="n">${fmtNum(grand.qty)}</td><td class="n">${fmt3(grand.netSales)}</td><td class="n">${fmt3(grand.discount)}</td><td class="n">—</td><td class="n">${fmt3(grand.netSales)}</td><td class="n">${fmt3(grand.cost)}</td><td class="n">${fmt3(grand.grossProfit)}</td><td class="n">${grand.netSales?(grand.grossProfit/grand.netSales*100).toFixed(1):'0.0'}%</td><td class="n">100%</td><td class="n">${fmtNum(grand.reqQty)}</td><td class="n">${fmt3(grand.reqNetSales)}</td><td class="n">${fmt3(grand.reqProfit)}</td></tr>`;
   tbody.innerHTML = html;
 }
 function rbarRowHtml(rank, item, colorVar, maxVal){
@@ -2083,6 +2238,9 @@ function openBranchDetail(branchName){
     + sortTh('الكلفة','branchDetailTable','cost','n')
     + sortTh('مجمل الربح','branchDetailTable','grossProfit','n')
     + '<th class="n">نسبة الربح</th>'
+    + sortTh('كمية مطلوبة','branchDetailTable','reqQty','n')
+    + sortTh('قيمة الكمية المطلوبة','branchDetailTable','reqNetSales','n')
+    + sortTh('ربح الكمية المطلوبة','branchDetailTable','reqProfit','n')
     + '</tr>';
   const tbody = document.getElementById('branchDetailTbody');
   if(!b || !b.items.size){
@@ -2095,8 +2253,8 @@ function openBranchDetail(branchName){
   items = applySort(items, 'branchDetailTable', (a,b2)=>b2.netSales-a.netSales);
   const t = branchTotals(b);
   document.getElementById('branchDetailSub').textContent = `${items.length} صنف · الكمية ${fmtNum(t.qty)} · المبيعات ${fmt3(t.netSales)} · الكلفة ${fmt3(t.cost)} · مجمل الربح ${fmt3(t.grossProfit)} (${t.profitPct.toFixed(1)}%)`;
-  let dhtml = items.map(it=>`<tr><td class="w freeze1">${esc(it.itemCode)}</td><td class="freeze2">${esc(it.itemName)}${it.estimated?estBadge('سعر تقديري (آخر سعر معروف) — فاتورة عمان لسا ما انسجلت لهاي الفترة'):''}</td><td class="n">${fmtNum(it.qty)}</td><td class="n">${fmt4(it.qty?it.netSales/it.qty:0)}</td><td class="n">${fmt3(it.netSales)}</td><td class="n">${fmt4(it.qty?it.cost/it.qty:0)}</td><td class="n">${fmt3(it.cost)}</td><td class="n">${fmt3(it.grossProfit)}</td><td class="n">${it.netSales?(it.grossProfit/it.netSales*100).toFixed(1):'0.0'}%</td></tr>`).join('');
-  dhtml += `<tr class="totalrow"><td colspan="2" class="freeze12">الإجمالي (${items.length} صنف)</td><td class="n">${fmtNum(t.qty)}</td><td class="n"></td><td class="n">${fmt3(t.netSales)}</td><td class="n"></td><td class="n">${fmt3(t.cost)}</td><td class="n">${fmt3(t.grossProfit)}</td><td class="n">${t.profitPct.toFixed(1)}%</td></tr>`;
+  let dhtml = items.map(it=>`<tr><td class="w freeze1">${esc(it.itemCode)}</td><td class="freeze2">${esc(it.itemName)}${it.estimated?estBadge('سعر تقديري (آخر سعر معروف) — فاتورة عمان لسا ما انسجلت لهاي الفترة'):''}</td><td class="n">${fmtNum(it.qty)}</td><td class="n">${fmt4(it.qty?it.netSales/it.qty:0)}</td><td class="n">${fmt3(it.netSales)}</td><td class="n">${fmt4(it.qty?it.cost/it.qty:0)}</td><td class="n">${fmt3(it.cost)}</td><td class="n">${fmt3(it.grossProfit)}</td><td class="n">${it.netSales?(it.grossProfit/it.netSales*100).toFixed(1):'0.0'}%</td><td class="n">${fmtNum(it.reqQty||0)}</td><td class="n">${fmt3(it.reqNetSales||0)}</td><td class="n">${fmt3(it.reqProfit||0)}</td></tr>`).join('');
+  dhtml += `<tr class="totalrow"><td colspan="2" class="freeze12">الإجمالي (${items.length} صنف)</td><td class="n">${fmtNum(t.qty)}</td><td class="n"></td><td class="n">${fmt3(t.netSales)}</td><td class="n"></td><td class="n">${fmt3(t.cost)}</td><td class="n">${fmt3(t.grossProfit)}</td><td class="n">${t.profitPct.toFixed(1)}%</td><td class="n">${fmtNum(t.reqQty)}</td><td class="n">${fmt3(t.reqNetSales)}</td><td class="n">${fmt3(t.reqProfit)}</td></tr>`;
   tbody.innerHTML = dhtml;
   document.getElementById('branchDetailOverlay').classList.add('active');
 }
