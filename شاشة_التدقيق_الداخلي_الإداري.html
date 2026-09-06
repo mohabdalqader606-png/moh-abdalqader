@@ -3259,6 +3259,138 @@ ORDER BY
     H."DocDate",
     H."CardCode";`},
 
+  {code:"KLN-SAL-000009", title:"مبيعات تفصيلية شهرية حسب الصنف والعميل والمندوب (كمية/صافي/ربح إجمالي/كلفة/خصم)", category:"sales",
+    desc:"[المصدر: محرك القوائم الختامية والتحليل المالي v48.1 — كويري q10] [الحالة: إنتاجي/معتمد]. الغرض: مجمّع مبيعات شهري متعدد الأبعاد (مجموعة الصنف، الصنف، العميل، المندوب) يشمل الكمية المفوترة (InvQty)، صافي المبيعات (LineTotal)، الربح الإجمالي (GrssProfit)، كلفة البضاعة المباعة (StockValue)، وقيمة الخصم — مع دمج المرتجعات بالسالب بنفس الهيكل (Gross Sales تُشتق بجمع عمود الخصم على صافي المبيعات، وNet Sales هو LineTotal مباشرة). SQL كما هو حرفياً بدون أي تعديل.",
+    params:"{FROM} = تاريخ بداية الفترة، {TO} = تاريخ نهاية الفترة (يُستبدلان نصياً قبل التنفيذ، أو [%0]/[%1] عند التحويل لصيغة SAP Query Manager)", tags:["مبيعات شهرية","ربح إجمالي","تصنيف V-SAL"],
+    sql:`SELECT YEAR(T0."DocDate") AS "Yr", MONTH(T0."DocDate") AS "Mo", COALESCE(T3."ItmsGrpNam", 'بدون مجموعة') AS "GroupName", T1."ItemCode" AS "ItemCode", T2."ItemName" AS "ItemName", T0."CardCode" AS "CustCode", T0."CardName" AS "CustName", COALESCE(T4."SlpName", '') AS "Rep",
+ SUM(T1."InvQty") AS "Qty", SUM(T1."LineTotal") AS "Net", SUM(T1."GrssProfit") AS "GP", SUM(T1."StockValue") AS "Cost", 0 AS "Returns", SUM(T1."DiscPrcnt" / 100 * T1."Quantity" * T1."Price") AS "Discount"
+FROM OINV T0 INNER JOIN INV1 T1 ON T1."DocEntry" = T0."DocEntry"
+INNER JOIN OITM T2 ON T2."ItemCode" = T1."ItemCode" LEFT JOIN OITB T3 ON T3."ItmsGrpCod" = T2."ItmsGrpCod" LEFT JOIN OSLP T4 ON T4."SlpCode" = T0."SlpCode"
+WHERE T0."CANCELED" = 'N' AND T0."DocDate" >= '{FROM}' AND T0."DocDate" <= '{TO}'
+GROUP BY YEAR(T0."DocDate"), MONTH(T0."DocDate"), COALESCE(T3."ItmsGrpNam", 'بدون مجموعة'), T1."ItemCode", T2."ItemName", T0."CardCode", T0."CardName", COALESCE(T4."SlpName", '')
+UNION ALL
+SELECT YEAR(T0."DocDate"), MONTH(T0."DocDate"), COALESCE(T3."ItmsGrpNam", 'بدون مجموعة'), T1."ItemCode", T2."ItemName", T0."CardCode", T0."CardName", COALESCE(T4."SlpName", ''),
+ -SUM(T1."InvQty"), -SUM(T1."LineTotal"), -SUM(T1."GrssProfit"), -SUM(T1."StockValue"), SUM(T1."LineTotal"), 0
+FROM ORIN T0 INNER JOIN RIN1 T1 ON T1."DocEntry" = T0."DocEntry"
+INNER JOIN OITM T2 ON T2."ItemCode" = T1."ItemCode" LEFT JOIN OITB T3 ON T3."ItmsGrpCod" = T2."ItmsGrpCod" LEFT JOIN OSLP T4 ON T4."SlpCode" = T0."SlpCode"
+WHERE T0."CANCELED" = 'N' AND T0."DocDate" >= '{FROM}' AND T0."DocDate" <= '{TO}'
+GROUP BY YEAR(T0."DocDate"), MONTH(T0."DocDate"), COALESCE(T3."ItmsGrpNam", 'بدون مجموعة'), T1."ItemCode", T2."ItemName", T0."CardCode", T0."CardName", COALESCE(T4."SlpName", '');`},
+
+  {code:"KLN-SAL-000010", title:"فواتير محجوزة (Reserve) لم تُسلَّم بعد ضمن نفس شهر الفاتورة — تسوية توقيت الإيراد (٥أ)", category:"sales",
+    desc:"[المصدر: محرك القوائم الختامية والتحليل المالي v48.1 — كويري q5a] [الحالة: إنتاجي/معتمد]. الغرض: يطابق كل سطر فاتورة محجوزة (isIns='Y') بأقرب تسليم/مرتجع فعلي مرتبط به (عبر DLN1/RIN1) لتحديد ما إذا حدث التسليم الفعلي بنفس شهر الفاتورة أو تأخر لشهر لاحق — أساس تسوية الاعتراف بالإيراد وفق مبدأ IFRS 15 (الاعتراف عند التسليم لا عند الفوترة). SQL كما هو حرفياً.",
+    params:"{FROM}/{TO} أو [%0]/[%1] = نطاق تاريخ الفاتورة", tags:["توقيت الإيراد","IFRS 15","فواتير محجوزة"],
+    sql:`SELECT 'RI' AS "Type", T0."DocEntry" AS "Key", T1."LineNum" AS "LineNum", T0."DocDate" AS "DocDate", T1."LineTotal" AS "LineTotal", T1."Quantity" AS "Quantity", M."MDate" AS "MatchDate", M."MQty" AS "MatchQty", M."MType" AS "MatchType", T0."DocNum" AS "DocNum", T0."CardCode" AS "CardCode", T0."CardName" AS "CardName", T1."ItemCode" AS "ItemCode", T1."Dscription" AS "ItemName", COALESCE(T4."SlpName", '') AS "Rep"
+FROM OINV T0 LEFT JOIN OSLP T4 ON T4."SlpCode" = T0."SlpCode"
+INNER JOIN INV1 T1 ON T1."DocEntry" = T0."DocEntry"
+LEFT JOIN (
+ SELECT D."BaseEntry" AS "BE", D."BaseLine" AS "BL", D."Quantity" AS "MQty", H."DocDate" AS "MDate", 'D' AS "MType"
+ FROM DLN1 D INNER JOIN ODLN H ON H."DocEntry" = D."DocEntry" AND H."CANCELED" = 'N' WHERE D."BaseType" = '13'
+ UNION ALL
+ SELECT R."BaseEntry", R."BaseLine", R."Quantity", H."DocDate", 'R'
+ FROM RIN1 R INNER JOIN ORIN H ON H."DocEntry" = R."DocEntry" AND H."CANCELED" = 'N' WHERE R."BaseType" = '13'
+) M ON M."BE" = T1."DocEntry" AND M."BL" = T1."LineNum"
+WHERE T0."isIns" = 'Y' AND T0."CANCELED" = 'N'
+ AND T0."DocDate" >= '{FROM}' AND T0."DocDate" <= '{TO}'
+ AND (M."MDate" IS NULL OR YEAR(M."MDate") <> YEAR(T0."DocDate") OR MONTH(M."MDate") <> MONTH(T0."DocDate")
+  OR EXISTS (SELECT 1 FROM DLN1 D2 INNER JOIN ODLN H2 ON H2."DocEntry" = D2."DocEntry" AND H2."CANCELED" = 'N' WHERE D2."BaseType" = '13' AND D2."BaseEntry" = T1."DocEntry" AND D2."BaseLine" = T1."LineNum" AND (YEAR(H2."DocDate") <> YEAR(T0."DocDate") OR MONTH(H2."DocDate") <> MONTH(T0."DocDate")))
+  OR EXISTS (SELECT 1 FROM RIN1 R2 INNER JOIN ORIN H3 ON H3."DocEntry" = R2."DocEntry" AND H3."CANCELED" = 'N' WHERE R2."BaseType" = '13' AND R2."BaseEntry" = T1."DocEntry" AND R2."BaseLine" = T1."LineNum" AND (YEAR(H3."DocDate") <> YEAR(T0."DocDate") OR MONTH(H3."DocDate") <> MONTH(T0."DocDate"))));`},
+
+  {code:"KLN-SAL-000011", title:"تسليمات (ODLN) غير مرتبطة بفاتورة أساس ضمن نفس شهر التسليم — تسوية توقيت الإيراد (٥ب)", category:"sales",
+    desc:"[المصدر: محرك القوائم الختامية والتحليل المالي v48.1 — كويري q5b] [الحالة: إنتاجي/معتمد]. الغرض: الوجه المقابل لـKLN-SAL-000010 — تسليمات فعلية (ODLN) لم تُفوتر بعد ضمن نفس شهر التسليم، لضبط توقيت الاعتراف بالإيراد من الجهتين معاً (فاتورة سبقت التسليم، وتسليم سبق الفاتورة). SQL كما هو حرفياً.",
+    params:"{FROM}/{TO} أو [%0]/[%1] = نطاق تاريخ التسليم", tags:["توقيت الإيراد","IFRS 15","تسليمات غير مفوترة"],
+    sql:`SELECT 'DL' AS "Type", T0."DocEntry" AS "Key", T1."LineNum" AS "LineNum", T0."DocDate" AS "DocDate", T1."LineTotal" AS "LineTotal", T1."Quantity" AS "Quantity", M."MDate" AS "MatchDate", M."MQty" AS "MatchQty", T0."DocNum" AS "DocNum", T0."CardCode" AS "CardCode", T0."CardName" AS "CardName", T1."ItemCode" AS "ItemCode", T1."Dscription" AS "ItemName", COALESCE(T4."SlpName", '') AS "Rep"
+FROM ODLN T0 LEFT JOIN OSLP T4 ON T4."SlpCode" = T0."SlpCode"
+INNER JOIN DLN1 T1 ON T1."DocEntry" = T0."DocEntry" AND (T1."BaseType" IS NULL OR T1."BaseType" <> '13')
+LEFT JOIN (
+ SELECT I."BaseEntry" AS "BE", I."BaseLine" AS "BL", I."Quantity" AS "MQty", H."DocDate" AS "MDate"
+ FROM INV1 I INNER JOIN OINV H ON H."DocEntry" = I."DocEntry" AND H."CANCELED" = 'N' WHERE I."BaseType" = '15'
+ UNION ALL
+ SELECT R."BaseEntry", R."BaseLine", R."Quantity", H."DocDate"
+ FROM RDN1 R INNER JOIN ORDN H ON H."DocEntry" = R."DocEntry" AND H."CANCELED" = 'N' WHERE R."BaseType" = '15'
+) M ON M."BE" = T1."DocEntry" AND M."BL" = T1."LineNum"
+WHERE T0."CANCELED" = 'N'
+ AND T0."DocDate" >= '{FROM}' AND T0."DocDate" <= '{TO}'
+ AND (M."MDate" IS NULL OR YEAR(M."MDate") <> YEAR(T0."DocDate") OR MONTH(M."MDate") <> MONTH(T0."DocDate")
+  OR EXISTS (SELECT 1 FROM INV1 I2 INNER JOIN OINV H2 ON H2."DocEntry" = I2."DocEntry" AND H2."CANCELED" = 'N' WHERE I2."BaseType" = '15' AND I2."BaseEntry" = T1."DocEntry" AND I2."BaseLine" = T1."LineNum" AND (YEAR(H2."DocDate") <> YEAR(T0."DocDate") OR MONTH(H2."DocDate") <> MONTH(T0."DocDate")))
+  OR EXISTS (SELECT 1 FROM RDN1 R2 INNER JOIN ORDN H3 ON H3."DocEntry" = R2."DocEntry" AND H3."CANCELED" = 'N' WHERE R2."BaseType" = '15' AND R2."BaseEntry" = T1."DocEntry" AND R2."BaseLine" = T1."LineNum" AND (YEAR(H3."DocDate") <> YEAR(T0."DocDate") OR MONTH(H3."DocDate") <> MONTH(T0."DocDate"))));`},
+
+  {code:"KLN-SAL-000012", title:"المبيعات التاريخية للصنف (بسيط) — أداة ذكاء المشتريات والمخزون", category:"sales",
+    desc:"[المصدر: شاشة ذكاء المشتريات والمخزون — كويري رقم 2 بأداة الاستيراد] [الحالة: إنتاجي/معتمد]. الغرض: كويري تغذية مبسّط (صنف/تاريخ/كمية/مستودع/عميل/مبلغ) يُستخدم كمصدر تاريخ الطلب لمحرك توقع إعادة الطلب — كل ما زاد المدى الزمني كل ما كان التوقع أدق. SQL كما هو حرفياً.",
+    params:"[%0] = تاريخ بداية الفترة، [%1] = تاريخ نهاية الفترة", tags:["ذكاء مشتريات","توقع طلب","تغذية بيانات"],
+    sql:`SELECT T1."ItemCode" AS "رمز الصنف", T0."DocDate" AS "التاريخ",
+       T1."Quantity" AS "الكمية", T1."WhsCode" AS "المستودع",
+       T0."CardCode" AS "رمز العميل", T0."CardName" AS "العميل", T1."LineTotal" AS "المبلغ"
+FROM OINV T0 INNER JOIN INV1 T1 ON T0."DocEntry"=T1."DocEntry"
+WHERE T0."DocDate" BETWEEN [%0] AND [%1]
+ORDER BY T1."ItemCode", T0."DocDate";`},
+
+  {code:"KLN-SAL-000013", title:"عروض الأسعار المفتوحة (Open Quotations) — مصدر توقّع طلب مبكر", category:"sales",
+    desc:"[المصدر: نظام التنبؤ بمسحوبات العملاء v1 — QUOTE_QUERY] [الحالة: إنتاجي/معتمد]. الغرض: يجيب كل سطر عرض سعر لا يزال مفتوحاً (LineStatus='O') مع الكمية المطلوبة والمتبقية — إشارة مبكرة على طلب محتمل قبل تحوّله لفاتورة فعلية، تُغذّي نموذج التنبؤ بالطلب. SQL كما هو حرفياً.",
+    params:"—", tags:["عروض أسعار","توقع طلب","OQUT"],
+    sql:`SELECT
+  T0."CardCode"   AS "CustCode",
+  T0."CardName"   AS "CustName",
+  T1."ItemCode"   AS "ItemCode",
+  T1."Dscription" AS "ItemName",
+  T0."DocDate"    AS "QuoteDate",
+  T1."Quantity"   AS "Qty",
+  T1."OpenQty"    AS "OpenQty",
+  T2."SlpName"    AS "Rep"
+FROM OQUT T0
+INNER JOIN QUT1 T1 ON T1."DocEntry" = T0."DocEntry"
+LEFT JOIN OSLP T2 ON T2."SlpCode" = T0."SlpCode"
+WHERE T1."LineStatus" = 'O'
+ORDER BY T0."CardCode", T1."ItemCode", T0."DocDate";`},
+
+  {code:"KLN-SAL-000014", title:"فواتير محجوزة بانتظار تسليم — بعد خصم التسليم الجزئي والمرتجع الجزئي", category:"sales",
+    desc:"[المصدر: نظام التنبؤ بمسحوبات العملاء v1 — RESERVE_QUERY] [الحالة: إنتاجي/معتمد]. الغرض: لكل سطر فاتورة محجوزة (isIns='Y')، يحسب الكمية المسلَّمة فعلياً (DLN1) والمرتجعة (RIN1) ويطرحهما من كمية الفاتورة للوصول للكمية غير المسلَّمة بعد (UndeliveredQty) — مقاربة مختلفة عن KLN-SAL-000010 (طرح كميات مباشر بدل مطابقة تواريخ الأشهر)، تُبقى منفصلة لاختلاف منهجية الحساب رغم تشابه الهدف العام. SQL كما هو حرفياً.",
+    params:"[%0] = تاريخ بداية الفواتير المعتبرة (>=)", tags:["فواتير محجوزة","تسليم جزئي","توقع طلب"],
+    sql:`SELECT
+    I0."DocNum" AS "DocNum", I0."DocDate" AS "InvoiceDate",
+    I0."CardCode" AS "CustCode", I0."CardName" AS "CustName",
+    I1."ItemCode" AS "ItemCode", I1."Dscription" AS "ItemName",
+    SUM(I1."Quantity") AS "TotalQty", SUM(I1."LineTotal") AS "TotalValue",
+    IFNULL((SELECT SUM(D1."Quantity") FROM DLN1 D1 INNER JOIN ODLN D0 ON D0."DocEntry"=D1."DocEntry"
+      WHERE D0."CANCELED"='N' AND D1."BaseType"=13 AND D1."BaseEntry"=I0."DocEntry" AND D1."ItemCode"=I1."ItemCode"),0) AS "DeliveredQty",
+    IFNULL((SELECT SUM(R1."Quantity") FROM RIN1 R1 INNER JOIN ORIN R0 ON R0."DocEntry"=R1."DocEntry"
+      WHERE R0."CancelDate" IS NULL AND R1."BaseType"=13 AND R1."BaseEntry"=I0."DocEntry" AND R1."ItemCode"=I1."ItemCode"),0) AS "ReturnedQty",
+    SUM(I1."Quantity")
+      - IFNULL((SELECT SUM(D1."Quantity") FROM DLN1 D1 INNER JOIN ODLN D0 ON D0."DocEntry"=D1."DocEntry"
+          WHERE D0."CANCELED"='N' AND D1."BaseType"=13 AND D1."BaseEntry"=I0."DocEntry" AND D1."ItemCode"=I1."ItemCode"),0)
+      - IFNULL((SELECT SUM(R1."Quantity") FROM RIN1 R1 INNER JOIN ORIN R0 ON R0."DocEntry"=R1."DocEntry"
+          WHERE R0."CancelDate" IS NULL AND R1."BaseType"=13 AND R1."BaseEntry"=I0."DocEntry" AND R1."ItemCode"=I1."ItemCode"),0) AS "UndeliveredQty"
+FROM OINV I0
+INNER JOIN INV1 I1 ON I0."DocEntry"=I1."DocEntry"
+WHERE I0."isIns"='Y'
+  AND I0."DocDate" >= [%0]
+GROUP BY I0."DocNum",I0."DocDate",I0."CardCode",I0."CardName",I1."ItemCode",I1."Dscription",I0."DocEntry";`},
+
+  {code:"KLN-SAL-000015", title:"مسحوبات العملاء التفصيلية (تسليمات) مع تصنيف العميل والصنف — تغذية نموذج التنبؤ بالطلب", category:"sales",
+    desc:"[المصدر: نظام التنبؤ بمسحوبات العملاء v1 — SAP_QUERY] [الحالة: إنتاجي/معتمد ('كويري المسحوبات المعتمد' كما ورد بالمصدر حرفياً)]. الغرض: يجيب كل سطر تسليم (ODLN/DLN1) مع اسم يوم الأسبوع (DAYNAME)، تصنيف العميل (OCRG)، وفئة الصنف (OITB) مدمجين بنفس الاستعلام — البيانات الخام الأساسية لأي نموذج تنبؤ باستهلاك/مسحوبات العملاء المستقبلية حسب النمط التاريخي.",
+    params:"[%0] = تاريخ بداية الفترة، [%1] = تاريخ نهاية الفترة (SAP يسأل عنهما تلقائياً كل ما تشغّل الكويري)", tags:["تنبؤ بالطلب","مسحوبات","ODLN"],
+    sql:`SELECT
+  T0."CardCode"        AS "CustCode",
+  T0."CardName"        AS "CustName",
+  T1."ItemCode"        AS "ItemCode",
+  T1."Dscription"      AS "ItemName",
+  T0."DocDate"         AS "WDDate",
+  DAYNAME(T0."DocDate") AS "DOW",
+  T1."Quantity"        AS "Qty",
+  T1."UomCode"         AS "UOM",
+  T2."SlpName"         AS "Rep",
+  T4."GroupName"       AS "CustCategory",
+  T6."ItmsGrpNam"      AS "ItemCategory"
+FROM ODLN T0
+INNER JOIN DLN1 T1 ON T1."DocEntry" = T0."DocEntry"
+LEFT JOIN OSLP T2 ON T2."SlpCode" = T0."SlpCode"
+LEFT JOIN OCRD T3 ON T3."CardCode" = T0."CardCode"
+LEFT JOIN OCRG T4 ON T4."GroupCode" = T3."GroupCode"
+LEFT JOIN OITM T5 ON T5."ItemCode" = T1."ItemCode"
+LEFT JOIN OITB T6 ON T6."ItmsGrpCod" = T5."ItmsGrpCod"
+WHERE T0."DocDate" BETWEEN [%0] AND [%1]      -- بيسألك SAP B1 عن تاريخ البداية والنهاية كل ما تشغّل الكويري
+  AND T0."CANCELED" = 'N'
+ORDER BY T0."CardCode", T1."ItemCode", T0."DocDate";`},
+
   {code:"KLN-SAL-005", title:"فواتير أُنشئت أو عُدِّلت خارج أوقات الدوام الرسمي", category:"sales",
     desc:"مؤشر مخاطر لعمليات غير معتادة (احتيال محتمل أو تجاوز صلاحيات) — يقارن وقت الإنشاء بساعات العمل المعتمدة.",
     params:"'[%2]' (مثال 08:00), '[%3]' (مثال 17:00), '[%0]', '[%1]'", tags:["مخاطر","توقيت غير معتاد"],
@@ -4786,12 +4918,114 @@ SELECT 'S', T0."CardCode", T0."CardName",
 FROM OCRD T0
 WHERE T0."CardType" = 'S' AND (T0."Balance" <> 0 OR EXISTS (SELECT 1 FROM OPCH P WHERE P."CardCode" = T0."CardCode" AND P."DocDate" >= '[%0]'));`},
 
+  {code:"KLN-COL-000014", title:"تحليل أعمار ذمم العملاء — نسخة مقترَحة (M0..M11) لأداة تحليل العملاء", category:"collect",
+    desc:"[المصدر: شاشة تحليل العملاء v1 — 'الكويري المقترح (SAP B1 HANA)'] [الحالة: ⚠ مقترَح غير موثَّق (Suggested/Unverified) — هكذا وُصف حرفياً بالمصدر نفسه، بخلاف بقية كويريات هذه الدفعة الموصوفة 'معتمد/إنتاجي']. الغرض: توزيع صافي حركة كل عميل (فواتير ناقص مرتجعات) على 12 شهراً سابقة (M0..M11) نسبة لتاريخ اليوم مباشرة (لا لقطة تاريخية ثابتة كـKLN-COL-000008) — يتطلب اختباراً وتوثيق نتيجة فعلية (lastTested) قبل اعتماده ضمن برنامج تدقيق، بخلاف الكويريات الأخرى المؤكَّدة من بيئة الإنتاج.",
+    params:"—", tags:["أعمار ذمم","مقترح","غير موثّق"],
+    sql:`SELECT C."CardCode" AS "رمز العميل", C."CardName" AS "اسم العميل",
+       IFNULL(S."SlpName",'') AS "المندوب",
+       C."Balance" AS "الرصيد", C."CreditLine" AS "السقف الائتماني",
+       SUM(CASE WHEN D."MDiff"=0  THEN D."Amt" ELSE 0 END) AS "M0",
+       SUM(CASE WHEN D."MDiff"=1  THEN D."Amt" ELSE 0 END) AS "M1",
+       SUM(CASE WHEN D."MDiff"=2  THEN D."Amt" ELSE 0 END) AS "M2",
+       SUM(CASE WHEN D."MDiff"=3  THEN D."Amt" ELSE 0 END) AS "M3",
+       SUM(CASE WHEN D."MDiff"=4  THEN D."Amt" ELSE 0 END) AS "M4",
+       SUM(CASE WHEN D."MDiff"=5  THEN D."Amt" ELSE 0 END) AS "M5",
+       SUM(CASE WHEN D."MDiff"=6  THEN D."Amt" ELSE 0 END) AS "M6",
+       SUM(CASE WHEN D."MDiff"=7  THEN D."Amt" ELSE 0 END) AS "M7",
+       SUM(CASE WHEN D."MDiff"=8  THEN D."Amt" ELSE 0 END) AS "M8",
+       SUM(CASE WHEN D."MDiff"=9  THEN D."Amt" ELSE 0 END) AS "M9",
+       SUM(CASE WHEN D."MDiff"=10 THEN D."Amt" ELSE 0 END) AS "M10",
+       SUM(CASE WHEN D."MDiff"=11 THEN D."Amt" ELSE 0 END) AS "M11"
+FROM OCRD C
+LEFT JOIN OSLP S ON S."SlpCode"=C."SlpCode"
+LEFT JOIN (
+   SELECT "CardCode",
+          (YEAR(CURRENT_DATE)*12+MONTH(CURRENT_DATE))-(YEAR("DocDate")*12+MONTH("DocDate")) AS "MDiff",
+          "DocTotal" AS "Amt"
+   FROM OINV WHERE "CANCELED"='N'
+   UNION ALL
+   SELECT "CardCode",
+          (YEAR(CURRENT_DATE)*12+MONTH(CURRENT_DATE))-(YEAR("DocDate")*12+MONTH("DocDate")),
+          -"DocTotal"
+   FROM ORIN WHERE "CANCELED"='N'
+) D ON D."CardCode"=C."CardCode" AND D."MDiff" BETWEEN 0 AND 11
+WHERE C."CardType"='C'
+GROUP BY C."CardCode", C."CardName", S."SlpName", C."Balance", C."CreditLine"
+ORDER BY C."CardCode";`},
+
   {code:"KLN-PUR-000003", title:"استحقاقات الموردين المفتوحة فعلياً (سيولة 13 أسبوعاً)", category:"purchasing",
     desc:"كويري إنتاجي فعلي: يستخرج فواتير الموردين ذوي رصيد دائن سالب (مدين لهم) لبناء جدول سيولة قصير الأمد (Cash Flow 13 أسبوعاً) — الجانب المقابل من طرف العملاء يُغذَّى من كويريات عمر الذمة (KLN-COL-000005 وما شابه).",
     params:"[%0] = تاريخ بداية الفواتير المعتبرة", tags:["سيولة","استحقاقات موردين","AP"],
     sql:`SELECT 'APINV' AS "Kind", T0."CardName" AS "Party", T0."DocDueDate" AS "DueDate", T0."DocTotal" AS "Amount", T0."CardCode" AS "Code", T1."Balance" AS "BPBalance", T0."DocDate" AS "DocDate"
 FROM OPCH T0 INNER JOIN OCRD T1 ON T1."CardCode" = T0."CardCode"
 WHERE T0."CANCELED" = 'N' AND T1."Balance" < 0 AND T0."DocDate" >= '[%0]';`},
+
+  {code:"KLN-PUR-000004", title:"مشتريات تفصيلية شهرية حسب الصنف والمورد (مع مرتجعات الشراء بالسالب)", category:"purchasing",
+    desc:"[المصدر: محرك القوائم الختامية والتحليل المالي v48.1 — كويري q11] [الحالة: إنتاجي/معتمد]. الغرض: مجمّع مشتريات شهري متعدد الأبعاد (مجموعة الصنف، الصنف، المورد) يشمل الكمية المشتراة وصافي القيمة، مع دمج مرتجعات الشراء (ORPC/RPC1) بالسالب بنفس الهيكل — أساس تحليل الموردين حسب الصنف والفترة. SQL كما هو حرفياً.",
+    params:"{FROM}/{TO} أو [%0]/[%1] = نطاق التاريخ", tags:["مشتريات شهرية","تحليل موردين","V-PUR"],
+    sql:`SELECT YEAR(T0."DocDate") AS "Yr", MONTH(T0."DocDate") AS "Mo", COALESCE(T3."ItmsGrpNam", 'بدون مجموعة') AS "GroupName", T1."ItemCode" AS "ItemCode", T2."ItemName" AS "ItemName", T0."CardCode" AS "SupCode", T0."CardName" AS "Supplier",
+ SUM(T1."InvQty") AS "Qty", SUM(T1."LineTotal") AS "Net"
+FROM OPCH T0 INNER JOIN PCH1 T1 ON T1."DocEntry" = T0."DocEntry"
+INNER JOIN OITM T2 ON T2."ItemCode" = T1."ItemCode" LEFT JOIN OITB T3 ON T3."ItmsGrpCod" = T2."ItmsGrpCod"
+WHERE T0."CANCELED" = 'N' AND T0."DocDate" >= '{FROM}' AND T0."DocDate" <= '{TO}'
+GROUP BY YEAR(T0."DocDate"), MONTH(T0."DocDate"), COALESCE(T3."ItmsGrpNam", 'بدون مجموعة'), T1."ItemCode", T2."ItemName", T0."CardCode", T0."CardName"
+UNION ALL
+SELECT YEAR(T0."DocDate"), MONTH(T0."DocDate"), COALESCE(T3."ItmsGrpNam", 'بدون مجموعة'), T1."ItemCode", T2."ItemName", T0."CardCode", T0."CardName", -SUM(T1."InvQty"), -SUM(T1."LineTotal")
+FROM ORPC T0 INNER JOIN RPC1 T1 ON T1."DocEntry" = T0."DocEntry"
+INNER JOIN OITM T2 ON T2."ItemCode" = T1."ItemCode" LEFT JOIN OITB T3 ON T3."ItmsGrpCod" = T2."ItmsGrpCod"
+WHERE T0."CANCELED" = 'N' AND T0."DocDate" >= '{FROM}' AND T0."DocDate" <= '{TO}'
+GROUP BY YEAR(T0."DocDate"), MONTH(T0."DocDate"), COALESCE(T3."ItmsGrpNam", 'بدون مجموعة'), T1."ItemCode", T2."ItemName", T0."CardCode", T0."CardName";`},
+
+  {code:"KLN-PUR-000005", title:"كشف كامل الأصناف النشطة (رمز/اسم) — كويري تغذية أساسي", category:"purchasing",
+    desc:"[المصدر: شاشة ذكاء المشتريات والمخزون — كويري رقم 1] [الحالة: إنتاجي/معتمد]. الغرض: قائمة كل صنف نشط (OITM.validFor='Y') — كويري تغذية إلزامي لبناء جدول بارامترات الشراء بأي أداة ذكاء مشتريات. SQL كما هو حرفياً.",
+    params:"—", tags:["أصناف","بيانات أساسية","تغذية"],
+    sql:`SELECT T0."ItemCode" AS "رمز الصنف", T0."ItemName" AS "اسم الصنف"
+FROM OITM T0
+WHERE T0."validFor"='Y';`},
+
+  {code:"KLN-PUR-000006", title:"تاريخ أوامر الشراء لكل صنف/مورد — لتقدير مدة التوريد الفعلية", category:"purchasing",
+    desc:"[المصدر: شاشة ذكاء المشتريات والمخزون — كويري رقم 4] [الحالة: إنتاجي/معتمد]. الغرض: تاريخ كل أمر شراء لكل صنف؛ تُطابقه الأداة المستهلكة تلقائياً مع أقرب استلام فعلي لاحق لنفس الصنف والمورد (كويري GRPO) لتقدير مدة التوريد الفعلية بدل الاعتماد على المدة التعاقدية فقط. SQL كما هو حرفياً.",
+    params:"[%0] = تاريخ بداية الفترة، [%1] = تاريخ نهاية الفترة", tags:["أوامر شراء","مدة توريد","Lead Time"],
+    sql:`SELECT T1."ItemCode" AS "رمز الصنف", T0."CardCode" AS "المورد",
+       T0."DocDate" AS "تاريخ الطلب", T1."Quantity" AS "الكمية"
+FROM OPOR T0 INNER JOIN POR1 T1 ON T0."DocEntry"=T1."DocEntry"
+WHERE T0."DocDate" BETWEEN [%0] AND [%1]
+ORDER BY T1."ItemCode", T0."DocDate";`},
+
+  {code:"KLN-PUR-000007", title:"بارامترات الشراء لكل صنف: Lead Time التعاقدي / MOQ / مضاعف الطلب", category:"purchasing",
+    desc:"[المصدر: شاشة ذكاء المشتريات والمخزون — كويري رقم 5] [الحالة: إنتاجي/معتمد]. الغرض: يسحب حقول التخطيط القياسية بـ SAP (تبويب Planning Data ببطاقة الصنف): مدة التوريد التعاقدية، الحد الأدنى للطلب، ومضاعف الطلب — تنبيه مهم موثَّق بالمصدر: Lead Time = صفر بـ SAP يعني غالباً 'غير محدَّد' لا 'توصيل فوري'. SQL كما هو حرفياً.",
+    params:"—", tags:["Lead Time","MOQ","بارامترات شراء"],
+    sql:`SELECT T0."ItemCode" AS "رمز الصنف",
+       T0."U_U_ST_V_NAME" AS "المورد",
+       T0."LeadTime" AS "Lead Time تعاقدي (يوم)",
+       T0."MinOrdrQty" AS "MOQ",
+       T0."OrdrMulti" AS "مضاعف الطلب"
+FROM OITM T0
+WHERE T0."validFor"='Y';`},
+
+  {code:"KLN-PUR-000008", title:"تاريخ استلام البضاعة (GRPO) مع سعر المنشأ لكل صنف/مورد — Purchase Price / Last Purchase Price", category:"purchasing",
+    desc:"[المصدر: شاشة ذكاء المشتريات والمخزون — كويري رقم 6] [الحالة: إنتاجي/معتمد]. الغرض: يعتمد على استلام البضاعة (GRPO) لا فاتورة الشراء لأنه يعكس فعلياً ما وصل سوياً بنفس الشحنة بتاريخ دقيق؛ عمود السعر هو سعر المنشأ وقت الاستلام (بدون شحن/جمارك/مصاريف) — للكلفة الفعلية النهائية بعد اللاندد كوست انظر KLN-PUR-000002. SQL كما هو حرفياً.",
+    params:"— (نطاق ثابت آخر 3 سنوات من تاريخ التشغيل)", tags:["Purchase Price","Last Purchase Price","GRPO"],
+    sql:`SELECT T1."ItemCode" AS "رمز الصنف", T0."CardCode" AS "المورد",
+       T0."DocEntry" AS "رقم الفاتورة", T0."DocDate" AS "تاريخ الفاتورة",
+       T1."Quantity" AS "الكمية", T1."Price" AS "السعر"
+FROM OPDN T0 INNER JOIN PDN1 T1 ON T0."DocEntry"=T1."DocEntry"
+WHERE T0."DocDate" >= ADD_YEARS(CURRENT_DATE, -3)
+ORDER BY T0."CardCode", T0."DocEntry";`},
+
+  {code:"KLN-PUR-000009", title:"طلبات الشراء المفتوحة (Purchase Orders) — بضاعة بالطريق مع تاريخ الوصول المتوقع", category:"purchasing",
+    desc:"[المصدر: شاشة ذكاء المشتريات والمخزون — كويري رقم 7] [الحالة: إنتاجي/معتمد]. الغرض: الكمية المتبقية غير المستلمة (OpenQty) لكل أمر شراء مفتوح مع تاريخ الوصول المتوقع (ShipDate) — يتيح حساب تاريخ انقطاع متوقع يوماً بيوم بدل الاعتماد على رقم 'تحت الطلب' الإجمالي بلا تاريخ. تنبيه موثَّق بالمصدر: تحقّق من اسم عمود الكمية/التاريخ فعلياً قبل التشغيل لاحتمال اختلاف التسمية حسب الإصدار. SQL كما هو حرفياً.",
+    params:"—", tags:["أوامر شراء مفتوحة","بضاعة بالطريق"],
+    sql:`SELECT T1."ItemCode" AS "رمز الصنف", T1."OpenQty" AS "الكمية",
+       T1."ShipDate" AS "تاريخ الوصول المتوقع", T0."CardName" AS "المورد"
+FROM OPOR T0 INNER JOIN POR1 T1 ON T0."DocEntry"=T1."DocEntry"
+WHERE T0."DocStatus"='O' AND T1."LineStatus"='O';`},
+
+  {code:"KLN-PUR-000010", title:"كشف الموردين النشطين (رمز/اسم) — لترجمة أكواد UDF لأسماء حقيقية", category:"purchasing",
+    desc:"[المصدر: شاشة ذكاء المشتريات والمخزون — قسم استيراد بيانات الموردين] [الحالة: إنتاجي/معتمد]. الغرض: قائمة كل مورد (CardType='S') تُستخدم لترجمة رمز المورد (عند ظهوره كرمز خام من حقل UDF بدل الاسم) لاسم حقيقي بتقارير الأداة — إضافة مرجعية فقط، لا تغيّر ربط البيانات الأساسي. SQL كما هو حرفياً.",
+    params:"—", tags:["موردين","بيانات أساسية","Supplier Analysis"],
+    sql:`SELECT "CardCode" AS "رمز المورد", "CardName" AS "اسم المورد"
+FROM OCRD WHERE "CardType"='S';`},
 
   // ---------------- المشتريات (تكملة) ----------------
   {code:"KLN-PUR-006", title:"أصناف ارتفع سعر شرائها الأخير عن متوسط آخر 6 أشهر", category:"purchasing",
@@ -5145,6 +5379,62 @@ JOIN OITM T2 ON T2."ItemCode" = T0."ItemCode"
 GROUP BY T0."WhsCode", T1."WhsName"
 ORDER BY "InventoryValueAtCost" DESC;`},
 
+  {code:"KLN-STK-000001", title:"تقييم مخزون الباتشات بالكلفة الفعلية + آخر بيع وآخر شراء لكل صنف", category:"stock",
+    desc:"[المصدر: محرك القوائم الختامية والتحليل المالي v48.1 — كويري q20] [الحالة: إنتاجي/معتمد]. الغرض: أشمل كويري باتشات بالمكتبة — لكل دفعة (Batch) بكل مستودع: الكمية، الكلفة الفعلية للوحدة (CostTotal/Quantity أو AvgPrice احتياطياً)، قيمة الدفعة، رصيد المستودع الكلي (OnHand/Committed/OnOrder)، وتاريخ آخر عملية بيع وآخر عملية شراء للصنف — لقطة واحدة تجمع Batch Cost وLast Purchase وLast Sale معاً. SQL كما هو حرفياً.",
+    params:"—", tags:["batch cost","aging","last purchase"],
+    sql:`SELECT T0."ItemCode" AS "ItemCode", T2."ItemName" AS "ItemName", COALESCE(T3."ItmsGrpNam",'') AS "GroupName", T0."WhsCode" AS "WhsCode", T1."DistNumber" AS "Batch", T1."ExpDate" AS "ExpDate", T1."InDate" AS "InDate",
+ T0."Quantity" AS "BatchQty", CASE WHEN T1."Quantity" <> 0 THEN T1."CostTotal" / T1."Quantity" ELSE T2."AvgPrice" END AS "UnitCost",
+ T0."Quantity" * (CASE WHEN T1."Quantity" <> 0 THEN T1."CostTotal" / T1."Quantity" ELSE T2."AvgPrice" END) AS "BatchValue",
+ T5."OnHand" AS "WhsOnHand", T5."IsCommited" AS "Committed", T5."OnOrder" AS "OnOrder",
+ (SELECT MAX(I."DocDate") FROM INV1 L INNER JOIN OINV I ON I."DocEntry" = L."DocEntry" WHERE L."ItemCode" = T0."ItemCode" AND I."CANCELED" = 'N') AS "LastSale",
+ (SELECT SUM(L."InvQty") / 3.0 FROM INV1 L INNER JOIN OINV I ON I."DocEntry" = L."DocEntry" WHERE L."ItemCode" = T0."ItemCode" AND I."CANCELED" = 'N' AND I."DocDate" >= ADD_DAYS(CURRENT_DATE, -90)) AS "AvgMonthQty",
+ (SELECT MAX(P."DocDate") FROM PCH1 L INNER JOIN OPCH P ON P."DocEntry" = L."DocEntry" WHERE L."ItemCode" = T0."ItemCode") AS "LastPurchase"
+FROM OBTQ T0
+INNER JOIN OBTN T1 ON T1."ItemCode" = T0."ItemCode" AND T1."SysNumber" = T0."SysNumber"
+INNER JOIN OITM T2 ON T2."ItemCode" = T0."ItemCode"
+LEFT JOIN OITB T3 ON T3."ItmsGrpCod" = T2."ItmsGrpCod"
+LEFT JOIN OITW T5 ON T5."ItemCode" = T0."ItemCode" AND T5."WhsCode" = T0."WhsCode"
+WHERE T0."Quantity" > 0
+ORDER BY T1."ExpDate", T0."ItemCode";`},
+
+  {code:"KLN-STK-000002", title:"المخزون الحالي حسب الصنف والمستودع مع الوارد تحت الطلب", category:"stock",
+    desc:"[المصدر: شاشة ذكاء المشتريات والمخزون — كويري رقم 3] [الحالة: إنتاجي/معتمد]. الغرض: كويري تغذية إلزامي للرصيد الحالي بكل مستودع، مع الكمية الواردة تحت الطلب واسم المستودع — Inventory Balance by Warehouse بأبسط صيغة قابلة للصق مباشر. SQL كما هو حرفياً.",
+    params:"—", tags:["مخزون حالي","تحت الطلب","تغذية"],
+    sql:`SELECT T0."ItemCode" AS "رمز الصنف", T0."WhsCode" AS "المستودع", T1."WhsName" AS "اسم المستودع",
+       T0."OnHand" AS "الرصيد الحالي", T0."OnOrder" AS "تحت الطلب"
+FROM OITW T0 LEFT JOIN OWHS T1 ON T0."WhsCode"=T1."WhsCode";`},
+
+  {code:"KLN-STK-000003", title:"سندات التحويل المخزني وطلبات التحويل المرتبطة بمستودع فرعي/فرع (Stock Movements)", category:"stock",
+    desc:"[المصدر: شاشة عميل المؤسسة الاستهلاكية العسكرية / شاشة مبيعات المؤسسة العسكرية حسب الفرع — كويري سندات التحويل] [الحالة: إنتاجي/معتمد]. الغرض: كل سند تحويل مخزني من/إلى مستودع فرعي معيّن (مثال حرفي بالمصدر: مستودع '011')، مع اسم الفرع (UDF: U_Branch) ورقم فاتورة الصرف المرتبط (UDF: U_ST_Remarks) — أساس تدقيق حركة البضاعة بين المستودعات/الفروع. رمز المستودع '011' وأسماء الحقول المخصصة (UDF) كما وردت حرفياً بالمصدر؛ تُستبدل يدوياً برمز المستودع الفعلي عند التطبيق على فرع/عميل مؤسسي آخر. SQL كما هو حرفياً بدون أي تعميم أو تعديل.",
+    params:"[%0] = تاريخ البداية، [%1] = تاريخ النهاية (بارامترات SAP Query Manager أصلية — يُسأل عنهما تلقائياً عند التشغيل)", tags:["تحويلات مخزنية","stock movements","UDF"],
+    sql:`SELECT T0."DocNum" AS "رقم السند", T0."DocDate" AS "تاريخ التسليم",
+T1."FromWhsCod" AS "من مستودع", T1."WhsCode" AS "الى مستودع",
+T1."ItemCode" AS "رمزنا", T1."Dscription" AS "اسمنا",
+T1."Quantity" AS "الكمية", T1."UomCode" AS "الوحدة",
+T0."U_Branch" AS "اسم الفرع",
+T0."U_ST_Remarks" AS "رقم فاتورة الصرف",
+T0."Comments" AS "ريمارك 2"
+FROM OWTR T0 INNER JOIN WTR1 T1 ON T0."DocEntry" = T1."DocEntry"
+WHERE (T1."FromWhsCod" = '011' OR T1."WhsCode" = '011')
+AND T0."DocDate" BETWEEN [%0] AND [%1]
+ORDER BY T0."DocNum";`},
+
+  {code:"KLN-STK-000004", title:"طلبات التحويل المخزني لسا ما تحوّلت لسند فعلي (Transfer Requests مفتوحة)", category:"stock",
+    desc:"[المصدر: شاشة مبيعات المؤسسة العسكرية حسب الفرع — كويري طلبات التحويل] [الحالة: إنتاجي/معتمد]. الغرض: كويري منفصل تماماً عن KLN-STK-000003 (جدول مصدر مختلف: OWTQ/WTQ1 لا OWTR/WTR1) — يجيب كمية 'مطلوبة' لسا ما انسلمت (الطلب موجود بالنظام بس ما تحوّل لسند تحويل فعلي بعد، LineStatus='O')، بنفس بنية أعمدة سند التحويل الفعلي لسهولة المقارنة جنباً إلى جنب. SQL كما هو حرفياً — رمز المستودع '011' وحقول UDF كما وردت بالمصدر.",
+    params:"[%0] = تاريخ البداية، [%1] = تاريخ النهاية", tags:["طلبات تحويل","stock movements","OWTQ"],
+    sql:`SELECT T0."DocNum" AS "رقم السند", T0."DocDate" AS "تاريخ التسليم",
+T1."FromWhsCod" AS "من مستودع", T1."WhsCode" AS "الى مستودع",
+T1."ItemCode" AS "رمزنا", T1."Dscription" AS "اسمنا",
+T1."Quantity" AS "الكمية", T1."UomCode" AS "الوحدة",
+T0."U_Branch" AS "اسم الفرع",
+T0."U_ST_Remarks" AS "رقم فاتورة الصرف",
+T0."Comments" AS "ريمارك 2"
+FROM OWTQ T0 INNER JOIN WTQ1 T1 ON T0."DocEntry" = T1."DocEntry"
+WHERE (T1."FromWhsCod" = '011' OR T1."WhsCode" = '011')
+AND T0."DocDate" BETWEEN [%0] AND [%1]
+AND T1."LineStatus" = 'O'
+ORDER BY T0."DocNum";`},
+
   // ---------------- الجودة (تكملة) ----------------
   {code:"KLN-QLT-005", title:"معدل رفض الاستلام (Quality Rejection Rate) لكل مورد", category:"quality",
     desc:"يقارن الكمية المرفوضة عند الاستلام (فرق بين كمية أمر الشراء وكمية إذن الاستلام الفعلي) بإجمالي الكمية المطلوبة من كل مورد.",
@@ -5229,6 +5519,189 @@ JOIN OITM T2 ON T2."ItemCode" = T0."ItemCode"
 JOIN OITM T1 ON T1."ItemCode" = T0."ItemCode"
 WHERE T0."FromWhsCode" = '[%0]' AND T0."WhsCode" = '[%1]' AND TH."DocDate" BETWEEN '[%2]' AND '[%3]'
 GROUP BY T1."ItemCode", T2."ItemName";`},
+
+  {code:"KLN-VAN-000004", title:"تتبّع رقم رحلة التوزيع (Pick No) لكل توصيلة — تصحيح مبلغ الديليفري", category:"fleet",
+    desc:"[المصدر: محرك القوائم الختامية والتحليل المالي v48.1 — كويري q45] [الحالة: إنتاجي/معتمد]. الغرض: يربط كل توصيلة (ODLN) برقم رحلة التوزيع (U_ST_PickNo) والسائق، مع تصحيح جوهري موثَّق: حقول المبلغ على الديليفري نفسه (DocTotal/VatSum) غير موثوقة بهذه البيئة (مؤكَّد بمثال حقيقي: رحلة 260007637 طلعت بالديليفري 2.00 دينار بدل 2,259.446 الحقيقية) — لذلك يُجلب المبلغ من الفاتورة المرتبطة (Reserve Invoice) مباشرة بدل الديليفري، مع أعمدة تجميعية لكل رحلة (عدد العملاء، عدد الفواتير، إجمالي الوزن). SQL كما هو حرفياً.",
+    params:"[%0] = تاريخ بداية فترة التوصيل، [%1] = تاريخ نهاية فترة التوصيل", tags:["رحلة توزيع","Pick No","تصحيح مبلغ"],
+    sql:`SELECT
+    T0."U_ST_PickNo"                 AS "رقم رحلة التوزيع (Pick No)",
+
+    T0."DocEntry"                    AS "رقم داخلي",
+    T0."DocNum"                      AS "رقم التوصيلة",
+    T0."DocDate"                     AS "تاريخ التوصيل",
+
+    -- رقم الفاتورة المرتبطة
+    (SELECT MAX(I."DocNum")
+     FROM DLN1 L
+     INNER JOIN OINV I ON L."BaseEntry" = I."DocEntry"
+     WHERE L."DocEntry" = T0."DocEntry" AND L."BaseType" = 13
+    )                                 AS "رقم الفاتورة المرتبطة",
+
+    T0."CardCode"                    AS "رمز العميل",
+    T0."CardName"                    AS "اسم العميل",
+
+    REPLACE(REPLACE(T0."Address", ', Jordan', ''), 'Jordan', '')
+                                      AS "عنوان العميل",
+
+    T0."SlpCode"                     AS "رمز المندوب",
+    S."SlpName"                      AS "المندوب",
+
+    T0."U_ST_DriverName"             AS "اسم السائق",
+
+    (T0."Weight" / 1000000.0)        AS "وزن التوصيلة (طن)",
+
+    -- المبلغ من الفاتورة المرتبطة (مو من الديليفري)
+    (SELECT SUM(I."VatSum")
+     FROM (SELECT DISTINCT I2."DocEntry" FROM DLN1 L2
+           INNER JOIN OINV I2 ON L2."BaseEntry" = I2."DocEntry"
+           WHERE L2."DocEntry" = T0."DocEntry" AND L2."BaseType" = 13) X
+     INNER JOIN OINV I ON I."DocEntry" = X."DocEntry"
+    )                                 AS "قيمة الضريبة",
+
+    (SELECT SUM(I."DocTotal" - I."VatSum")
+     FROM (SELECT DISTINCT I2."DocEntry" FROM DLN1 L2
+           INNER JOIN OINV I2 ON L2."BaseEntry" = I2."DocEntry"
+           WHERE L2."DocEntry" = T0."DocEntry" AND L2."BaseType" = 13) X
+     INNER JOIN OINV I ON I."DocEntry" = X."DocEntry"
+    )                                 AS "المبلغ قبل الضريبة",
+
+    (SELECT SUM(I."DocTotal")
+     FROM (SELECT DISTINCT I2."DocEntry" FROM DLN1 L2
+           INNER JOIN OINV I2 ON L2."BaseEntry" = I2."DocEntry"
+           WHERE L2."DocEntry" = T0."DocEntry" AND L2."BaseType" = 13) X
+     INNER JOIN OINV I ON I."DocEntry" = X."DocEntry"
+    )                                 AS "المبلغ شامل الضريبة",
+
+    -- === أعمدة تجميعية لكل رحلة (Pick No) مكرّرة بكل صف ===
+    (SELECT COUNT(DISTINCT D2."CardCode") FROM ODLN D2
+     WHERE D2."U_ST_PickNo" = T0."U_ST_PickNo" AND D2."CANCELED"='N'
+       AND D2."DocDate" BETWEEN [%0] AND [%1])
+                                      AS "عدد العملاء بالرحلة",
+
+    (SELECT COUNT(DISTINCT I2."DocNum") FROM ODLN D2
+     INNER JOIN DLN1 L2 ON D2."DocEntry" = L2."DocEntry" AND L2."BaseType" = 13
+     INNER JOIN OINV I2 ON L2."BaseEntry" = I2."DocEntry"
+     WHERE D2."U_ST_PickNo" = T0."U_ST_PickNo" AND D2."CANCELED"='N'
+       AND D2."DocDate" BETWEEN [%0] AND [%1])
+                                      AS "عدد الفواتير بالرحلة",
+
+    (SELECT SUM(D2."Weight") / 1000000.0 FROM ODLN D2
+     WHERE D2."U_ST_PickNo" = T0."U_ST_PickNo" AND D2."CANCELED"='N'
+       AND D2."DocDate" BETWEEN [%0] AND [%1])
+                                      AS "إجمالي وزن الرحلة (طن)",
+
+    T0."DocStatus"                   AS "حالة المستند",
+    T0."CANCELED"                    AS "ملغي",
+    T0."Comments"                    AS "ملاحظات"
+
+FROM ODLN T0
+LEFT JOIN OSLP S ON T0."SlpCode" = S."SlpCode"
+
+WHERE T0."DocDate" BETWEEN [%0] AND [%1]
+  AND T0."CANCELED" = 'N'
+
+ORDER BY
+    T0."U_ST_PickNo",
+    T0."DocDate",
+    T0."DocNum";`},
+
+  {code:"KLN-VAN-000009", title:"تفاصيل الترانسفيرات المرتبطة برحلة توزيع — تصحيح حقل الوزن", category:"fleet",
+    desc:"[المصدر: محرك القوائم الختامية والتحليل المالي v48.1 — كويري q50] [الحالة: إنتاجي/معتمد]. الغرض: يربط سندات التحويل المخزني (OWTR) برقم رحلة التوزيع نفسه، مع تصحيح موثَّق: حقل الوزن الصحيح المُدخل فعلياً ببيانات المبيعات هو SWeight1 لا IWeight1، ومخزَّن بالكيلوغرام فتُقسَّم القيمة ÷1000 لتحويلها لطن. SQL كما هو حرفياً.",
+    params:"[%0] = تاريخ بداية فترة التحويل، [%1] = تاريخ نهاية فترة التحويل", tags:["رحلة توزيع","ترانسفير","تصحيح وزن"],
+    sql:`SELECT
+    T0."U_ST_PickNo"                 AS "رقم الرحلة",
+    T0."U_ST_DriverName"             AS "اسم السائق",
+
+    T0."DocNum"                      AS "رقم الترانسفير",
+    T0."DocDate"                     AS "التاريخ",
+
+    T1."FromWhsCod"                  AS "من مستودع",
+    T1."WhsCode"                     AS "إلى مستودع",
+    T0."U_Branch"                    AS "اسم الفرع",
+
+    COUNT(DISTINCT T1."ItemCode")    AS "عدد الأصناف",
+    SUM(T1."Quantity")               AS "إجمالي الكمية",
+
+    (SUM(T1."Quantity" * IFNULL(IT."SWeight1", 0)) / 1000.0)
+                                      AS "الوزن (طن)",
+
+    SUM(T1."StockPrice" * T1."Quantity")
+                                      AS "قيمة التكلفة",
+
+    T0."Comments"                    AS "ملاحظات"
+
+FROM OWTR T0
+INNER JOIN WTR1 T1 ON T0."DocEntry" = T1."DocEntry"
+LEFT JOIN OITM IT ON T1."ItemCode" = IT."ItemCode"
+
+WHERE T0."DocDate" BETWEEN [%0] AND [%1]
+  AND T0."CANCELED" = 'N'
+
+GROUP BY T0."U_ST_PickNo", T0."U_ST_DriverName", T0."DocNum", T0."DocDate",
+         T1."FromWhsCod", T1."WhsCode", T0."U_Branch", T0."Comments"
+
+ORDER BY T0."DocDate", T0."DocNum";`},
+
+  {code:"KLN-VAN-000010", title:"مندوبو الكاش فان النشطون (قسم CashVan) — كويري تغذية أساسي", category:"fleet",
+    desc:"[المصدر: عمولة الكاش فان — كويري qReps] [الحالة: إنتاجي/معتمد]. الغرض: قائمة مندوبي المبيعات المصنَّفين قسمهم 'CashVan' عبر حقل مخصص (U_SlpType، يظهر بعنوان 'Department' بالشاشة) والنشيطين فقط (Active='Y') — كويري تغذية أساسي لأي حساب عمولة أو أداء خاص بمندوبي الكاش فان.",
+    params:"—", tags:["كاش فان","مندوبين","U_SlpType"],
+    sql:`SELECT T0."SlpCode" AS "كود المندوب", T0."SlpName" AS "المندوب", T0."U_SlpType" AS "القسم"
+FROM OSLP T0
+WHERE T0."U_SlpType" = 'CashVan' AND T0."Active" = 'Y'
+ORDER BY T0."SlpName";`},
+
+  {code:"KLN-VAN-000011", title:"صافي المبيعات الشهرية لكل مندوب كاش فان — أساس عمولة 2% ومكافأة البيع", category:"fleet",
+    desc:"[المصدر: عمولة الكاش فان — كويري qSales] [الحالة: إنتاجي/معتمد]. الغرض: صافي مبيعات كل مندوب كاش فان شهرياً (فواتير OINV ناقص مرتجعات ORIN)، مفلتر تلقائياً على مندوبي الكاش فان النشيطين فقط — القاعدة التي تُحتسب عليها عمولة نسبتها 2% ومكافأة البيع حسب سياسة العمولات المعتمدة.",
+    params:"[%0] = تاريخ بداية الفترة، [%1] = تاريخ نهاية الفترة", tags:["عمولات","كاش فان","صافي مبيعات"],
+    sql:`SELECT "المندوب", "الشهر", SUM("صافي") AS "صافي المبيعات"
+FROM (
+    SELECT T4."SlpName" AS "المندوب", TO_VARCHAR(T0."DocDate",'YYYY-MM') AS "الشهر",
+           SUM(T0."DocTotal" - T0."VatSum") AS "صافي"
+    FROM OINV T0
+    INNER JOIN OSLP T4 ON T4."SlpCode" = T0."SlpCode"
+    WHERE T0."CANCELED" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1] AND T4."U_SlpType" = 'CashVan' AND T4."Active" = 'Y'
+    GROUP BY T4."SlpName", TO_VARCHAR(T0."DocDate",'YYYY-MM')
+    UNION ALL
+    SELECT T4."SlpName", TO_VARCHAR(T0."DocDate",'YYYY-MM'),
+           -SUM(T0."DocTotal" - T0."VatSum")
+    FROM ORIN T0
+    INNER JOIN OSLP T4 ON T4."SlpCode" = T0."SlpCode"
+    WHERE T0."CANCELED" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1] AND T4."U_SlpType" = 'CashVan' AND T4."Active" = 'Y'
+    GROUP BY T4."SlpName", TO_VARCHAR(T0."DocDate",'YYYY-MM')
+) X
+GROUP BY "المندوب", "الشهر"
+ORDER BY "المندوب", "الشهر";`},
+
+  {code:"KLN-VAN-000012", title:"تحصيل وشيكات مندوبي الكاش فان — أساس مكافأة جودة التحصيل", category:"fleet",
+    desc:"[المصدر: عمولة الكاش فان — كويري qColl] [الحالة: إنتاجي/معتمد]. الغرض: يرجّع سطر لكل قبض نقدي/حوالة وسطر مستقل لكل شيك بتاريخ استحقاقه لمندوبي الكاش فان النشيطين — القاعدة التي تُحتسب عليها مكافأة جودة التحصيل (شيك استحقاقه أكثر من 7 أيام من تاريخ القبض = 'ضعيف' حسب السياسة المعتمدة بالمصدر).",
+    params:"[%0] = تاريخ بداية الفترة، [%1] = تاريخ نهاية الفترة", tags:["عمولات","كاش فان","تحصيل","شيكات"],
+    sql:`SELECT T2."SlpName" AS "المندوب",
+       TO_VARCHAR(T0."DocDate",'YYYY-MM-DD') AS "تاريخ القبض",
+       'نقد' AS "الطريقة",
+       '' AS "تاريخ استحقاق الشيك",
+       (COALESCE(T0."CashSum",0) + COALESCE(T0."TrsfrSum",0)) AS "المبلغ"
+FROM ORCT T0
+INNER JOIN OCRD T1 ON T1."CardCode" = T0."CardCode"
+INNER JOIN OSLP T2 ON T2."SlpCode" = T1."SlpCode"
+WHERE T0."Canceled" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1]
+  AND (COALESCE(T0."CashSum",0) + COALESCE(T0."TrsfrSum",0)) > 0
+  AND T2."U_SlpType" = 'CashVan' AND T2."Active" = 'Y'
+
+UNION ALL
+
+SELECT T2."SlpName",
+       TO_VARCHAR(T0."DocDate",'YYYY-MM-DD'),
+       'شيك',
+       TO_VARCHAR(T3."DueDate",'YYYY-MM-DD'),
+       T3."CheckSum"
+FROM ORCT T0
+INNER JOIN RCT1 T3 ON T3."DocNum" = T0."DocEntry"
+INNER JOIN OCRD T1 ON T1."CardCode" = T0."CardCode"
+INNER JOIN OSLP T2 ON T2."SlpCode" = T1."SlpCode"
+WHERE T0."Canceled" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1]
+  AND T2."U_SlpType" = 'CashVan' AND T2."Active" = 'Y'
+
+ORDER BY 1,2;`},
 
   // ---------------- SAP وIT (تكملة) ----------------
   {code:"KLN-SAP-006", title:"تغييرات على إعدادات الضرائب أو قوائم الأسعار الأساسية بالنظام", category:"sapit",
