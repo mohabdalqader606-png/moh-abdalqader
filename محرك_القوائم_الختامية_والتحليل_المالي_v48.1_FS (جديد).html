@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v49.0-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v49.1-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -1042,6 +1042,9 @@ body[data-mode="exec"] :is(#tab-fsi,#tab-fsb,#tab-fsc) .fsi-kpis{gap:var(--sp-4)
 #tab-fsc #fscLink .badge{white-space:nowrap}
 #tab-fsc #fscLiq .btn{margin-inline-start:8px}
 @media print{#tab-fsc #fscTbl th:nth-child(9){display:none}#tab-fsc #fscLiq .btn{display:none}#tab-fsc #fscLink table{min-width:0;font-size:10.5px}}
+.yrs-dl{margin-inline-start:10px;white-space:nowrap;font-weight:600;color:var(--ink2)}.yrs-dl input{vertical-align:-2px;margin-inline-end:4px}
+th.yd,td.yd{background:rgba(11,31,58,.035);font-size:.92em}th.yd{color:var(--muted);font-weight:600;letter-spacing:.02em}
+@media print{.yrs-dl{display:none}}
 </style>
 </head>
 <body>
@@ -1488,7 +1491,7 @@ function accOf(c){return S.accounts[c]||(isVirt(c)?virtAcct(c):null)}
 function accName(c){const a=accOf(c);return a?a.name:''}
 let S={accounts:{},opening:{},moves:{},adj:[],bank:{},banks:[],bp:{},bpOpen:{},bpMoves:{},timing:[],timingOn:true,budget:{},due:[],pcMoves:{},cust:[],aging:{rows:[],chq:[],snap:''},sales:[],purch:[],ben:[],prof:[],deliv:[],transf:[],findings:{},payroll:[],repMap:{},emps:[],ecl:{rates:[0.005,0.02,0.05,0.15,0.4,0.8],overlay:0,acct:'',on:false,hist:[]},segP:{a:70000,c:7000,perMonths:7,stopsDay:20,days:26,vanCost:975,vanRepCost:0,leak:0.1,mgrComm:0.5,dupWin:0},ctsP:{inv:0.229,line:1.216,stop:6.15,rate:8,ret:1.5,retDays:2},commP:{default:1,byRep:{'اشرف ابو عزة':0,'اشرف ابو عزه':0,'باسل نوري':0,'Basil Nori':0},timeRules:[{rep:'صهيب ابو عمشة',from:'2026-07',rate:0},{rep:'صهيب ابو عمشه',from:'2026-07',rate:0}],militaryCodes:['GRP_MIL','C0006588','C0006751'],militaryRate:0.5},fleetP:{truck:975,cap:3,fuel:0},map:{},bench:null,settings:{co:'مركز الكيلاني للأغذية',cur:'د.أ',tax:20,int:8,scale:1,openYear:2026,openMonth:1}};
 let R=null; // results
-let isView='sum',bsView='sum',cfView='sum';
+let isView='sum',yrsDelta=true,bsView='sum',cfView='sum';
 const LINES={
  CASH:{n:'النقد وما في حكمه',st:'BS',g:'CA'},AR:{n:'الذمم المدينة التجارية',st:'BS',g:'CA'},CHQ:{n:'شيكات برسم التحصيل',st:'BS',g:'CA'},INV:{n:'المخزون',st:'BS',g:'CA'},PREPAID:{n:'مصاريف مدفوعة مقدماً وأرصدة مدينة أخرى',st:'BS',g:'CA'},RELATED_DR:{n:'ذمم أطراف ذات علاقة (مدينة)',st:'BS',g:'CA'},
  PPE:{n:'الممتلكات والآلات والمعدات (بالكلفة)',st:'BS',g:'NCA'},ACC_DEP:{n:'مجمع الإهلاك',st:'BS',g:'NCA'},INTANG:{n:'الأصول غير الملموسة',st:'BS',g:'NCA'},OTHER_NCA:{n:'أصول غير متداولة أخرى',st:'BS',g:'NCA'},
@@ -3285,6 +3288,13 @@ function drill(key,kind,label){const lines=GROUPS[key]||[key];const isIS=kind===
 /* ---------- IS ---------- */
 function yearGroups(){const by={};R.per.forEach(k=>{const y=k.slice(0,4);(by[y]=by[y]||[]).push(k)});return Object.keys(by).sort().map(y=>({y,ms:by[y],end:by[y][by[y].length-1],lbl:y+(by[y].length<12?` (${by[y].length} أشهر)`:'')}))}
 const ISROWS=[['sec','الإيرادات'],['SALES','المبيعات الإجمالية'],['SALES_RET','(−) مردودات وخصومات'],['tot','NETSALES','صافي المبيعات'],['COGS','(−) كلفة المبيعات'],['tot','GP','مجمل الربح'],['sec','المصاريف التشغيلية'],['SELL','مصاريف البيع والتوزيع'],['ADMIN','المصاريف الإدارية والعمومية'],['SALARY','الرواتب والأجور'],['DEPR','الإهلاك والإطفاء'],['PROV','المخصصات'],['tot','OPEX','إجمالي المصاريف التشغيلية'],['OTHER_INC','(+) إيرادات أخرى'],['OTHER_EXP','(−) مصاريف أخرى'],['tot','EBIT','الربح التشغيلي (EBIT)'],['FIN_EXP','(−) تكاليف التمويل'],['FIN_INC','(+) إيرادات تمويلية'],['tot','EBT','الربح قبل الضريبة'],['TAX','(−) ضريبة الدخل'],['tot','NI','صافي ربح الفترة'],['tot','EBITDA','EBITDA (للمرجعية)']];
+function toggleYrsDelta(){yrsDelta=!yrsDelta;renderIS();renderBS();renderCF()}
+function ydLbl(){return `<label class="yrs-dl"><input type="checkbox" ${yrsDelta?'checked':''} onchange="toggleYrsDelta()"> إظهار فروقات كل سنة عن السنة السابقة (Δ، Δ%) ومعدل النمو السنوي المركّب</label>`}
+function ydHead(YG,flows=true){return YG.map((g,i)=>'<th class="num">'+g.lbl+'</th>'+(yrsDelta&&i>0?(flows&&g.ms.length<12?'<th class="num yd" title="السنة غير المكتملة تُقارن بنفس أشهرها من السنة السابقة">Δ نفس الأشهر</th><th class="num yd" title="السنة غير المكتملة تُقارن بنفس أشهرها من السنة السابقة">Δ%</th>':'<th class="num yd">Δ</th><th class="num yd">Δ%</th>'):'')).join('')+(yrsDelta&&YG.length>=3?'<th class="num yd" title="بين أول وآخر سنة مكتملة (12 شهراً)">CAGR</th>':'')}
+function ydPrev(YG,i,sumFn){const g=YG[i],p=YG[i-1];if(g.ms.length>=12)return sumFn(p.ms);const mm=new Set(g.ms.map(k=>k.slice(5)));return sumFn(p.ms.filter(k=>mm.has(k.slice(5))))}
+function ydCols(YG){return YG.length+(yrsDelta?2*(YG.length-1)+(YG.length>=3?1:0):0)}
+function ydCells(v,p,dir){if(!yrsDelta)return '';const d=v-p,r=chg(v,p);const good=dir===0||r==null?null:(d*dir>=0);return `<td class="${cls(d)} yd">${fmt(d)}</td><td class="num yd ${good==null?'':(good?'pos':'neg')}">${pct(r)}</td>`}
+function ydCagr(vs,YG){if(!yrsDelta||YG.length<3)return '';const a=YG.findIndex(g=>g.ms.length===12);let b=-1;for(let i=YG.length-1;i>=0;i--){if(YG[i].ms.length===12){b=i;break}}let out='—';if(a>=0&&b>a){const v0=vs[a],v1=vs[b];if(v0>0&&v1>0)out=pct(Math.pow(v1/v0,1/(b-a))-1)}return `<td class="num yd">${out}</td>`}
 function renderIS(){const el=document.getElementById('isTbl');const cm=R.CMP;let h='';
  const val=(o,k)=>k==='OPEX'?o.OPEX:o[k];
  if(isView==='sum'){h=`<table><tr><th>البند</th><th class="num">الفترة الحالية</th><th class="num">% من المبيعات</th>${cm?'<th class="num">'+cm.label+'</th><th class="num">التغير</th><th class="num">التغير %</th>':''}</tr>`;
@@ -3294,9 +3304,9 @@ function renderIS(){const el=document.getElementById('isTbl');const cm=R.CMP;let
  else if(isView==='months'||isView==='common'){const cs=isView==='common';h=`<table><tr><th>البند</th>${R.per.map(k=>'<th class="num">'+k+'</th>').join('')}<th class="num">الإجمالي</th></tr>`;
   ISROWS.forEach(r=>{if(r[0]==='sec'){h+=`<tr class="sec"><td colspan="${R.per.length+2}">${r[1]}</td></tr>`;return}const key=r[0]==='tot'?r[1]:r[0],lbl=r[0]==='tot'?r[2]:r[1];
    h+=`<tr class="${r[0]==='tot'?'tot':'h2'} drill" onclick="drill('${key}','IS','${lbl}')"><td>${lbl}</td>${R.per.concat(['TOT']).map(k=>{const v=val(R.IS[k],key);return `<td class="num">${cs?pct(R.IS[k].NETSALES?v/R.IS[k].NETSALES:null):fmt(v)}</td>`}).join('')}</tr>`});h+='</table>'}
- else if(isView==='years'){const YG=yearGroups();h=`<p class="hint">عمود لكل سنة ضمن الفترة المختارة أعلاه — السنة غير المكتملة يظهر عدد أشهرها بجانبها. وسّع الفترة (من سنة/إلى سنة) لتشمل كل السنوات المطلوبة.</p><table><tr><th>البند</th>${YG.map(g=>'<th class="num">'+g.lbl+'</th>').join('')}<th class="num">الإجمالي</th></tr>`;
-  ISROWS.forEach(r=>{if(r[0]==='sec'){h+=`<tr class="sec"><td colspan="${YG.length+2}">${r[1]}</td></tr>`;return}const key=r[0]==='tot'?r[1]:r[0],lbl=r[0]==='tot'?r[2]:r[1];
-   h+=`<tr class="${r[0]==='tot'?'tot':'h2'} drill" onclick="drill('${key}','IS','${lbl}')"><td>${lbl}</td>${YG.map(g=>{const v=g.ms.reduce((a,k)=>a+val(R.IS[k],key),0);return `<td class="num">${fmt(v)}</td>`}).join('')}<td class="num"><b>${fmt(val(R.IS.TOT,key))}</b></td></tr>`});h+='</table>'}
+ else if(isView==='years'){const YG=yearGroups();h=`<p class="hint">عمود لكل سنة ضمن الفترة المختارة أعلاه — السنة غير المكتملة يظهر عدد أشهرها بجانبها. وسّع الفترة (من سنة/إلى سنة) لتشمل كل السنوات المطلوبة. ${ydLbl()}</p><table><tr><th>البند</th>${ydHead(YG)}<th class="num">الإجمالي</th></tr>`;
+  ISROWS.forEach(r=>{if(r[0]==='sec'){h+=`<tr class="sec"><td colspan="${ydCols(YG)+2}">${r[1]}</td></tr>`;return}const key=r[0]==='tot'?r[1]:r[0],lbl=r[0]==='tot'?r[2]:r[1];const dir=['SALES','SALES_RET','NETSALES','GP','OTHER_INC','FIN_INC','EBIT','EBT','NI','EBITDA'].includes(key)?1:-1;const sumIS=ms=>ms.reduce((a,k)=>a+val(R.IS[k],key),0);const vs=YG.map(g=>sumIS(g.ms));
+   h+=`<tr class="${r[0]==='tot'?'tot':'h2'} drill" onclick="drill('${key}','IS','${lbl}')"><td>${lbl}</td>${vs.map((v,i)=>`<td class="num">${fmt(v)}</td>`+(i>0?ydCells(v,ydPrev(YG,i,sumIS),dir):'')).join('')}${ydCagr(vs,YG)}<td class="num"><b>${fmt(val(R.IS.TOT,key))}</b></td></tr>`});h+='</table>'}
  else{h=`<table><tr><th>الحساب</th><th>البند</th>${R.per.map(k=>'<th class="num">'+k+'</th>').join('')}<th class="num">الإجمالي</th><th class="num">%</th></tr>`;
   ISROWS.forEach(r=>{if(r[0]==='sec'||r[0]==='tot'){if(r[0]==='tot'){h+=`<tr class="tot"><td colspan="2">${r[2]}</td>${R.per.concat(['TOT']).map(k=>`<td class="num">${fmt(val(R.IS[k],r[1]))}</td>`).join('')}<td></td></tr>`}return}
    const l=r[0];const sg=['SALES','OTHER_INC','FIN_INC'].includes(l)?-1:1;const accs=Object.entries(R.L[l].acc).filter(([c,a])=>Object.keys(a.mo).length).sort((a,b)=>a[0].localeCompare(b[0]));if(!accs.length)return;
@@ -3317,9 +3327,9 @@ function renderBS(){const el=document.getElementById('bsTbl');const cm=R.CMP;let
  else if(bsView==='months'||bsView==='common'){const cs=bsView==='common';h=`<table><tr><th>البند</th><th class="num">افتتاحي</th>${R.per.map(k=>'<th class="num">'+k+'</th>').join('')}</tr>`;
   BSROWS.forEach(r=>{if(r[0]==='sec'||r[0]==='sub'){h+=`<tr class="${r[0]}"><td colspan="${R.per.length+2}">${r[1]}</td></tr>`;return}const lbl=r[0]==='tot'?r[2]:LINES[r[0]].n;const o=bsv(R.BSo,r);if(r[0]!=='tot'&&!o&&!R.per.some(k=>bsv(R.BSm[k],r)))return;
    h+=`<tr class="${r[0]==='tot'?'tot':'h2'} drill" onclick="drill('${r[0]==='tot'?r[1]:r[0]}','BS','${lbl}')"><td>${lbl}</td><td class="num">${cs?pct(R.BSo.TA?o/R.BSo.TA:null):fmt(o)}</td>${R.per.map(k=>{const v=bsv(R.BSm[k],r);return `<td class="${cls(v)}">${cs?pct(R.BSm[k].TA?v/R.BSm[k].TA:null):fmt(v)}</td>`}).join('')}</tr>`});h+='</table>'}
- else if(bsView==='years'){const YG=yearGroups();h=`<p class="hint">رصيد نهاية كل سنة ضمن الفترة المختارة — السنة غير المكتملة الرصيد بنهاية آخر شهر متاح منها. وسّع الفترة (من سنة/إلى سنة) لتشمل كل السنوات.</p><table><tr><th>البند</th><th class="num">افتتاحي</th>${YG.map(g=>'<th class="num">'+g.lbl+'</th>').join('')}</tr>`;
-  BSROWS.forEach(r=>{if(r[0]==='sec'||r[0]==='sub'){h+=`<tr class="${r[0]}"><td colspan="${YG.length+2}">${r[1]}</td></tr>`;return}const lbl=r[0]==='tot'?r[2]:LINES[r[0]].n;const o=bsv(R.BSo,r);if(r[0]!=='tot'&&!o&&!YG.some(g=>bsv(R.BSm[g.end],r)))return;
-   h+=`<tr class="${r[0]==='tot'?'tot':'h2'} drill" onclick="drill('${r[0]==='tot'?r[1]:r[0]}','BS','${lbl}')"><td>${lbl}</td><td class="num">${fmt(o)}</td>${YG.map(g=>{const v=bsv(R.BSm[g.end],r);return `<td class="${cls(v)}">${fmt(v)}</td>`}).join('')}</tr>`});h+='</table>'}
+ else if(bsView==='years'){const YG=yearGroups();h=`<p class="hint">رصيد نهاية كل سنة ضمن الفترة المختارة — السنة غير المكتملة الرصيد بنهاية آخر شهر متاح منها. وسّع الفترة (من سنة/إلى سنة) لتشمل كل السنوات. ${ydLbl()}</p><table><tr><th>البند</th><th class="num">افتتاحي</th>${ydHead(YG,false)}</tr>`;
+  BSROWS.forEach(r=>{if(r[0]==='sec'||r[0]==='sub'){h+=`<tr class="${r[0]}"><td colspan="${ydCols(YG)+2}">${r[1]}</td></tr>`;return}const lbl=r[0]==='tot'?r[2]:LINES[r[0]].n;const o=bsv(R.BSo,r);if(r[0]!=='tot'&&!o&&!YG.some(g=>bsv(R.BSm[g.end],r)))return;const vs=YG.map(g=>bsv(R.BSm[g.end],r));
+   h+=`<tr class="${r[0]==='tot'?'tot':'h2'} drill" onclick="drill('${r[0]==='tot'?r[1]:r[0]}','BS','${lbl}')"><td>${lbl}</td><td class="num">${fmt(o)}</td>${vs.map((v,i)=>`<td class="${cls(v)}">${fmt(v)}</td>`+(i>0?ydCells(v,vs[i-1],0):'')).join('')}${ydCagr(vs,YG)}</tr>`});h+='</table>'}
  else{h=`<table><tr><th>الحساب</th><th>الاسم</th><th class="num">افتتاحي</th>${R.per.map(k=>'<th class="num">'+k+'</th>').join('')}<th class="num">حركة الفترة</th></tr>`;
   BSROWS.forEach(r=>{if(r[0]==='sec'||r[0]==='sub'){h+=`<tr class="${r[0]}"><td colspan="${R.per.length+4}">${r[1]}</td></tr>`;return}
    if(r[0]==='tot'){h+=`<tr class="tot"><td colspan="2">${r[2]}</td><td class="num">${fmt(R.BSo[r[1]])}</td>${R.per.map(k=>`<td class="num">${fmt(R.BSm[k][r[1]])}</td>`).join('')}<td class="num">${fmt(R.BSc[r[1]]-R.BSo[r[1]])}</td></tr>`;return}
@@ -3349,12 +3359,12 @@ function renderCF(){const cf=R.CF,cm=R.CMP;const monthly=cfView==='months';
   h+='</table>';
  } else if(cfView==='years'){
   const YG=yearGroups();
-  h=`<p class="hint">عمود لكل سنة ضمن الفترة المختارة — السنة غير المكتملة يظهر عدد أشهرها. النقد بداية السنة = بداية أول شهر منها ونهايتها = نهاية آخر شهر متاح.</p><table><tr><th>البند</th>${YG.map(g=>`<th class="num">${g.lbl}</th>`).join('')}<th class="num">الإجمالي</th></tr>`;
-  CFROWS.forEach(r=>{if(r[0]==='sec'||r[0]==='sub'){h+=`<tr class="${r[0]}"><td colspan="${YG.length+2}">${r[1]}</td></tr>`;return}
+  h=`<p class="hint">عمود لكل سنة ضمن الفترة المختارة — السنة غير المكتملة يظهر عدد أشهرها. النقد بداية السنة = بداية أول شهر منها ونهايتها = نهاية آخر شهر متاح. ${ydLbl()}</p><table><tr><th>البند</th>${ydHead(YG)}<th class="num">الإجمالي</th></tr>`;
+  CFROWS.forEach(r=>{if(r[0]==='sec'||r[0]==='sub'){h+=`<tr class="${r[0]}"><td colspan="${ydCols(YG)+2}">${r[1]}</td></tr>`;return}
    const key=r[0]==='tot'?r[1]:r[0],lbl=r[0]==='tot'?r[2]:r[1];const v=cf[key];if(r[0]!=='tot'&&!v&&key!=='NI'&&key!=='CASH0')return;
    const dk=CFMAP[key];
    const vals=YG.map(g=>{if(key==='CASH0')return (R.CFm[g.ms[0]]&&R.CFm[g.ms[0]].CASH0)||0;if(key==='CASH1')return (R.CFm[g.end]&&R.CFm[g.end].CASH1)||0;return g.ms.reduce((a,k)=>a+((R.CFm[k]&&R.CFm[k][key])||0),0)});
-   h+=`<tr class="${r[0]==='tot'?'tot':'h2'} ${dk?'drill':''}" ${dk?`onclick="drill('${dk}','${dk==='NI'?'IS':'BS'}','${lbl}')"`:''}><td>${lbl}${dk?' <span class="hint">▸</span>':''}</td>${vals.map(v=>`<td class="${cls(v)}">${fmt(v)}</td>`).join('')}<td class="${cls(v)}"><b>${fmt(v)}</b></td></tr>`});
+   h+=`<tr class="${r[0]==='tot'?'tot':'h2'} ${dk?'drill':''}" ${dk?`onclick="drill('${dk}','${dk==='NI'?'IS':'BS'}','${lbl}')"`:''}><td>${lbl}${dk?' <span class="hint">▸</span>':''}</td>${vals.map((x,i)=>`<td class="${cls(x)}">${fmt(x)}</td>`+(i>0?ydCells(x,(key==='CASH0'||key==='CASH1')?vals[i-1]:ydPrev(YG,i,ms=>ms.reduce((a,k)=>a+((R.CFm[k]&&R.CFm[k][key])||0),0)),1):'')).join('')}${ydCagr(vals,YG)}<td class="${cls(v)}"><b>${fmt(v)}</b></td></tr>`});
   h+='</table>';
  } else {
   h=`<table><tr><th>البند</th><th class="num">الفترة الحالية</th>${cm?'<th class="num">'+cm.label+'</th>':''}</tr>`;
