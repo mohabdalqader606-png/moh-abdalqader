@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v49.1-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v49.2-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -1045,6 +1045,15 @@ body[data-mode="exec"] :is(#tab-fsi,#tab-fsb,#tab-fsc) .fsi-kpis{gap:var(--sp-4)
 .yrs-dl{margin-inline-start:10px;white-space:nowrap;font-weight:600;color:var(--ink2)}.yrs-dl input{vertical-align:-2px;margin-inline-end:4px}
 th.yd,td.yd{background:rgba(11,31,58,.035);font-size:.92em}th.yd{color:var(--muted);font-weight:600;letter-spacing:.02em}
 @media print{.yrs-dl{display:none}}
+.sparkr{width:130px;height:28px}
+.rmini-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px}
+.rmini{background:var(--card,#fff);border:1px solid var(--line,#DDE2EC);border-radius:8px;padding:8px 10px 6px;min-width:0}
+.rmini-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:12.5px;font-weight:600;color:var(--ink2,#1E3A66);margin-bottom:4px}
+.rmini-h b{font-family:var(--mono);font-variant-numeric:tabular-nums}.rmini-h b.ok{color:var(--teal)}.rmini-h b.warn{color:var(--gold)}.rmini-h b.bad{color:var(--coral)}
+.rmini svg{width:100%;height:auto;display:block;font-variant-numeric:tabular-nums;cursor:crosshair}
+.rmini-tip{position:fixed;z-index:9999;background:var(--navy,#0B1F3A);color:#fff;font-size:12px;line-height:1.5;padding:6px 9px;border-radius:6px;pointer-events:none;box-shadow:0 4px 14px rgba(0,0,0,.18);max-width:340px;direction:rtl}
+.rmini-tip-s{display:block;opacity:.75;font-size:11px}
+@media print{.rmini-tip{display:none}.rmini-grid{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
 <body>
@@ -1378,7 +1387,7 @@ th.yd,td.yd{background:rgba(11,31,58,.035);font-size:.92em}th.yd{color:var(--mut
   <div class="tblwrap" id="ratioTbl"></div></div>
  <div class="grid g2">
   <div class="card"><h2>رادار الأداء مقابل المعيار</h2><div class="chart" id="chRadar"></div></div>
-  <div class="card"><h2>اتجاه النسب الرئيسية شهرياً</h2><div class="chart" id="chRatioTrend"></div></div>
+  <div class="card"><h2>اتجاه النسب الرئيسية شهرياً</h2><p class="hint">ثماني نسب رئيسية، كل واحدة برسم مستقل ومقياسها الخاص مقابل نطاق المعيار — لا خلط مقاييس مختلفة على محور واحد.</p><div class="chart" id="chRatioTrend"></div></div>
  </div>
 </section>
 
@@ -3450,14 +3459,42 @@ function ratioDetail(k){const r=R.RAT[k],b=BENCH[k],inf=RINFO[k]||{},cm=R.CMP;co
  <h3>المكونات — اضغط للتنقيب في الحسابات</h3><div class="tag-list">${(inf.parts||[]).map(p=>`<button class="btn ghost sm" onclick="drill('${p[0]}','${p[1]}','${p[0]}')">${(LINES[p[0]]||{}).n||{NETSALES:'صافي المبيعات',GP:'مجمل الربح',OPEX:'المصاريف التشغيلية',EBIT:'EBIT',EBITDA:'EBITDA',NI:'صافي الربح',CA:'الأصول المتداولة',CL:'الالتزامات المتداولة',TA:'إجمالي الأصول',TL:'إجمالي الالتزامات',EQ:'حقوق الملكية',WC:'رأس المال العامل'}[p[0]]||p[0]}</button>`).join('')}</div>`;
  openModal(b.n,h)}
 /* ---------- Ratios ---------- */
+/* ---------- Ratio trend visuals (v49.2): sparkline with benchmark band + small multiples with hover ---------- */
+/* R.RATm is computed by the production engine with the whole-period day count and annualisation factor (days=nMo×30.42, ann=12/nMo)
+   applied to every single month. For a one-month IS that inflates day-based ratios by nMo and deflates annualised ones by nMo.
+   This read layer rebases each month to its true monthly basis with exact inverse factors; the engine itself is left untouched
+   (FROZEN CHANGE REQUIRED — see ratio card note). Z mixes both factors and is not rebased. */
+const RM_DAYS=new Set(['DSO','DIO','DPO','CCC','DEF','ND_EBITDA','NWC_S']),RM_ANN=new Set(['ATO','INVTO','ARTO','ROA','ROE','ROCE','FAT','WCT','ROIC','SGR']);
+function ratioMonthly(k,m){const o=R.RATm[m];if(!o)return null;const n=R.nMo||R.per.length||1;let v=o[k];if(v==null||!isFinite(v))return null;if(n===1)return v;if(RM_DAYS.has(k))return v/n;if(RM_ANN.has(k))return v*n;if(k==='SPREAD'){const r=o.ROIC;return r==null?null:r*n-((S.settings.wacc||12)/100)}if(k==='EVA'||k==='Z')return null;return v}
+function ratioSeries(k){return R.per.map(m=>ratioMonthly(k,m))}
+function gradeCol(gc){return gc==='ok'?C.teal:gc==='warn'?C.gold:gc==='bad'?C.coral:C.navy}
+function sparkR(k){const b=BENCH[k];const vals=ratioSeries(k);const have=vals.filter(v=>v!=null);if(!have.length)return '<span class="hint">—</span>';
+ const w=130,h=28,p=3;let mn=Math.min(...have,b.lo),mx=Math.max(...have,b.hi);if(mx===mn){mx+=1;mn-=1}const x=i=>p+(i/(vals.length-1||1))*(w-2*p),y=v=>h-p-((v-mn)/(mx-mn))*(h-2*p);
+ let d='',pen=false,last=null;vals.forEach((v,i)=>{if(v==null){pen=false;return}last=[x(i),y(v)];d+=(pen?'L':'M')+last[0].toFixed(1)+','+last[1].toFixed(1);pen=true});
+ const col=gradeCol(grade(k,have[have.length-1])[0]);
+ return `<svg class="spark sparkr" viewBox="0 0 ${w} ${h}" role="img"><title>${b.n}: ${rfmt(k,have[0])} ← ${rfmt(k,have[have.length-1])} · المعيار ${rfmt(k,b.lo)} – ${rfmt(k,b.hi)}</title><rect x="${p}" y="${y(b.hi).toFixed(1)}" width="${w-2*p}" height="${Math.max(1,y(b.lo)-y(b.hi)).toFixed(1)}" fill="${C.gold}" opacity=".16"/><path d="${d}" fill="none" stroke="${C.navy}" stroke-width="1.6" stroke-linejoin="round"/>${last?`<circle cx="${last[0].toFixed(1)}" cy="${last[1].toFixed(1)}" r="2.6" fill="${col}" stroke="#fff" stroke-width="1"/>`:''}</svg>`}
+const RMULT=['CR','QR','GM','NM','DSO','DIO','DPO','CCC'];
+function ratioMini(k,w=300,h=150){const b=BENCH[k];const per=R.per;const vals=ratioSeries(k);const have=vals.filter(v=>v!=null);if(!have.length)return `<div class="rmini"><div class="rmini-h"><span>${b.n}</span></div><p class="hint">لا تتوفر قيم شهرية</p></div>`;
+ const pad={l:46,r:12,t:8,b:20},W=w-pad.l-pad.r,H=h-pad.t-pad.b;let mn=Math.min(...have,b.lo),mx=Math.max(...have,b.hi);const pd=(mx-mn||1)*.1;mn-=pd;mx+=pd;const x=i=>pad.l+(i/(per.length-1||1))*W,y=v=>pad.t+H-((v-mn)/(mx-mn))*H;
+ let d='',pen=false,li=-1;vals.forEach((v,i)=>{if(v==null){pen=false;return}li=i;d+=(pen?'L':'M')+x(i).toFixed(1)+','+y(v).toFixed(1);pen=true});const lv=vals[li];const gc=grade(k,lv)[0];const col=gradeCol(gc);
+ const tv=[mn+pd,(mn+mx)/2,mx-pd];const ticks=tv.map(v=>`<line x1="${pad.l}" x2="${w-pad.r}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="${C.light}"/><text x="${pad.l-6}" y="${(y(v)+3.5).toFixed(1)}" text-anchor="end" font-size="9.5" fill="${C.muted}">${rfmt(k,v)}</text>`).join('');
+ const xi=[0,Math.floor((per.length-1)/2),per.length-1].filter((v,i,a)=>a.indexOf(v)===i);const xl=xi.map(i=>`<text x="${x(i).toFixed(1)}" y="${h-6}" text-anchor="${i===0?'start':i===per.length-1?'end':'middle'}" font-size="9.5" fill="${C.muted}">${per[i]}</text>`).join('');
+ return `<div class="rmini" data-k="${k}"><div class="rmini-h"><span>${b.n}</span><b class="${gc}">${rfmt(k,lv)}</b></div><svg viewBox="0 0 ${w} ${h}" data-k="${k}" data-l="${pad.l}" data-w="${W}" role="img"><title>${b.n} شهرياً — المعيار ${rfmt(k,b.lo)} – ${rfmt(k,b.hi)}</title><rect x="${pad.l}" y="${y(b.hi).toFixed(1)}" width="${W}" height="${Math.max(1,y(b.lo)-y(b.hi)).toFixed(1)}" fill="${C.gold}" opacity=".14"/>${ticks}${xl}<path d="${d}" fill="none" stroke="${C.navy}" stroke-width="2" stroke-linejoin="round"/><circle cx="${x(li).toFixed(1)}" cy="${y(lv).toFixed(1)}" r="4" fill="${col}" stroke="#fff" stroke-width="1.5"/><line class="rmini-x" x1="0" x2="0" y1="${pad.t}" y2="${pad.t+H}" stroke="${C.ink2}" stroke-dasharray="3,3" opacity="0"/></svg></div>`}
+function ratioMultiples(){return `<div class="rmini-grid">${RMULT.map(k=>ratioMini(k)).join('')}</div><p class="hint">كل نسبة بمقياسها الخاص. الشريط الذهبي الشفاف = نطاق المعيار الداخلي (من/إلى في الجدول)؛ النقطة الأخيرة ملوّنة بحسب التقييم. مرّر المؤشر فوق أي رسم لقراءة قيمة الشهر. القيم الشهرية معادة إلى أساسها الشهري (أيام الشهر للنسب الزمنية، وتحويل سنوي ×12 لنسب العائد والدوران) فتقارَن مباشرة بنطاق المعيار.</p>`}
+function bindRatioHover(){const c=document.getElementById('chRatioTrend');if(!c||c.dataset.hover)return;c.dataset.hover='1';let tip=document.getElementById('rminiTip');if(!tip){tip=document.createElement('div');tip.id='rminiTip';tip.className='rmini-tip';tip.hidden=true;document.body.appendChild(tip)}
+ const hide=()=>{tip.hidden=true;c.querySelectorAll('.rmini-x').forEach(l=>l.setAttribute('opacity','0'))};
+ c.addEventListener('pointermove',e=>{const svg=e.target.closest('svg[data-k]');if(!svg||!R||!R.per||R.per.length<1){hide();return}const k=svg.dataset.k;const r=svg.getBoundingClientRect();if(!r.width)return;const vb=svg.viewBox.baseVal;const px=(e.clientX-r.left)*(vb.width/r.width);const l=+svg.dataset.l,W=+svg.dataset.w;const n=R.per.length;const i=Math.max(0,Math.min(n-1,Math.round((px-l)/W*(n-1))));const v=ratioMonthly(k,R.per[i]);
+  c.querySelectorAll('.rmini-x').forEach(x=>x.setAttribute('opacity','0'));const xl=svg.querySelector('.rmini-x');if(xl){const xx=(l+(i/(n-1||1))*W).toFixed(1);xl.setAttribute('x1',xx);xl.setAttribute('x2',xx);xl.setAttribute('opacity','1')}
+  tip.innerHTML=`<b>${R.per[i]}</b> · ${BENCH[k].n}: <b>${v==null||!isFinite(v)?'—':rfmt(k,v)}</b><span class="rmini-tip-s">المعيار ${rfmt(k,BENCH[k].lo)} – ${rfmt(k,BENCH[k].hi)}</span>`;tip.hidden=false;tip.style.left=Math.max(4,Math.min(window.innerWidth-tip.offsetWidth-8,e.clientX+12))+'px';tip.style.top=(e.clientY+14)+'px'});
+ c.addEventListener('pointerleave',hide)}
 function renderRatios(){const r=R.RAT,cm=R.CMP,sf=R.SELF;let h=`<table><tr><th>النسبة</th><th class="num">الحالية</th>${cm?'<th class="num">المقارنة</th>':''}${sf?`<th class="num">متوسطك (${sf.years.join('،')})</th>`:''}<th class="num">اتجاه شهري</th><th class="num">المعيار (من)</th><th class="num">(إلى)</th><th>التقييم</th><th>الصيغة</th></tr>`;
  const F={CR:'الأصول المتداولة ÷ الالتزامات المتداولة',QR:'(الأصول المتداولة − المخزون) ÷ الالتزامات المتداولة',CashR:'النقد ÷ الالتزامات المتداولة',DSO:'متوسط الذمم ÷ المبيعات × أيام الفترة',DIO:'متوسط المخزون ÷ كلفة المبيعات × أيام',DPO:'متوسط الدائنين ÷ كلفة المبيعات × أيام',CCC:'DSO + DIO − DPO',ATO:'المبيعات السنوية ÷ متوسط الأصول',INVTO:'كلفة المبيعات السنوية ÷ متوسط المخزون',ARTO:'المبيعات السنوية ÷ متوسط الذمم',GM:'مجمل الربح ÷ المبيعات',EBITDAM:'EBITDA ÷ المبيعات',OM:'EBIT ÷ المبيعات',NM:'صافي الربح ÷ المبيعات',OPEXR:'المصاريف التشغيلية ÷ المبيعات',ROA:'صافي الربح السنوي ÷ متوسط الأصول',ROE:'صافي الربح السنوي ÷ متوسط حقوق الملكية',ROCE:'EBIT السنوي ÷ (الأصول − الالتزامات المتداولة)',DE:'الالتزامات ÷ حقوق الملكية',DR:'الالتزامات ÷ الأصول',ICR:'EBIT ÷ تكاليف التمويل',ND_EBITDA:'(القروض − النقد) ÷ EBITDA السنوي',Z:'نموذج Altman للشركات الخاصة'};
  RGROUPS.forEach(([g,ks])=>{h+=`<tr class="sec"><td colspan="${8+(sf?1:0)}">${g}</td></tr>`;ks.forEach(k=>{const [c,t]=grade(k,r[k]);const sv=sf?sf.RAT[k]:null;let selfCell='';if(sf){if(sv==null||!isFinite(sv))selfCell='<td class="num hint">—</td>';else{const dir=BENCH[k].dir;const better=dir==='low'?r[k]<sv:dir==='high'?r[k]>sv:Math.abs(r[k]-((BENCH[k].lo+BENCH[k].hi)/2))<=Math.abs(sv-((BENCH[k].lo+BENCH[k].hi)/2));selfCell=`<td class="num">${rfmt(k,sv)} <span class="hint" style="color:${better?'var(--teal,#0f6e56)':'var(--coral,#d85a30)'}">${better?'▲':'▼'}</span></td>`}}
-  h+=`<tr class="drill" onclick="if(event.target.tagName!=='INPUT')ratioDetail('${k}')"><td>${BENCH[k].n} <span class="hint">▸</span></td><td class="num"><b>${rfmt(k,r[k])}</b></td>${cm?`<td class="num">${rfmt(k,cm.RAT[k])}</td>`:''}${selfCell}<td class="num">${spark(R.per.map(m=>R.RATm[m][k]||0))}</td><td class="num"><input type="number" step="any" value="${BENCH[k].lo}" style="width:70px" onchange="BENCH['${k}'].lo=+this.value;saveState();renderRatios()"></td><td class="num"><input type="number" step="any" value="${BENCH[k].hi}" style="width:70px" onchange="BENCH['${k}'].hi=+this.value;saveState();renderRatios()"></td><td><span class="badge ${c}">${t}</span></td><td class="hint">${F[k]}</td></tr>`})});
+  h+=`<tr class="drill" onclick="if(event.target.tagName!=='INPUT')ratioDetail('${k}')"><td>${BENCH[k].n} <span class="hint">▸</span></td><td class="num"><b>${rfmt(k,r[k])}</b></td>${cm?`<td class="num">${rfmt(k,cm.RAT[k])}</td>`:''}${selfCell}<td class="num">${sparkR(k)}</td><td class="num"><input type="number" step="any" value="${BENCH[k].lo}" style="width:70px" onchange="BENCH['${k}'].lo=+this.value;saveState();renderRatios()"></td><td class="num"><input type="number" step="any" value="${BENCH[k].hi}" style="width:70px" onchange="BENCH['${k}'].hi=+this.value;saveState();renderRatios()"></td><td><span class="badge ${c}">${t}</span></td><td class="hint">${F[k]}</td></tr>`})});
  document.getElementById('ratioTbl').innerHTML=h+'</table>';
  const ax=['CR','GM','NM','ROE','ATO','ICR'].map(k=>({n:BENCH[k].n.split(' ').slice(0,3).join(' '),v:r[k]==null?0:r[k]/((BENCH[k].lo+BENCH[k].hi)/2)})).concat(['DSO','CCC','DE'].map(k=>({n:BENCH[k].n.split(' ').slice(0,3).join(' '),v:r[k]==null||!r[k]?0:((BENCH[k].lo+BENCH[k].hi)/2)/Math.max(r[k],0.01)})));
  document.getElementById('chRadar').innerHTML=radar(ax);
- document.getElementById('chRatioTrend').innerHTML=lineChart(R.per,[{n:'نسبة التداول',data:R.per.map(k=>R.RATm[k].CR),col:C.navy},{n:'الالتزامات/حقوق الملكية',data:R.per.map(k=>R.RATm[k].DE),col:C.coral},{n:'DSO/30',data:R.per.map(k=>R.RATm[k].DSO==null?null:R.RATm[k].DSO/30),col:C.gold}],620,280)}
+ document.getElementById('chRatioTrend').innerHTML=ratioMultiples();bindRatioHover()}
 
 /* ---------- Advanced ---------- */
 function advRatios(){const r={...R.RAT},cf=R.CF,is=R.IS.TOT,b=R.BSc,ann=12/R.nMo,cm=R.CMP;const debt=-(b.STL+b.LTL);
