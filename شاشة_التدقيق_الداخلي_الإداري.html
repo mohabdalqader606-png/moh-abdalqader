@@ -4140,6 +4140,155 @@ C."CardName"
 ORDER BY
 C."CardCode";`},
 
+  {code:"KLN-COL-000003", title:"كشف حركات العميل من دفتر الأستاذ (JDT1) بأنواع المستندات", category:"collect",
+    desc:"كويري إنتاجي حقيقي: كشف حساب تفصيلي لكل عميل مباشرة من دفتر الأستاذ العام (JDT1، مربوط بحساب العميل عبر ShortName) مع ترجمة نوع كل قيد (فاتورة/إشعار دائن/دفعة واردة/قيد يومية) والمبلغ الصافي (مدين-دائن) لكل سطر — المصدر الأدق لأي مطابقة تفصيلية لرصيد عميل تتجاوز مجرد OCRD.Balance الحالي.",
+    params:"[%0] = تاريخ بداية الفترة، [%1] = تاريخ نهاية الفترة (على تاريخ ترحيل القيد RefDate)", tags:["كشف حساب","دفتر أستاذ","JDT1"],
+    sql:`SELECT
+    T0."CardCode"        AS "Customer Code",
+    T0."CardName"        AS "Customer Name",
+    T1."TransId"         AS "Journal Entry",
+    T1."Line_ID"         AS "Line Number",
+    T1."RefDate"         AS "Posting Date",
+    T1."BaseRef"         AS "Document No",
+
+    CASE T1."TransType"
+        WHEN '13' THEN 'A/R Invoice'
+        WHEN '14' THEN 'A/R Credit Memo'
+        WHEN '24' THEN 'Incoming Payment'
+        WHEN '30' THEN 'Journal Entry'
+        ELSE 'Other'
+    END AS "Document Type",
+
+    T1."Debit"           AS "Debit",
+    T1."Credit"          AS "Credit",
+
+    (IFNULL(T1."Debit",0) - IFNULL(T1."Credit",0)) AS "Net Amount",
+
+    T0."Balance"         AS "Current Balance"
+
+FROM OCRD T0
+INNER JOIN JDT1 T1
+    ON T0."CardCode" = T1."ShortName"
+
+WHERE
+    T0."CardType" = 'C'
+    AND T1."RefDate" BETWEEN '[%0]' AND '[%1]'
+
+ORDER BY
+    T0."CardCode",
+    T1."RefDate",
+    T1."TransId",
+    T1."Line_ID";`},
+
+  {code:"KLN-COL-000004", title:"لوحة حالة العميل الشاملة: ائتمان، رصيد بتاريخ، آخر فاتورة/تحصيل، وفترة التحصيل", category:"collect",
+    desc:"كويري إنتاجي حقيقي شامل — لقطة واحدة لكل عميل تجمع: الرصيد الفعلي بتاريخ معيّن (JDT1 قبل ذلك التاريخ، لا OCRD.Balance الحالي)، الائتمان المتاح (الحد ناقص الرصيد)، تاريخ آخر فاتورة وآخر تحصيل وعدد أيام التوقف عن كل منهما، فترة التحصيل الفعلية (الفارق بين آخر فاتورة وآخر تحصيل)، وتصنيف حالة ائتمانية تلقائي (OVER LIMIT / WARNING عند تجاوز 80% من الحد / OK). يغطي كل العملاء بما فيهم من لا حركة له بالفترة (LEFT JOIN بكل الأجزاء).",
+    params:"[%0] = تاريخ اللقطة (Snapshot Date) — كل الحسابات تُقاس كأنها بهذا التاريخ تحديداً", tags:["ائتمان","لقطة رصيد","إنذار مبكر"],
+    sql:`SELECT
+    C."CardCode" AS "Customer Code",
+    C."CardName" AS "Customer Name",
+
+    C."CreateDate" AS "Customer Creation Date",
+
+    IFNULL(S."SlpName",'No Sales Employee') AS "Sales Employee",
+
+    CG."GroupName" AS "Customer Group",
+
+    IFNULL(T."PymntGroup",'Cash') AS "Payment Terms",
+
+    CASE
+        WHEN C."validFor" = 'Y' THEN 'Active'
+        ELSE 'Inactive'
+    END AS "Status",
+
+    C."CreditLine" AS "Credit Limit",
+
+    IFNULL(B."Balance",0) AS "Balance As Of Date",
+
+    (C."CreditLine" - IFNULL(B."Balance",0)) AS "Available Credit",
+
+    IFNULL(I."LastInvoice",'') AS "Last Invoice Date",
+
+    IFNULL(P."LastPayment",'') AS "Last Payment Date",
+
+    DAYS_BETWEEN(I."LastInvoice", CURRENT_DATE) AS "Days Since Last Invoice",
+
+    DAYS_BETWEEN(P."LastPayment", CURRENT_DATE) AS "Days Since Last Payment",
+
+    CASE
+        WHEN P."LastPayment" IS NULL
+          OR I."LastInvoice" IS NULL THEN NULL
+        ELSE DAYS_BETWEEN(I."LastInvoice", P."LastPayment")
+    END AS "Collection Period (Days)",
+
+    CASE
+        WHEN IFNULL(B."Balance",0) > C."CreditLine" THEN 'OVER LIMIT'
+        WHEN IFNULL(B."Balance",0) > (C."CreditLine" * 0.8) THEN 'WARNING'
+        ELSE 'OK'
+    END AS "Credit Status"
+
+FROM OCRD C
+
+LEFT JOIN OSLP S
+       ON C."SlpCode" = S."SlpCode"
+
+LEFT JOIN OCRG CG
+       ON C."GroupCode" = CG."GroupCode"
+
+LEFT JOIN OCTG T
+       ON C."GroupNum" = T."GroupNum"
+
+-- ======================
+-- Balance
+-- ======================
+LEFT JOIN
+(
+    SELECT
+        T1."ShortName",
+        SUM(T1."Debit" - T1."Credit") AS "Balance"
+    FROM JDT1 T1
+    INNER JOIN OJDT T0
+            ON T1."TransId" = T0."TransId"
+    WHERE T0."RefDate" <= [%0]
+    GROUP BY T1."ShortName"
+) B
+ON C."CardCode" = B."ShortName"
+
+-- ======================
+-- Last Invoice
+-- ======================
+LEFT JOIN
+(
+    SELECT
+        "CardCode",
+        MAX("DocDate") AS "LastInvoice"
+    FROM OINV
+    WHERE "DocDate" <= [%0]
+      AND "CANCELED" = 'N'
+    GROUP BY "CardCode"
+) I
+ON C."CardCode" = I."CardCode"
+
+-- ======================
+-- Last Payment
+-- ======================
+LEFT JOIN
+(
+    SELECT
+        "CardCode",
+        MAX("DocDate") AS "LastPayment"
+    FROM ORCT
+    WHERE "DocDate" <= [%0]
+      AND "Canceled" = 'N'
+    GROUP BY "CardCode"
+) P
+ON C."CardCode" = P."CardCode"
+
+WHERE
+    C."CardType" = 'C'
+
+ORDER BY
+    C."CardCode";`},
+
   // ---------------- المشتريات (تكملة) ----------------
   {code:"KLN-PUR-006", title:"أصناف ارتفع سعر شرائها الأخير عن متوسط آخر 6 أشهر", category:"purchasing",
     desc:"يكشف ارتفاعات سعر شراء مفاجئة تستوجب تفسيراً (تضخم عالمي، مورد بديل أعلى سعراً، أو خطأ إدخال).",
