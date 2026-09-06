@@ -3971,6 +3971,138 @@ ORDER BY
     "Transaction No",
     "Item Code";`},
 
+  {code:"KLN-PUR-000002", title:"آخر تكلفة شحن (Landed Cost) فعلية لكل صنف باستيراد", category:"purchasing",
+    desc:"كويري إنتاجي فعلي لبيئة استيراد: يستخرج آخر مستند Landed Cost فقط بسلسلة كل صنف/طلبية (باستبعاد أي Landed Cost سابق أُعيد توزيعه لاحقاً بمستند Landed Cost جديد يشير إليه عبر BaseType=69)، ويحسب الكلفة النهائية للوحدة بعد إضافة الشحن/الجمارك/المصاريف الإضافية، ونسبة الزيادة عن سعر المستند الأساس (GRPO/فاتورة مورد). أساس مباشر لتدقيق دقة تسعير المستوردات (قسم المخزون والمشتريات بالدليل المؤسسي، الباب 8).",
+    params:"[%0] = تاريخ بداية الفترة، [%1] = تاريخ نهاية الفترة (على تاريخ مستند Landed Cost)", tags:["استيراد","landed cost","تكلفة شحن وجمارك"],
+    sql:`SELECT
+
+/* Landed Cost Header */
+
+T0."DocNum" AS "Landed Cost No",
+T0."DocDate" AS "Landed Cost Date",
+T0."Ref1" AS "Reference 1",
+
+T0."CardCode" AS "Vendor Code",
+T0."SuppName" AS "Vendor Name",
+
+
+/* Base Document */
+
+CASE
+    WHEN T1."BaseType" = 20 THEN 'GRPO'
+    WHEN T1."BaseType" = 18 THEN 'A/P Invoice'
+    WHEN T1."BaseType" = 69 THEN 'Landed Cost'
+    ELSE CAST(T1."BaseType" AS NVARCHAR(20))
+END AS "Base Document Type",
+
+T1."BaseEntry" AS "Base Document Internal ID",
+T1."BaseRowNum" AS "Base Row Number",
+
+
+/* Item Details */
+
+T1."ItemCode" AS "Item Code",
+T1."Dscription" AS "Item Description",
+T1."WhsCode" AS "Warehouse",
+
+T1."Quantity" AS "Quantity",
+T1."UnitCode" AS "UoM",
+T1."DistNumber" AS "Batch Number",
+
+
+/* Purchase Cost */
+
+T1."Currency" AS "Currency",
+T1."Rate" AS "Exchange Rate",
+
+T1."PriceAtWH" AS "Base Doc. Price",
+
+(T1."PriceAtWH" * T1."Quantity") AS "Base Doc. Value",
+
+
+/* Landed Cost Details */
+
+T1."FobValue" AS "FOB Value",
+T1."FobValCurr" AS "FOB Currency",
+
+T1."Custom" AS "Customs",
+
+T1."Cost" AS "Additional Cost",
+
+T1."TtlExpndLC" AS "Landed Cost Amount",
+
+
+/* Final Cost */
+
+T1."TtlCostLC" AS "Total",
+
+CASE
+    WHEN T1."Quantity" <> 0
+    THEN T1."TtlCostLC" / T1."Quantity"
+    ELSE 0
+END AS "Final Unit Cost",
+
+
+/* Increase Analysis */
+
+CASE
+    WHEN T1."Quantity" <> 0
+    THEN
+        (T1."TtlCostLC" / T1."Quantity")
+        -
+        T1."PriceAtWH"
+    ELSE 0
+END AS "Landed Cost Increase Per Unit",
+
+
+CASE
+    WHEN T1."PriceAtWH" <> 0
+    THEN
+        (((T1."TtlCostLC" / T1."Quantity")
+        -
+        T1."PriceAtWH")
+        /
+        T1."PriceAtWH") * 100
+    ELSE 0
+END AS "Increase %",
+
+
+/* Tax */
+
+T1."VatGroup" AS "VAT Group",
+T1."VatPrcnt" AS "VAT %"
+
+
+FROM OIPF T0
+
+INNER JOIN IPF1 T1
+ON T0."DocEntry" = T1."DocEntry"
+
+
+/* Take Last Landed Cost in Chain */
+
+WHERE NOT EXISTS
+(
+    SELECT 1
+
+    FROM IPF1 N1
+
+    WHERE
+        N1."BaseType" = 69
+        AND N1."BaseEntry" = T0."DocEntry"
+        AND N1."ItemCode" = T1."ItemCode"
+)
+
+
+AND T0."DocDate" BETWEEN '[%0]' AND '[%1]'
+
+
+ORDER BY
+
+T0."DocDate",
+T0."DocNum",
+T1."ItemCode";`},
+
   // ---------------- المخزون (تكملة) ----------------
   {code:"KLN-STK-008", title:"تقييم إجمالي المخزون بالتكلفة حسب المستودع (لمطابقة القوائم المالية)", category:"stock",
     desc:"يربط تدقيق المخزون التشغيلي بالرقم الظاهر بالقوائم المالية — أي فارق جوهري بينهما يستوجب تسوية موثقة قبل الإقفال.",
