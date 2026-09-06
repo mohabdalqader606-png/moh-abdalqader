@@ -3799,6 +3799,178 @@ WHERE T0."DocStatus" = 'C' AND T0."DocDate" BETWEEN @FromDate AND @ToDate
   AND T0."DocEntry" IN (SELECT P."BaseEntry" FROM PDN1 P JOIN OPDN D ON D."DocEntry" = P."DocEntry" WHERE D."DocDate" = T0."DocDate")
 ORDER BY T0."DocDate" DESC;`},
 
+  {code:"KLN-PUR-000001", title:"تحليل ضريبة المشتريات حسب فئة المورد والصنف (كل نسب الضريبة)", category:"purchasing",
+    desc:"كويري إنتاجي فعلي: يوزّع فواتير ومرتجعات المشتريات (بالسالب) لكل مورد/صنف على كامل نسب الضريبة المستخدمة فعلياً (0% إلى 21%)، مجمّعة حسب فئة المورد (OCRG). أساس مباشر لمطابقة ضريبة المدخلات (Input VAT) بإقرار ضريبة المبيعات، ولرصد أي نسبة ضريبة غير متوقعة على مورد/صنف معيّن.",
+    params:"[%0] = تاريخ بداية الفترة، [%1] = تاريخ نهاية الفترة، [%2] = من رمز فئة المورد، [%3] = إلى رمز فئة المورد (مرّر نفس القيمة بـ[%2] و[%3] لفئة واحدة، أو أدنى/أقصى رمز لتغطية كل الفئات)", tags:["ضريبة مشتريات","فئات موردين","إقرار ضريبي"],
+    sql:`WITH PurchaseData AS
+(
+    -- فواتير المشتريات
+    SELECT
+        T4."GroupCode" AS "Vendor Group Code",
+        T4."GroupName" AS "Vendor Group",
+
+        T0."CardCode" AS "Vendor Code",
+        T0."CardName" AS "Vendor Name",
+
+        T0."DocNum" AS "Transaction No",
+
+        T1."ItemCode" AS "Item Code",
+        T1."Dscription" AS "Item Name",
+
+        T1."VatPrcnt" AS "VAT Rate",
+
+        T1."LineTotal" AS "Amount",
+        T1."VatSum" AS "VAT Amount",
+        (T1."LineTotal" + T1."VatSum") AS "Total Amount"
+
+    FROM OPCH T0
+
+    INNER JOIN PCH1 T1
+        ON T0."DocEntry" = T1."DocEntry"
+
+    INNER JOIN OCRD T3
+        ON T0."CardCode" = T3."CardCode"
+
+    INNER JOIN OCRG T4
+        ON T3."GroupCode" = T4."GroupCode"
+
+    WHERE
+        T0."CANCELED" = 'N'
+        AND T0."DocDate" BETWEEN [%0] AND [%1]
+        AND T4."GroupCode" BETWEEN [%2] AND [%3]
+
+
+    UNION ALL
+
+
+    -- مرتجعات المشتريات بالسالب
+    SELECT
+        T4."GroupCode",
+        T4."GroupName",
+
+        T0."CardCode",
+        T0."CardName",
+
+        T0."DocNum",
+
+        T1."ItemCode",
+        T1."Dscription",
+
+        T1."VatPrcnt",
+
+        -T1."LineTotal",
+        -T1."VatSum",
+        -(T1."LineTotal" + T1."VatSum")
+
+    FROM ORPC T0
+
+    INNER JOIN RPC1 T1
+        ON T0."DocEntry" = T1."DocEntry"
+
+    INNER JOIN OCRD T3
+        ON T0."CardCode" = T3."CardCode"
+
+    INNER JOIN OCRG T4
+        ON T3."GroupCode" = T4."GroupCode"
+
+    WHERE
+        T0."CANCELED" = 'N'
+        AND T0."DocDate" BETWEEN [%0] AND [%1]
+        AND T4."GroupCode" BETWEEN [%2] AND [%3]
+)
+
+
+SELECT
+
+    "Vendor Group Code" AS "رمز فئة المورد",
+    "Vendor Group" AS "فئة المورد",
+
+    "Vendor Code" AS "رمز المورد",
+    "Vendor Name" AS "المورد",
+
+    "Transaction No" AS "رمز الحركة",
+
+    "Item Code" AS "رمز الصنف",
+    "Item Name" AS "الصنف",
+
+
+    -- 0%
+    SUM(CASE WHEN "VAT Rate" = 0 THEN "Amount" ELSE 0 END) AS "0% مبلغ",
+    SUM(CASE WHEN "VAT Rate" = 0 THEN "VAT Amount" ELSE 0 END) AS "0% ضريبة",
+    SUM(CASE WHEN "VAT Rate" = 0 THEN "Total Amount" ELSE 0 END) AS "0% إجمالي",
+
+
+    -- 2%
+    SUM(CASE WHEN "VAT Rate" = 2 THEN "Amount" ELSE 0 END) AS "2% مبلغ",
+    SUM(CASE WHEN "VAT Rate" = 2 THEN "VAT Amount" ELSE 0 END) AS "2% ضريبة",
+    SUM(CASE WHEN "VAT Rate" = 2 THEN "Total Amount" ELSE 0 END) AS "2% إجمالي",
+
+
+    -- 4%
+    SUM(CASE WHEN "VAT Rate" = 4 THEN "Amount" ELSE 0 END) AS "4% مبلغ",
+    SUM(CASE WHEN "VAT Rate" = 4 THEN "VAT Amount" ELSE 0 END) AS "4% ضريبة",
+    SUM(CASE WHEN "VAT Rate" = 4 THEN "Total Amount" ELSE 0 END) AS "4% إجمالي",
+
+
+    -- 5%
+    SUM(CASE WHEN "VAT Rate" = 5 THEN "Amount" ELSE 0 END) AS "5% مبلغ",
+    SUM(CASE WHEN "VAT Rate" = 5 THEN "VAT Amount" ELSE 0 END) AS "5% ضريبة",
+    SUM(CASE WHEN "VAT Rate" = 5 THEN "Total Amount" ELSE 0 END) AS "5% إجمالي",
+
+
+    -- 8%
+    SUM(CASE WHEN "VAT Rate" = 8 THEN "Amount" ELSE 0 END) AS "8% مبلغ",
+    SUM(CASE WHEN "VAT Rate" = 8 THEN "VAT Amount" ELSE 0 END) AS "8% ضريبة",
+    SUM(CASE WHEN "VAT Rate" = 8 THEN "Total Amount" ELSE 0 END) AS "8% إجمالي",
+
+
+    -- 10%
+    SUM(CASE WHEN "VAT Rate" = 10 THEN "Amount" ELSE 0 END) AS "10% مبلغ",
+    SUM(CASE WHEN "VAT Rate" = 10 THEN "VAT Amount" ELSE 0 END) AS "10% ضريبة",
+    SUM(CASE WHEN "VAT Rate" = 10 THEN "Total Amount" ELSE 0 END) AS "10% إجمالي",
+
+
+    -- 13.5%
+    SUM(CASE WHEN "VAT Rate" = 13.5 THEN "Amount" ELSE 0 END) AS "13.5% مبلغ",
+    SUM(CASE WHEN "VAT Rate" = 13.5 THEN "VAT Amount" ELSE 0 END) AS "13.5% ضريبة",
+    SUM(CASE WHEN "VAT Rate" = 13.5 THEN "Total Amount" ELSE 0 END) AS "13.5% إجمالي",
+
+
+    -- 16%
+    SUM(CASE WHEN "VAT Rate" = 16 THEN "Amount" ELSE 0 END) AS "16% مبلغ",
+    SUM(CASE WHEN "VAT Rate" = 16 THEN "VAT Amount" ELSE 0 END) AS "16% ضريبة",
+    SUM(CASE WHEN "VAT Rate" = 16 THEN "Total Amount" ELSE 0 END) AS "16% إجمالي",
+
+
+    -- 20%
+    SUM(CASE WHEN "VAT Rate" = 20 THEN "Amount" ELSE 0 END) AS "20% مبلغ",
+    SUM(CASE WHEN "VAT Rate" = 20 THEN "VAT Amount" ELSE 0 END) AS "20% ضريبة",
+    SUM(CASE WHEN "VAT Rate" = 20 THEN "Total Amount" ELSE 0 END) AS "20% إجمالي",
+
+
+    -- 21%
+    SUM(CASE WHEN "VAT Rate" = 21 THEN "Amount" ELSE 0 END) AS "21% مبلغ",
+    SUM(CASE WHEN "VAT Rate" = 21 THEN "VAT Amount" ELSE 0 END) AS "21% ضريبة",
+    SUM(CASE WHEN "VAT Rate" = 21 THEN "Total Amount" ELSE 0 END) AS "21% إجمالي"
+
+
+FROM PurchaseData
+
+GROUP BY
+    "Vendor Group Code",
+    "Vendor Group",
+    "Vendor Code",
+    "Vendor Name",
+    "Transaction No",
+    "Item Code",
+    "Item Name"
+
+ORDER BY
+    "Vendor Group",
+    "Vendor Name",
+    "Transaction No",
+    "Item Code";`},
+
   // ---------------- المخزون (تكملة) ----------------
   {code:"KLN-STK-008", title:"تقييم إجمالي المخزون بالتكلفة حسب المستودع (لمطابقة القوائم المالية)", category:"stock",
     desc:"يربط تدقيق المخزون التشغيلي بالرقم الظاهر بالقوائم المالية — أي فارق جوهري بينهما يستوجب تسوية موثقة قبل الإقفال.",
