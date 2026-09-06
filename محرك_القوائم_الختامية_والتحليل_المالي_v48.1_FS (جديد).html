@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v49.7-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v49.8-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -1317,7 +1317,7 @@ th.yd,td.yd{background:rgba(11,31,58,.035);font-size:.92em}th.yd{color:var(--mut
   </table>
   <p><b>قاعدة عملية:</b> صنّف على مستوى الحساب الأب في الدليل، وعدّل الحسابات الفرعية الشاذة فقط. أي حساب "غير مصنف" يُستثنى من القوائم ويظهر فرقه في فحص السلامة، لذلك الهدف صفر حسابات غير مصنفة.</p>
   </div></details>
-  <div class="row"><button class="btn" onclick="if(confirm('سيستبدل التصنيف اليدوي بالكامل — متابعة؟'))autoMap(true)">إعادة الاقتراح التلقائي</button><button class="btn gold" onclick="saveState();recalcAll();toast('تم حفظ التصنيف')">حفظ وإعادة الاحتساب</button><input type="text" id="mapSearch" placeholder="بحث..." oninput="renderMap()"><label><input type="checkbox" id="mapUn" onchange="renderMap()"> غير المصنفة فقط</label><span id="mapStats" class="badge"></span></div>
+  <div class="row"><button class="btn" onclick="if(confirm('سيستبدل التصنيف اليدوي بالكامل — متابعة؟'))autoMap(true)">إعادة الاقتراح التلقائي</button><button class="btn gold" onclick="saveState();recalcAll();toast('تم حفظ التصنيف')">حفظ وإعادة الاحتساب</button><input type="text" id="mapSearch" placeholder="بحث..." oninput="mapSearchInput()"><label><input type="checkbox" id="mapUn" onchange="renderMap()"> غير المصنفة فقط</label><span id="mapStats" class="badge"></span></div>
   <div id="mapTree" class="tree"></div>
  </div>
 </section>
@@ -1684,29 +1684,40 @@ function effLine(code){if(VIRT[code])return VIRT[code].line;if(isVirt(code))retu
  return S.map[code]||'UNMAP';
 }
 let mapOpenCodes=new Set();
+/* v49.8 F-5: the classification tree renders lazily — closed branches build their children on first open, each account's
+   line <select> holds only its current option until focused (the full 40+ option list is injected on demand), the search box
+   is debounced. Same markup, same texts, same setMap()/effLine() behaviour; only when things are built changed. */
+let _mapCtx=null,_mapT=null;
+function mapSearchInput(){clearTimeout(_mapT);_mapT=setTimeout(renderMap,150)}
+function mapOptsHtml(){return Object.entries(LINES).map(([k,v])=>`<option value="${k}">${v.n}</option>`).join('')+`<option value="">— وراثة من الأب —</option>`}
+function mapSelHtml(a,ch,eff,ovr){const first=`<option value="">${ovr?'':(ch.length?'(تلقائي حسب كل حساب فرعي)':'(تلقائي: '+(LINES[eff]||LINES.UNMAP).n+')')}</option>`;return `<select data-lazyopts="1" data-ovr="${ovr}" onchange="setMap('${a.code}',this.value)">${first}${ovr?`<option value="${ovr}" selected>${(LINES[ovr]||LINES.UNMAP).n}</option>`:''}</select>`}
+function mapFillSelect(s){if(!s||!s.dataset.lazyopts)return;const ovr=s.dataset.ovr||'';const first=s.options[0]?s.options[0].outerHTML:'<option value=""></option>';s.innerHTML=first+mapOptsHtml();s.value=ovr;delete s.dataset.lazyopts}
 function renderMap(){
  const q=(document.getElementById('mapSearch').value||'').toLowerCase();const onlyUn=document.getElementById('mapUn').checked;
  const scrollY=window.scrollY;
  const kids={};Object.values(S.accounts).forEach(a=>{(kids[a.father||'ROOT']=kids[a.father||'ROOT']||[]).push(a)});
- const opts=(sel)=>Object.entries(LINES).map(([k,v])=>`<option value="${k}" ${sel===k?'selected':''}>${v.n}</option>`).join('')+`<option value="">— وراثة من الأب —</option>`;
- let un=0,tot=0;
+ let un=0,tot=0;Object.values(S.accounts).forEach(a=>{if(a.post){tot++;if(effLine(a.code)==='UNMAP')un++}});
+ const lazyOK=!q&&!onlyUn;
  function node(a,depth){
   const ch=(kids[a.code]||[]).sort((x,y)=>x.code.localeCompare(y.code));
-  const eff=effLine(a.code);if(a.post){tot++;if(eff==='UNMAP')un++}
+  const eff=effLine(a.code);
   const match=(!q||a.code.toLowerCase().includes(q)||a.name.toLowerCase().includes(q))&&(!onlyUn||(eff==='UNMAP'&&a.post));
   const ovr=S.map['_o'+a.code]||'';
-  const sel=`<select onchange="setMap('${a.code}',this.value)"><option value="">${ovr?'':(ch.length?'(تلقائي حسب كل حساب فرعي)':'(تلقائي: '+(LINES[eff]||LINES.UNMAP).n+')')}</option>${opts(ovr)}</select>`;
+  const sel=mapSelHtml(a,ch,eff,ovr);
   if(!ch.length){return match?`<div class="leaf" style="padding-inline-start:${24+depth*14}px"><span class="cd">${a.code}</span><span class="nm">${a.name} ${eff==='UNMAP'?'<span class="badge bad">⚠</span>':''}</span>${sel}</div>`:''}
-  const inner=ch.map(c=>node(c,depth+1)).join('');if(!inner&&!match)return '';
   const isOpen=depth<1||q||mapOpenCodes.has(a.code);
-  return `<details data-code="${a.code}" ${isOpen?'open':''}><summary style="margin-inline-start:${depth*14}px">${a.code} — ${a.name} <span class="badge">${ch.length}</span> ${sel}</summary>${inner}</details>`;
+  if(lazyOK&&!isOpen)return `<details data-code="${a.code}" data-lazy="1" data-depth="${depth}"><summary style="margin-inline-start:${depth*14}px">${a.code} — ${a.name} <span class="badge">${ch.length}</span> ${sel}</summary></details>`;
+  const inner=ch.map(c=>node(c,depth+1)).join('');if(!inner&&!match)return '';
+  return `<details data-code="${a.code}" data-depth="${depth}" ${isOpen?'open':''}><summary style="margin-inline-start:${depth*14}px">${a.code} — ${a.name} <span class="badge">${ch.length}</span> ${sel}</summary>${inner}</details>`;
  }
+ _mapCtx={kids,node};
  const roots=(kids['ROOT']||[]).filter(a=>!S.accounts[a.father]).sort((x,y)=>x.code.localeCompare(y.code));
- document.getElementById('mapTree').innerHTML=roots.map(a=>node(a,0)).join('')||'<p class="hint">حمّل دليل الحسابات أولاً.</p>';
+ const tree=document.getElementById('mapTree');tree.innerHTML=roots.map(a=>node(a,0)).join('')||'<p class="hint">حمّل دليل الحسابات أولاً.</p>';
  document.getElementById('mapStats').textContent=`${tot} حساب قابل للترحيل — ${un} غير مصنف`;
- document.querySelectorAll('#mapTree details[data-code]').forEach(d=>{
-  d.addEventListener('toggle',()=>{const code=d.dataset.code;if(d.open)mapOpenCodes.add(code);else mapOpenCodes.delete(code)});
- });
+ if(!tree.dataset.bound){tree.dataset.bound='1';
+  tree.addEventListener('toggle',e=>{const d=e.target;if(!d.matches||!d.matches('details[data-code]'))return;const code=d.dataset.code;if(d.open)mapOpenCodes.add(code);else mapOpenCodes.delete(code);
+   if(d.open&&d.dataset.lazy&&_mapCtx){const a=S.accounts[code];const depth=+d.dataset.depth||0;const ch=(_mapCtx.kids[code]||[]).sort((x,y)=>x.code.localeCompare(y.code));d.insertAdjacentHTML('beforeend',ch.map(c=>_mapCtx.node(c,depth+1)).join(''));delete d.dataset.lazy}},true);
+  const fill=e=>{const s=e.target.closest&&e.target.closest('select[data-lazyopts]');if(s)mapFillSelect(s)};tree.addEventListener('pointerdown',fill,true);tree.addEventListener('focusin',fill,true);tree.addEventListener('keydown',fill,true)}
  window.scrollTo(0,scrollY);
 }
 function setMap(code,v){if(v)S.map['_o'+code]=v;else delete S.map['_o'+code];saveStateNow();renderMap()}
