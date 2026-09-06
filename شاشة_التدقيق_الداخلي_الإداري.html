@@ -2551,17 +2551,667 @@ JOIN OINV T0 ON T0."DocEntry" = T1."DocEntry"
 WHERE T1."DiscPrcnt" > @MaxDiscPercent AND T0."DocDate" BETWEEN @FromDate AND @ToDate
 ORDER BY T1."DiscPrcnt" DESC;`},
 
-  {code:"KLN-SAL-004", title:"هامش ربح سالب أو أقل من الحد الأدنى على مستوى سطر الفاتورة", category:"sales",
-    desc:"يعتمد على حقل الربح الإجمالي المخزَّن بالسطر (GrssProfit) لرصد بيع تحت التكلفة أو خطأ تسعير.",
-    params:"@MinMarginPercent, @FromDate, @ToDate", tags:["هامش ربح","تسعير","مخاطر"],
-    sql:`SELECT T0."DocNum", T0."DocDate", T0."CardCode", T0."CardName",
-       T1."ItemCode", T1."Dscription", T1."Quantity", T1."Price", T1."LineTotal", T1."GrssProfit",
-       CASE WHEN T1."LineTotal" <> 0 THEN T1."GrssProfit" / T1."LineTotal" * 100 ELSE NULL END AS "MarginPct"
-FROM INV1 T1
-JOIN OINV T0 ON T0."DocEntry" = T1."DocEntry"
-WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate
-  AND (T1."GrssProfit" < 0 OR (T1."LineTotal" <> 0 AND T1."GrssProfit" / T1."LineTotal" * 100 < @MinMarginPercent))
-ORDER BY "MarginPct" ASC;`},
+  {code:"KLN-SAL-000004", title:"ربحية الفواتير والمرتجعات مع الباتش الفعلي وكلفته الحالية", category:"sales",
+    desc:"كويري إنتاجي فعلي (وليس مبني على حقل GrssProfit الجاهز غير المعتمد بهذه البيئة). يحسب صافي المبيعات والكلفة الفعلية ومجمل الربح لكل سطر فاتورة/مرتجع اعتماداً على الباتش الفعلي المُدلفر (عبر OITL/ITL1/OBTN بثلاثة مسارات بحث احتياطية)، مع تصحيح إلزامي لمعامل وحدة القياس (INV1.NumPerMsr) — إغفاله يُضخّم الكلفة المحتسبة بشكل فادح عند البيع بوحدة أصغر من وحدة تخزين الباتش (تم توثيق حالة فعلية: 300 قطعة احتُسبت كأنها 300 كرتونة). يوفر أيضاً كلفة تقديرية مرجعية فقط (متوسط مرجّح لباتشات المستودع المتاحة) للفواتير غير المدلفرة بعد، دون إدخالها ضمن حساب الربح الفعلي.",
+    params:"[%0] = تاريخ بداية الفترة، [%1] = تاريخ نهاية الفترة (على تاريخ الفاتورة/المرتجع)", tags:["ربحية","باتش","كلفة فعلية","UoM"],
+    sql:`SELECT
+    "نوع المستند", "رقم المستند", "التاريخ", "رمز العميل", "اسم العميل",
+    "كود الصنف", "اسم الصنف", "الكمية",
+    "سعر البيع", "خصم السطر %", "خصم الوثيقة %", "صافي السعر للوحدة",
+    "صافي المبيعات",
+    "رقم الديليفري المرتبط",
+    "رقم الباتش",
+    "كلفة الوحدة الحالية للباتش",
+    CASE WHEN "رقم الباتش" IS NULL THEN "_est_cost_raw" ELSE NULL END
+                                      AS "كلفة تقديرية (غير مدلفرة)",
+
+    CASE WHEN "نوع المستند" = 'مرتجع' THEN -1 ELSE 1 END
+        * "_qty_raw"
+        * "كلفة الوحدة الحالية للباتش"
+                                      AS "إجمالي الكلفة",
+
+    ("صافي المبيعات" -
+     (CASE WHEN "نوع المستند" = 'مرتجع' THEN -1 ELSE 1 END
+        * "_qty_raw"
+        * "كلفة الوحدة الحالية للباتش")
+    )                                 AS "مجمل الربح",
+
+    CASE WHEN "رقم الباتش" IS NULL THEN 'غير مدلفرة' ELSE 'مدلفرة' END
+                                      AS "حالة التسليم",
+
+    CASE
+        WHEN "صافي السعر للوحدة" IS NULL OR "صافي السعر للوحدة" = 0 THEN NULL
+        WHEN "كلفة الوحدة الحالية للباتش" IS NULL THEN NULL
+        ELSE ROUND((("صافي السعر للوحدة" - "كلفة الوحدة الحالية للباتش") / "صافي السعر للوحدة") * 100, 2)
+    END                               AS "نسبة الربح %"
+
+FROM (
+
+    -- ============ الفواتير (٣ مسارات للباتش) ============
+    SELECT
+        'فاتورة'                         AS "نوع المستند",
+        T0."DocNum"                      AS "رقم المستند",
+        T0."DocDate"                     AS "التاريخ",
+        T0."CardCode"                    AS "رمز العميل",
+        T0."CardName"                    AS "اسم العميل",
+        T1."ItemCode"                    AS "كود الصنف",
+        T1."Dscription"                  AS "اسم الصنف",
+        T1."Quantity"                    AS "الكمية",
+        T1."PriceBefDi"                  AS "سعر البيع",
+        T1."DiscPrcnt"                   AS "خصم السطر %",
+        T0."DiscPrcnt"                   AS "خصم الوثيقة %",
+        (T1."LineTotal" * (1 - IFNULL(T0."DiscPrcnt",0)/100) / NULLIF(T1."Quantity",0))
+                                          AS "صافي السعر للوحدة",
+
+        (T1."LineTotal" * (1 - IFNULL(T0."DiscPrcnt",0)/100))
+                                          AS "صافي المبيعات",
+
+        COALESCE(
+            (SELECT MAX(D."DocNum") FROM DLN1 DL
+             INNER JOIN ODLN D ON DL."DocEntry" = D."DocEntry"
+             WHERE DL."BaseEntry" = T0."DocEntry" AND DL."BaseLine" = T1."LineNum" AND DL."BaseType" = 13),
+            (SELECT D."DocNum" FROM ODLN D
+             WHERE D."DocEntry" = T1."BaseEntry" AND T1."BaseType" = 15)
+        )                                 AS "رقم الديليفري المرتبط",
+
+        COALESCE(
+            (SELECT MAX(B."DistNumber")
+             FROM OITL O INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+             INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+             WHERE O."DocType" = 13 AND O."DocEntry" = T0."DocEntry" AND O."DocLine" = T1."LineNum"
+               AND O."StockEff" = 1),
+            (SELECT MAX(B."DistNumber")
+             FROM DLN1 DL
+             INNER JOIN OITL O ON O."DocType" = 15 AND O."DocEntry" = DL."DocEntry" AND O."DocLine" = DL."LineNum"
+             INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+             INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+             WHERE DL."BaseEntry" = T0."DocEntry" AND DL."BaseLine" = T1."LineNum" AND DL."BaseType" = 13
+               AND O."StockEff" = 1),
+            (SELECT MAX(B."DistNumber")
+             FROM OITL O INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+             INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+             WHERE O."DocType" = 15 AND O."DocEntry" = T1."BaseEntry" AND O."DocLine" = T1."BaseLine"
+               AND T1."BaseType" = 15 AND O."StockEff" = 1)
+        )                                 AS "رقم الباتش",
+
+        (COALESCE(
+            (SELECT MAX(B."CostTotal" / NULLIF(B."Quantity",0))
+             FROM OITL O INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+             INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+             WHERE O."DocType" = 13 AND O."DocEntry" = T0."DocEntry" AND O."DocLine" = T1."LineNum"
+               AND O."StockEff" = 1),
+            (SELECT MAX(B."CostTotal" / NULLIF(B."Quantity",0))
+             FROM DLN1 DL
+             INNER JOIN OITL O ON O."DocType" = 15 AND O."DocEntry" = DL."DocEntry" AND O."DocLine" = DL."LineNum"
+             INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+             INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+             WHERE DL."BaseEntry" = T0."DocEntry" AND DL."BaseLine" = T1."LineNum" AND DL."BaseType" = 13
+               AND O."StockEff" = 1),
+            (SELECT MAX(B."CostTotal" / NULLIF(B."Quantity",0))
+             FROM OITL O INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+             INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+             WHERE O."DocType" = 15 AND O."DocEntry" = T1."BaseEntry" AND O."DocLine" = T1."BaseLine"
+               AND T1."BaseType" = 15 AND O."StockEff" = 1)
+        ) * IFNULL(NULLIF(T1."NumPerMsr",0), 1))
+                                          AS "كلفة الوحدة الحالية للباتش",
+
+        -- كلفة تقديرية: متوسط مرجّح لكل الباتشات المتوفرة حالياً بنفس المستودع
+        ((SELECT SUM(Q."Quantity" * (BN."CostTotal" / NULLIF(BN."Quantity",0)))
+                / NULLIF(SUM(Q."Quantity"),0)
+         FROM OBTQ Q
+         INNER JOIN OBTN BN ON Q."ItemCode" = BN."ItemCode" AND Q."SysNumber" = BN."SysNumber"
+         WHERE Q."ItemCode" = T1."ItemCode" AND Q."WhsCode" = T1."WhsCode" AND Q."Quantity" > 0
+        ) * IFNULL(NULLIF(T1."NumPerMsr",0), 1))
+                                          AS "_est_cost_raw",
+
+        T1."Quantity"                     AS "_qty_raw"
+
+    FROM OINV T0
+    INNER JOIN INV1 T1 ON T0."DocEntry" = T1."DocEntry"
+    WHERE T0."DocDate" BETWEEN [%0] AND [%1]
+      AND T0."CANCELED" = 'N'
+
+    UNION ALL
+
+    -- ============ المرتجعات (مباشرة دائماً) ============
+    SELECT
+        'مرتجع',
+        T0."DocNum",
+        T0."DocDate",
+        T0."CardCode",
+        T0."CardName",
+        T1."ItemCode",
+        T1."Dscription",
+        -T1."Quantity",
+        T1."PriceBefDi",
+        T1."DiscPrcnt",
+        T0."DiscPrcnt",
+        -(T1."LineTotal" * (1 - IFNULL(T0."DiscPrcnt",0)/100) / NULLIF(T1."Quantity",0)),
+
+        -(T1."LineTotal" * (1 - IFNULL(T0."DiscPrcnt",0)/100)),
+
+        NULL,
+
+        (SELECT MAX(B."DistNumber")
+         FROM OITL O INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+         INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+         WHERE O."DocType" = 14 AND O."DocEntry" = T0."DocEntry" AND O."DocLine" = T1."LineNum"
+           AND O."StockEff" = 1),
+
+        (SELECT MAX(B."CostTotal" / NULLIF(B."Quantity",0))
+         FROM OITL O INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+         INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+         WHERE O."DocType" = 14 AND O."DocEntry" = T0."DocEntry" AND O."DocLine" = T1."LineNum"
+           AND O."StockEff" = 1) * IFNULL(NULLIF(T1."NumPerMsr",0), 1),
+
+        NULL,   -- _est_cost_raw: المرتجعات ما لها كلفة تقديرية (مباشرة دايماً، هذا العمود خاص بالفواتير فقط)
+
+        T1."Quantity"
+
+    FROM ORIN T0
+    INNER JOIN RIN1 T1 ON T0."DocEntry" = T1."DocEntry"
+    WHERE T0."DocDate" BETWEEN [%0] AND [%1]
+      AND T0."CANCELED" = 'N'
+
+) X
+
+ORDER BY "التاريخ", "نوع المستند", "رقم المستند";`},
+
+  {code:"KLN-SAL-000005", title:"تحليل المبيعات حسب تصنيف الضريبة (تصدير/جهات صفرية ومعفاة/فئات الصنف)", category:"sales",
+    desc:"يوزّع صافي المبيعات وقيمة الضريبة لكل سطر فاتورة/مرتجع حسب تصنيف ضريبي شامل: خصائص العميل (تصدير/جهة صفرية/جهة معفاة عبر QryGroup62-64) أولاً، ثم رمز ضريبة الصنف (X0 معفى، Out0 صفري، Out16/10/5/4/2%) كبديل — مع توزيع خصم المستند على السطور بالتناسب (Pro-rata) عبر SUM...OVER(PARTITION BY DocEntry) قبل التصنيف. أساس مباشر لتغذية إقرار ضريبة المبيعات وتدقيق تصنيفها.",
+    params:"[%0] = تاريخ بداية الفترة، [%1] = تاريخ نهاية الفترة", tags:["ضريبة مبيعات","تصنيف ضريبي","إقرار ضريبي"],
+    sql:`WITH SALES AS
+(
+    /* فواتير المبيعات */
+    SELECT
+        'فاتورة' AS "نوع الحركة",
+        T0."DocEntry",
+        T0."DocNum" AS "رقم المستند",
+        T0."DocDate" AS "تاريخ المستند",
+
+        T0."CardCode",
+        T0."CardName",
+
+        C."QryGroup62" AS "Property62",
+        C."QryGroup63" AS "Property63",
+        C."QryGroup64" AS "Property64",
+
+        T1."ItemCode",
+        T1."Dscription",
+
+        T1."Quantity",
+
+        T1."LineTotal" AS "قيمة السطر",
+
+        T0."DiscSum" AS "خصم المستند",
+
+        T1."VatGroup" AS "Tax Definition",
+
+        T1."VatSum" AS "VatSum"
+
+    FROM OINV T0
+    INNER JOIN INV1 T1
+        ON T0."DocEntry" = T1."DocEntry"
+
+    LEFT JOIN OCRD C
+        ON T0."CardCode" = C."CardCode"
+
+    WHERE
+        T0."CANCELED" = 'N'
+        AND T0."DocDate" BETWEEN [%0] AND [%1]
+
+
+    UNION ALL
+
+
+    /* مرتجعات المبيعات */
+    SELECT
+        'مرتجع' AS "نوع الحركة",
+        T0."DocEntry",
+        T0."DocNum",
+        T0."DocDate",
+
+        T0."CardCode",
+        T0."CardName",
+
+        C."QryGroup62",
+        C."QryGroup63",
+        C."QryGroup64",
+
+        T1."ItemCode",
+        T1."Dscription",
+
+        -T1."Quantity",
+
+        -T1."LineTotal",
+
+        -T0."DiscSum",
+
+        T1."VatGroup",
+
+        -T1."VatSum"
+
+    FROM ORIN T0
+    INNER JOIN RIN1 T1
+        ON T0."DocEntry" = T1."DocEntry"
+
+    LEFT JOIN OCRD C
+        ON T0."CardCode" = C."CardCode"
+
+    WHERE
+        T0."CANCELED" = 'N'
+        AND T0."DocDate" BETWEEN [%0] AND [%1]
+),CALC AS
+(
+    SELECT
+        S.*,
+
+        S."قيمة السطر"
+        -
+        (
+            S."خصم المستند"
+            *
+            (
+                S."قيمة السطر"
+                /
+                NULLIF(
+                    SUM(S."قيمة السطر")
+                    OVER(PARTITION BY S."DocEntry"),
+                0)
+            )
+        )
+        AS "صافي المبيعات"
+
+    FROM SALES S
+),
+
+CLASS AS
+(
+    SELECT
+        C.*,
+
+        CASE
+
+            WHEN C."Property64" = 'Y'
+                THEN 'تصدير'
+
+            WHEN C."Property63" = 'Y'
+                THEN 'جهة صفرية'
+
+            WHEN C."Property62" = 'Y'
+                THEN 'جهة معفاة'
+
+
+            WHEN C."Tax Definition" = 'X0'
+                THEN 'صنف معفي'
+
+            WHEN C."Tax Definition" = 'Out0'
+                THEN 'صنف صفري'
+
+            WHEN C."Tax Definition" = 'Out16'
+                THEN '16%'
+
+            WHEN C."Tax Definition" = 'Out10'
+                THEN '10%'
+
+            WHEN C."Tax Definition" = 'Out5'
+                THEN '5%'
+
+            WHEN C."Tax Definition" = 'Out4'
+                THEN '4%'
+
+            WHEN C."Tax Definition" = 'Out2'
+                THEN '2%'
+
+            ELSE 'غير مصنف'
+
+        END AS "التصنيف"
+
+    FROM CALC C
+)SELECT
+
+    C."نوع الحركة",
+    C."رقم المستند",
+    C."تاريخ المستند",
+
+    C."CardCode" AS "كود العميل",
+    C."CardName" AS "اسم العميل",
+
+    C."ItemCode" AS "كود الصنف",
+    C."Dscription" AS "اسم الصنف",
+
+    C."Tax Definition" AS "رمز الضريبة",
+
+    C."Quantity" AS "الكمية",
+
+
+    /* تصدير */
+    CASE
+        WHEN C."التصنيف"='تصدير'
+        THEN C."صافي المبيعات"
+        ELSE 0
+    END AS "مبيعات تصدير",
+
+    CASE
+        WHEN C."التصنيف"='تصدير'
+        THEN C."VatSum"
+        ELSE 0
+    END AS "ضريبة تصدير",
+
+
+    /* جهات صفرية */
+    CASE
+        WHEN C."التصنيف"='جهة صفرية'
+        THEN C."صافي المبيعات"
+        ELSE 0
+    END AS "مبيعات جهات صفرية",
+
+    CASE
+        WHEN C."التصنيف"='جهة صفرية'
+        THEN C."VatSum"
+        ELSE 0
+    END AS "ضريبة جهات صفرية",
+
+
+    /* جهات معفاة */
+    CASE
+        WHEN C."التصنيف"='جهة معفاة'
+        THEN C."صافي المبيعات"
+        ELSE 0
+    END AS "مبيعات جهات معفاة",
+
+    CASE
+        WHEN C."التصنيف"='جهة معفاة'
+        THEN C."VatSum"
+        ELSE 0
+    END AS "ضريبة جهات معفاة",
+
+
+    /* X0 */
+    CASE
+        WHEN C."التصنيف"='صنف معفي'
+        THEN C."صافي المبيعات"
+        ELSE 0
+    END AS "مبيعات X0",
+
+    CASE
+        WHEN C."التصنيف"='صنف معفي'
+        THEN C."VatSum"
+        ELSE 0
+    END AS "ضريبة X0",
+
+
+    /* Out0 */
+    CASE
+        WHEN C."التصنيف"='صنف صفري'
+        THEN C."صافي المبيعات"
+        ELSE 0
+    END AS "مبيعات Out0",
+
+    CASE
+        WHEN C."التصنيف"='صنف صفري'
+        THEN C."VatSum"
+        ELSE 0
+    END AS "ضريبة Out0",
+
+
+    /* 16% */
+    CASE
+        WHEN C."التصنيف"='16%'
+        THEN C."صافي المبيعات"
+        ELSE 0
+    END AS "مبيعات 16%",
+
+    CASE
+        WHEN C."التصنيف"='16%'
+        THEN C."VatSum"
+        ELSE 0
+    END AS "ضريبة 16%",
+
+
+    /* 10% */
+    CASE
+        WHEN C."التصنيف"='10%'
+        THEN C."صافي المبيعات"
+        ELSE 0
+    END AS "مبيعات 10%",
+
+    CASE
+        WHEN C."التصنيف"='10%'
+        THEN C."VatSum"
+        ELSE 0
+    END AS "ضريبة 10%",
+
+
+    /* 5% */
+    CASE
+        WHEN C."التصنيف"='5%'
+        THEN C."صافي المبيعات"
+        ELSE 0
+    END AS "مبيعات 5%",
+
+    CASE
+        WHEN C."التصنيف"='5%'
+        THEN C."VatSum"
+        ELSE 0
+    END AS "ضريبة 5%",
+
+
+    /* 4% */
+    CASE
+        WHEN C."التصنيف"='4%'
+        THEN C."صافي المبيعات"
+        ELSE 0
+    END AS "مبيعات 4%",
+
+    CASE
+        WHEN C."التصنيف"='4%'
+        THEN C."VatSum"
+        ELSE 0
+    END AS "ضريبة 4%",
+
+
+    /* 2% */
+    CASE
+        WHEN C."التصنيف"='2%'
+        THEN C."صافي المبيعات"
+        ELSE 0
+    END AS "مبيعات 2%",
+
+    CASE
+        WHEN C."التصنيف"='2%'
+        THEN C."VatSum"
+        ELSE 0
+    END AS "ضريبة 2%"
+
+
+FROM CLASS C
+
+ORDER BY
+    C."تاريخ المستند",
+    C."رقم المستند";`},
+
+  {code:"KLN-SAL-000006", title:"مبيعات الجهات غير الخاضعة للضريبة (معفاة/صفرية/تصدير)", category:"sales",
+    desc:"يستخرج فواتير ومرتجعات العملاء المصنَّفين ضمن أي خاصية إعفاء ضريبي ببطاقتهم (QryGroup61 إلى 64: غير خاضع/معفى/صفري/تصدير)، مع قيمة الفاتورة قبل وبعد الخصم والضريبة — أساس مباشر لمراجعة بند 'الجهات غير الخاضعة' بإقرار ضريبة المبيعات والتحقق من عدم احتساب ضريبة خطأً عليها.",
+    params:"[%0] = تاريخ بداية الفترة، [%1] = تاريخ نهاية الفترة", tags:["ضريبة مبيعات","إعفاء ضريبي","إقرار ضريبي"],
+    sql:`SELECT
+    T0."DocNum",
+    T0."DocDate",
+    'Invoice' AS "Document Type",
+    T2."SlpName",
+    T0."CardCode",
+    T0."CardName",
+    T1."U_ST_LegacyNo",
+
+    CASE
+        WHEN T1."QryGroup62" = 'Y' THEN 'معفي'
+        WHEN T1."QryGroup63" = 'Y' THEN 'صفري'
+        WHEN T1."QryGroup64" = 'Y' THEN 'تصدير'
+        ELSE ''
+    END AS "Customer Property",
+
+    T0."DocTotal",
+    T0."VatSum",
+    (T0."DocTotal" - T0."VatSum" + T0."DiscSum") AS "Before Discount",
+    T0."DiscSum" AS "Discount"
+
+FROM OINV T0
+INNER JOIN OCRD T1
+    ON T0."CardCode" = T1."CardCode"
+LEFT JOIN OSLP T2
+    ON T2."SlpCode" = T0."SlpCode"
+
+WHERE
+    T0."CANCELED" = 'N'
+    AND T0."DocDate" >= [%0]
+    AND T0."DocDate" <= [%1]
+    AND (
+        T1."QryGroup61" = 'Y'
+        OR T1."QryGroup62" = 'Y'
+        OR T1."QryGroup63" = 'Y'
+        OR T1."QryGroup64" = 'Y'
+    )
+
+UNION ALL
+
+SELECT
+    T0."DocNum",
+    T0."DocDate",
+    'Return' AS "Document Type",
+    T2."SlpName",
+    T0."CardCode",
+    T0."CardName",
+    T1."U_ST_LegacyNo",
+
+    CASE
+        WHEN T1."QryGroup62" = 'Y' THEN 'معفي'
+        WHEN T1."QryGroup63" = 'Y' THEN 'صفري'
+        WHEN T1."QryGroup64" = 'Y' THEN 'تصدير'
+        ELSE ''
+    END AS "Customer Property",
+
+    -T0."DocTotal",
+    -T0."VatSum",
+    -(T0."DocTotal" - T0."VatSum" + T0."DiscSum"),
+    -T0."DiscSum"
+
+FROM ORIN T0
+INNER JOIN OCRD T1
+    ON T0."CardCode" = T1."CardCode"
+LEFT JOIN OSLP T2
+    ON T2."SlpCode" = T0."SlpCode"
+
+WHERE
+    T0."CANCELED" = 'N'
+    AND T0."DocDate" >= [%0]
+    AND T0."DocDate" <= [%1]
+    AND (
+        T1."QryGroup61" = 'Y'
+        OR T1."QryGroup62" = 'Y'
+        OR T1."QryGroup63" = 'Y'
+        OR T1."QryGroup64" = 'Y'
+    )
+
+ORDER BY "DocNum";`},
+
+  {code:"KLN-SAL-000007", title:"مبيعات 3 سنوات شامل الضريبة — مصفوفة عميل × شهر", category:"sales",
+    desc:"مصفوفة سنوية-شهرية (Pivot) لصافي مبيعات كل عميل شامل الضريبة، بعد توزيع خصم المستند على السطور بالتناسب (Pro-rata عبر SUM...OVER)، مع دمج المرتجعات كقيم سالبة بنفس الهيكل. مفيد لتحليل اتجاه العميل السنوي ولمطابقة إجمالي الإقرارات الضريبية السنوية بمجموع أعمدة الأشهر. أعمدة السنوات (2024-2026) مبنية صراحة بالكويري ذاته حسب الاستخدام الفعلي؛ لتغطية سنوات مختلفة تُعدَّل كتل SUM/CASE يدوياً بنفس النمط.",
+    params:"[%0] = تاريخ بداية الفترة، [%1] = تاريخ نهاية الفترة (يجب أن يغطي نفس مدى السنوات المبنية بالأعمدة)", tags:["ضريبة مبيعات","اتجاه سنوي","مصفوفة عميل"],
+    sql:`SELECT
+    T0."CardCode",
+    MAX(T0."CardName") AS "CardName",
+
+    /* ===== 2024 ===== */
+    SUM(CASE WHEN YEAR(T0."DocDate")=2024 AND MONTH(T0."DocDate")=1 THEN NetSale+Vat ELSE 0 END) AS "2024-01",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2024 AND MONTH(T0."DocDate")=2 THEN NetSale+Vat ELSE 0 END) AS "2024-02",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2024 AND MONTH(T0."DocDate")=3 THEN NetSale+Vat ELSE 0 END) AS "2024-03",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2024 AND MONTH(T0."DocDate")=4 THEN NetSale+Vat ELSE 0 END) AS "2024-04",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2024 AND MONTH(T0."DocDate")=5 THEN NetSale+Vat ELSE 0 END) AS "2024-05",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2024 AND MONTH(T0."DocDate")=6 THEN NetSale+Vat ELSE 0 END) AS "2024-06",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2024 AND MONTH(T0."DocDate")=7 THEN NetSale+Vat ELSE 0 END) AS "2024-07",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2024 AND MONTH(T0."DocDate")=8 THEN NetSale+Vat ELSE 0 END) AS "2024-08",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2024 AND MONTH(T0."DocDate")=9 THEN NetSale+Vat ELSE 0 END) AS "2024-09",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2024 AND MONTH(T0."DocDate")=10 THEN NetSale+Vat ELSE 0 END) AS "2024-10",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2024 AND MONTH(T0."DocDate")=11 THEN NetSale+Vat ELSE 0 END) AS "2024-11",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2024 AND MONTH(T0."DocDate")=12 THEN NetSale+Vat ELSE 0 END) AS "2024-12",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2024 THEN NetSale+Vat ELSE 0 END) AS "إجمالي_2024",
+
+    /* ===== 2025 ===== */
+    SUM(CASE WHEN YEAR(T0."DocDate")=2025 AND MONTH(T0."DocDate")=1 THEN NetSale+Vat ELSE 0 END) AS "2025-01",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2025 AND MONTH(T0."DocDate")=2 THEN NetSale+Vat ELSE 0 END) AS "2025-02",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2025 AND MONTH(T0."DocDate")=3 THEN NetSale+Vat ELSE 0 END) AS "2025-03",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2025 AND MONTH(T0."DocDate")=4 THEN NetSale+Vat ELSE 0 END) AS "2025-04",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2025 AND MONTH(T0."DocDate")=5 THEN NetSale+Vat ELSE 0 END) AS "2025-05",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2025 AND MONTH(T0."DocDate")=6 THEN NetSale+Vat ELSE 0 END) AS "2025-06",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2025 AND MONTH(T0."DocDate")=7 THEN NetSale+Vat ELSE 0 END) AS "2025-07",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2025 AND MONTH(T0."DocDate")=8 THEN NetSale+Vat ELSE 0 END) AS "2025-08",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2025 AND MONTH(T0."DocDate")=9 THEN NetSale+Vat ELSE 0 END) AS "2025-09",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2025 AND MONTH(T0."DocDate")=10 THEN NetSale+Vat ELSE 0 END) AS "2025-10",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2025 AND MONTH(T0."DocDate")=11 THEN NetSale+Vat ELSE 0 END) AS "2025-11",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2025 AND MONTH(T0."DocDate")=12 THEN NetSale+Vat ELSE 0 END) AS "2025-12",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2025 THEN NetSale+Vat ELSE 0 END) AS "إجمالي_2025",
+
+    /* ===== 2026 ===== */
+    SUM(CASE WHEN YEAR(T0."DocDate")=2026 AND MONTH(T0."DocDate")=1 THEN NetSale+Vat ELSE 0 END) AS "2026-01",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2026 AND MONTH(T0."DocDate")=2 THEN NetSale+Vat ELSE 0 END) AS "2026-02",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2026 AND MONTH(T0."DocDate")=3 THEN NetSale+Vat ELSE 0 END) AS "2026-03",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2026 AND MONTH(T0."DocDate")=4 THEN NetSale+Vat ELSE 0 END) AS "2026-04",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2026 AND MONTH(T0."DocDate")=5 THEN NetSale+Vat ELSE 0 END) AS "2026-05",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2026 AND MONTH(T0."DocDate")=6 THEN NetSale+Vat ELSE 0 END) AS "2026-06",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2026 AND MONTH(T0."DocDate")=7 THEN NetSale+Vat ELSE 0 END) AS "2026-07",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2026 AND MONTH(T0."DocDate")=8 THEN NetSale+Vat ELSE 0 END) AS "2026-08",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2026 AND MONTH(T0."DocDate")=9 THEN NetSale+Vat ELSE 0 END) AS "2026-09",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2026 AND MONTH(T0."DocDate")=10 THEN NetSale+Vat ELSE 0 END) AS "2026-10",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2026 AND MONTH(T0."DocDate")=11 THEN NetSale+Vat ELSE 0 END) AS "2026-11",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2026 AND MONTH(T0."DocDate")=12 THEN NetSale+Vat ELSE 0 END) AS "2026-12",
+    SUM(CASE WHEN YEAR(T0."DocDate")=2026 THEN NetSale+Vat ELSE 0 END) AS "إجمالي_2026"
+
+FROM
+(
+    SELECT
+        T0."CardCode",
+        T0."CardName",
+        T0."DocDate",
+        (T1."LineTotal" -
+         (T1."LineTotal" *
+          CASE
+            WHEN SUM(T1."LineTotal") OVER (PARTITION BY T0."DocEntry") <> 0
+            THEN T0."DiscSum" / SUM(T1."LineTotal") OVER (PARTITION BY T0."DocEntry")
+            ELSE 0
+          END)
+        ) AS NetSale,
+        T1."VatSum" AS Vat
+    FROM "OINV" T0
+    INNER JOIN "INV1" T1 ON T0."DocEntry"=T1."DocEntry"
+    WHERE T0."CANCELED"='N'
+      AND T0."DocDate" BETWEEN [%0] AND [%1]
+
+    UNION ALL
+
+    SELECT
+        T0."CardCode",
+        T0."CardName",
+        T0."DocDate",
+        -1*(T1."LineTotal" -
+         (T1."LineTotal" *
+          CASE
+            WHEN SUM(T1."LineTotal") OVER (PARTITION BY T0."DocEntry") <> 0
+            THEN T0."DiscSum" / SUM(T1."LineTotal") OVER (PARTITION BY T0."DocEntry")
+            ELSE 0
+          END)
+        ) AS NetSale,
+        -1*T1."VatSum" AS Vat
+    FROM "ORIN" T0
+    INNER JOIN "RIN1" T1 ON T0."DocEntry"=T1."DocEntry"
+    WHERE T0."CANCELED"='N'
+      AND T0."DocDate" BETWEEN [%0] AND [%1]
+) T0
+
+GROUP BY
+    T0."CardCode"
+
+ORDER BY
+    MAX(T0."CardName");`},
 
   {code:"KLN-SAL-005", title:"فواتير أُنشئت أو عُدِّلت خارج أوقات الدوام الرسمي", category:"sales",
     desc:"مؤشر مخاطر لعمليات غير معتادة (احتيال محتمل أو تجاوز صلاحيات) — يقارن وقت الإنشاء بساعات العمل المعتمدة.",
