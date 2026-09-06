@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v49.2-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v49.3-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -1763,8 +1763,8 @@ function calc(from,to,noSelf){
   return o};
  const CF=cf(BSo,BSc,IS.TOT);const CFm={};let prevB=BSo;per.forEach(k=>{CFm[k]=cf(prevB,BSm[k],IS[k]);prevB=BSm[k]});
  // Ratios
- const nMo=per.length||1,ann=12/nMo,days=nMo*30.42;
- const rat=(is,b,bo)=>{const avg=(l)=>(b[l]+bo[l])/2;const o={};
+ const nMo=per.length||1,ann=12/nMo,days=nMo*30.42,annP=ann,daysP=days;
+ const rat=(is,b,bo,days=daysP,ann=annP)=>{const avg=(l)=>(b[l]+bo[l])/2;const o={};
   o.CR=b.CL?b.CA/b.CL:null;o.QR=b.CL?(b.CA-b.INV)/b.CL:null;o.CashR=b.CL?b.CASH/b.CL:null;o.WC=b.WC;
   o.DSO=is.NETSALES?avg('AR')/is.NETSALES*days:null;o.DIO=is.COGS?avg('INV')/is.COGS*days:null;o.DPO=is.COGS?-avg('AP')/is.COGS*days:null;o.CCC=(o.DSO||0)+(o.DIO||0)-(o.DPO||0);
   o.ATO=b.TA?is.NETSALES*ann/((b.TA+bo.TA)/2):null;o.INVTO=avg('INV')?is.COGS*ann/avg('INV'):null;o.ARTO=avg('AR')?is.NETSALES*ann/avg('AR'):null;
@@ -1777,7 +1777,7 @@ function calc(from,to,noSelf){
   o.SGR=(o.ROE!=null)?o.ROE*(1-Math.max(0,Math.min(1,-(b.DIV-bo.DIV)/(is.NI||1)))):null;o.DEF=is.OPEX+is.COGS?(b.CASH+b.AR+b.CHQ)/((is.OPEX+is.COGS)/days):null;
   o.Z=b.TA?0.717*(b.WC/b.TA)+0.847*((b.RE_BAL+b.CUR_NI)/b.TA)+3.107*(is.EBIT*ann/b.TA)+0.42*(b.TL?b.EQ/b.TL:0)+0.998*(is.NETSALES*ann/b.TA):null;
   return o};
- const RAT=rat(IS.TOT,BSc,BSo);const RATm={};let pb=BSo;per.forEach(k=>{RATm[k]=rat(IS[k],BSm[k],pb);pb=BSm[k]});
+ const RAT=rat(IS.TOT,BSc,BSo);const RATm={};let pb=BSo;per.forEach(k=>{RATm[k]=rat(IS[k],BSm[k],pb,days/nMo,ann*nMo);pb=BSm[k]});
  // Comparison period
  let CMP=null;const mode=document.getElementById('pCmp').value;
  if(mode!=='none'&&per.length){const n=per.length;let cf_,ct_;if(mode==='ly'){cf_=prevKey(per[0],12);ct_=prevKey(per[per.length-1],12)}else{ct_=prevKey(per[0],1);cf_=prevKey(per[0],n)}
@@ -3460,12 +3460,9 @@ function ratioDetail(k){const r=R.RAT[k],b=BENCH[k],inf=RINFO[k]||{},cm=R.CMP;co
  openModal(b.n,h)}
 /* ---------- Ratios ---------- */
 /* ---------- Ratio trend visuals (v49.2): sparkline with benchmark band + small multiples with hover ---------- */
-/* R.RATm is computed by the production engine with the whole-period day count and annualisation factor (days=nMo×30.42, ann=12/nMo)
-   applied to every single month. For a one-month IS that inflates day-based ratios by nMo and deflates annualised ones by nMo.
-   This read layer rebases each month to its true monthly basis with exact inverse factors; the engine itself is left untouched
-   (FROZEN CHANGE REQUIRED — see ratio card note). Z mixes both factors and is not rebased. */
-const RM_DAYS=new Set(['DSO','DIO','DPO','CCC','DEF','ND_EBITDA','NWC_S']),RM_ANN=new Set(['ATO','INVTO','ARTO','ROA','ROE','ROCE','FAT','WCT','ROIC','SGR']);
-function ratioMonthly(k,m){const o=R.RATm[m];if(!o)return null;const n=R.nMo||R.per.length||1;let v=o[k];if(v==null||!isFinite(v))return null;if(n===1)return v;if(RM_DAYS.has(k))return v/n;if(RM_ANN.has(k))return v*n;if(k==='SPREAD'){const r=o.ROIC;return r==null?null:r*n-((S.settings.wacc||12)/100)}if(k==='EVA'||k==='Z')return null;return v}
+/* v49.3: the engine now computes R.RATm on a one-month basis (days = 30.42, annualisation ×12 per month), so the
+   monthly series is read as-is. ratioMonthly() stays as the single access point for all ratio visuals. */
+function ratioMonthly(k,m){const o=R.RATm[m];if(!o)return null;const v=o[k];return v==null||!isFinite(v)?null:v}
 function ratioSeries(k){return R.per.map(m=>ratioMonthly(k,m))}
 function gradeCol(gc){return gc==='ok'?C.teal:gc==='warn'?C.gold:gc==='bad'?C.coral:C.navy}
 function sparkR(k){const b=BENCH[k];const vals=ratioSeries(k);const have=vals.filter(v=>v!=null);if(!have.length)return '<span class="hint">—</span>';
@@ -3480,7 +3477,7 @@ function ratioMini(k,w=300,h=150){const b=BENCH[k];const per=R.per;const vals=ra
  const tv=[mn+pd,(mn+mx)/2,mx-pd];const ticks=tv.map(v=>`<line x1="${pad.l}" x2="${w-pad.r}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}" stroke="${C.light}"/><text x="${pad.l-6}" y="${(y(v)+3.5).toFixed(1)}" text-anchor="end" font-size="9.5" fill="${C.muted}">${rfmt(k,v)}</text>`).join('');
  const xi=[0,Math.floor((per.length-1)/2),per.length-1].filter((v,i,a)=>a.indexOf(v)===i);const xl=xi.map(i=>`<text x="${x(i).toFixed(1)}" y="${h-6}" text-anchor="${i===0?'start':i===per.length-1?'end':'middle'}" font-size="9.5" fill="${C.muted}">${per[i]}</text>`).join('');
  return `<div class="rmini" data-k="${k}"><div class="rmini-h"><span>${b.n}</span><b class="${gc}">${rfmt(k,lv)}</b></div><svg viewBox="0 0 ${w} ${h}" data-k="${k}" data-l="${pad.l}" data-w="${W}" role="img"><title>${b.n} شهرياً — المعيار ${rfmt(k,b.lo)} – ${rfmt(k,b.hi)}</title><rect x="${pad.l}" y="${y(b.hi).toFixed(1)}" width="${W}" height="${Math.max(1,y(b.lo)-y(b.hi)).toFixed(1)}" fill="${C.gold}" opacity=".14"/>${ticks}${xl}<path d="${d}" fill="none" stroke="${C.navy}" stroke-width="2" stroke-linejoin="round"/><circle cx="${x(li).toFixed(1)}" cy="${y(lv).toFixed(1)}" r="4" fill="${col}" stroke="#fff" stroke-width="1.5"/><line class="rmini-x" x1="0" x2="0" y1="${pad.t}" y2="${pad.t+H}" stroke="${C.ink2}" stroke-dasharray="3,3" opacity="0"/></svg></div>`}
-function ratioMultiples(){return `<div class="rmini-grid">${RMULT.map(k=>ratioMini(k)).join('')}</div><p class="hint">كل نسبة بمقياسها الخاص. الشريط الذهبي الشفاف = نطاق المعيار الداخلي (من/إلى في الجدول)؛ النقطة الأخيرة ملوّنة بحسب التقييم. مرّر المؤشر فوق أي رسم لقراءة قيمة الشهر. القيم الشهرية معادة إلى أساسها الشهري (أيام الشهر للنسب الزمنية، وتحويل سنوي ×12 لنسب العائد والدوران) فتقارَن مباشرة بنطاق المعيار.</p>`}
+function ratioMultiples(){return `<div class="rmini-grid">${RMULT.map(k=>ratioMini(k)).join('')}</div><p class="hint">كل نسبة بمقياسها الخاص. الشريط الذهبي الشفاف = نطاق المعيار الداخلي (من/إلى في الجدول)؛ النقطة الأخيرة ملوّنة بحسب التقييم. مرّر المؤشر فوق أي رسم لقراءة قيمة الشهر. القيم الشهرية محسوبة على أساس الشهر الواحد (أيام الشهر للنسب الزمنية، وتحويل سنوي ×12 لنسب العائد والدوران) فتقارَن مباشرة بنطاق المعيار.</p>`}
 function bindRatioHover(){const c=document.getElementById('chRatioTrend');if(!c||c.dataset.hover)return;c.dataset.hover='1';let tip=document.getElementById('rminiTip');if(!tip){tip=document.createElement('div');tip.id='rminiTip';tip.className='rmini-tip';tip.hidden=true;document.body.appendChild(tip)}
  const hide=()=>{tip.hidden=true;c.querySelectorAll('.rmini-x').forEach(l=>l.setAttribute('opacity','0'))};
  c.addEventListener('pointermove',e=>{const svg=e.target.closest('svg[data-k]');if(!svg||!R||!R.per||R.per.length<1){hide();return}const k=svg.dataset.k;const r=svg.getBoundingClientRect();if(!r.width)return;const vb=svg.viewBox.baseVal;const px=(e.clientX-r.left)*(vb.width/r.width);const l=+svg.dataset.l,W=+svg.dataset.w;const n=R.per.length;const i=Math.max(0,Math.min(n-1,Math.round((px-l)/W*(n-1))));const v=ratioMonthly(k,R.per[i]);
