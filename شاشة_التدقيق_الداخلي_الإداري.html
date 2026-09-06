@@ -2575,11 +2575,12 @@ ORDER BY T0."DocDate", T0."DocTime";`},
   {code:"KLN-SAL-006", title:"تركز المبيعات على أكبر 20 عميل (تحليل باريتو / تعارض اعتماد)", category:"sales",
     desc:"يدعم تقييم مخاطر الاعتماد على عدد محدود من العملاء (Concentration Risk) ضمن تدقيق المبيعات السنوي.",
     params:"@FromDate, @ToDate", tags:["تركز","باريتو"],
-    sql:`SELECT TOP 20 T0."CardCode", T0."CardName", SUM(T0."DocTotal") AS "TotalSales", COUNT(*) AS "InvoiceCount"
+    sql:`SELECT T0."CardCode", T0."CardName", SUM(T0."DocTotal") AS "TotalSales", COUNT(*) AS "InvoiceCount"
 FROM OINV T0
 WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate AND T0."Canceled" = 'N'
 GROUP BY T0."CardCode", T0."CardName"
-ORDER BY "TotalSales" DESC;`},
+ORDER BY "TotalSales" DESC
+LIMIT 20;`},
 
   // ---------------- المرتجعات ----------------
   {code:"KLN-RET-001", title:"مطابقة كل مرتجع (إشعار دائن) بفاتورته الأصلية ونسبته منها", category:"returns",
@@ -2620,13 +2621,13 @@ ORDER BY "ReturnedValue" DESC;`},
     desc:"الأساس الأول لتدقيق التحصيل — تصنيف كل رصيد مفتوح حسب عدد أيام تأخره عن تاريخ الاستحقاق.",
     params:"@AsOfDate", tags:["ذمم","aging","DSO"],
     sql:`SELECT T0."CardCode", T0."CardName", T1."DocNum", T1."DocDueDate",
-       DATEDIFF(day, T1."DocDueDate", @AsOfDate) AS "DaysOverdue",
+       DAYS_BETWEEN(T1."DocDueDate", @AsOfDate) AS "DaysOverdue",
        CASE
-         WHEN DATEDIFF(day, T1."DocDueDate", @AsOfDate) <= 0 THEN 'غير مستحق'
-         WHEN DATEDIFF(day, T1."DocDueDate", @AsOfDate) <= 30 THEN '1-30'
-         WHEN DATEDIFF(day, T1."DocDueDate", @AsOfDate) <= 60 THEN '31-60'
-         WHEN DATEDIFF(day, T1."DocDueDate", @AsOfDate) <= 90 THEN '61-90'
-         WHEN DATEDIFF(day, T1."DocDueDate", @AsOfDate) <= 120 THEN '91-120'
+         WHEN DAYS_BETWEEN(T1."DocDueDate", @AsOfDate) <= 0 THEN 'غير مستحق'
+         WHEN DAYS_BETWEEN(T1."DocDueDate", @AsOfDate) <= 30 THEN '1-30'
+         WHEN DAYS_BETWEEN(T1."DocDueDate", @AsOfDate) <= 60 THEN '31-60'
+         WHEN DAYS_BETWEEN(T1."DocDueDate", @AsOfDate) <= 90 THEN '61-90'
+         WHEN DAYS_BETWEEN(T1."DocDueDate", @AsOfDate) <= 120 THEN '91-120'
          ELSE '+120'
        END AS "AgingBucket",
        T1."DocTotal" - T1."PaidToDate" AS "OpenBalance"
@@ -2669,12 +2670,12 @@ ORDER BY T0."DocDate", T1."SlpCode";`},
     desc:"يكشف حسابات متوقفة عن السداد فعلياً رغم وجود رصيد مفتوح — مرشحة لقرار إيقاف بيع أو متابعة قانونية.",
     params:"@AsOfDate, @IdleDays (افتراضي 60)", tags:["متعثرين","إنذار مبكر"],
     sql:`SELECT T0."CardCode", T0."CardName", T0."Balance", MAX(T1."DocDate") AS "LastPaymentDate",
-       DATEDIFF(day, MAX(T1."DocDate"), @AsOfDate) AS "DaysSinceLastPayment"
+       DAYS_BETWEEN(MAX(T1."DocDate"), @AsOfDate) AS "DaysSinceLastPayment"
 FROM OCRD T0
 LEFT JOIN ORCT T1 ON T1."CardCode" = T0."CardCode"
 WHERE T0."Balance" > 0
 GROUP BY T0."CardCode", T0."CardName", T0."Balance"
-HAVING DATEDIFF(day, MAX(T1."DocDate"), @AsOfDate) > @IdleDays OR MAX(T1."DocDate") IS NULL
+HAVING DAYS_BETWEEN(MAX(T1."DocDate"), @AsOfDate) > @IdleDays OR MAX(T1."DocDate") IS NULL
 ORDER BY "DaysSinceLastPayment" DESC;`},
 
   // ---------------- المشتريات ----------------
@@ -2705,7 +2706,7 @@ ORDER BY "PriceVariancePct" DESC;`},
     desc:"يرصد تأخر الموردين عن الالتزام بمواعيد التوريد — مدخل لتقييم أداء الموردين (Vendor Scorecard).",
     params:"@AsOfDate", tags:["أداء موردين","تسليم"],
     sql:`SELECT T0."DocNum", T0."CardCode", T0."CardName", T0."DocDate", T0."DocDueDate",
-       DATEDIFF(day, T0."DocDueDate", @AsOfDate) AS "DaysLate", T0."DocStatus"
+       DAYS_BETWEEN(T0."DocDueDate", @AsOfDate) AS "DaysLate", T0."DocStatus"
 FROM OPOR T0
 WHERE T0."DocStatus" = 'O' AND T0."DocDueDate" < @AsOfDate
 ORDER BY "DaysLate" DESC;`},
@@ -2744,12 +2745,12 @@ ORDER BY T0."OnHand" ASC;`},
     desc:"يدعم مبدأ الصرف الأول للأقرب انتهاءً (FEFO) ويغذي نظام الإنذار المبكر للمخزون القريب الانتهاء.",
     params:"@AsOfDate", tags:["expiry","fefo","batch"],
     sql:`SELECT T0."ItemCode", T1."ItemName", T0."DistNumber" AS "BatchNo", T0."ExpDate",
-       DATEDIFF(day, @AsOfDate, T0."ExpDate") AS "DaysToExpiry", T2."Quantity", T2."WhsCode"
+       DAYS_BETWEEN(@AsOfDate, T0."ExpDate") AS "DaysToExpiry", T2."Quantity", T2."WhsCode"
 FROM OBTN T0
 JOIN OITM T1 ON T1."ItemCode" = T0."ItemCode"
 JOIN OBTQ T2 ON T2."ItemCode" = T0."ItemCode" AND T2."DistNumber" = T0."DistNumber"
 WHERE T2."Quantity" > 0 AND T0."ExpDate" IS NOT NULL
-  AND DATEDIFF(day, @AsOfDate, T0."ExpDate") <= 90
+  AND DAYS_BETWEEN(@AsOfDate, T0."ExpDate") <= 90
 ORDER BY "DaysToExpiry" ASC;`},
 
   {code:"KLN-STK-003", title:"دفعات (Batch) منتهية الصلاحية فعلياً ولا تزال ضمن أرصدة المخزون", category:"stock",
@@ -2766,12 +2767,12 @@ ORDER BY T0."ExpDate" ASC;`},
     desc:"يقارن آخر تاريخ حركة صرف مسجّلة (OINM) بتاريخ اليوم لتحديد الأصناف الراكدة وربطها بمصفوفة تحرير مخزون.",
     params:"@AsOfDate, @IdleDays (افتراضي 90)", tags:["راكد","تحسين"],
     sql:`SELECT T0."ItemCode", T1."ItemName", MAX(T0."CreateDate") AS "LastMovementDate",
-       DATEDIFF(day, MAX(T0."CreateDate"), @AsOfDate) AS "IdleDays"
+       DAYS_BETWEEN(MAX(T0."CreateDate"), @AsOfDate) AS "IdleDays"
 FROM OINM T0
 JOIN OITM T1 ON T1."ItemCode" = T0."ItemCode"
 WHERE T0."OutQty" > 0
 GROUP BY T0."ItemCode", T1."ItemName"
-HAVING DATEDIFF(day, MAX(T0."CreateDate"), @AsOfDate) > @IdleDays
+HAVING DAYS_BETWEEN(MAX(T0."CreateDate"), @AsOfDate) > @IdleDays
 ORDER BY "IdleDays" DESC;`},
 
   {code:"KLN-STK-005", title:"تسويات جرد ذات قيمة جوهرية (Inventory Adjustments)", category:"stock",
@@ -2814,10 +2815,10 @@ GROUP BY T1."ItmsGrpCod";`},
     desc:"يربط بين نافذة الصلاحية المتبقية وحالة إتاحة الصنف للبيع لضمان عدم بيع بضاعة تقترب من نهاية عمرها الافتراضي دون خصم/سياسة تصريف واضحة.",
     params:"@AsOfDate, @MinDaysBeforeSaleBlock (مثال 15)", tags:["جودة","expiry"],
     sql:`SELECT T0."ItemCode", T1."ItemName", T0."DistNumber" AS "BatchNo", T0."ExpDate",
-       DATEDIFF(day, @AsOfDate, T0."ExpDate") AS "DaysToExpiry", T1."SellItem"
+       DAYS_BETWEEN(@AsOfDate, T0."ExpDate") AS "DaysToExpiry", T1."SellItem"
 FROM OBTN T0
 JOIN OITM T1 ON T1."ItemCode" = T0."ItemCode"
-WHERE T1."SellItem" = 'Y' AND DATEDIFF(day, @AsOfDate, T0."ExpDate") <= @MinDaysBeforeSaleBlock
+WHERE T1."SellItem" = 'Y' AND DAYS_BETWEEN(@AsOfDate, T0."ExpDate") <= @MinDaysBeforeSaleBlock
 ORDER BY "DaysToExpiry" ASC;`},
 
   {code:"KLN-QLT-002", title:"تتبع دفعة (Batch) من الاستلام حتى فاتورة العميل (Traceability)", category:"quality",
@@ -2982,10 +2983,10 @@ ORDER BY "TotalDebit" DESC;`},
     desc:"يقارن تاريخ إنشاء القيد الفعلي (CreateDate/TransTS) بتاريخ القيد المحاسبي (RefDate) لكشف ترحيل بتاريخ سابق لتاريخ الإدخال الحقيقي.",
     params:"@FromDate, @ToDate, @MaxAllowedGapDays (افتراضي 3)", tags:["تاريخ رجعي","مخاطر"],
     sql:`SELECT T0."TransId", T0."RefDate", T0."CreateDate" AS "SystemCreateDate", T0."Memo", T0."UserSign",
-       DATEDIFF(day, T0."RefDate", T0."CreateDate") AS "GapDays"
+       DAYS_BETWEEN(T0."RefDate", T0."CreateDate") AS "GapDays"
 FROM OJDT T0
 WHERE T0."RefDate" BETWEEN @FromDate AND @ToDate
-  AND DATEDIFF(day, T0."RefDate", T0."CreateDate") > @MaxAllowedGapDays
+  AND DAYS_BETWEEN(T0."RefDate", T0."CreateDate") > @MaxAllowedGapDays
 ORDER BY "GapDays" DESC;`},
 
   {code:"KLN-FIN-003", title:"مصروفات صندوق نثري تجاوزت السقف المعتمد للبند", category:"expense",
@@ -3004,11 +3005,11 @@ ORDER BY T1."Debit" DESC;
     desc:"يتحقق من التزام فتح حساب العميل الجديد بسياسة الحوكمة (فترة تعامل نقدي قبل منح آجل) قبل ظهور أول فاتورة آجلة.",
     params:"@RequiredCashDays (مثال 90)", tags:["سياسة ائتمان","عملاء جدد"],
     sql:`SELECT T0."CardCode", T0."CardName", T0."CreateDate" AS "CustomerOpenedDate", MIN(T1."DocDate") AS "FirstCreditInvoiceDate",
-       DATEDIFF(day, T0."CreateDate", MIN(T1."DocDate")) AS "DaysBeforeFirstCredit"
+       DAYS_BETWEEN(T0."CreateDate", MIN(T1."DocDate")) AS "DaysBeforeFirstCredit"
 FROM OCRD T0
 JOIN OINV T1 ON T1."CardCode" = T0."CardCode" AND T1."DocTotal" > T1."PaidToDate"
 GROUP BY T0."CardCode", T0."CardName", T0."CreateDate"
-HAVING DATEDIFF(day, T0."CreateDate", MIN(T1."DocDate")) < @RequiredCashDays
+HAVING DAYS_BETWEEN(T0."CreateDate", MIN(T1."DocDate")) < @RequiredCashDays
 ORDER BY "DaysBeforeFirstCredit" ASC;`},
 
   {code:"KLN-GOV-002", title:"تعديلات على حد الائتمان أو شروط الدفع لعميل قائم", category:"gov",
@@ -3048,12 +3049,12 @@ ORDER BY "TotalSales" DESC;`},
   {code:"KLN-RET-004", title:"نسبة المرتجعات إلى إجمالي المبيعات شهرياً (اتجاه عام)", category:"returns",
     desc:"يرصد اتجاه نسبة المرتجعات شهراً بعد شهر لاكتشاف تدهور تدريجي بالجودة أو التسليم قبل أن يتحول لمشكلة كبيرة.",
     params:"@FromDate, @ToDate", tags:["اتجاه","kpi"],
-    sql:`SELECT DATEPART(year, T0."DocDate") AS "Yr", DATEPART(month, T0."DocDate") AS "Mo", SUM(T0."DocTotal") AS "ReturnsValue",
-       (SELECT SUM(S."DocTotal") FROM OINV S WHERE DATEPART(year, S."DocDate") = DATEPART(year, T0."DocDate")
-          AND DATEPART(month, S."DocDate") = DATEPART(month, T0."DocDate") AND S."Canceled" = 'N') AS "SalesValue"
+    sql:`SELECT YEAR(T0."DocDate") AS "Yr", MONTH(T0."DocDate") AS "Mo", SUM(T0."DocTotal") AS "ReturnsValue",
+       (SELECT SUM(S."DocTotal") FROM OINV S WHERE YEAR(S."DocDate") = YEAR(T0."DocDate")
+          AND MONTH(S."DocDate") = MONTH(T0."DocDate") AND S."Canceled" = 'N') AS "SalesValue"
 FROM ORIN T0
 WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate
-GROUP BY DATEPART(year, T0."DocDate"), DATEPART(month, T0."DocDate")
+GROUP BY YEAR(T0."DocDate"), MONTH(T0."DocDate")
 ORDER BY "Yr", "Mo";`},
 
   {code:"KLN-RET-005", title:"مرتجعات اعتمدها مستخدم مختلف عن مُصدر الفاتورة الأصلية", category:"returns",
@@ -3068,11 +3069,12 @@ WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate AND T0."UserSign" <> T2."UserSi
   {code:"KLN-RET-006", title:"أعلى 10 عملاء من حيث قيمة المرتجعات خلال الفترة", category:"returns",
     desc:"يحدد العملاء الأعلى مساهمة بالمرتجعات لفتح نقاش تجاري معهم (جودة التسليم، دقة الطلب، سوء تخزين لديهم).",
     params:"@FromDate, @ToDate", tags:["تركز","عملاء"],
-    sql:`SELECT TOP 10 T0."CardCode", T0."CardName", SUM(T0."DocTotal") AS "TotalReturns", COUNT(*) AS "ReturnDocs"
+    sql:`SELECT T0."CardCode", T0."CardName", SUM(T0."DocTotal") AS "TotalReturns", COUNT(*) AS "ReturnDocs"
 FROM ORIN T0
 WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate
 GROUP BY T0."CardCode", T0."CardName"
-ORDER BY "TotalReturns" DESC;`},
+ORDER BY "TotalReturns" DESC
+LIMIT 10;`},
 
   // ---------------- التحصيل (تكملة) ----------------
   {code:"KLN-COL-006", title:"توزيع أرصدة الذمم المدينة حسب مندوب المبيعات", category:"collect",
@@ -3089,7 +3091,7 @@ ORDER BY "TotalOutstanding" DESC;`},
   {code:"KLN-COL-007", title:"متوسط فترة التحصيل الفعلي (DSO) على مستوى المركز", category:"collect",
     desc:"مؤشر KPI مالي جوهري: متوسط عدد الأيام بين تاريخ الفاتورة وتاريخ تحصيلها فعلياً، لمقارنته بشروط الدفع المعتمدة.",
     params:"@FromDate, @ToDate", tags:["dso","kpi"],
-    sql:`SELECT AVG(DATEDIFF(day, T0."DocDate", T1."DocDate")) AS "AvgDSO"
+    sql:`SELECT AVG(DAYS_BETWEEN(T0."DocDate", T1."DocDate")) AS "AvgDSO"
 FROM OINV T0
 JOIN RCT2 T2 ON 1=0 -- placeholder join، الأصح ربط عبر جدول تخصيص الدفعات (ITR1/RCT4) حسب إصدار B1
 JOIN ORCT T1 ON T1."CardCode" = T0."CardCode"
@@ -3101,13 +3103,13 @@ WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate;
     desc:"يقارن شرط الدفع المسجّل ببطاقة العميل (PayTermsGrpCode) بمتوسط أيام السداد الفعلي لرصد تساهل غير معتمد بالتحصيل.",
     params:"@FromDate, @ToDate", tags:["شروط دفع","استثناء"],
     sql:`SELECT T0."CardCode", T0."CardName", T1."GroupName" AS "ApprovedPaymentTerms",
-       AVG(DATEDIFF(day, T2."DocDueDate", @ToDate)) AS "AvgDaysPastDue"
+       AVG(DAYS_BETWEEN(T2."DocDueDate", @ToDate)) AS "AvgDaysPastDue"
 FROM OCRD T0
 LEFT JOIN OCTG T1 ON T1."GroupNum" = T0."GroupNum"
 JOIN OINV T2 ON T2."CardCode" = T0."CardCode" AND T2."DocTotal" > T2."PaidToDate"
 WHERE T2."DocDate" BETWEEN @FromDate AND @ToDate
 GROUP BY T0."CardCode", T0."CardName", T1."GroupName"
-HAVING AVG(DATEDIFF(day, T2."DocDueDate", @ToDate)) > 0
+HAVING AVG(DAYS_BETWEEN(T2."DocDueDate", @ToDate)) > 0
 ORDER BY "AvgDaysPastDue" DESC;`},
 
   // ---------------- المشتريات (تكملة) ----------------
@@ -3116,7 +3118,7 @@ ORDER BY "AvgDaysPastDue" DESC;`},
     params:"@AsOfDate, @LookbackMonths (افتراضي 6)", tags:["تسعير موردين","انحراف"],
     sql:`SELECT T1."ItemCode", T2."ItemName", T1."Price" AS "LastPurchasePrice",
        (SELECT AVG(P."Price") FROM PCH1 P JOIN OPCH O ON O."DocEntry" = P."DocEntry"
-          WHERE P."ItemCode" = T1."ItemCode" AND O."DocDate" >= DATEADD(month, -@LookbackMonths, @AsOfDate)) AS "Avg6MoPrice"
+          WHERE P."ItemCode" = T1."ItemCode" AND O."DocDate" >= ADD_MONTHS(@AsOfDate, -@LookbackMonths)) AS "Avg6MoPrice"
 FROM PCH1 T1
 JOIN OPCH T0 ON T0."DocEntry" = T1."DocEntry"
 JOIN OITM T2 ON T2."ItemCode" = T1."ItemCode"
@@ -3269,10 +3271,10 @@ WHERE 1=1; -- يُراجع بمطابقة تصدير دوري لجدول ITM1 (�
     desc:"فجوة زمنية كبيرة بين تاريخ المباشرة الفعلي وتاريخ إنشاء حساب SAP قد تعني عملاً بصلاحيات موظف آخر خلال الفترة الفاصلة.",
     params:"@MaxGapDays (افتراضي 7)", tags:["onboarding","صلاحيات"],
     sql:`SELECT T0."empID", T0."firstName", T0."lastName", T0."hireDate", T1."USERID", T1."createDate" AS "UserAccountCreated",
-       DATEDIFF(day, T0."hireDate", T1."createDate") AS "GapDays"
+       DAYS_BETWEEN(T0."hireDate", T1."createDate") AS "GapDays"
 FROM OHEM T0
 JOIN OUSR T1 ON T1."USERID" = T0."userId"
-WHERE ABS(DATEDIFF(day, T0."hireDate", T1."createDate")) > @MaxGapDays;`},
+WHERE ABS(DAYS_BETWEEN(T0."hireDate", T1."createDate")) > @MaxGapDays;`},
 
   {code:"KLN-HR-005", title:"موظفون لم يأخذوا إجازة سنوية منذ فترة طويلة (ضابط كشف احتيال)", category:"hr",
     desc:"الإجازة الإلزامية الدورية من أقوى ضوابط كشف الاحتيال المالي — غياب الموظف الفعلي عن مركز عمله يكشف أي عملية كان يخفيها بحضوره المستمر.",
@@ -3353,7 +3355,7 @@ GROUP BY T1."PrcCode", T1."PrcName";
   {code:"KLN-EXP-001", title:"مصاريف تشغيلية شهرية تجاوزت الانحراف المعياري التاريخي لنفس البند", category:"expense",
     desc:"يكشف قفزة غير معتادة ببند مصروف معين مقارنة بسلوكه التاريخي، دون الحاجة لتحديد سقف ثابت مسبقاً لكل بند.",
     params:"@AcctCode, @AsOfMonth", tags:["انحراف","تحليل اتجاه"],
-    sql:`SELECT T1."Account", AVG(T1."Debit") AS "HistoricalAvgMonthly", STDEV(T1."Debit") AS "StdDev"
+    sql:`SELECT T1."Account", AVG(T1."Debit") AS "HistoricalAvgMonthly", STDDEV(T1."Debit") AS "StdDev"
 FROM JDT1 T1
 JOIN OJDT T0 ON T0."TransId" = T1."TransId"
 WHERE T1."Account" = @AcctCode AND T0."RefDate" < @AsOfMonth
