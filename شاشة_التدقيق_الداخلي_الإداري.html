@@ -3213,6 +3213,52 @@ GROUP BY
 ORDER BY
     MAX(T0."CardName");`},
 
+  {code:"KLN-SAL-000008", title:"ملخص المبيعات اليومية لكل عميل مع إجمالي الوزن", category:"sales",
+    desc:"كويري إنتاجي حقيقي: ملخص يومي لكل عميل (عدد الفواتير، المبلغ قبل/بعد الضريبة) مع إجمالي الوزن الفعلي المشحون (الكمية × وزن الوحدة المسجَّل بالصنف OITM.SWeight1) — مهم لشركة توزيع أغذية لمطابقة سعة الشحن الفعلية بالأسطول (الباب 17 من الدليل) بجانب القيمة المالية للمبيعات.",
+    params:"[%0] = تاريخ بداية الفترة، [%1] = تاريخ نهاية الفترة", tags:["مبيعات يومية","وزن الشحنة","أسطول"],
+    sql:`SELECT
+    H."DocDate"                                  AS "التاريخ",
+    H."CardCode"                                 AS "رمز العميل",
+    H."CardName"                                 AS "اسم العميل",
+
+    COUNT(H."DocEntry")                          AS "عدد الفواتير",
+
+    SUM(IFNULL(W."الوزن",0))                     AS "إجمالي الوزن",
+
+    SUM(H."DocTotal" - H."VatSum")               AS "المبلغ بعد الخصم وقبل الضريبة",
+
+    SUM(H."VatSum")                              AS "ضريبة المبيعات",
+
+    SUM(H."DocTotal")                            AS "المبلغ شامل الضريبة"
+
+FROM OINV H
+
+LEFT JOIN
+(
+    SELECT
+        D."DocEntry",
+        SUM(D."Quantity" * IFNULL(I."SWeight1",0)) AS "الوزن"
+    FROM INV1 D
+    INNER JOIN OITM I
+        ON D."ItemCode" = I."ItemCode"
+    GROUP BY
+        D."DocEntry"
+) W
+ON H."DocEntry" = W."DocEntry"
+
+WHERE
+    H."CANCELED" = 'N'
+    AND H."DocDate" BETWEEN '[%0]' AND '[%1]'
+
+GROUP BY
+    H."DocDate",
+    H."CardCode",
+    H."CardName"
+
+ORDER BY
+    H."DocDate",
+    H."CardCode";`},
+
   {code:"KLN-SAL-005", title:"فواتير أُنشئت أو عُدِّلت خارج أوقات الدوام الرسمي", category:"sales",
     desc:"مؤشر مخاطر لعمليات غير معتادة (احتيال محتمل أو تجاوز صلاحيات) — يقارن وقت الإنشاء بساعات العمل المعتمدة.",
     params:"@WorkStart (مثال 08:00), @WorkEnd (مثال 17:00), @FromDate, @ToDate", tags:["مخاطر","توقيت غير معتاد"],
