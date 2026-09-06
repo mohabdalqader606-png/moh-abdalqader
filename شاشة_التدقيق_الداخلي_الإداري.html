@@ -3762,6 +3762,250 @@ GROUP BY T0."CardCode", T0."CardName", T1."GroupName"
 HAVING AVG(DAYS_BETWEEN(T2."DocDueDate", @ToDate)) > 0
 ORDER BY "AvgDaysPastDue" DESC;`},
 
+  {code:"KLN-COL-000001", title:"تفصيل التحصيل الشامل (نقد/شيك فوري/شيك مؤجل) مع مبيعات 6 أشهر ومصفوفة استحقاقات", category:"collect",
+    desc:"الكويري المرجعي الأشمل لتدقيق التحصيل — يوحّد 3 مصادر حركة (نقد وتحويل، شيكات فورية، شيكات مؤجلة) بجدول واحد لكل عميل مع فئته وسقف ائتمانه ورصيده ومندوبه، ويرفق صافي مبيعاته (شامل الضريبة، بعد خصم المردودات) لآخر 6 أشهر لكل شهر بعمود مستقل لدعم قرار المتابعة. يوزّع الشيكات المؤجلة على 6 أعمدة استحقاق (الشهر الحالي حتى الشهر السادس وما بعده)، ويحسب 'تصنيف الحركة 1' (نقد/شيك فوري/شيك مؤجل) بمقارنة تاريخ الاستحقاق بتاريخ تسجيل السند نفسه — وهو التصنيف الحي المعتمد عملياً (انظر لوحة التحصيل التنفيذية)، بمعزل عن أي تصنيف أولي مخزَّن بالمصدر. يضم أيضاً 3 مجاميع مقطعية جاهزة حسب هذا التصنيف الحي لمطابقة سريعة مع أي تقرير تنفيذي آخر.",
+    params:"[%0] = تاريخ بداية فترة القبض، [%1] = تاريخ نهاية فترة القبض (ويُستخدم أيضاً كأساس لحساب أشهر المبيعات الستة وتوزيع أعمدة استحقاق الشيكات المؤجلة)", tags:["تحصيل شامل","شيكات مؤجلة","أعمار ذمم","مصفوفة استحقاق"],
+    sql:`SELECT
+    T."رقم سند القبض",
+    T."تاريخ السند / الإدخال",
+    T."تاريخ الاستحقاق",
+    T."شهر الاستحقاق",
+    T."كود العميل",
+    T."اسم العميل",
+    T."فئة العميل",
+    T."سقف الائتمان",
+    T."الرصيد الحقيقي بعد الدفعة",
+    T."شروط / مدة الائتمان",
+    T."مندوب المبيعات",
+    T."طريقة الدفع",
+    T."تصنيف الحركة",
+
+    -- العمود الجديد: تصنيف الحركة 1
+    CASE
+        WHEN T."طريقة الدفع" = 'Cash/Transfer' THEN 'نقد / تحويل'
+        WHEN T."طريقة الدفع" = 'Cheque' AND T."تاريخ الاستحقاق" > T."تاريخ السند / الإدخال" THEN 'شيك مؤجل'
+        ELSE 'شيك فوري'
+    END AS "تصنيف الحركة 1",
+
+    T."رقم الشيك",
+    T."المبلغ",
+
+    -- صافي مبيعات العميل لآخر 6 أشهر شاملة الضريبة (كل شهر بعمود مستقل)
+    COALESCE(Sales."Sales_M_Minus_5", 0) AS "صافي مبيعات (شامل الضريبة) - منذ 5 أشهر",
+    COALESCE(Sales."Sales_M_Minus_4", 0) AS "صافي مبيعات (شامل الضريبة) - منذ 4 أشهر",
+    COALESCE(Sales."Sales_M_Minus_3", 0) AS "صافي مبيعات (شامل الضريبة) - منذ 3 أشهر",
+    COALESCE(Sales."Sales_M_Minus_2", 0) AS "صافي مبيعات (شامل الضريبة) - الشهر قبل الماضي",
+    COALESCE(Sales."Sales_M_Minus_1", 0) AS "صافي مبيعات (شامل الضريبة) - الشهر الماضي",
+    COALESCE(Sales."Sales_Current_M", 0) AS "صافي مبيعات (شامل الضريبة) - الشهر الحالي",
+
+    -- أعمدة الملخص للنقد والشيكات الفورية
+    COALESCE(Totals."مجموع النقد والتحويل", 0) AS "مجموع النقد والتحويل",
+    COALESCE(Totals."مجموع الشيكات الفورية", 0) AS "مجموع الشيكات الفورية",
+
+    -- تفكيك الشيكات المؤجلة إلى 6 أعمدة حسب شهر الاستحقاق
+    COALESCE(Totals."مؤجل - شهر 1", 0) AS "شيكات مؤجلة - الشهر 1 (الحالي)",
+    COALESCE(Totals."مؤجل - شهر 2", 0) AS "شيكات مؤجلة - الشهر 2",
+    COALESCE(Totals."مؤجل - شهر 3", 0) AS "شيكات مؤجلة - الشهر 3",
+    COALESCE(Totals."مؤجل - شهر 4", 0) AS "شيكات مؤجلة - الشهر 4",
+    COALESCE(Totals."مؤجل - شهر 5", 0) AS "شيكات مؤجلة - الشهر 5",
+    COALESCE(Totals."مؤجل - شهر 6 وما بعده", 0) AS "شيكات مؤجلة - الشهر 6 وما بعده",
+
+    COALESCE(Totals."إجمالي الشيكات المؤجلة", 0) AS "إجمالي الشيكات المؤجلة الشامل",
+    (COALESCE(Totals."مجموع النقد والتحويل", 0) + COALESCE(Totals."مجموع الشيكات الفورية", 0) + COALESCE(Totals."إجمالي الشيكات المؤجلة", 0)) AS "إجمالي التحصيل الكلي",
+
+    -- 3 أعمدة مجاميع حسب تصنيف الحركة 1
+    COALESCE(Totals2."مجموع نقد/تحويل (تصنيف 1)", 0) AS "مجموع نقد/تحويل (تصنيف 1)",
+    COALESCE(Totals2."مجموع شيكات فورية (تصنيف 1)", 0) AS "مجموع شيكات فورية (تصنيف 1)",
+    COALESCE(Totals2."مجموع شيكات مؤجلة (تصنيف 1)", 0) AS "مجموع شيكات مؤجلة (تصنيف 1)"
+
+FROM (
+    -- 1. الكاش والتحويلات التفصيلية
+    SELECT
+        T0."DocNum" AS "رقم سند القبض",
+        TO_VARCHAR(T0."DocDate", 'YYYY-MM-DD') AS "تاريخ السند / الإدخال",
+        TO_VARCHAR(T0."DocDate", 'YYYY-MM-DD') AS "تاريخ الاستحقاق",
+        TO_VARCHAR(T0."DocDate", 'YYYY-MM') AS "شهر الاستحقاق",
+        T0."CardCode" AS "كود العميل",
+        T0."CardName" AS "اسم العميل",
+        COALESCE(T5."GroupName", 'بدون فئة') AS "فئة العميل",
+        COALESCE(T1."CreditLine", 0) AS "سقف الائتمان",
+        COALESCE(T1."Balance", 0) AS "الرصيد الحقيقي بعد الدفعة",
+        COALESCE(T4."PymntGroup", 'غير محدد') AS "شروط / مدة الائتمان",
+        COALESCE(T2."SlpName", 'بدون مندوب') AS "مندوب المبيعات",
+        'Cash/Transfer' AS "طريقة الدفع",
+        'نقد / تحويل' AS "تصنيف الحركة",
+        '' AS "رقم الشيك",
+        (COALESCE(T0."CashSum", 0) + COALESCE(T0."TrsfrSum", 0)) AS "المبلغ"
+    FROM "KAYLANI_LIVE"."ORCT" T0
+    LEFT JOIN "KAYLANI_LIVE"."OCRD" T1 ON T0."CardCode" = T1."CardCode"
+    LEFT JOIN "KAYLANI_LIVE"."OSLP" T2 ON T1."SlpCode" = T2."SlpCode"
+    LEFT JOIN "KAYLANI_LIVE"."OCTG" T4 ON T1."GroupNum" = T4."GroupNum"
+    LEFT JOIN "KAYLANI_LIVE"."OCRG" T5 ON T1."GroupCode" = T5."GroupCode"
+    WHERE (COALESCE(T0."CashSum", 0) + COALESCE(T0."TrsfrSum", 0)) > 0
+      AND T0."Canceled" = 'N'
+      AND T0."DocDate" >= [%0] AND T0."DocDate" <= [%1]
+
+    UNION ALL
+
+    -- 2. الشيكات الفورية
+    SELECT
+        T0."DocNum" AS "رقم سند القبض",
+        TO_VARCHAR(T0."DocDate", 'YYYY-MM-DD') AS "تاريخ السند / الإدخال",
+        TO_VARCHAR(T3."DueDate", 'YYYY-MM-DD') AS "تاريخ الاستحقاق",
+        TO_VARCHAR(T3."DueDate", 'YYYY-MM') AS "شهر الاستحقاق",
+        T0."CardCode" AS "كود العميل",
+        T0."CardName" AS "اسم العميل",
+        COALESCE(T5."GroupName", 'بدون فئة') AS "فئة العميل",
+        COALESCE(T1."CreditLine", 0) AS "سقف الائتمان",
+        COALESCE(T1."Balance", 0) AS "الرصيد الحقيقي بعد الدفعة",
+        COALESCE(T4."PymntGroup", 'غير محدد') AS "شروط / مدة الائتمان",
+        COALESCE(T2."SlpName", 'بدون مندوب') AS "مندوب المبيعات",
+        'Cheque' AS "طريقة الدفع",
+        'شيك فوري' AS "تصنيف الحركة",
+        CAST(T3."CheckNum" AS VARCHAR(30)) AS "رقم الشيك",
+        T3."CheckSum" AS "المبلغ"
+    FROM "KAYLANI_LIVE"."ORCT" T0
+    INNER JOIN "KAYLANI_LIVE"."RCT1" T3 ON T0."DocEntry" = T3."DocNum"
+    LEFT JOIN "KAYLANI_LIVE"."OCRD" T1 ON T0."CardCode" = T1."CardCode"
+    LEFT JOIN "KAYLANI_LIVE"."OSLP" T2 ON T1."SlpCode" = T2."SlpCode"
+    LEFT JOIN "KAYLANI_LIVE"."OCTG" T4 ON T1."GroupNum" = T4."GroupNum"
+    LEFT JOIN "KAYLANI_LIVE"."OCRG" T5 ON T1."GroupCode" = T5."GroupCode"
+    WHERE T0."Canceled" = 'N'
+      AND T0."DocDate" >= [%0] AND T0."DocDate" <= [%1]
+      AND T3."DueDate" <= [%1]
+
+    UNION ALL
+
+    -- 3. الشيكات المؤجلة
+    SELECT
+        T0."DocNum" AS "رقم سند القبض",
+        TO_VARCHAR(T0."DocDate", 'YYYY-MM-DD') AS "تاريخ السند / الإدخال",
+        TO_VARCHAR(T3."DueDate", 'YYYY-MM-DD') AS "تاريخ الاستحقاق",
+        TO_VARCHAR(T3."DueDate", 'YYYY-MM') AS "شهر الاستحقاق",
+        T0."CardCode" AS "كود العميل",
+        T0."CardName" AS "اسم العميل",
+        COALESCE(T5."GroupName", 'بدون فئة') AS "فئة العميل",
+        COALESCE(T1."CreditLine", 0) AS "سقف الائتمان",
+        COALESCE(T1."Balance", 0) AS "الرصيد الحقيقي بعد الدفعة",
+        COALESCE(T4."PymntGroup", 'غير محدد') AS "شروط / مدة الائتمان",
+        COALESCE(T2."SlpName", 'بدون مندوب') AS "مندوب المبيعات",
+        'Cheque' AS "طريقة الدفع",
+        'شيك مؤجل' AS "تصنيف الحركة",
+        CAST(T3."CheckNum" AS VARCHAR(30)) AS "رقم الشيك",
+        T3."CheckSum" AS "المبلغ"
+    FROM "KAYLANI_LIVE"."ORCT" T0
+    INNER JOIN "KAYLANI_LIVE"."RCT1" T3 ON T0."DocEntry" = T3."DocNum"
+    LEFT JOIN "KAYLANI_LIVE"."OCRD" T1 ON T0."CardCode" = T1."CardCode"
+    LEFT JOIN "KAYLANI_LIVE"."OSLP" T2 ON T1."SlpCode" = T2."SlpCode"
+    LEFT JOIN "KAYLANI_LIVE"."OCTG" T4 ON T1."GroupNum" = T4."GroupNum"
+    LEFT JOIN "KAYLANI_LIVE"."OCRG" T5 ON T1."GroupCode" = T5."GroupCode"
+    WHERE T0."Canceled" = 'N'
+      AND T0."DocDate" >= [%0] AND T0."DocDate" <= [%1]
+      AND T3."DueDate" > [%1]
+) T
+
+-- احتساب صافي المبيعات شامل الضريبة (DocTotal بالكامل)
+LEFT JOIN (
+    SELECT
+        SalesSub."CardCode",
+        SUM(CASE WHEN TO_VARCHAR(SalesSub."DocDate", 'YYYY-MM') = TO_VARCHAR(ADD_MONTHS([%1], -5), 'YYYY-MM') THEN SalesSub."NetSales" ELSE 0 END) AS "Sales_M_Minus_5",
+        SUM(CASE WHEN TO_VARCHAR(SalesSub."DocDate", 'YYYY-MM') = TO_VARCHAR(ADD_MONTHS([%1], -4), 'YYYY-MM') THEN SalesSub."NetSales" ELSE 0 END) AS "Sales_M_Minus_4",
+        SUM(CASE WHEN TO_VARCHAR(SalesSub."DocDate", 'YYYY-MM') = TO_VARCHAR(ADD_MONTHS([%1], -3), 'YYYY-MM') THEN SalesSub."NetSales" ELSE 0 END) AS "Sales_M_Minus_3",
+        SUM(CASE WHEN TO_VARCHAR(SalesSub."DocDate", 'YYYY-MM') = TO_VARCHAR(ADD_MONTHS([%1], -2), 'YYYY-MM') THEN SalesSub."NetSales" ELSE 0 END) AS "Sales_M_Minus_2",
+        SUM(CASE WHEN TO_VARCHAR(SalesSub."DocDate", 'YYYY-MM') = TO_VARCHAR(ADD_MONTHS([%1], -1), 'YYYY-MM') THEN SalesSub."NetSales" ELSE 0 END) AS "Sales_M_Minus_1",
+        SUM(CASE WHEN TO_VARCHAR(SalesSub."DocDate", 'YYYY-MM') = TO_VARCHAR([%1], 'YYYY-MM') THEN SalesSub."NetSales" ELSE 0 END) AS "Sales_Current_M"
+    FROM (
+        -- الفواتير شاملة الضريبة (إيجابي)
+        SELECT INV0."CardCode", INV0."DocDate", INV0."DocTotal" AS "NetSales"
+        FROM "KAYLANI_LIVE"."OINV" INV0
+        WHERE INV0."DocDate" >= ADD_MONTHS([%1], -5) AND INV0."DocDate" <= [%1]
+          AND INV0."DocEntry" NOT IN (SELECT COALESCE(X."BaseEntry", 0) FROM "KAYLANI_LIVE"."OINV" X WHERE X."BaseEntry" IS NOT NULL)
+
+        UNION ALL
+
+        -- المردودات شاملة الضريبة (سلبي)
+        SELECT RIN0."CardCode", RIN0."DocDate", -RIN0."DocTotal" AS "NetSales"
+        FROM "KAYLANI_LIVE"."ORIN" RIN0
+        WHERE RIN0."DocDate" >= ADD_MONTHS([%1], -5) AND RIN0."DocDate" <= [%1]
+    ) SalesSub
+    GROUP BY SalesSub."CardCode"
+) Sales ON T."كود العميل" = Sales."CardCode"
+
+-- الربط لحساب مجاميع الفترة الموزعة للشيكات المؤجلة (6 أعمدة)
+LEFT JOIN (
+    SELECT
+        1 AS "JoinKey",
+        SUM(CASE WHEN Type = 'Cash' THEN Amount ELSE 0 END) AS "مجموع النقد والتحويل",
+        SUM(CASE WHEN Type = 'Cheque' AND DueDate <= [%1] THEN Amount ELSE 0 END) AS "مجموع الشيكات الفورية",
+
+        -- 6 أعمدة تفكيك الشيكات المؤجلة
+        SUM(CASE WHEN Type = 'Cheque' AND DueDate > [%1]
+                 AND TO_VARCHAR(DueDate, 'YYYY-MM') = TO_VARCHAR([%1], 'YYYY-MM')
+                 THEN Amount ELSE 0 END) AS "مؤجل - شهر 1",
+
+        SUM(CASE WHEN Type = 'Cheque' AND DueDate > [%1]
+                 AND TO_VARCHAR(DueDate, 'YYYY-MM') = TO_VARCHAR(ADD_MONTHS([%1], 1), 'YYYY-MM')
+                 THEN Amount ELSE 0 END) AS "مؤجل - شهر 2",
+
+        SUM(CASE WHEN Type = 'Cheque' AND DueDate > [%1]
+                 AND TO_VARCHAR(DueDate, 'YYYY-MM') = TO_VARCHAR(ADD_MONTHS([%1], 2), 'YYYY-MM')
+                 THEN Amount ELSE 0 END) AS "مؤجل - شهر 3",
+
+        SUM(CASE WHEN Type = 'Cheque' AND DueDate > [%1]
+                 AND TO_VARCHAR(DueDate, 'YYYY-MM') = TO_VARCHAR(ADD_MONTHS([%1], 3), 'YYYY-MM')
+                 THEN Amount ELSE 0 END) AS "مؤجل - شهر 4",
+
+        SUM(CASE WHEN Type = 'Cheque' AND DueDate > [%1]
+                 AND TO_VARCHAR(DueDate, 'YYYY-MM') = TO_VARCHAR(ADD_MONTHS([%1], 4), 'YYYY-MM')
+                 THEN Amount ELSE 0 END) AS "مؤجل - شهر 5",
+
+        SUM(CASE WHEN Type = 'Cheque' AND DueDate >= ADD_MONTHS([%1], 5)
+                 THEN Amount ELSE 0 END) AS "مؤجل - شهر 6 وما بعده",
+
+        SUM(CASE WHEN Type = 'Cheque' AND DueDate > [%1] THEN Amount ELSE 0 END) AS "إجمالي الشيكات المؤجلة"
+    FROM (
+        SELECT 'Cash' AS Type, (COALESCE("CashSum", 0) + COALESCE("TrsfrSum", 0)) AS Amount, "DocDate" AS DueDate
+        FROM "KAYLANI_LIVE"."ORCT"
+        WHERE (COALESCE("CashSum", 0) + COALESCE("TrsfrSum", 0)) > 0 AND "Canceled" = 'N' AND "DocDate" >= [%0] AND "DocDate" <= [%1]
+
+        UNION ALL
+
+        SELECT 'Cheque' AS Type, T3."CheckSum" AS Amount, T3."DueDate" AS DueDate
+        FROM "KAYLANI_LIVE"."ORCT" T0
+        INNER JOIN "KAYLANI_LIVE"."RCT1" T3 ON T0."DocEntry" = T3."DocNum"
+        WHERE T0."Canceled" = 'N' AND T0."DocDate" >= [%0] AND T0."DocDate" <= [%1]
+    ) Sub
+) Totals ON 1 = Totals."JoinKey"
+
+-- مجاميع حسب تصنيف الحركة 1 (مقارنة تاريخ الاستحقاق بتاريخ الإدخال)
+LEFT JOIN (
+    SELECT
+        1 AS "JoinKey2",
+        SUM(CASE WHEN Type = 'Cash' THEN Amount ELSE 0 END) AS "مجموع نقد/تحويل (تصنيف 1)",
+        SUM(CASE WHEN Type = 'Cheque' AND DueDate <= DocDate THEN Amount ELSE 0 END) AS "مجموع شيكات فورية (تصنيف 1)",
+        SUM(CASE WHEN Type = 'Cheque' AND DueDate > DocDate THEN Amount ELSE 0 END) AS "مجموع شيكات مؤجلة (تصنيف 1)"
+    FROM (
+        SELECT 'Cash' AS Type,
+               (COALESCE("CashSum", 0) + COALESCE("TrsfrSum", 0)) AS Amount,
+               "DocDate" AS DueDate,
+               "DocDate" AS DocDate
+        FROM "KAYLANI_LIVE"."ORCT"
+        WHERE (COALESCE("CashSum", 0) + COALESCE("TrsfrSum", 0)) > 0 AND "Canceled" = 'N' AND "DocDate" >= [%0] AND "DocDate" <= [%1]
+
+        UNION ALL
+
+        SELECT 'Cheque' AS Type,
+               T3."CheckSum" AS Amount,
+               T3."DueDate" AS DueDate,
+               T0."DocDate" AS DocDate
+        FROM "KAYLANI_LIVE"."ORCT" T0
+        INNER JOIN "KAYLANI_LIVE"."RCT1" T3 ON T0."DocEntry" = T3."DocNum"
+        WHERE T0."Canceled" = 'N' AND T0."DocDate" >= [%0] AND T0."DocDate" <= [%1]
+    ) Sub2
+) Totals2 ON 1 = Totals2."JoinKey2"
+
+ORDER BY T."شهر الاستحقاق" ASC, T."تاريخ السند / الإدخال" ASC;`},
+
   // ---------------- المشتريات (تكملة) ----------------
   {code:"KLN-PUR-006", title:"أصناف ارتفع سعر شرائها الأخير عن متوسط آخر 6 أشهر", category:"purchasing",
     desc:"يكشف ارتفاعات سعر شراء مفاجئة تستوجب تفسيراً (تضخم عالمي، مورد بديل أعلى سعراً، أو خطأ إدخال).",
