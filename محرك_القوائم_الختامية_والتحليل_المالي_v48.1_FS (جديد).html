@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v49.5-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v49.6-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -2956,9 +2956,9 @@ document.querySelectorAll('.ng-toggle').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('.ng-toggle').forEach(x=>{x.classList.remove('open');x.textContent=x.textContent.replace('▾','▸')});
   if(!wasOpen){grp.hidden=false;b.classList.add('open');b.textContent=b.textContent.replace('▸','▾')}
 });
-document.querySelectorAll('nav button[data-t]').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button[data-t]').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.getElementById('tab-'+b.dataset.t).classList.add('active');const grp=b.closest('.tabgrp');if(grp){grp.hidden=false;const tgl=document.querySelector(`.ng-toggle[data-grp="${grp.id.replace('grp-','')}"]`);if(tgl){document.querySelectorAll('.tabgrp').forEach(g=>{if(g!==grp)g.hidden=true});document.querySelectorAll('.ng-toggle').forEach(x=>{x.classList.remove('open');x.textContent=x.textContent.replace('▾','▸')});tgl.classList.add('open');tgl.textContent=tgl.textContent.replace('▸','▾')}}if(!R&&months().length)recalcAll();else if(typeof lazyRender==='function')lazyRender(b.dataset.t);if(b.dataset.t==='home'&&typeof renderHome==='function')renderHome()});
-function printTab(t){document.querySelectorAll('.tab').forEach(x=>x.classList.remove('print-me'));document.getElementById('tab-'+t).classList.add('print-me');window.print();document.getElementById('tab-'+t).classList.remove('print-me')}
-window.addEventListener('beforeprint',()=>{const a=document.querySelector('.tab.active');if(!document.querySelector('.tab.print-me'))a.classList.add('print-me')});window.addEventListener('afterprint',()=>document.querySelectorAll('.print-me').forEach(x=>x.classList.remove('print-me')));
+document.querySelectorAll('nav button[data-t]').forEach(b=>b.onclick=()=>{document.querySelectorAll('nav button[data-t]').forEach(x=>x.classList.remove('active'));b.classList.add('active');document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.getElementById('tab-'+b.dataset.t).classList.add('active');const grp=b.closest('.tabgrp');if(grp){grp.hidden=false;const tgl=document.querySelector(`.ng-toggle[data-grp="${grp.id.replace('grp-','')}"]`);if(tgl){document.querySelectorAll('.tabgrp').forEach(g=>{if(g!==grp)g.hidden=true});document.querySelectorAll('.ng-toggle').forEach(x=>{x.classList.remove('open');x.textContent=x.textContent.replace('▾','▸')});tgl.classList.add('open');tgl.textContent=tgl.textContent.replace('▸','▾')}}if(!R&&months().length)recalcAll();else if(typeof lazyRender==='function')lazyRender(b.dataset.t);if(typeof stmtFresh==='function')stmtFresh(b.dataset.t);if(b.dataset.t==='home'&&typeof renderHome==='function')renderHome()});
+function printTab(t){if(typeof stmtFresh==='function')stmtFresh(t);document.querySelectorAll('.tab').forEach(x=>x.classList.remove('print-me'));document.getElementById('tab-'+t).classList.add('print-me');window.print();document.getElementById('tab-'+t).classList.remove('print-me')}
+window.addEventListener('beforeprint',()=>{const a=document.querySelector('.tab.active');const pm=document.querySelector('.tab.print-me');if(typeof stmtFresh==='function'){const tgt=pm||a;if(tgt)stmtFresh(tgt.id.replace('tab-',''))}if(!pm&&a)a.classList.add('print-me')});window.addEventListener('afterprint',()=>document.querySelectorAll('.print-me').forEach(x=>x.classList.remove('print-me')));
 </script>
 <script>
 /* ================= CHART PRIMITIVES (SVG, offline) ================= */
@@ -3071,8 +3071,11 @@ function grade(k,v){if(v==null||!isFinite(v))return ['','—'];const b=BENCH[k];
 </script>
 <script>
 /* ================= RENDER ================= */
+/* v49.6 F-1: statement tables render lazily — recalcAll marks IS/BS/CF stale and renders only the visible one; the others render on tab activation or before print. Results (R) are computed exactly as before. */
+const STALE={};function stmtFresh(t){const fn={is:typeof renderIS==='function'?renderIS:null,bs:typeof renderBS==='function'?renderBS:null,cf:typeof renderCF==='function'?renderCF:null}[t];if(fn&&STALE[t]){STALE[t]=false;fn()}}
+function activeTab(){const b=document.querySelector('nav button.active');return b?b.dataset.t:null}
 function recalcAll(){const f=document.getElementById('pFrom').value,t=document.getElementById('pTo').value;if(!f||!t){document.getElementById('integrity').innerHTML='<span class="msg err">لا توجد حركات شهرية محمّلة.</span>';return}
- saveState();applyPalette();buildMV();window._allIS=null;R=calc(f,t);Object.keys(DONE).forEach(k=>delete DONE[k]);renderIntegrity();renderDash();renderIS();renderBS();renderCF();renderRatios();renderTiming();renderTimingDetail();renderBoard();renderHome();
+ saveState();applyPalette();buildMV();window._allIS=null;R=calc(f,t);Object.keys(DONE).forEach(k=>delete DONE[k]);renderIntegrity();renderDash();const curT=activeTab();['is','bs','cf'].forEach(x=>{STALE[x]=true;if(x===curT)stmtFresh(x)});renderRatios();renderTiming();renderTimingDetail();renderBoard();renderHome();
  const cur=(document.querySelector('nav button.active')||{}).dataset;if(cur&&cur.t)lazyRender(cur.t);toast('تم الاحتساب: '+R.per.length+' شهر')}
 function renderIntegrity(){const o=Object.values(S.opening).reduce((a,b)=>a+b,0);const un=R.codes.filter(c=>effLine(c)==='UNMAP');const noAcc=R.codes.filter(c=>!S.accounts[c]);
  let mvUnbal=[];R.per.forEach(k=>{const s=Object.values(MV[k]||{}).reduce((a,v)=>a+v.d-v.c,0);if(Math.abs(s)>1)mvUnbal.push(k+': '+fmt(s))});
@@ -3332,7 +3335,7 @@ function bindDupont(){const c=document.getElementById('chDupont');if(!c||c.datas
 function exportTableCSV(id,name){const el=document.getElementById(id);const tb=el&&el.querySelector('table');if(!tb){toast('لا يوجد جدول لتصديره');return}const num=s=>{const m=s.match(/^\(?(-?[\d,]+(?:\.\d+)?)\)?$/);if(!m)return null;const v=parseFloat(m[1].replace(/,/g,''));return isNaN(v)?null:(s.startsWith('(')?-v:v)};
  const rows=[];tb.querySelectorAll('tr').forEach(tr=>{if(tr.hidden)return;const cells=[...tr.children].map(td=>{const s=td.textContent.replace(/[▸▾▴]/g,'').replace(/\s+/g,' ').trim();const n=num(s);return n==null?'"'+s.replace(/"/g,'""')+'"':n});if(cells.length)rows.push(cells.join(','))});
  const per=R&&R.per&&R.per.length?R.per[0]+'_'+R.per[R.per.length-1]:'';const b=new Blob(['﻿'+rows.join('\r\n')],{type:'text/csv;charset=utf-8'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download=`${name}_${per}.csv`;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},800);toast('تم تصدير '+rows.length+' صفاً')}
-function toggleYrsDelta(){yrsDelta=!yrsDelta;renderIS();renderBS();renderCF()}
+function toggleYrsDelta(){yrsDelta=!yrsDelta;['is','bs','cf'].forEach(x=>STALE[x]=true);const t=activeTab();if(t)stmtFresh(t)}
 function ydLbl(){return `<label class="yrs-dl"><input type="checkbox" ${yrsDelta?'checked':''} onchange="toggleYrsDelta()"> إظهار فروقات كل سنة عن السنة السابقة (Δ، Δ%) ومعدل النمو السنوي المركّب</label>`}
 function ydHead(YG,flows=true){return YG.map((g,i)=>'<th class="num">'+g.lbl+'</th>'+(yrsDelta&&i>0?(flows&&g.ms.length<12?'<th class="num yd" title="السنة غير المكتملة تُقارن بنفس أشهرها من السنة السابقة">Δ نفس الأشهر</th><th class="num yd" title="السنة غير المكتملة تُقارن بنفس أشهرها من السنة السابقة">Δ%</th>':'<th class="num yd">Δ</th><th class="num yd">Δ%</th>'):'')).join('')+(yrsDelta&&YG.length>=3?'<th class="num yd" title="بين أول وآخر سنة مكتملة (12 شهراً)">CAGR</th>':'')}
 function ydPrev(YG,i,sumFn){const g=YG[i],p=YG[i-1];if(g.ms.length>=12)return sumFn(p.ms);const mm=new Set(g.ms.map(k=>k.slice(5)));return sumFn(p.ms.filter(k=>mm.has(k.slice(5))))}
