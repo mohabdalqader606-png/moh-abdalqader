@@ -1055,6 +1055,12 @@
 
   <!-- QUERY LIBRARY VIEW -->
   <div class="view" id="view-qlibrary">
+    <p style="color:var(--muted);font-size:12.5px;margin:0 0 12px 0;max-width:900px;">
+      <b>تنبيه قبل الاستخدام:</b> الكويريات المعبَّأة مسبقاً هنا (SAP Business One) قراءة فقط (SELECT)، بصياغة T-SQL —
+      عند التطبيق على HANA استبدل <code>SELECT TOP n</code> بـ <code>LIMIT n</code> وراجع دوال التاريخ.
+      أسماء الجداول/الحقول قد تختلف حسب الإصدار والإضافات المُركّبة؛ اختبر كل كويري على بيئة غير إنتاجية ووثّق تاريخ الاختبار
+      (حقل "آخر اختبار") قبل اعتماده ضمن برنامج تدقيق فعلي.
+    </p>
     <div class="toolbar">
       <div class="toolbar-left">
         <div class="search-box"><input type="text" id="searchQ" placeholder="بحث بالاسم أو الوسوم أو محتوى الكويري..."></div>
@@ -2380,6 +2386,11 @@ const DEFAULT_CATEGORIES = [
   {id:"expense", name:"المصاريف", color:"var(--expense)", hex:"#F59E0B"},
   {id:"journal", name:"القيود اليومية", color:"var(--journal)", hex:"#7C3AED"},
   {id:"stock", name:"المخزون", color:"var(--stock)", hex:"#0891B2"},
+  {id:"purchasing", name:"المشتريات", color:"#0D9488", hex:"#0D9488"},
+  {id:"quality", name:"الجودة وسلامة الغذاء", color:"#DB2777", hex:"#DB2777"},
+  {id:"fleet", name:"الأسطول والكاش فان", color:"#EA580C", hex:"#EA580C"},
+  {id:"sapit", name:"SAP وIT", color:"#1E3A8A", hex:"#1E3A8A"},
+  {id:"hr", name:"الموارد البشرية", color:"#C026D3", hex:"#C026D3"},
   {id:"gov", name:"حوكمة وسياسات", color:"var(--gov)", hex:"#4F46E5"},
   {id:"other", name:"أخرى", color:"var(--other)", hex:"#64748B"},
 ];
@@ -2501,6 +2512,515 @@ const LIBRARY = [
   ]},
 ];
 
+/* ===================== مكتبة الكويريات القياسية (تعبئة أولية) =====================
+   كويريات SQL تفصيلية مبنية على جداول SAP Business One القياسية (OINV, OCRD, OITM...).
+   الصياغة بلغة T-SQL (SQL Server) لأنها الأكثر توثيقاً في مجتمع B1؛ عند العمل على HANA
+   يُستبدل "SELECT TOP n" بـ "LIMIT n" في نهاية الجملة وتُراجع دوال التاريخ (مثل GETDATE→CURRENT_DATE).
+   ملاحظة تدقيق: أسماء الجداول/الحقول قد تختلف حسب إصدار SAP B1 والإضافات (Add-ons) المُركّبة
+   لدى مركز الكيلاني — كل كويري يجب اختباره على بيئة غير إنتاجية وتوثيق نتيجة الاختبار (lastTested)
+   قبل اعتماده ضمن برنامج تدقيق فعلي. الكويريات القراءة فقط (SELECT) ولا تُعدّل بيانات الإنتاج.
+*/
+const DEFAULT_QUERY_LIBRARY = [
+  // ---------------- المبيعات ----------------
+  {code:"KLN-SAL-001", title:"فحص تسلسل ترقيم فواتير المبيعات واكتشاف الفجوات", category:"sales",
+    desc:"يكشف حذف/إلغاء فواتير من التسلسل الرسمي أو ترقيم غير متسلسل يستوجب تفسيراً — رقابة على اكتمال الإيراد.",
+    params:"@FromDate, @ToDate, @Series", tags:["مبيعات","اكتمال","ترقيم"],
+    sql:`SELECT T0."DocNum", T0."DocEntry", T0."DocDate", T0."CardCode", T0."CardName", T0."DocTotal", T0."Canceled"
+FROM OINV T0
+WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate
+ORDER BY T0."DocNum";
+-- بعد السحب: افحص بـ Excel وجود قفزات بين DocNum المتتالية بدون فاتورة تقابلها (فجوة تسلسل)
+-- وتحقّق من سبب كل Canceled = 'Y' ووجود موافقة موثقة عليه.`},
+
+  {code:"KLN-SAL-002", title:"فواتير أُلغيت (Canceled) أو مرتجعة كلياً بعد التسليم", category:"sales",
+    desc:"يرصد الفواتير الملغاة لمطابقتها مع دليل عدم تسليم البضاعة أو موافقة إدارية موثقة.",
+    params:"@FromDate, @ToDate", tags:["إلغاء","اعتماد"],
+    sql:`SELECT T0."DocNum", T0."DocDate", T0."CardCode", T0."CardName", T0."DocTotal",
+       T0."UpdateDate", T0."UserSign2" AS "LastModifiedBy"
+FROM OINV T0
+WHERE T0."Canceled" = 'Y' AND T0."DocDate" BETWEEN @FromDate AND @ToDate
+ORDER BY T0."DocDate" DESC;`},
+
+  {code:"KLN-SAL-003", title:"تجاوز نسبة الخصم المصرح بها حسب سياسة التسعير", category:"sales",
+    desc:"يحدد سطور الفواتير التي تجاوز فيها الخصم الممنوح الحد الأقصى المعتمد (مثال: 10%) لمراجعة الموافقة عليها.",
+    params:"@MaxDiscPercent (افتراضي 10), @FromDate, @ToDate", tags:["خصومات","تسعير"],
+    sql:`SELECT T1."DocEntry", T0."DocNum", T0."DocDate", T0."CardCode", T0."CardName",
+       T1."ItemCode", T1."Dscription", T1."Quantity", T1."Price", T1."DiscPrcnt", T1."LineTotal"
+FROM INV1 T1
+JOIN OINV T0 ON T0."DocEntry" = T1."DocEntry"
+WHERE T1."DiscPrcnt" > @MaxDiscPercent AND T0."DocDate" BETWEEN @FromDate AND @ToDate
+ORDER BY T1."DiscPrcnt" DESC;`},
+
+  {code:"KLN-SAL-004", title:"هامش ربح سالب أو أقل من الحد الأدنى على مستوى سطر الفاتورة", category:"sales",
+    desc:"يعتمد على حقل الربح الإجمالي المخزَّن بالسطر (GrssProfit) لرصد بيع تحت التكلفة أو خطأ تسعير.",
+    params:"@MinMarginPercent, @FromDate, @ToDate", tags:["هامش ربح","تسعير","مخاطر"],
+    sql:`SELECT T0."DocNum", T0."DocDate", T0."CardCode", T0."CardName",
+       T1."ItemCode", T1."Dscription", T1."Quantity", T1."Price", T1."LineTotal", T1."GrssProfit",
+       CASE WHEN T1."LineTotal" <> 0 THEN T1."GrssProfit" / T1."LineTotal" * 100 ELSE NULL END AS "MarginPct"
+FROM INV1 T1
+JOIN OINV T0 ON T0."DocEntry" = T1."DocEntry"
+WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate
+  AND (T1."GrssProfit" < 0 OR (T1."LineTotal" <> 0 AND T1."GrssProfit" / T1."LineTotal" * 100 < @MinMarginPercent))
+ORDER BY "MarginPct" ASC;`},
+
+  {code:"KLN-SAL-005", title:"فواتير أُنشئت أو عُدِّلت خارج أوقات الدوام الرسمي", category:"sales",
+    desc:"مؤشر مخاطر لعمليات غير معتادة (احتيال محتمل أو تجاوز صلاحيات) — يقارن وقت الإنشاء بساعات العمل المعتمدة.",
+    params:"@WorkStart (مثال 08:00), @WorkEnd (مثال 17:00), @FromDate, @ToDate", tags:["مخاطر","توقيت غير معتاد"],
+    sql:`SELECT T0."DocNum", T0."DocDate", T0."DocTime", T0."CardCode", T0."CardName", T0."DocTotal", T0."UserSign"
+FROM OINV T0
+WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate
+  AND (T0."DocTime" < @WorkStart OR T0."DocTime" > @WorkEnd)
+ORDER BY T0."DocDate", T0."DocTime";`},
+
+  {code:"KLN-SAL-006", title:"تركز المبيعات على أكبر 20 عميل (تحليل باريتو / تعارض اعتماد)", category:"sales",
+    desc:"يدعم تقييم مخاطر الاعتماد على عدد محدود من العملاء (Concentration Risk) ضمن تدقيق المبيعات السنوي.",
+    params:"@FromDate, @ToDate", tags:["تركز","باريتو"],
+    sql:`SELECT TOP 20 T0."CardCode", T0."CardName", SUM(T0."DocTotal") AS "TotalSales", COUNT(*) AS "InvoiceCount"
+FROM OINV T0
+WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate AND T0."Canceled" = 'N'
+GROUP BY T0."CardCode", T0."CardName"
+ORDER BY "TotalSales" DESC;`},
+
+  // ---------------- المرتجعات ----------------
+  {code:"KLN-RET-001", title:"مطابقة كل مرتجع (إشعار دائن) بفاتورته الأصلية ونسبته منها", category:"returns",
+    desc:"يتحقق من ربط كل مرتجع بمستند أساس (BaseEntry) ويحسب نسبة قيمة المرتجع من الفاتورة الأصلية.",
+    params:"@FromDate, @ToDate", tags:["مرتجعات","مطابقة"],
+    sql:`SELECT T0."DocNum" AS "CreditNoteNo", T0."DocDate", T0."CardCode", T0."CardName", T0."DocTotal" AS "ReturnValue",
+       T1."BaseEntry", T2."DocNum" AS "OrigInvoiceNo", T2."DocTotal" AS "OrigInvoiceValue",
+       CASE WHEN T2."DocTotal" <> 0 THEN T0."DocTotal" / T2."DocTotal" * 100 ELSE NULL END AS "ReturnPctOfInvoice"
+FROM ORIN T0
+JOIN RIN1 T1 ON T1."DocEntry" = T0."DocEntry"
+LEFT JOIN OINV T2 ON T2."DocEntry" = T1."BaseEntry" AND T1."BaseType" = 13
+WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate
+ORDER BY "ReturnPctOfInvoice" DESC;`},
+
+  {code:"KLN-RET-002", title:"مرتجعات بدون فاتورة مرجعية (Return بدون Base Document)", category:"returns",
+    desc:"إشعارات دائن مُنشأة مباشرة بدون ربط بفاتورة أصلية — تستوجب تبريراً موثقاً (كسر/تلف بدون بيع سابق مثلاً).",
+    params:"@FromDate, @ToDate", tags:["استثناء","ضبط"],
+    sql:`SELECT T0."DocNum", T0."DocDate", T0."CardCode", T0."CardName", T0."DocTotal", T0."Comments"
+FROM ORIN T0
+WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate
+  AND NOT EXISTS (SELECT 1 FROM RIN1 T1 WHERE T1."DocEntry" = T0."DocEntry" AND T1."BaseEntry" IS NOT NULL)
+ORDER BY T0."DocDate" DESC;`},
+
+  {code:"KLN-RET-003", title:"معدل المرتجعات الشهري حسب الصنف ومجموعة الأصناف", category:"returns",
+    desc:"يقيس أثر المرتجعات على هامش الربح ويحدد الأصناف الأعلى تكراراً بالإرجاع لربطها بتدقيق الجودة.",
+    params:"@FromDate, @ToDate", tags:["اتجاه","جودة"],
+    sql:`SELECT T2."ItmsGrpCod", T1."ItemCode", T1."Dscription",
+       SUM(T1."Quantity") AS "ReturnedQty", SUM(T1."LineTotal") AS "ReturnedValue", COUNT(DISTINCT T0."DocEntry") AS "ReturnDocs"
+FROM RIN1 T1
+JOIN ORIN T0 ON T0."DocEntry" = T1."DocEntry"
+LEFT JOIN OITM T2 ON T2."ItemCode" = T1."ItemCode"
+WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate
+GROUP BY T2."ItmsGrpCod", T1."ItemCode", T1."Dscription"
+ORDER BY "ReturnedValue" DESC;`},
+
+  // ---------------- التحصيل والائتمان ----------------
+  {code:"KLN-COL-001", title:"أعمار الذمم المدينة حسب فئات التقادم (30/60/90/120+)", category:"collect",
+    desc:"الأساس الأول لتدقيق التحصيل — تصنيف كل رصيد مفتوح حسب عدد أيام تأخره عن تاريخ الاستحقاق.",
+    params:"@AsOfDate", tags:["ذمم","aging","DSO"],
+    sql:`SELECT T0."CardCode", T0."CardName", T1."DocNum", T1."DocDueDate",
+       DATEDIFF(day, T1."DocDueDate", @AsOfDate) AS "DaysOverdue",
+       CASE
+         WHEN DATEDIFF(day, T1."DocDueDate", @AsOfDate) <= 0 THEN 'غير مستحق'
+         WHEN DATEDIFF(day, T1."DocDueDate", @AsOfDate) <= 30 THEN '1-30'
+         WHEN DATEDIFF(day, T1."DocDueDate", @AsOfDate) <= 60 THEN '31-60'
+         WHEN DATEDIFF(day, T1."DocDueDate", @AsOfDate) <= 90 THEN '61-90'
+         WHEN DATEDIFF(day, T1."DocDueDate", @AsOfDate) <= 120 THEN '91-120'
+         ELSE '+120'
+       END AS "AgingBucket",
+       T1."DocTotal" - T1."PaidToDate" AS "OpenBalance"
+FROM OINV T1
+JOIN OCRD T0 ON T0."CardCode" = T1."CardCode"
+WHERE T1."DocTotal" > T1."PaidToDate" AND T1."Canceled" = 'N'
+ORDER BY "DaysOverdue" DESC;`},
+
+  {code:"KLN-COL-002", title:"عملاء تجاوزوا حد الائتمان المعتمد (Credit Line)", category:"collect",
+    desc:"يقارن الرصيد المدين الفعلي بحد الائتمان المسجل ببطاقة العميل — رقابة أساسية على منح بيع آجل إضافي.",
+    params:"@AsOfDate", tags:["ائتمان","حدود"],
+    sql:`SELECT T0."CardCode", T0."CardName", T0."CreditLine", T0."Balance", T0."Balance" - T0."CreditLine" AS "ExcessOverLimit"
+FROM OCRD T0
+WHERE T0."CreditLine" > 0 AND T0."Balance" > T0."CreditLine"
+ORDER BY "ExcessOverLimit" DESC;`},
+
+  {code:"KLN-COL-003", title:"الشيكات المستلمة غير المحصَّلة عند/بعد تاريخ الاستحقاق", category:"collect",
+    desc:"يرصد الشيكات (ضمن الدفعات الواردة) التي فات موعد استحقاقها دون تأكيد صرفها بالبنك.",
+    params:"@AsOfDate", tags:["شيكات","تحصيل"],
+    sql:`SELECT T1."CardCode", T1."CardName", T0."CheckNum", T0."DueDate", T0."CheckSum", T0."BankCode", T0."Branch"
+FROM RCT2 T0
+JOIN ORCT T1 ON T1."DocEntry" = T0."DocNum"
+WHERE T0."DueDate" <= @AsOfDate
+ORDER BY T0."DueDate";
+-- يُطابق ناتج الكويري مع كشف الحساب البنكي لتحديد الشيكات المرتجعة فعلياً.`},
+
+  {code:"KLN-COL-004", title:"مطابقة التحصيل اليومي الفعلي بالمستهدف لكل مندوب/فرع", category:"collect",
+    desc:"يجمع قيمة الدفعات الواردة يومياً لكل مندوب مبيعات لمقارنتها بخطة التحصيل المعتمدة.",
+    params:"@FromDate, @ToDate", tags:["أداء","تحصيل يومي"],
+    sql:`SELECT T1."SlpCode", T2."SlpName", T0."DocDate",
+       SUM(T0."CashSum" + T0."CheckSum" + T0."TrsfrSum") AS "DailyCollected"
+FROM ORCT T0
+LEFT JOIN OCRD T1 ON T1."CardCode" = T0."CardCode"
+LEFT JOIN OSLP T2 ON T2."SlpCode" = T1."SlpCode"
+WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate
+GROUP BY T1."SlpCode", T2."SlpName", T0."DocDate"
+ORDER BY T0."DocDate", T1."SlpCode";`},
+
+  {code:"KLN-COL-005", title:"عملاء برصيد مدين بدون أي حركة تحصيل لأكثر من 60 يوماً", category:"collect",
+    desc:"يكشف حسابات متوقفة عن السداد فعلياً رغم وجود رصيد مفتوح — مرشحة لقرار إيقاف بيع أو متابعة قانونية.",
+    params:"@AsOfDate, @IdleDays (افتراضي 60)", tags:["متعثرين","إنذار مبكر"],
+    sql:`SELECT T0."CardCode", T0."CardName", T0."Balance", MAX(T1."DocDate") AS "LastPaymentDate",
+       DATEDIFF(day, MAX(T1."DocDate"), @AsOfDate) AS "DaysSinceLastPayment"
+FROM OCRD T0
+LEFT JOIN ORCT T1 ON T1."CardCode" = T0."CardCode"
+WHERE T0."Balance" > 0
+GROUP BY T0."CardCode", T0."CardName", T0."Balance"
+HAVING DATEDIFF(day, MAX(T1."DocDate"), @AsOfDate) > @IdleDays OR MAX(T1."DocDate") IS NULL
+ORDER BY "DaysSinceLastPayment" DESC;`},
+
+  // ---------------- المشتريات ----------------
+  {code:"KLN-PUR-001", title:"أوامر شراء بدون عروض أسعار مقارنة موثقة (Single Source)", category:"purchasing",
+    desc:"يستخرج أوامر الشراء الكبيرة للمطابقة اليدوية مع ملف عروض الأسعار — B1 لا يخزّن عروض الأسعار الورقية، فالفحص هجين (نظام + مستندات).",
+    params:"@FromDate, @ToDate, @MinAmount", tags:["مشتريات","حوكمة موردين"],
+    sql:`SELECT T0."DocNum", T0."DocDate", T0."CardCode", T0."CardName", T0."DocTotal", T0."Comments"
+FROM OPOR T0
+WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate AND T0."DocTotal" >= @MinAmount
+ORDER BY T0."DocTotal" DESC;
+-- طابق يدوياً كل سطر مع أرشيف عروض الأسعار (≥3 عروض للمبالغ الجوهرية حسب سياسة المشتريات).`},
+
+  {code:"KLN-PUR-002", title:"فروقات كمية/سعر بين أمر الشراء وإذن الاستلام والفاتورة (3-Way Match)", category:"purchasing",
+    desc:"الرقابة الجوهرية على دورة المشتريات: يقارن الكمية والسعر عبر PO → GRN → AP Invoice لاكتشاف أي انحراف.",
+    params:"@FromDate, @ToDate, @TolerancePercent (افتراضي 2)", tags:["3-way match","ضبط"],
+    sql:`SELECT T0."DocNum" AS "PO_No", T1."ItemCode", T1."Quantity" AS "PO_Qty", T1."Price" AS "PO_Price",
+       T3."Quantity" AS "GRN_Qty", T5."Quantity" AS "Invoice_Qty", T5."Price" AS "Invoice_Price",
+       (T5."Price" - T1."Price") / NULLIF(T1."Price",0) * 100 AS "PriceVariancePct"
+FROM POR1 T1
+JOIN OPOR T0 ON T0."DocEntry" = T1."DocEntry"
+LEFT JOIN PDN1 T3 ON T3."BaseEntry" = T0."DocEntry" AND T3."BaseLine" = T1."LineNum" AND T3."BaseType" = 22
+LEFT JOIN PCH1 T5 ON T5."BaseEntry" = T3."DocEntry" AND T5."BaseLine" = T3."LineNum" AND T5."BaseType" = 20
+WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate
+  AND ABS((T5."Price" - T1."Price") / NULLIF(T1."Price",0) * 100) > @TolerancePercent
+ORDER BY "PriceVariancePct" DESC;`},
+
+  {code:"KLN-PUR-003", title:"أوامر شراء متأخرة عن تاريخ التسليم المطلوب", category:"purchasing",
+    desc:"يرصد تأخر الموردين عن الالتزام بمواعيد التوريد — مدخل لتقييم أداء الموردين (Vendor Scorecard).",
+    params:"@AsOfDate", tags:["أداء موردين","تسليم"],
+    sql:`SELECT T0."DocNum", T0."CardCode", T0."CardName", T0."DocDate", T0."DocDueDate",
+       DATEDIFF(day, T0."DocDueDate", @AsOfDate) AS "DaysLate", T0."DocStatus"
+FROM OPOR T0
+WHERE T0."DocStatus" = 'O' AND T0."DocDueDate" < @AsOfDate
+ORDER BY "DaysLate" DESC;`},
+
+  {code:"KLN-PUR-004", title:"تركز المشتريات على مورد واحد (اعتماد مفرط / مخاطر استمرارية توريد)", category:"purchasing",
+    desc:"يحسب حصة كل مورد من إجمالي المشتريات لتقييم مخاطر الاعتماد المفرط أو مؤشر تضارب مصالح محتمل.",
+    params:"@FromDate, @ToDate", tags:["تركز","موردين"],
+    sql:`SELECT T0."CardCode", T0."CardName", SUM(T0."DocTotal") AS "TotalPurchases",
+       SUM(T0."DocTotal") * 100.0 / SUM(SUM(T0."DocTotal")) OVER () AS "SharePct"
+FROM OPCH T0
+WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate AND T0."Canceled" = 'N'
+GROUP BY T0."CardCode", T0."CardName"
+ORDER BY "TotalPurchases" DESC;`},
+
+  {code:"KLN-PUR-005", title:"فواتير موردين معتمدة قبل تسجيل إذن الاستلام (Invoice Before Receipt)", category:"purchasing",
+    desc:"استثناء رقابي يكشف دفع/اعتماد فاتورة مورد بدون إذن استلام مطابق مسبق بالنظام.",
+    params:"@FromDate, @ToDate", tags:["استثناء","اعتماد"],
+    sql:`SELECT T0."DocNum" AS "APInvoiceNo", T0."DocDate", T0."CardCode", T0."CardName", T0."DocTotal"
+FROM OPCH T0
+WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate
+  AND NOT EXISTS (SELECT 1 FROM PCH1 T1 WHERE T1."DocEntry" = T0."DocEntry" AND T1."BaseType" = 22)
+ORDER BY T0."DocDate" DESC;`},
+
+  // ---------------- المخزون والمستودعات ----------------
+  {code:"KLN-STK-001", title:"المخزون السالب حسب الصنف والمستودع", category:"stock",
+    desc:"مؤشر خطأ جوهري بضبط المخزون أو بيع بدون رصيد فعلي — يستوجب تحقيقاً فورياً.",
+    params:"@AsOfDate", tags:["مخزون سالب","خطر"],
+    sql:`SELECT T0."ItemCode", T1."ItemName", T0."WhsCode", T2."WhsName", T0."OnHand"
+FROM OITW T0
+JOIN OITM T1 ON T1."ItemCode" = T0."ItemCode"
+JOIN OWHS T2 ON T2."WhsCode" = T0."WhsCode"
+WHERE T0."OnHand" < 0
+ORDER BY T0."OnHand" ASC;`},
+
+  {code:"KLN-STK-002", title:"أصناف/دفعات قريبة من الانتهاء خلال 30/60/90 يوماً (دعم FEFO)", category:"stock",
+    desc:"يدعم مبدأ الصرف الأول للأقرب انتهاءً (FEFO) ويغذي نظام الإنذار المبكر للمخزون القريب الانتهاء.",
+    params:"@AsOfDate", tags:["expiry","fefo","batch"],
+    sql:`SELECT T0."ItemCode", T1."ItemName", T0."DistNumber" AS "BatchNo", T0."ExpDate",
+       DATEDIFF(day, @AsOfDate, T0."ExpDate") AS "DaysToExpiry", T2."Quantity", T2."WhsCode"
+FROM OBTN T0
+JOIN OITM T1 ON T1."ItemCode" = T0."ItemCode"
+JOIN OBTQ T2 ON T2."ItemCode" = T0."ItemCode" AND T2."DistNumber" = T0."DistNumber"
+WHERE T2."Quantity" > 0 AND T0."ExpDate" IS NOT NULL
+  AND DATEDIFF(day, @AsOfDate, T0."ExpDate") <= 90
+ORDER BY "DaysToExpiry" ASC;`},
+
+  {code:"KLN-STK-003", title:"دفعات (Batch) منتهية الصلاحية فعلياً ولا تزال ضمن أرصدة المخزون", category:"stock",
+    desc:"استثناء حرج: بضاعة تجاوزت تاريخ صلاحيتها ولم تُشطب/تُتلف بعد بالنظام — خطر مباشر على سلامة الغذاء.",
+    params:"@AsOfDate", tags:["منتهي الصلاحية","حرج"],
+    sql:`SELECT T0."ItemCode", T1."ItemName", T0."DistNumber" AS "BatchNo", T0."ExpDate", T2."Quantity", T2."WhsCode"
+FROM OBTN T0
+JOIN OITM T1 ON T1."ItemCode" = T0."ItemCode"
+JOIN OBTQ T2 ON T2."ItemCode" = T0."ItemCode" AND T2."DistNumber" = T0."DistNumber"
+WHERE T2."Quantity" > 0 AND T0."ExpDate" < @AsOfDate
+ORDER BY T0."ExpDate" ASC;`},
+
+  {code:"KLN-STK-004", title:"المخزون الراكد (Slow / Non-Moving) بدون أي حركة صرف لأكثر من 90 يوماً", category:"stock",
+    desc:"يقارن آخر تاريخ حركة صرف مسجّلة (OINM) بتاريخ اليوم لتحديد الأصناف الراكدة وربطها بمصفوفة تحرير مخزون.",
+    params:"@AsOfDate, @IdleDays (افتراضي 90)", tags:["راكد","تحسين"],
+    sql:`SELECT T0."ItemCode", T1."ItemName", MAX(T0."CreateDate") AS "LastMovementDate",
+       DATEDIFF(day, MAX(T0."CreateDate"), @AsOfDate) AS "IdleDays"
+FROM OINM T0
+JOIN OITM T1 ON T1."ItemCode" = T0."ItemCode"
+WHERE T0."OutQty" > 0
+GROUP BY T0."ItemCode", T1."ItemName"
+HAVING DATEDIFF(day, MAX(T0."CreateDate"), @AsOfDate) > @IdleDays
+ORDER BY "IdleDays" DESC;`},
+
+  {code:"KLN-STK-005", title:"تسويات جرد ذات قيمة جوهرية (Inventory Adjustments)", category:"stock",
+    desc:"يستخرج حركات تسوية المخزون (زيادة/نقص) من دفتر أستاذ الأصناف لمراجعة أسباب الفروقات الكبيرة.",
+    params:"@FromDate, @ToDate, @MinValue", tags:["جرد","فروقات"],
+    sql:`SELECT T0."DocDate", T0."ItemCode", T1."ItemName", T0."Warehouse", T0."InQty", T0."OutQty",
+       T0."TransValue", T0."TransType"
+FROM OINM T0
+JOIN OITM T1 ON T1."ItemCode" = T0."ItemCode"
+WHERE T0."TransType" IN (59, 60) -- 59/60: قيد مخزون يدوي (Inventory GL / تسوية) حسب دليل B1
+  AND T0."DocDate" BETWEEN @FromDate AND @ToDate
+  AND ABS(T0."TransValue") >= @MinValue
+ORDER BY ABS(T0."TransValue") DESC;`},
+
+  {code:"KLN-STK-006", title:"تحويلات مخزنية بين المستودعات خارج ساعات العمل أو بدون مستند مرجعي", category:"stock",
+    desc:"يرصد حركات التحويل غير المعتادة توقيتاً كمؤشر مخاطر رقابية على حركة البضاعة بين الفروع/المستودعات.",
+    params:"@FromDate, @ToDate, @WorkStart, @WorkEnd", tags:["تحويلات","توقيت غير معتاد"],
+    sql:`SELECT T0."DocNum", T0."DocDate", T0."DocTime", T1."ItemCode", T1."Quantity", T1."FromWhsCode", T1."WhsCode" AS "ToWhsCode"
+FROM OWTR T0
+JOIN WTR1 T1 ON T1."DocEntry" = T0."DocEntry"
+WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate
+  AND (T0."DocTime" < @WorkStart OR T0."DocTime" > @WorkEnd)
+ORDER BY T0."DocDate", T0."DocTime";`},
+
+  {code:"KLN-STK-007", title:"معدل دوران المخزون (Inventory Turnover) لكل مجموعة أصناف", category:"stock",
+    desc:"مؤشر KPI جوهري لكفاءة إدارة المخزون — يقارن تكلفة المبيعات بمتوسط قيمة المخزون خلال الفترة.",
+    params:"@FromDate, @ToDate", tags:["kpi","دوران"],
+    sql:`SELECT T1."ItmsGrpCod", SUM(T0."OutQty" * T0."CalcPrice") AS "COGS_Period",
+       AVG(T2."AvgPrice" * T3."OnHand") AS "AvgInventoryValue",
+       SUM(T0."OutQty" * T0."CalcPrice") / NULLIF(AVG(T2."AvgPrice" * T3."OnHand"),0) AS "TurnoverRatio"
+FROM OINM T0
+JOIN OITM T2 ON T2."ItemCode" = T0."ItemCode"
+JOIN OITM T1 ON T1."ItemCode" = T0."ItemCode"
+JOIN OITW T3 ON T3."ItemCode" = T0."ItemCode"
+WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate
+GROUP BY T1."ItmsGrpCod";`},
+
+  // ---------------- الجودة وسلامة الغذاء ----------------
+  {code:"KLN-QLT-001", title:"أصناف قريبة من الانتهاء ولا تزال متاحة للبيع (خطر بيع منتج قريب الصلاحية)", category:"quality",
+    desc:"يربط بين نافذة الصلاحية المتبقية وحالة إتاحة الصنف للبيع لضمان عدم بيع بضاعة تقترب من نهاية عمرها الافتراضي دون خصم/سياسة تصريف واضحة.",
+    params:"@AsOfDate, @MinDaysBeforeSaleBlock (مثال 15)", tags:["جودة","expiry"],
+    sql:`SELECT T0."ItemCode", T1."ItemName", T0."DistNumber" AS "BatchNo", T0."ExpDate",
+       DATEDIFF(day, @AsOfDate, T0."ExpDate") AS "DaysToExpiry", T1."SellItem"
+FROM OBTN T0
+JOIN OITM T1 ON T1."ItemCode" = T0."ItemCode"
+WHERE T1."SellItem" = 'Y' AND DATEDIFF(day, @AsOfDate, T0."ExpDate") <= @MinDaysBeforeSaleBlock
+ORDER BY "DaysToExpiry" ASC;`},
+
+  {code:"KLN-QLT-002", title:"تتبع دفعة (Batch) من الاستلام حتى فاتورة العميل (Traceability)", category:"quality",
+    desc:"يعيد بناء رحلة دفعة محددة (Batch) عبر سجل حركات الأصناف — أساسي لأي إجراء سحب منتج (Recall).",
+    params:"@BatchNo, @ItemCode", tags:["traceability","recall"],
+    sql:`SELECT T0."TransType", T0."BaseType", T0."BaseEntry", T0."DocDate", T0."Warehouse", T0."InQty", T0."OutQty"
+FROM OINM T0
+WHERE T0."ItemCode" = @ItemCode
+ORDER BY T0."DocDate";
+-- عند توفر جدول دفعات مخصص (Batch Attributes) يُضاف فلتر DistNumber = @BatchNo لتضييق النتيجة على الدفعة تحديداً.`},
+
+  {code:"KLN-QLT-003", title:"معدل مرتجعات الجودة حسب المورد (لأصناف الشراء) والصنف", category:"quality",
+    desc:"يربط بيانات المرتجعات بمصدر الشراء (المورد) لتحديد الموردين الأعلى مساهمة بمشاكل جودة متكررة.",
+    params:"@FromDate, @ToDate", tags:["موردين","جودة"],
+    sql:`SELECT T3."CardCode" AS "SupplierCode", T3."CardName" AS "SupplierName", T1."ItemCode", T1."Dscription",
+       SUM(T1."Quantity") AS "ReturnedQty"
+FROM RIN1 T1
+JOIN ORIN T0 ON T0."DocEntry" = T1."DocEntry"
+LEFT JOIN OITM T4 ON T4."ItemCode" = T1."ItemCode"
+LEFT JOIN OPCH T3 ON T3."CardCode" = T4."CardCode" -- يتطلب مطابقة المورد الافتراضي بجدول OITM أو UDF مخصص للمورد الأساسي للصنف
+WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate
+GROUP BY T3."CardCode", T3."CardName", T1."ItemCode", T1."Dscription"
+ORDER BY "ReturnedQty" DESC;`},
+
+  {code:"KLN-QLT-004", title:"أصناف مصنّفة قابلة للانتهاء بدون تاريخ صلاحية مسجَّل بالنظام", category:"quality",
+    desc:"فجوة بيانات أساسية: صنف من فئة يُفترض متابعة صلاحيتها (مجمد/مبرد) لكن لا توجد له دفعة Batch مسجّلة بتاريخ انتهاء.",
+    params:"@PerishableGroupCodes (قائمة أكواد مجموعات الأصناف القابلة للتلف)", tags:["بيانات أساسية","ضبط"],
+    sql:`SELECT T0."ItemCode", T0."ItemName", T0."ItmsGrpCod"
+FROM OITM T0
+WHERE T0."ItmsGrpCod" IN (@PerishableGroupCodes)
+  AND T0."ManBtchNum" = 'Y'
+  AND NOT EXISTS (SELECT 1 FROM OBTN T1 WHERE T1."ItemCode" = T0."ItemCode" AND T1."ExpDate" IS NOT NULL);`},
+
+  // ---------------- الأسطول والكاش فان ----------------
+  {code:"KLN-FLT-001", title:"مطابقة دورة الكاش فان: تحميل + إضافات − مبيعات − مرتجعات = المتبقي الفعلي", category:"fleet",
+    desc:"يبني المعادلة الرقابية لكل سيارة/يوم اعتماداً على مستندات التحويل للمركبة كمستودع فرعي وفواتيرها اليومية.",
+    params:"@VanWhsCode, @FromDate, @ToDate", tags:["كاش فان","مطابقة"],
+    sql:`SELECT T0."ItemCode", T1."ItemName",
+       SUM(CASE WHEN T0."TransType" = 67 THEN T0."InQty" ELSE 0 END) AS "LoadedIn",
+       SUM(CASE WHEN T0."TransType" = 13 THEN T0."OutQty" ELSE 0 END) AS "SoldOut",
+       SUM(CASE WHEN T0."TransType" = 14 THEN T0."InQty" ELSE 0 END) AS "ReturnedIn",
+       (SELECT "OnHand" FROM OITW W WHERE W."ItemCode" = T0."ItemCode" AND W."WhsCode" = @VanWhsCode) AS "CurrentOnHand"
+FROM OINM T0
+JOIN OITM T1 ON T1."ItemCode" = T0."ItemCode"
+WHERE T0."Warehouse" = @VanWhsCode AND T0."DocDate" BETWEEN @FromDate AND @ToDate
+GROUP BY T0."ItemCode", T1."ItemName";
+-- الفاقد المحتمل = (LoadedIn + الرصيد الافتتاحي) - SoldOut - ReturnedIn - CurrentOnHand.`},
+
+  {code:"KLN-FLT-002", title:"إنتاجية كل سيارة كاش فان: مبيعات وتحصيل شهري", category:"fleet",
+    desc:"يربط مندوب/مركبة الكاش فان (عبر مستودعه الفرعي) بحجم مبيعاته وتحصيله الشهري لتقييم الإنتاجية.",
+    params:"@FromDate, @ToDate", tags:["أداء","كاش فان"],
+    sql:`SELECT T0."CardCode", T2."SlpName", T0."DocDate", SUM(T0."DocTotal") AS "MonthlySales"
+FROM OINV T0
+LEFT JOIN OSLP T2 ON T2."SlpCode" = T0."SlpCode"
+WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate AND T0."Canceled" = 'N'
+GROUP BY T0."CardCode", T2."SlpName", T0."DocDate"
+ORDER BY "MonthlySales" DESC;`},
+
+  {code:"KLN-FLT-003", title:"فواتير كاش فان لم تُحصَّل خلال نفس يوم البيع (رصيد معلّق)", category:"fleet",
+    desc:"دورة الكاش فان يُفترض إغلاقها يومياً نقداً — أي رصيد آجل متبقٍ بعد نهاية اليوم يستوجب تفسيراً موثقاً.",
+    params:"@AsOfDate", tags:["تحصيل يومي","استثناء"],
+    sql:`SELECT T0."DocNum", T0."DocDate", T0."CardCode", T0."CardName", T0."DocTotal", T0."PaidToDate",
+       T0."DocTotal" - T0."PaidToDate" AS "OpenAmount"
+FROM OINV T0
+WHERE T0."DocDate" = @AsOfDate AND T0."DocTotal" > T0."PaidToDate"
+ORDER BY "OpenAmount" DESC;`},
+
+  {code:"KLN-FLT-004", title:"بضاعة محمّلة على كاش فان ولم تُباع ولم تُرجع خلال المهلة المعتمدة (فاقد محتمل)", category:"fleet",
+    desc:"يقارن ما تم تحميله على مستودع المركبة الفرعي بما بيع أو أُعيد خلال عدد أيام معقول — الفارق فاقد يستوجب تحقيقاً.",
+    params:"@VanWhsCode, @AsOfDate, @MaxDaysOnVan (افتراضي 3)", tags:["فاقد","كاش فان"],
+    sql:`SELECT T0."ItemCode", T1."ItemName", T0."OnHand" AS "StillOnVan"
+FROM OITW T0
+JOIN OITM T1 ON T1."ItemCode" = T0."ItemCode"
+WHERE T0."WhsCode" = @VanWhsCode AND T0."OnHand" > 0
+ORDER BY T0."OnHand" DESC;
+-- يُقارن يدوياً بتاريخ آخر تحميل (من KLN-FLT-001) لتحديد الأصناف المتبقية لأكثر من @MaxDaysOnVan أيام.`},
+
+  // ---------------- SAP وIT ----------------
+  {code:"KLN-SAP-001", title:"مستخدمون مقفلون (Locked) أو مرتبطون بموظفين مغادرين", category:"sapit",
+    desc:"رقابة أساسية على إلغاء صلاحيات الوصول فور مغادرة الموظف — يقارن حالة المستخدم بحالة نشاط الموظف بجدول الموارد البشرية.",
+    params:"—", tags:["صلاحيات","مغادرين"],
+    sql:`SELECT T0."USERID", T0."U_Name", T0."Locked", T1."empID", T1."firstName", T1."lastName", T1."Active"
+FROM OUSR T0
+LEFT JOIN OHEM T1 ON T1."userId" = T0."USERID"
+WHERE T0."Locked" = 'N' AND (T1."Active" = 'N' OR T1."empID" IS NULL);`},
+
+  {code:"KLN-SAP-002", title:"مستخدمون بصلاحية Superuser الكاملة", category:"sapit",
+    desc:"صلاحية Superuser تتجاوز كل قيود مصفوفة الصلاحيات — يجب أن تقتصر على أقل عدد ممكن من المستخدمين ومبررة رسمياً.",
+    params:"—", tags:["superuser","صلاحيات"],
+    sql:`SELECT T0."USERID", T0."U_Name", T0."Superuser", T0."Locked"
+FROM OUSR T0
+WHERE T0."Superuser" = 'Y'
+ORDER BY T0."U_Name";`},
+
+  {code:"KLN-SAP-003", title:"بيانات عملاء أساسية (حد ائتمان/شروط دفع) عُدِّلت خارج أوقات العمل الرسمية", category:"sapit",
+    desc:"يعتمد على تاريخ آخر تعديل ببطاقة العميل كمؤشر أولي؛ يُستكمل بمطابقة Change Log الفعلي لتحديد المستخدم والحقل المعدَّل بدقة.",
+    params:"@FromDate, @ToDate, @WorkStart, @WorkEnd", tags:["master data","توقيت غير معتاد"],
+    sql:`SELECT T0."CardCode", T0."CardName", T0."CreditLine", T0."UpdateDate", T0."UpdateTS"
+FROM OCRD T0
+WHERE T0."UpdateDate" BETWEEN @FromDate AND @ToDate;
+-- ملاحظة: اسم/بنية جدول Change Log الفعلي (من هو غيّر أي حقل ومتى) تختلف حسب إصدار SAP B1؛
+-- يُستخرج غالباً من: Administration > Utilities > Document/Master Data Change Log ويُصدَّر لملف قبل مطابقته يدوياً بهذه القائمة.`},
+
+  {code:"KLN-SAP-004", title:"تعارض فصل مهام محتمل: نفس المستخدم أنشأ واعتمد نفس المستند", category:"sapit",
+    desc:"يقارن حقل منشئ المستند بحقل آخر معدِّل/مرحِّل عندما يفرض تدفق الموافقات (Approval Procedure) شخصاً مختلفاً للاعتماد.",
+    params:"@FromDate, @ToDate", tags:["sod","حوكمة"],
+    sql:`SELECT T0."DocNum", T0."DocDate", T0."DocTotal", T0."UserSign" AS "CreatedBy", T0."UserSign2" AS "LastEditedBy"
+FROM OPCH T0
+WHERE T0."DocDate" BETWEEN @FromDate AND @ToDate AND T0."UserSign" = T0."UserSign2";
+-- يُستخدم كمؤشر أولي فقط؛ التأكيد النهائي لتعارض SoD يتم بمطابقة مصفوفة الصلاحيات الفعلية (قسم 12 من الدليل).`},
+
+  {code:"KLN-SAP-005", title:"جرد آخر نسخة احتياطية ناجحة لقاعدة البيانات", category:"sapit",
+    desc:"إجراء رقابي إلزامي (استمرارية أعمال) وليس كويري SQL — يُراجع من سجلات SQL Server Agent / HANA Backup Catalog وليس من داخل جداول B1.",
+    params:"—", tags:["backup","استمرارية أعمال","إجراء"],
+    sql:`-- على SQL Server: SELECT TOP 20 database_name, backup_start_date, backup_finish_date, type
+-- FROM msdb.dbo.backupset ORDER BY backup_finish_date DESC;
+-- على HANA: يُراجع عبر BACKUP_CATALOG (SYSTEMDB) أو أدوات SAP HANA Cockpit.
+-- التوثيق المطلوب بالتدقيق: تاريخ آخر نسخة ناجحة + تاريخ آخر اختبار استعادة (Restore Test) فعلي.`},
+
+  // ---------------- الموارد البشرية ----------------
+  {code:"KLN-HR-001", title:"موظفون فعّالون بجدول الموارد البشرية بدون حساب مستخدم مرتبط (أو العكس)", category:"hr",
+    desc:"فجوة تزامن بين بيانات الموظفين وحسابات النظام قد تدل على وصول غير موثق أو حسابات يتيمة.",
+    params:"—", tags:["hr","صلاحيات"],
+    sql:`SELECT T0."empID", T0."firstName", T0."lastName", T0."Active", T1."USERID"
+FROM OHEM T0
+LEFT JOIN OUSR T1 ON T1."USERID" = T0."userId"
+WHERE T0."Active" = 'Y' AND T1."USERID" IS NULL;`},
+
+  {code:"KLN-HR-002", title:"عمولات مندوبي المبيعات مقابل تحقيق المستهدف الشهري", category:"hr",
+    desc:"يربط مبيعات كل مندوب (SlpCode) بجدول العمولات لمطابقة صحة الاحتساب واعتماد المستهدف قبل الصرف.",
+    params:"@FromDate, @ToDate", tags:["عمولات","أداء"],
+    sql:`SELECT T0."SlpCode", T1."SlpName", SUM(T2."DocTotal") AS "ActualSales"
+FROM OSLP T1
+LEFT JOIN OINV T2 ON T2."SlpCode" = T1."SlpCode" AND T2."DocDate" BETWEEN @FromDate AND @ToDate AND T2."Canceled" = 'N'
+JOIN (SELECT DISTINCT SlpCode FROM OSLP) T0 ON T0."SlpCode" = T1."SlpCode"
+GROUP BY T0."SlpCode", T1."SlpName";
+-- يُطابق الناتج بجدول المستهدف الشهري ونسبة العمولة المعتمدة (غالباً محفوظة خارج B1 بملف/نظام رواتب منفصل).`},
+
+  {code:"KLN-HR-003", title:"مستخدمون بصلاحيات نظام أعلى من مستوى وظيفتهم المسجّل", category:"hr",
+    desc:"مطابقة يدوية-نظامية بين المسمى الوظيفي بجدول الموظفين ومستوى الصلاحيات الممنوح فعلياً (خاصة Superuser وصلاحيات الاعتماد المالي).",
+    params:"—", tags:["مصفوفة صلاحيات","hr"],
+    sql:`SELECT T0."empID", T0."firstName", T0."lastName", T0."position", T1."USERID", T1."Superuser"
+FROM OHEM T0
+JOIN OUSR T1 ON T1."USERID" = T0."userId"
+WHERE T1."Superuser" = 'Y'
+ORDER BY T0."position";`},
+
+  // ---------------- المالية والقيود ----------------
+  {code:"KLN-FIN-001", title:"القيود اليدوية (Manual Journal Entries) خارج الترحيل الآلي", category:"journal",
+    desc:"يستخرج القيود المُدخلة يدوياً (وليس عبر ترحيل مستندات تشغيلية آلية) لتصنيفها ومراجعة مبرراتها ومرفقاتها.",
+    params:"@FromDate, @ToDate, @MinAmount", tags:["قيود يدوية","تصنيف"],
+    sql:`SELECT T0."TransId", T0."RefDate", T0."Memo", T0."UserSign", SUM(T1."Debit") AS "TotalDebit", SUM(T1."Credit") AS "TotalCredit"
+FROM OJDT T0
+JOIN JDT1 T1 ON T1."TransId" = T0."TransId"
+WHERE T0."RefDate" BETWEEN @FromDate AND @ToDate
+  AND T0."TransType" = -1 -- قيد يدوي وليس ناتجاً عن ترحيل مستند تشغيلي
+GROUP BY T0."TransId", T0."RefDate", T0."Memo", T0."UserSign"
+HAVING SUM(T1."Debit") >= @MinAmount
+ORDER BY "TotalDebit" DESC;`},
+
+  {code:"KLN-FIN-002", title:"قيود مرحّلة بتاريخ رجعي (Back-dated Entries)", category:"journal",
+    desc:"يقارن تاريخ إنشاء القيد الفعلي (CreateDate/TransTS) بتاريخ القيد المحاسبي (RefDate) لكشف ترحيل بتاريخ سابق لتاريخ الإدخال الحقيقي.",
+    params:"@FromDate, @ToDate, @MaxAllowedGapDays (افتراضي 3)", tags:["تاريخ رجعي","مخاطر"],
+    sql:`SELECT T0."TransId", T0."RefDate", T0."CreateDate" AS "SystemCreateDate", T0."Memo", T0."UserSign",
+       DATEDIFF(day, T0."RefDate", T0."CreateDate") AS "GapDays"
+FROM OJDT T0
+WHERE T0."RefDate" BETWEEN @FromDate AND @ToDate
+  AND DATEDIFF(day, T0."RefDate", T0."CreateDate") > @MaxAllowedGapDays
+ORDER BY "GapDays" DESC;`},
+
+  {code:"KLN-FIN-003", title:"مصروفات صندوق نثري تجاوزت السقف المعتمد للبند", category:"expense",
+    desc:"يقارن كل حركة صرف نثري ببند مصروفه (حساب دفتر الأستاذ) بالسقف المعتمد لهذا البند ضمن سياسة الصلاحيات المالية.",
+    params:"@FromDate, @ToDate, @PettyCashAccountCode", tags:["صندوق نثري","سقوف اعتماد"],
+    sql:`SELECT T0."TransId", T0."RefDate", T1."Account", T2."AcctName", T1."Debit" AS "Amount", T0."Memo"
+FROM OJDT T0
+JOIN JDT1 T1 ON T1."TransId" = T0."TransId"
+JOIN OACT T2 ON T2."AcctCode" = T1."Account"
+WHERE T1."Account" = @PettyCashAccountCode AND T0."RefDate" BETWEEN @FromDate AND @ToDate
+ORDER BY T1."Debit" DESC;
+-- يُطابق كل سطر تجاوز السقف بمصفوفة الصلاحيات المالية (الملحق رقم 4) قبل تصنيفه كملاحظة تدقيق.`},
+
+  // ---------------- الحوكمة والسياسات ----------------
+  {code:"KLN-GOV-001", title:"عملاء جدد بدون فترة الدفع النقدي الإلزامية قبل فتح بيع آجل", category:"gov",
+    desc:"يتحقق من التزام فتح حساب العميل الجديد بسياسة الحوكمة (فترة تعامل نقدي قبل منح آجل) قبل ظهور أول فاتورة آجلة.",
+    params:"@RequiredCashDays (مثال 90)", tags:["سياسة ائتمان","عملاء جدد"],
+    sql:`SELECT T0."CardCode", T0."CardName", T0."CreateDate" AS "CustomerOpenedDate", MIN(T1."DocDate") AS "FirstCreditInvoiceDate",
+       DATEDIFF(day, T0."CreateDate", MIN(T1."DocDate")) AS "DaysBeforeFirstCredit"
+FROM OCRD T0
+JOIN OINV T1 ON T1."CardCode" = T0."CardCode" AND T1."DocTotal" > T1."PaidToDate"
+GROUP BY T0."CardCode", T0."CardName", T0."CreateDate"
+HAVING DATEDIFF(day, T0."CreateDate", MIN(T1."DocDate")) < @RequiredCashDays
+ORDER BY "DaysBeforeFirstCredit" ASC;`},
+
+  {code:"KLN-GOV-002", title:"تعديلات على حد الائتمان أو شروط الدفع لعميل قائم", category:"gov",
+    desc:"يرصد تغييرات حساسة على بطاقة العميل تستوجب اعتماداً موثقاً من صاحب الصلاحية حسب مصفوفة الصلاحيات.",
+    params:"@FromDate, @ToDate", tags:["اعتماد","master data"],
+    sql:`SELECT T0."CardCode", T0."CardName", T0."CreditLine", T0."GroupNum", T0."UpdateDate"
+FROM OCRD T0
+WHERE T0."UpdateDate" BETWEEN @FromDate AND @ToDate
+ORDER BY T0."UpdateDate" DESC;
+-- يُطابق مع نموذج اعتماد تعديل بيانات عميل (الملحق رقم 5) للتأكد من وجود توقيع صاحب الصلاحية.`},
+];
+
 const DEFAULT_HEALTH_WEIGHTS = { planExec:25, findingsClosure:20, riskTreatment:20, timeliness:15, coverage:10, docQuality:10 };
 function defaultSettings(){
   return {materialityGlobal:null, materialityByCategory:{}, materialityBasis:"", materialityNotes:"", healthScoreWeights: {...DEFAULT_HEALTH_WEIGHTS}, responsibleEmails:{}, categoryOverrides:{}, customCategories:[], categoryOrder:[]};
@@ -2508,6 +3028,27 @@ function defaultSettings(){
 
 let DB = loadDB();
 rebuildCategories();
+seedDefaultQueryLibrary();
+
+function seedDefaultQueryLibrary(){
+  if(DB.queries && DB.queries.length) return;
+  DB.queries = DEFAULT_QUERY_LIBRARY.map(q=>({
+    id: uid(),
+    title: q.title,
+    category: q.category,
+    code: q.code || "",
+    version: "1.0",
+    lastTested: "",
+    desc: q.desc || "",
+    params: q.params || "",
+    sql: q.sql || "",
+    tags: q.tags || [],
+    changelog: [{date: todayStr(), note: "استيراد ضمن مكتبة الكويريات القياسية v1.0"}],
+    createdAt: todayStr(),
+    updatedAt: todayStr(),
+  }));
+  saveDB();
+}
 
 function loadDB(){
   try{
