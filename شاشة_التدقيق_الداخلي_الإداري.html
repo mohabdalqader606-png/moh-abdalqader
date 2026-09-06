@@ -1333,7 +1333,7 @@
   </div>
 </div>
 
-<footer>عمل بلا اتصال بالإنترنت — البيانات محفوظة محلياً على هذا الجهاز فقط عبر المتصفح. — الإصدار v2.3 (Internal Audit Management System + GRC + Executive Analytics Dashboard — تقرير المسؤول · أقسام قابلة للتعديل)</footer>
+<footer>عمل بلا اتصال بالإنترنت — البيانات محفوظة محلياً على هذا الجهاز فقط عبر المتصفح. — الإصدار v2.4 (Internal Audit Management System + GRC + Executive Analytics Dashboard — تقرير المسؤول · أقسام قابلة للتعديل)</footer>
 <div class="ksh-scrim" id="kshScrim" aria-hidden="true"></div>
 <div class="ksh-status" role="contentinfo" aria-label="شريط الحالة">
   <span class="ksh-dot" aria-hidden="true"></span><span>حفظ محلي</span>
@@ -5935,6 +5935,213 @@ WHERE T0."Status" = 'Y' AND T0."CreateDate" BETWEEN '[%0]' AND '[%1]';
 FROM OPOR T0
 WHERE T0."DocDate" BETWEEN '[%0]' AND '[%1]' AND T0."DocTotal" >= [%2];
 -- مؤشر أولي فقط بالاعتماد على حقل الملاحظات النصي؛ الأدق أرشفة عروض الأسعار كمرفقات (ATC1) مرتبطة بكل أمر شراء كبير.`},
+
+  // ---------------- دفعة: كويريات إنتاجية متبقية من شاشات المستودع (q4، قالب بنفورد، slQuerySql، كشف العملاء، CUFD) ----------------
+
+  {code:"KLN-FIN-000013", title:"حركة شركاء أعمال محددين داخل حساب مراقبة (تسهيلات بنكية مسجَّلة كموردين) — افتتاحي + شهري", category:"journal",
+    desc:"[المصدر: محرك القوائم الختامية والتحليل المالي v48.1 — كويري q4 (تغذية 4)] [الحالة: إنتاجي/معتمد]. الغرض: حركة دفتر الأستاذ (JDT1) لقائمة ثابتة من شركاء الأعمال المسجَّلين كموردين تحت حساب المراقبة 2112000001 وهم فعلياً تسهيلات بنكية — صف افتتاحي (Yr=0/Mo=0) قبل بداية الفترة ثم تجميع شهري بالشريك وحساب المراقبة؛ تُفصل في الأداة كحسابات فرعية وتُربط بالبنوك كأوراق دفع. قاعدة شركة: قائمة الأكواد IN (...) ثابتة وتُصان يدوياً. SQL كما هو حرفياً.",
+    params:"{FROM} = تاريخ بداية الفترة، {TO} = تاريخ نهاية الفترة (يُستبدلان نصياً قبل التنفيذ، أو [%0]/[%1] عند التحويل لصيغة SAP Query Manager)", tags:["تسهيلات","حساب مراقبة","JDT1","شركاء أعمال"],
+    sql:`SELECT T0."ShortName" AS "BPCode", T1."CardName" AS "BPName", T0."Account" AS "CtrlAcct", 0 AS "Yr", 0 AS "Mo", SUM(T0."Debit") AS "Debit", SUM(T0."Credit") AS "Credit"
+FROM JDT1 T0 INNER JOIN OCRD T1 ON T1."CardCode" = T0."ShortName"
+WHERE T0."ShortName" IN ('V000136','V000412','V000137','V000138','V000352','V000480')
+  AND T0."RefDate" < '{FROM}'
+GROUP BY T0."ShortName", T1."CardName", T0."Account"
+UNION ALL
+SELECT T0."ShortName" AS "BPCode", T1."CardName" AS "BPName", T0."Account" AS "CtrlAcct", YEAR(T0."RefDate") AS "Yr", MONTH(T0."RefDate") AS "Mo", SUM(T0."Debit") AS "Debit", SUM(T0."Credit") AS "Credit"
+FROM JDT1 T0 INNER JOIN OCRD T1 ON T1."CardCode" = T0."ShortName"
+WHERE T0."ShortName" IN ('V000136','V000412','V000137','V000138','V000352','V000480')
+  AND T0."RefDate" >= '{FROM}' AND T0."RefDate" <= '{TO}'
+GROUP BY T0."ShortName", T1."CardName", T0."Account", YEAR(T0."RefDate"), MONTH(T0."RefDate")`},
+
+  {code:"KLN-FIN-000014", title:"القيود التفصيلية لنوع حركة معيّن خلال شهر مع فلترة بالرقم الأول للمبلغ (ورقة عمل بنفورد)", category:"journal",
+    desc:"[المصدر: محرك القوائم الختامية والتحليل المالي v48.1 — قالب كويري يولَّد من شاشة فحص سلامة البيانات (Benford)] [الحالة: إنتاجي/معتمد]. الغرض: بعد رصد انحراف في توزيع الرقم الأول (KLN-GOV-007) يستخرج هذا القالب سطور القيود لنوع حركة واحد خلال شهر واحد التي يبدأ مبلغها (مدين أو دائن) برقم معيّن، مرتبة تنازلياً بالمبلغ — ورقة عمل مباشرة لتبرير الشذوذ. القالب يُملأ في الشاشة قبل التنفيذ. SQL كما هو حرفياً مع متغيرات القالب.",
+    params:"${tt} = نوع الحركة (TransType)، ${y}-${m} = السنة والشهر، ${last} = آخر يوم في الشهر، ${d} = الرقم الأول للمبلغ (1–9) — تُملأ برمجياً في الشاشة المصدر؛ عند النقل إلى Query Manager تُستبدل بـ[%0]…[%3]", tags:["بنفورد","ورقة عمل","GL","نوع حركة"],
+    sql:`SELECT T1."TransId", T1."RefDate", T1."TransType", T1."Account", T1."ShortName", T1."LineMemo", T1."Debit", T1."Credit", T0."Memo" FROM OJDT T0 INNER JOIN JDT1 T1 ON T1."TransId" = T0."TransId" WHERE T1."TransType" = '\${tt}' AND T1."RefDate" >= '\${y}-\${m}-01' AND T1."RefDate" <= '\${y}-\${m}-\${String(last).padStart(2,'0')}' AND SUBSTRING(CAST(CAST(FLOOR(CASE WHEN T1."Debit" > 0 THEN T1."Debit" ELSE T1."Credit" END) AS BIGINT) AS VARCHAR),1,1) = '\${d}' ORDER BY (CASE WHEN T1."Debit" > 0 THEN T1."Debit" ELSE T1."Credit" END) DESC`},
+
+  {code:"KLN-SAL-000016", title:"ربحية فواتير ومرتجعات المؤسسة الاستهلاكية العسكرية بالباتش الفعلي وكلفته (KLN-SAL-000004 مقيَّدة بالعميلين C0006588/C0006751)", category:"sales",
+    desc:"[المصدر: شاشة مبيعات المؤسسة العسكرية حسب الفرع — slQuerySql] [الحالة: إنتاجي/معتمد]. الغرض: نفس منطق KLN-SAL-000004 حرفياً (٣ مسارات للباتش، كلفة الباتش الحالية × NumPerMsr، كلفة تقديرية لغير المدلفَر من OBTQ، المرتجع مباشر بإشارة سالبة) مع فلتر إضافي وحيد على رمز العميل IN ('C0006588','C0006751') — يغذّي شاشة توزيع مبيعات المؤسسة العسكرية على الفروع. قاعدة شركة: C0006751 = فرع العقبة من فواتيره مباشرة، C0006588 = باقي الفروع تُوزَّع بسندات التحويل × متوسط عمان المرجّح (المنطق في الشاشة لا في SQL). SQL كما هو حرفياً.",
+    params:"[%0] = تاريخ البداية، [%1] = تاريخ النهاية (موجّه التاريخ في السطر الأول)", tags:["مبيعات","باتش","المؤسسة العسكرية","ربحية"],
+    sql:`/* SELECT T0."DocDate" FROM OINV T0 WHERE T0."DocDate" BETWEEN [%0] AND [%1] */
+/*
+  KLN-SAL-000004 (مخصصة لعملاء المؤسسة الاستهلاكية العسكرية C0006588 و C0006751)
+  ======================================================================
+  ربحية الفواتير والمرتجعات مع الباتش الفعلي وكلفته الحالية — نفس منطق النسخة
+  الأصلية، مع فلترة إضافية على رمز العميل فقط.
+  ======================================================================
+*/
+SELECT
+    "نوع المستند", "رقم المستند", "التاريخ", "رمز العميل", "اسم العميل",
+    "كود الصنف", "اسم الصنف", "الكمية",
+    "سعر البيع", "خصم السطر %", "خصم الوثيقة %", "صافي السعر للوحدة",
+    "صافي المبيعات",
+    "رقم الديليفري المرتبط",
+    "رقم الباتش",
+    "كلفة الوحدة الحالية للباتش",
+    CASE WHEN "رقم الباتش" IS NULL THEN "_est_cost_raw" ELSE NULL END
+                                      AS "كلفة تقديرية (غير مدلفرة)",
+
+    CASE WHEN "نوع المستند" = 'مرتجع' THEN -1 ELSE 1 END
+        * "_qty_raw"
+        * "كلفة الوحدة الحالية للباتش"
+                                      AS "إجمالي الكلفة",
+
+    ("صافي المبيعات" -
+     (CASE WHEN "نوع المستند" = 'مرتجع' THEN -1 ELSE 1 END
+        * "_qty_raw"
+        * "كلفة الوحدة الحالية للباتش")
+    )                                 AS "مجمل الربح",
+
+    CASE WHEN "رقم الباتش" IS NULL THEN 'غير مدلفرة' ELSE 'مدلفرة' END
+                                      AS "حالة التسليم",
+
+    CASE
+        WHEN "صافي السعر للوحدة" IS NULL OR "صافي السعر للوحدة" = 0 THEN NULL
+        WHEN "كلفة الوحدة الحالية للباتش" IS NULL THEN NULL
+        ELSE ROUND((("صافي السعر للوحدة" - "كلفة الوحدة الحالية للباتش") / "صافي السعر للوحدة") * 100, 2)
+    END                               AS "نسبة الربح %"
+
+FROM (
+
+    -- ============ الفواتير (٣ مسارات للباتش) ============
+    SELECT
+        'فاتورة'                         AS "نوع المستند",
+        T0."DocNum"                      AS "رقم المستند",
+        T0."DocDate"                     AS "التاريخ",
+        T0."CardCode"                    AS "رمز العميل",
+        T0."CardName"                    AS "اسم العميل",
+        T1."ItemCode"                    AS "كود الصنف",
+        T1."Dscription"                  AS "اسم الصنف",
+        T1."Quantity"                    AS "الكمية",
+        T1."PriceBefDi"                  AS "سعر البيع",
+        T1."DiscPrcnt"                   AS "خصم السطر %",
+        T0."DiscPrcnt"                   AS "خصم الوثيقة %",
+        (T1."LineTotal" * (1 - IFNULL(T0."DiscPrcnt",0)/100) / NULLIF(T1."Quantity",0))
+                                          AS "صافي السعر للوحدة",
+
+        (T1."LineTotal" * (1 - IFNULL(T0."DiscPrcnt",0)/100))
+                                          AS "صافي المبيعات",
+
+        COALESCE(
+            (SELECT MAX(D."DocNum") FROM DLN1 DL
+             INNER JOIN ODLN D ON DL."DocEntry" = D."DocEntry"
+             WHERE DL."BaseEntry" = T0."DocEntry" AND DL."BaseLine" = T1."LineNum" AND DL."BaseType" = 13),
+            (SELECT D."DocNum" FROM ODLN D
+             WHERE D."DocEntry" = T1."BaseEntry" AND T1."BaseType" = 15)
+        )                                 AS "رقم الديليفري المرتبط",
+
+        COALESCE(
+            (SELECT MAX(B."DistNumber")
+             FROM OITL O INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+             INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+             WHERE O."DocType" = 13 AND O."DocEntry" = T0."DocEntry" AND O."DocLine" = T1."LineNum"
+               AND O."StockEff" = 1),
+            (SELECT MAX(B."DistNumber")
+             FROM DLN1 DL
+             INNER JOIN OITL O ON O."DocType" = 15 AND O."DocEntry" = DL."DocEntry" AND O."DocLine" = DL."LineNum"
+             INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+             INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+             WHERE DL."BaseEntry" = T0."DocEntry" AND DL."BaseLine" = T1."LineNum" AND DL."BaseType" = 13
+               AND O."StockEff" = 1),
+            (SELECT MAX(B."DistNumber")
+             FROM OITL O INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+             INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+             WHERE O."DocType" = 15 AND O."DocEntry" = T1."BaseEntry" AND O."DocLine" = T1."BaseLine"
+               AND T1."BaseType" = 15 AND O."StockEff" = 1)
+        )                                 AS "رقم الباتش",
+
+        (COALESCE(
+            (SELECT MAX(B."CostTotal" / NULLIF(B."Quantity",0))
+             FROM OITL O INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+             INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+             WHERE O."DocType" = 13 AND O."DocEntry" = T0."DocEntry" AND O."DocLine" = T1."LineNum"
+               AND O."StockEff" = 1),
+            (SELECT MAX(B."CostTotal" / NULLIF(B."Quantity",0))
+             FROM DLN1 DL
+             INNER JOIN OITL O ON O."DocType" = 15 AND O."DocEntry" = DL."DocEntry" AND O."DocLine" = DL."LineNum"
+             INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+             INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+             WHERE DL."BaseEntry" = T0."DocEntry" AND DL."BaseLine" = T1."LineNum" AND DL."BaseType" = 13
+               AND O."StockEff" = 1),
+            (SELECT MAX(B."CostTotal" / NULLIF(B."Quantity",0))
+             FROM OITL O INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+             INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+             WHERE O."DocType" = 15 AND O."DocEntry" = T1."BaseEntry" AND O."DocLine" = T1."BaseLine"
+               AND T1."BaseType" = 15 AND O."StockEff" = 1)
+        ) * IFNULL(NULLIF(T1."NumPerMsr",0), 1))
+                                          AS "كلفة الوحدة الحالية للباتش",
+
+        ((SELECT SUM(Q."Quantity" * (BN."CostTotal" / NULLIF(BN."Quantity",0)))
+                / NULLIF(SUM(Q."Quantity"),0)
+         FROM OBTQ Q
+         INNER JOIN OBTN BN ON Q."ItemCode" = BN."ItemCode" AND Q."SysNumber" = BN."SysNumber"
+         WHERE Q."ItemCode" = T1."ItemCode" AND Q."WhsCode" = T1."WhsCode" AND Q."Quantity" > 0
+        ) * IFNULL(NULLIF(T1."NumPerMsr",0), 1))
+                                          AS "_est_cost_raw",
+
+        T1."Quantity"                     AS "_qty_raw"
+
+    FROM OINV T0
+    INNER JOIN INV1 T1 ON T0."DocEntry" = T1."DocEntry"
+    WHERE T0."DocDate" BETWEEN [%0] AND [%1]
+      AND T0."CANCELED" = 'N'
+      AND T0."CardCode" IN ('C0006588','C0006751')
+
+    UNION ALL
+
+    -- ============ المرتجعات (مباشرة دائماً) ============
+    SELECT
+        'مرتجع',
+        T0."DocNum",
+        T0."DocDate",
+        T0."CardCode",
+        T0."CardName",
+        T1."ItemCode",
+        T1."Dscription",
+        -T1."Quantity",
+        T1."PriceBefDi",
+        T1."DiscPrcnt",
+        T0."DiscPrcnt",
+        -(T1."LineTotal" * (1 - IFNULL(T0."DiscPrcnt",0)/100) / NULLIF(T1."Quantity",0)),
+
+        -(T1."LineTotal" * (1 - IFNULL(T0."DiscPrcnt",0)/100)),
+
+        NULL,
+
+        (SELECT MAX(B."DistNumber")
+         FROM OITL O INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+         INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+         WHERE O."DocType" = 14 AND O."DocEntry" = T0."DocEntry" AND O."DocLine" = T1."LineNum"
+           AND O."StockEff" = 1),
+
+        (SELECT MAX(B."CostTotal" / NULLIF(B."Quantity",0))
+         FROM OITL O INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+         INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+         WHERE O."DocType" = 14 AND O."DocEntry" = T0."DocEntry" AND O."DocLine" = T1."LineNum"
+           AND O."StockEff" = 1) * IFNULL(NULLIF(T1."NumPerMsr",0), 1),
+
+        NULL,
+
+        T1."Quantity"
+
+    FROM ORIN T0
+    INNER JOIN RIN1 T1 ON T0."DocEntry" = T1."DocEntry"
+    WHERE T0."DocDate" BETWEEN [%0] AND [%1]
+      AND T0."CANCELED" = 'N'
+      AND T0."CardCode" IN ('C0006588','C0006751')
+
+) X
+
+ORDER BY "التاريخ", "نوع المستند", "رقم المستند"`},
+
+  {code:"KLN-PUR-000011", title:"كشف العملاء (رمز/اسم) من بيانات شركاء الأعمال", category:"purchasing",
+    desc:"[المصدر: شاشة ذكاء المشتريات والمخزون — كويري قائمة العملاء] [الحالة: إنتاجي/معتمد]. الغرض: قائمة مرجعية بسيطة لكل شركاء الأعمال من نوع عميل (CardType='C') لربط الأكواد بالأسماء في الشاشات التحليلية — النظير المباشر لكشف الموردين (CardType='S'). SQL كما هو حرفياً.",
+    params:"—", tags:["عملاء","OCRD","كشف مرجعي"],
+    sql:`SELECT "CardCode" AS "رمز العميل", "CardName" AS "اسم العميل" FROM OCRD WHERE "CardType"='C'`},
+
+  {code:"KLN-SAP-000001", title:"اكتشاف الحقول المعرَّفة من المستخدم (UDF) بالبحث في وصف الحقل — CUFD", category:"sapit",
+    desc:"[المصدر: شاشة عميل المؤسسة الاستهلاكية العسكرية — كويري مساعد] [الحالة: إنتاجي/معتمد]. الغرض: أداة تدقيق/استكشاف لتحديد الاسم الفعلي (AliasID) والجدول (TableID) لأي حقل معرَّف من المستخدم في B1 اعتماداً على كلمة من وصفه العربي أو الإنجليزي — تُستخدم قبل الاعتماد على أي UDF (مثل U_Branch أو U_ST_Remarks) في كويري رقابي، ولحسم الحقول غير المحقَّقة في مراجعات المنهجية. SQL كما هو حرفياً؛ استبدل النص بين % % بكلمة البحث.",
+    params:"كلمة البحث داخل LIKE N'%...%' (تُعدَّل نصياً)", tags:["UDF","CUFD","استكشاف حقول","SAP"],
+    sql:`SELECT "TableID", "AliasID", "Descr" FROM CUFD WHERE "Descr" LIKE N'%كلمة من اسم الحقل%'`},
 ];
 
 const DEFAULT_HEALTH_WEIGHTS = { planExec:25, findingsClosure:20, riskTreatment:20, timeliness:15, coverage:10, docQuality:10 };
