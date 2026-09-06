@@ -573,6 +573,7 @@ ORDER BY T0."DocNum"</code>
           <label style="font-size:12px; display:flex; align-items:center; gap:6px;">التاريخ (لكل الفواتير) <input type="date" id="trAqabaPrintDocDate"></label>
           <button class="btn-primary btn-sm" onclick="printAqabaVoucherInvoices()">🖨️ طباعة فاتورة العقبة لهاي السند/السندات</button>
           <button class="btn-ghost btn-sm" onclick="printAqabaVoucherInvoices('company')" title="نفس الفواتير بس برموزنا وكمياتنا وسعرنا — انسخها والصقها بـ SAP">🏢 حسب الشركة (SAP)</button>
+          <button class="btn-primary btn-sm" onclick="approveAqabaVoucherInvoices()" title="بتنحفظ بصفحة (طباعة الفواتير ← تبويب العقبة) تحت اسم فواتير العقبة الشهرية عشان ترجع تشوفها/تطبعها بأي وقت">✅ اعتماد وحفظ بطباعة الفواتير</button>
         </div>
       </div>
       <div class="summary" id="trSummaryRow" style="display:none;"></div>
@@ -2738,6 +2739,54 @@ function printAqabaVoucherInvoices(mode){
   document.getElementById('printSheetContent').innerHTML = html;
   document.getElementById('printOverlay').classList.add('active');
   setPrintCopyModeLabel(mode==='company' ? 'company' : 'customer');
+}
+
+// بتحوّل فواتير العقبة يلي تولّدت من مطابقة السند/السندات لفواتير محفوظة دائمة بصفحة "طباعة الفواتير"
+// (تبويب العقبة) تحت اسم "فاتورة العقبة الشهرية" — عشان ترجع تشوفها/تطبعها بأي وقت بعدين، مش بس لحظة الطباعة.
+function approveAqabaVoucherInvoices(){
+  if(!lastTrMatch || !lastTrMatch.mappedRows.length){ flash('trMatchMsg','اعمل "مطابقة" للسند/السندات أول.', false); return; }
+  const chunks = buildTrAqabaDynamicSlots();
+  if(!chunks.length){ flash('trMatchMsg','ما في أصناف مطابقة من السند/السندات لتوزيعها على فواتير.', false); return; }
+  const g = GROUPS.find(x=>x.id==='aqaba');
+  if(!g){ flash('trMatchMsg','ما في مجموعة العقبة.', false); return; }
+  ensureGroupDefaults(g);
+  const missing = [];
+  chunks.flat().forEach(k=>{
+    const it = findItem(k);
+    if(!it) return;
+    const label = (it.theirName||it.ourName||'') + ' (' + it.ourCode + ')';
+    if(!it.salePricePiece) missing.push(label + ' — سعر البيع/الحبة');
+    if(!it.aqabaWhsPricePiece) missing.push(label + ' — سعر بيع المؤسسة - العقبة');
+  });
+  if(missing.length){
+    alert('يرجى تعبئة سعر المادة قبل الاعتماد (من صفحة "ربط الأصناف"):\n\n• ' + missing.join('\n• '));
+    return;
+  }
+  const qtyMap = new Map();
+  lastTrMatch.mappedRows.forEach(r=> qtyMap.set(r.ourCode+'|'+r.theirCode, r.theirQty));
+  const docDate = document.getElementById('trAqabaPrintDocDate').value;
+  const voucherLabel = (lastTrMatch.vouchers||[]).map(v=>v.docNum).join('/');
+  chunks.forEach((keys, i)=>{
+    const slot = i+1;
+    const d = trAqabaSlotData[slot] || {docNo:'', qrImg:''};
+    const qty = {};
+    keys.forEach(k=> qty[k] = qtyMap.get(k)||0);
+    g.invoices.push({
+      id: uid(),
+      name: 'فاتورة العقبة الشهرية — سند ' + (voucherLabel||'—') + (chunks.length>1 ? (' ('+slot+'/'+chunks.length+')') : ''),
+      docType: 'invoice',
+      docNo: (d.docNo||'').trim(),
+      docDate,
+      qrImg: d.qrImg||'',
+      itemKeys: keys,
+      qty
+    });
+  });
+  (lastTrMatch.vouchers||[]).forEach(v=>{ getVoucherMeta(normDocNum(v.docNum)).done = true; });
+  saveState();
+  renderPrintPage();
+  renderVoucherRegistry();
+  flash('trMatchMsg', `تم اعتماد وحفظ ${chunks.length} فاتورة بصفحة "طباعة الفواتير" (تبويب العقبة) — دورّهم هناك تحت اسم "فاتورة العقبة الشهرية".`, true);
 }
 
 const TR_SORT_TH = {
