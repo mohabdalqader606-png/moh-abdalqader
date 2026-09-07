@@ -262,7 +262,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--ink-faint);}
         <div id="suppWrap"></div>
         <form class="toolbar" style="margin:12px 0 0" onsubmit="event.preventDefault();addSupplierManual(this.sname.value,this.sbal.value,this.snote.value);this.reset();">
           <label>اسم المورد <input type="text" name="sname" placeholder="مثال: مورد المواد الأولية" required></label>
-          <label>الرصيد (سالب = علينا) <input type="number" step="any" name="sbal" placeholder="-15000" required></label>
+          <label>الرصيد (موجب = علينا للمورد، سالب = دفعنا مقدماً) <input type="number" step="any" name="sbal" placeholder="15000" required></label>
           <label>ملاحظة <input type="text" name="snote" placeholder="اختياري"></label>
           <button class="btn primary" type="submit">+ إضافة مورد</button>
         </form>
@@ -448,21 +448,35 @@ function totalsAt(monthKey){
 }
 
 /* ============================================================
-   SUPPLIERS / TRADE PAYABLES (ذمم الموردين)
-   نفس اتجاه إشارة البنوك: موجب = لنا، سالب = علينا.
-   الرصيد المحتسب = رصيد حساب/حسابات الذمم الدائنة (AP) بعد طرح كل
-   أرصدة شركاء الأعمال (BP) المصنّفين أصلاً كتسهيلات بنكية ضمن جدول
-   البنوك، حتى ما ينحسب نفس المبلغ مرتين. + أي بنود يدوية يضيفها المستخدم.
+   SUPPLIERS / TRADE PAYABLES (الذمم الدائنة التجارية)
+   تُجمع كل الحسابات الشقيقة تحت نفس الأب الذي يقع تحته أي حساب مصنّف
+   AP (وليس فقط الحساب المصنّف AP وحده) — لأن التصنيف الآلي بالملف
+   المستورد بيصنّف بعض الحسابات الشقيقة (زي "ذمم دائنة اخرى خارجيين")
+   كـ ACCR بدل AP رغم إنها بنفس مجموعة الذمم الدائنة التجارية فعلياً؛
+   بيُستبعد فقط ما هو ضريبة (TAX_PAY) أو شيكات آجلة/أطراف ذات علاقة.
+   من كل حساب بهالمجموعة تُطرح أرصدة شركاء الأعمال (BP) المصنّفين أصلاً
+   كتسهيلات بنكية ضمن جدول البنوك، حتى ما ينحسب نفس المبلغ مرتين.
+
+   اتجاه العرض بهالقسم يطابق محرك القوائم الختامية نفسه: الالتزامات
+   تُعرض موجبة (علينا = موجب، دفعنا مقدماً = سالب) — عكس بقية الشاشة
+   (البنوك) اللي فيها علينا = سالب. القيمة الداخلية "net" تبقى بنفس
+   اتجاه البنوك (علينا = سالب) لغرض الجمع بالمستحق الإجمالي فقط.
    ============================================================ */
 function apControlCodes(){
-  if(!RAW) return [];
-  return Object.keys(RAW.map||{}).filter(c=>RAW.map[c]==='AP' && RAW.accounts && RAW.accounts[c] && RAW.accounts[c].post);
+  if(!RAW || !RAW.accounts) return [];
+  const accounts = RAW.accounts, map = RAW.map||{};
+  const EXCLUDE_CLASSES = ['TAX_PAY','CHQ_PAY','RELATED_CR','STL','LTL'];
+  const apFathers = new Set();
+  Object.keys(map).forEach(c=>{ if(map[c]==='AP' && accounts[c] && accounts[c].father) apFathers.add(accounts[c].father); });
+  if(!apFathers.size) return Object.keys(map).filter(c=>map[c]==='AP' && accounts[c] && accounts[c].post);
+  return Object.values(accounts).filter(a=>a.post && apFathers.has(a.father) && !EXCLUDE_CLASSES.includes(map[a.code])).map(a=>a.code);
 }
 function bpCtrlSet(){
   const set = {};
   Object.entries((RAW&&RAW.bp)||{}).forEach(([v,info])=>{ set[info.ctrl] = set[info.ctrl]||[]; set[info.ctrl].push(v); });
   return set;
 }
+/* بنفس اتجاه البنوك (asset+/liability-): موجب = أصل/دفعنا مقدماً، سالب = علينا للمورد */
 function suppliersResidualAt(monthKey){
   if(!RAW || !GL) return 0;
   const ctrlMap = bpCtrlSet();
@@ -474,11 +488,15 @@ function suppliersResidualAt(monthKey){
   return total;
 }
 function suppliersManualList(){ return (RAW && RAW.suppliersManual) || []; }
-function suppliersManualTotal(){ return suppliersManualList().reduce((a,s)=>a+toNum(s.balance),0); }
+/* أرصدة يدوية تُدخَل بنفس اتجاه العرض بهالقسم (موجب = علينا للمورد) */
+function suppliersManualTotalDisplay(){ return suppliersManualList().reduce((a,s)=>a+toNum(s.balance),0); }
 function suppliersAgg(monthKey){
-  const residual = suppliersResidualAt(monthKey);
-  const manual = suppliersManualTotal();
-  return { residual, manual, net: residual+manual, hasControl: apControlCodes().length>0 };
+  const residual = suppliersResidualAt(monthKey); // asset+/liability- (اتجاه البنوك)
+  const residualDisplay = -residual; // الالتزامات معروضة موجبة
+  const manualDisplay = suppliersManualTotalDisplay();
+  const display = residualDisplay + manualDisplay;
+  const net = -display; // اتجاه البنوك: علينا = سالب (للجمع بالمستحق الإجمالي فقط)
+  return { residual, residualDisplay, manualDisplay, display, net, hasControl: apControlCodes().length>0 };
 }
 function addSupplierManual(name, balance, note){
   if(!name || !name.trim()) return;
@@ -495,7 +513,7 @@ function removeSupplierManual(id){
 }
 function persistRaw(){ try{ localStorage.setItem(LSK, JSON.stringify(RAW)); }catch(e){ console.warn('localStorage save failed', e); } }
 
-/* المستحق الإجمالي = صافي كل البنوك + صافي الموردين، بنفس اتجاه الإشارة (سالب = علينا) */
+/* المستحق الإجمالي = صافي كل البنوك + صافي الذمم الدائنة التجارية، باتجاه البنوك (سالب = علينا) */
 function grandTotalAt(monthKey){
   const t = totalsAt(monthKey), s = suppliersAgg(monthKey);
   return { banks:t.net, suppliers:s.net, grand:t.net+s.net };
@@ -524,6 +542,8 @@ function fmt(n){
   return (n < 0 ? '−' : '') + s;
 }
 function clsFor(n){ n = toNum(n); return n>0.5 ? 'v-good' : (n<-0.5 ? 'v-bad' : 'v-mut'); }
+/* لقيم "display" بقسم الذمم الدائنة (الالتزامات معروضة موجبة): عكس clsFor */
+function clsForLiab(n){ return clsFor(-toNum(n)); }
 function netBadge(n){
   n = toNum(n);
   if(n>0.5) return '<span class="badge good">لنا عند البنك</span>';
@@ -536,11 +556,12 @@ function dueBadge(n){
   if(n<-0.5) return '<span class="badge bad">مستحق علينا</span>';
   return '<span class="badge mut">متوازن</span>';
 }
-/* موجب = دفعنا مقدماً (رصيد مدين على حساب دائن، أصل لنا) — سالب = لسا ما دفعناه للمورد (ذمم قائمة علينا) */
-function supplierBadge(n){
-  n = toNum(n);
-  if(n>0.5) return '<span class="badge good">دفعنا مقدماً</span>';
-  if(n<-0.5) return '<span class="badge bad">علينا للمورد</span>';
+/* لقيم "display" (الالتزامات معروضة موجبة، بنفس نمط محرك القوائم الختامية):
+   موجب = علينا للمورد (ذمم دائنة قائمة) — سالب = دفعنا مقدماً (رصيد مدين لصالحنا) */
+function supplierBadge(displayVal){
+  displayVal = toNum(displayVal);
+  if(displayVal>0.5) return '<span class="badge bad">علينا للمورد</span>';
+  if(displayVal<-0.5) return '<span class="badge good">دفعنا مقدماً</span>';
   return '<span class="badge mut">متوازن</span>';
 }
 function dateToMonth(dateStr){ return (dateStr||'').slice(0,7); }
@@ -715,16 +736,16 @@ function renderSuppliers(){
   const manualRows = suppliersManualList();
   let h = `<div class="twrap"><table class="dt"><thead><tr><th>المورد</th><th class="num">الرصيد</th><th>الحالة</th><th></th></tr></thead><tbody>`;
   if(s.hasControl){
-    h += `<tr><td><b>الذمم الدائنة التجارية (من الحسابات)</b></td><td class="num ${clsFor(s.residual)}">${fmt(s.residual)}</td><td>${supplierBadge(s.residual)}</td><td></td></tr>`;
+    h += `<tr><td><b>الذمم الدائنة التجارية (من الحسابات)</b></td><td class="num ${clsForLiab(s.residualDisplay)}">${fmt(s.residualDisplay)}</td><td>${supplierBadge(s.residualDisplay)}</td><td></td></tr>`;
   }
   manualRows.forEach(sp=>{
-    h += `<tr><td><b>${escHtml(sp.name)}</b>${sp.note?`<div class="hint" style="margin:2px 0 0">${escHtml(sp.note)}</div>`:''}</td><td class="num ${clsFor(sp.balance)}">${fmt(sp.balance)}</td><td>${supplierBadge(sp.balance)}</td><td><button class="btn" style="padding:4px 9px" onclick="removeSupplierManual('${jsStr(sp.id)}')">حذف</button></td></tr>`;
+    h += `<tr><td><b>${escHtml(sp.name)}</b>${sp.note?`<div class="hint" style="margin:2px 0 0">${escHtml(sp.note)}</div>`:''}</td><td class="num ${clsForLiab(sp.balance)}">${fmt(sp.balance)}</td><td>${supplierBadge(sp.balance)}</td><td><button class="btn" style="padding:4px 9px" onclick="removeSupplierManual('${jsStr(sp.id)}')">حذف</button></td></tr>`;
   });
   if(!s.hasControl && !manualRows.length){
     h += `<tr><td colspan="4"><div class="hint" style="margin:0">لا يوجد حساب ذمم دائنة تجارية (AP) بالبيانات المستوردة، وما أضفت أي مورد يدوي بعد.</div></td></tr>`;
   }
-  h += `<tr class="tot"><td>إجمالي الذمم الدائنة التجارية</td><td class="num ${clsFor(s.net)}">${fmt(s.net)}</td><td>${supplierBadge(s.net)}</td><td></td></tr>`;
-  h += `</tbody></table></div><p class="hint" style="margin-top:10px;color:var(--text-muted);font-size:12px">موجب = دفعنا مقدماً (رصيد مدين لصالحنا على حساب الموردين)، سالب = لسا علينا للمورد (ذمم دائنة قائمة).</p>`;
+  h += `<tr class="tot"><td>إجمالي الذمم الدائنة التجارية</td><td class="num ${clsForLiab(s.display)}">${fmt(s.display)}</td><td>${supplierBadge(s.display)}</td><td></td></tr>`;
+  h += `</tbody></table></div><p class="hint" style="margin-top:10px;color:var(--text-muted);font-size:12px">هذا القسم معروض بنفس نمط محرك القوائم الختامية (الالتزامات معروضة موجبة): موجب = علينا للمورد (ذمم قائمة)، سالب = دفعنا مقدماً (رصيد مدين لصالحنا) — بعكس اتجاه جدول البنوك أعلاه.</p>`;
   wrap.innerHTML = h;
 }
 
@@ -737,9 +758,9 @@ function renderDue(){
   const g = grandTotalAt(m);
   let h = `<div class="twrap"><table class="dt"><thead><tr><th>البند</th><th class="num">الصافي</th><th>الحالة</th></tr></thead><tbody>`;
   h += `<tr><td>إجمالي البنوك</td><td class="num ${clsFor(g.banks)}">${fmt(g.banks)}</td><td>${dueBadge(g.banks)}</td></tr>`;
-  h += `<tr><td>إجمالي الذمم الدائنة التجارية</td><td class="num ${clsFor(g.suppliers)}">${fmt(g.suppliers)}</td><td>${supplierBadge(g.suppliers)}</td></tr>`;
+  h += `<tr><td>إجمالي الذمم الدائنة التجارية</td><td class="num ${clsFor(g.suppliers)}">${fmt(g.suppliers)}</td><td>${dueBadge(g.suppliers)}</td></tr>`;
   h += `<tr class="tot"><td>المستحق الإجمالي (بنوك + ذمم تجارية)</td><td class="num ${clsFor(g.grand)}"><b>${fmt(g.grand)}</b></td><td>${dueBadge(g.grand)}</td></tr>`;
-  h += `</tbody></table></div>`;
+  h += `</tbody></table></div><p class="hint" style="margin-top:10px;color:var(--text-muted);font-size:12px">هالجدول موحّد باتجاه جدول البنوك (سالب = علينا، موجب = فائض لنا) — بعكس بطاقة "الذمم الدائنة التجارية" أعلاه اللي معروضة بنمط محرك القوائم الختامية (الالتزامات موجبة).</p>`;
   wrap.innerHTML = h;
 }
 
@@ -833,7 +854,7 @@ function renderSummary(){
   const maxAbs = Math.max(1, ...rows.map(r=>Math.abs(r.net)));
   bEl.innerHTML = rows.length ? `<div class="twrap"><table class="dt"><thead><tr><th>البنك</th><th class="num">الرصيد</th><th class="num">الصافي</th><th>النسبة</th><th>الحالة</th></tr></thead><tbody>`+
     rows.map(r=>`<tr><td><b>${escHtml(r.bank)}</b></td><td class="num">${fmt(r.balanceMain)}</td><td class="num ${clsFor(r.net)}"><b>${fmt(r.net)}</b></td><td><div class="rank-bar"><i style="width:${Math.max(3,Math.abs(r.net)/maxAbs*100)}%;background:${r.net<0?'var(--bad)':'var(--good)'}"></i></div></td><td>${netBadge(r.net)}</td></tr>`).join('')
-    +`<tr><td><b>الذمم الدائنة التجارية</b></td><td class="num">—</td><td class="num ${clsFor(S.net)}"><b>${fmt(S.net)}</b></td><td></td><td>${supplierBadge(S.net)}</td></tr>`
+    +`<tr><td><b>الذمم الدائنة التجارية</b></td><td class="num">—</td><td class="num ${clsFor(S.net)}"><b>${fmt(S.net)}</b></td><td></td><td>${dueBadge(S.net)}</td></tr>`
     +`</tbody></table></div>` : emptyState();
 
   const months = (function(){ const all = monthRange(DATA_MIN_MONTH||m, m); return all.length>12 ? all.slice(-12) : all; })();
