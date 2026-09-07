@@ -241,20 +241,38 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--ink-faint);}
         <div class="quick-card" onclick="goView('summary')"><div class="qc-top"><div class="quick-ic" style="background:#FBEDEA;color:var(--bad)">🧾</div><span class="qc-badge">متوفر</span></div><b>الملخص التنفيذي</b><span class="qc-desc">كم تدين به الشركة لكل بنك، والاتجاه الشهري الإجمالي للسداد والاقتراض</span><div class="qc-foot"><span class="qc-open">افتح الملخص ←</span></div></div>
       </div>
       <div class="kpi-grid" id="ovKpis"></div>
-      <div class="card"><h3>ترتيب البنوك حسب صافي المديونية (أحدث شهر متوفر)</h3><div class="hint">الصافي = الرصيد + أوراق الدفع (الكمبيالات) − التأمينات النقدية − شيكات برسم التحصيل. رقم موجب يعني أن البنك «له» عندنا (مديونية علينا)، والسالب يعني أن رصيدنا فائض لصالحنا.</div><div id="ovRank"></div></div>
+      <div class="card"><h3>ترتيب البنوك حسب الصافي (أحدث شهر متوفر)</h3><div class="hint">الصافي = الرصيد + تأمينات نقدية + شيكات برسم التحصيل + أوراق الدفع. رقم سالب يعني أننا مدينون للبنك (علينا)، والموجب يعني أن رصيدنا فائض لصالحنا (لنا).</div><div id="ovRank"></div></div>
     </section>
 
     <!-- ===================== SNAPSHOT ===================== -->
     <section class="view" id="view-snapshot">
       <div class="pg"><div><div class="eye">AS OF DATE</div><h2>كشف الأرصدة بتاريخ محدد</h2><p>اضغط على اسم أي بنك رئيسي لعرض حساباته الفرعية (تأمينات، شيكات تحصيل، أرصدة جارية/تسهيلات، كمبيالات) وأرصدتها كل واحد على حدة.</p></div></div>
       <div class="toolbar">
-        <label>حتى تاريخ <input type="date" id="snapDate" value="2025-12-31" onchange="renderSnapshot()"></label>
+        <label>حتى تاريخ <input type="date" id="snapDate" value="2025-12-31" onchange="renderSnapshotAll()"></label>
         <label>بحث <input type="text" id="snapSearch" placeholder="اسم البنك…" oninput="renderSnapshot()"></label>
         <div class="sp1"></div>
         <button class="btn" onclick="expandAllSnap(true)">توسيع الكل</button>
         <button class="btn" onclick="expandAllSnap(false)">طيّ الكل</button>
       </div>
       <div id="snapWrap"></div>
+
+      <div class="card" style="margin-top:20px">
+        <h3>ذمم الموردين</h3>
+        <div class="hint">رصيد تقديري = رصيد حساب/حسابات الذمم الدائنة التجارية بعد استبعاد ما هو مصنّف أصلاً كتسهيلات بنكية بالجدول أعلاه (تفادياً لاحتساب نفس المبلغ مرتين). أضف أسماء موردين يدوياً إذا عندك تفصيل أدق — تُحفظ برصيد ثابت غير مرتبط بالتاريخ المختار.</div>
+        <div id="suppWrap"></div>
+        <form class="toolbar" style="margin:12px 0 0" onsubmit="event.preventDefault();addSupplierManual(this.sname.value,this.sbal.value,this.snote.value);this.reset();">
+          <label>اسم المورد <input type="text" name="sname" placeholder="مثال: مورد المواد الأولية" required></label>
+          <label>الرصيد (سالب = علينا) <input type="number" step="any" name="sbal" placeholder="-15000" required></label>
+          <label>ملاحظة <input type="text" name="snote" placeholder="اختياري"></label>
+          <button class="btn primary" type="submit">+ إضافة مورد</button>
+        </form>
+      </div>
+
+      <div class="card" style="margin-top:20px">
+        <h3>المستحق الإجمالي — بنوك + موردون</h3>
+        <div class="hint">مجموع صافي كل البنوك مع صافي الموردين بنفس تاريخ الكشف أعلاه.</div>
+        <div id="dueWrap"></div>
+      </div>
     </section>
 
     <!-- ===================== MONTHLY ===================== -->
@@ -271,7 +289,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--ink-faint);}
 
     <!-- ===================== PERIOD ===================== -->
     <section class="view" id="view-period">
-      <div class="pg"><div><div class="eye">PERIOD COMPARE</div><h2>مقارنة بين فترتين</h2><p>لكل بنك: الصافي في بداية الفترة، الصافي في نهايتها، والتغيّر بينهما — تغيّر سالب يعني سداد (تحسّن)، وموجب يعني اقتراض إضافي.</p></div></div>
+      <div class="pg"><div><div class="eye">PERIOD COMPARE</div><h2>مقارنة بين فترتين</h2><p>لكل بنك: الصافي في بداية الفترة، الصافي في نهايتها، والتغيّر بينهما — تغيّر موجب يعني تحسّن (سداد دين أو زيادة رصيد)، وسالب يعني تراجع (اقتراض إضافي أو سحب من رصيد فائض).</p></div></div>
       <div class="toolbar">
         <label>من تاريخ <input type="date" id="pFrom" value="2024-12-31" onchange="renderPeriod()"></label>
         <label>إلى تاريخ <input type="date" id="pTo" value="2025-12-31" onchange="renderPeriod()"></label>
@@ -286,8 +304,8 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--ink-faint);}
         <label>حتى تاريخ <input type="date" id="sumDate" value="2025-12-31" onchange="renderSummary()"></label>
       </div>
       <div class="kpi-grid" id="sumKpis"></div>
-      <div class="card"><h3 id="sumBankTitle">صافي المديونية لكل بنك</h3><div id="sumBankTable"></div></div>
-      <div class="card"><h3>الحركة الشهرية الإجمالية — سداد أو اقتراض</h3><div class="hint">آخر 12 شهراً تنتهي بتاريخ «حتى تاريخ» أعلاه. موجب = زيادة صافي المديونية (اقتراض إضافي)، سالب = انخفاضها (سداد).</div><div id="sumMonthly"></div></div>
+      <div class="card"><h3 id="sumBankTitle">صافي كل بنك</h3><div id="sumBankTable"></div></div>
+      <div class="card"><h3>الحركة الشهرية الإجمالية — سداد أو اقتراض</h3><div class="hint">آخر 12 شهراً تنتهي بتاريخ «حتى تاريخ» أعلاه. موجب = تحسّن الصافي (سداد)، سالب = تراجعه (اقتراض إضافي).</div><div id="sumMonthly"></div></div>
     </section>
   </main>
 </div>
@@ -407,15 +425,15 @@ function bankSumRole(bankName, role, monthKey){
   return (g[role]||[]).reduce((a,c)=>a+balAsOfAny(c,monthKey),0);
 }
 
-/* debt-positive convention: رصيد/أوراق دفع موجب = علينا، تأمينات/شيكات موجب = أصل لنا */
+/* اتجاه الإشارة: موجب = رصيد/فائض لنا (البنك أو المورد مدين لنا أو متوازن)، سالب = علينا (نحن مدينون) */
 function bankAggAt(bankName, monthKey){
   const dr = bankSumRole(bankName,'DR',monthKey), cr = bankSumRole(bankName,'CR',monthKey);
-  const balanceMain = -(dr+cr);
+  const balanceMain = dr+cr;
   const margin = bankSumRole(bankName,'MARGIN',monthKey);
   const chq = bankSumRole(bankName,'CHQ',monthKey);
   const manual = (RAW.bankManual && RAW.bankManual[bankName]) || {};
-  const notes = -bankSumRole(bankName,'NOTES',monthKey) + toNum(manual.notes);
-  const net = balanceMain + notes - margin - chq;
+  const notes = bankSumRole(bankName,'NOTES',monthKey) - toNum(manual.notes);
+  const net = balanceMain + margin + chq + notes;
   const nAcc = ['DR','CR','MARGIN','CHQ','NOTES'].reduce((a,r)=>a+((GROUPS[bankName]&&GROUPS[bankName][r])||[]).length,0);
   return { bank:bankName, balanceMain, margin, chq, notes, net, nAcc, limit: toNum(manual.limit) };
 }
@@ -430,6 +448,74 @@ function totalsAt(monthKey){
 }
 
 /* ============================================================
+   SUPPLIERS / TRADE PAYABLES (ذمم الموردين)
+   نفس اتجاه إشارة البنوك: موجب = لنا، سالب = علينا.
+   الرصيد المحتسب = رصيد حساب/حسابات الذمم الدائنة (AP) بعد طرح كل
+   أرصدة شركاء الأعمال (BP) المصنّفين أصلاً كتسهيلات بنكية ضمن جدول
+   البنوك، حتى ما ينحسب نفس المبلغ مرتين. + أي بنود يدوية يضيفها المستخدم.
+   ============================================================ */
+function apControlCodes(){
+  if(!RAW) return [];
+  return Object.keys(RAW.map||{}).filter(c=>RAW.map[c]==='AP' && RAW.accounts && RAW.accounts[c] && RAW.accounts[c].post);
+}
+function bpCtrlSet(){
+  const set = {};
+  Object.entries((RAW&&RAW.bp)||{}).forEach(([v,info])=>{ set[info.ctrl] = set[info.ctrl]||[]; set[info.ctrl].push(v); });
+  return set;
+}
+function suppliersResidualAt(monthKey){
+  if(!RAW || !GL) return 0;
+  const ctrlMap = bpCtrlSet();
+  let total = 0;
+  apControlCodes().forEach(code=>{
+    total += balAsOf(GL, code, monthKey);
+    (ctrlMap[code]||[]).forEach(v=>{ total -= balAsOf(BP, v, monthKey); });
+  });
+  return total;
+}
+function suppliersManualList(){ return (RAW && RAW.suppliersManual) || []; }
+function suppliersManualTotal(){ return suppliersManualList().reduce((a,s)=>a+toNum(s.balance),0); }
+function suppliersAgg(monthKey){
+  const residual = suppliersResidualAt(monthKey);
+  const manual = suppliersManualTotal();
+  return { residual, manual, net: residual+manual, hasControl: apControlCodes().length>0 };
+}
+function addSupplierManual(name, balance, note){
+  if(!name || !name.trim()) return;
+  RAW.suppliersManual = RAW.suppliersManual || [];
+  RAW.suppliersManual.push({ id:'sm'+Date.now()+Math.random().toString(36).slice(2,6), name:name.trim(), balance:toNum(balance), note:note||'' });
+  persistRaw();
+  renderAll();
+}
+function removeSupplierManual(id){
+  if(!RAW || !RAW.suppliersManual) return;
+  RAW.suppliersManual = RAW.suppliersManual.filter(s=>s.id!==id);
+  persistRaw();
+  renderAll();
+}
+function persistRaw(){ try{ localStorage.setItem(LSK, JSON.stringify(RAW)); }catch(e){ console.warn('localStorage save failed', e); } }
+
+/* المستحق الإجمالي = صافي كل البنوك + صافي الموردين، بنفس اتجاه الإشارة (سالب = علينا) */
+function grandTotalAt(monthKey){
+  const t = totalsAt(monthKey), s = suppliersAgg(monthKey);
+  return { banks:t.net, suppliers:s.net, grand:t.net+s.net };
+}
+
+/* تسمية اتجاه الحركة بين تاريخين: تراعي إن كنا مدينين أو صاحبي فائض */
+function moveLabel(prevNet, curNet){
+  const delta = curNet - prevNet;
+  if(Math.abs(delta) < 0.5) return 'بدون تغيير';
+  const owedAtEither = (prevNet < -0.5) || (curNet < -0.5);
+  if(owedAtEither) return delta < 0 ? 'اقتراض إضافي' : 'سداد';
+  return delta > 0 ? 'زيادة الرصيد' : 'سحب من الرصيد';
+}
+function moveBadge(prevNet, curNet){
+  const delta = curNet - prevNet;
+  const cls = delta>0.5?'good':(delta<-0.5?'bad':'mut');
+  return '<span class="badge '+cls+'">'+moveLabel(prevNet,curNet)+'</span>';
+}
+
+/* ============================================================
    FORMAT HELPERS
    ============================================================ */
 function fmt(n){
@@ -437,11 +523,17 @@ function fmt(n){
   const s = Math.round(Math.abs(n)).toLocaleString('en-US');
   return (n < 0 ? '−' : '') + s;
 }
-function clsFor(n){ n = toNum(n); return n>0.5 ? 'v-bad' : (n<-0.5 ? 'v-good' : 'v-mut'); }
+function clsFor(n){ n = toNum(n); return n>0.5 ? 'v-good' : (n<-0.5 ? 'v-bad' : 'v-mut'); }
 function netBadge(n){
   n = toNum(n);
-  if(n>0.5) return '<span class="badge bad">البنك له علينا</span>';
-  if(n<-0.5) return '<span class="badge good">رصيدنا فائض</span>';
+  if(n>0.5) return '<span class="badge good">لنا عند البنك</span>';
+  if(n<-0.5) return '<span class="badge bad">علينا للبنك</span>';
+  return '<span class="badge mut">متوازن</span>';
+}
+function dueBadge(n){
+  n = toNum(n);
+  if(n>0.5) return '<span class="badge good">فائض لنا</span>';
+  if(n<-0.5) return '<span class="badge bad">مستحق علينا</span>';
   return '<span class="badge mut">متوازن</span>';
 }
 function dateToMonth(dateStr){ return (dateStr||'').slice(0,7); }
@@ -535,7 +627,7 @@ function goView(v){
 document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click', ()=>goView(b.dataset.v)));
 
 function renderAll(){
-  renderOverview(); renderSnapshot(); renderMonthly(); renderPeriod(); renderSummary();
+  renderOverview(); renderSnapshotAll(); renderMonthly(); renderPeriod(); renderSummary();
 }
 
 /* ============================================================
@@ -544,17 +636,17 @@ function renderAll(){
 function renderOverview(){
   const kEl = document.getElementById('ovKpis'), rEl = document.getElementById('ovRank');
   if(!GL || !DATA_MAX_MONTH){ kEl.innerHTML=''; rEl.innerHTML = emptyState(); return; }
-  const m = DATA_MAX_MONTH, t = totalsAt(m);
+  const m = DATA_MAX_MONTH, t = totalsAt(m), s = suppliersAgg(m), grand = t.net+s.net;
   kEl.innerHTML = [
-    kpi('إجمالي الصافي مع البنوك', fmt(t.net), t.net>0?'bad':(t.net<0?'good':''), 'حتى '+m, t.net>0?'var(--bad)':'var(--good)'),
-    kpi('عدد البنوك', allBankNames().length, '', 'حساب بنكي: '+t.nAcc, 'var(--gold-d)'),
-    kpi('إجمالي التأمينات النقدية', fmt(t.margin), '', 'أصل مجمّد لدى البنوك', 'var(--good)'),
-    kpi('إجمالي شيكات برسم التحصيل', fmt(t.chq), '', 'أصل قيد التحصيل', 'var(--gold-d)'),
+    kpi('المستحق الإجمالي (بنوك + موردون)', fmt(grand), grand<0?'bad':(grand>0?'good':''), 'حتى '+m, grand<0?'var(--bad)':'var(--good)'),
+    kpi('صافي البنوك', fmt(t.net), '', allBankNames().length+' بنك · '+t.nAcc+' حساب', t.net<0?'var(--bad)':'var(--good)'),
+    kpi('صافي الموردين', fmt(s.net), '', 'ذمم دائنة تجارية', s.net<0?'var(--bad)':'var(--good)'),
+    kpi('إجمالي التأمينات النقدية', fmt(t.margin), '', 'أصل مجمّد لدى البنوك', 'var(--gold-d)'),
   ].join('');
-  const rows = allBankNames().map(b=>bankAggAt(b,m)).sort((a,b)=>b.net-a.net);
+  const rows = allBankNames().map(b=>bankAggAt(b,m)).sort((a,b)=>a.net-b.net);
   const maxAbs = Math.max(1, ...rows.map(r=>Math.abs(r.net)));
   rEl.innerHTML = rows.length ? `<div class="twrap"><table class="dt"><thead><tr><th>البنك</th><th class="num">الصافي</th><th>النسبة</th><th></th></tr></thead><tbody>`+
-    rows.map(r=>`<tr><td><b>${escHtml(r.bank)}</b></td><td class="num ${clsFor(r.net)}">${fmt(r.net)}</td><td><div class="rank-bar"><i style="width:${Math.max(3,Math.abs(r.net)/maxAbs*100)}%;background:${r.net>0?'var(--bad)':'var(--good)'}"></i></div></td><td>${netBadge(r.net)}</td></tr>`).join('')
+    rows.map(r=>`<tr><td><b>${escHtml(r.bank)}</b></td><td class="num ${clsFor(r.net)}">${fmt(r.net)}</td><td><div class="rank-bar"><i style="width:${Math.max(3,Math.abs(r.net)/maxAbs*100)}%;background:${r.net<0?'var(--bad)':'var(--good)'}"></i></div></td><td>${netBadge(r.net)}</td></tr>`).join('')
     +`</tbody></table></div>` : emptyState();
 }
 function kpi(label, val, cls, sub, color){
@@ -589,12 +681,11 @@ function renderSnapshot(){
       `<td class="num ${clsFor(r.net)}"><b>${fmt(r.net)}</b></td><td>${netBadge(r.net)}</td></tr>`;
     if(open){
       const g = GROUPS[r.bank]||{};
-      let sub = `<table class="sub-tbl"><tr><th>الحساب</th><th>الدور</th><th class="num">الرصيد (بمنطق الصافي)</th></tr>`;
+      let sub = `<table class="sub-tbl"><tr><th>الحساب</th><th>الدور</th><th class="num">الرصيد</th></tr>`;
       ['CR','DR','MARGIN','CHQ','NOTES'].forEach(role=>{
         (g[role]||[]).forEach(code=>{
-          const raw = balAsOfAny(code, m);
-          const display = (role==='CR'||role==='DR') ? -raw : (role==='NOTES' ? -raw : raw);
-          sub += `<tr><td class="mono" style="direction:rtl">${escHtml(accountLabel(code))}</td><td><span class="role-chip ${role}">${ROLE_LBL[role]}</span></td><td class="num ${clsFor(role==='MARGIN'||role==='CHQ'?0:display)}">${fmt(display)}</td></tr>`;
+          const display = balAsOfAny(code, m);
+          sub += `<tr><td class="mono" style="direction:rtl">${escHtml(accountLabel(code))}</td><td><span class="role-chip ${role}">${ROLE_LBL[role]}</span></td><td class="num ${clsFor(display)}">${fmt(display)}</td></tr>`;
         });
       });
       sub += `</table>`;
@@ -602,10 +693,50 @@ function renderSnapshot(){
     }
   });
   h += `<tr class="tot"><td>إجمالي البنوك</td><td class="num">${T.nAcc}</td><td class="num">${fmt(T.balanceMain)}</td><td class="num">${fmt(T.margin)}</td><td class="num">${fmt(T.chq)}</td><td class="num">${fmt(T.notes)}</td><td class="num ${clsFor(T.net)}">${fmt(T.net)}</td><td>${netBadge(T.net)}</td></tr>`;
-  h += `</tbody></table></div><p class="hint" style="margin-top:10px;color:var(--text-muted);font-size:12px">الصافي = الرصيد + أوراق الدفع (الكمبيالات) − التأمينات النقدية − شيكات برسم التحصيل. بيانات كتاريخ ${dateVal} (حسب شهر ${m}).</p>`;
+  h += `</tbody></table></div><p class="hint" style="margin-top:10px;color:var(--text-muted);font-size:12px">الصافي = الرصيد + تأمينات نقدية + شيكات برسم التحصيل + أوراق الدفع (بنفس اتجاه إشارتها). موجب = رصيدنا فائض لدى البنك، سالب = علينا للبنك. بيانات كتاريخ ${dateVal} (حسب شهر ${m}).</p>`;
   wrap.innerHTML = rows.length ? h : emptyState();
 }
 function jsStr(s){ return String(s).replace(/\\/g,'\\\\').replace(/'/g,"\\'"); }
+
+function renderSuppliers(){
+  const wrap = document.getElementById('suppWrap');
+  if(!wrap) return;
+  if(!GL){ wrap.innerHTML = ''; return; }
+  const dateVal = document.getElementById('snapDate').value || '2025-12-31';
+  const m = dateToMonth(dateVal);
+  const s = suppliersAgg(m);
+  const manualRows = suppliersManualList();
+  let h = `<div class="twrap"><table class="dt"><thead><tr><th>المورد</th><th class="num">الرصيد</th><th>الحالة</th><th></th></tr></thead><tbody>`;
+  if(s.hasControl){
+    h += `<tr><td><b>ذمم موردين أخرى (تقديري من الحسابات)</b></td><td class="num ${clsFor(s.residual)}">${fmt(s.residual)}</td><td>${dueBadge(s.residual)}</td><td></td></tr>`;
+  }
+  manualRows.forEach(sp=>{
+    h += `<tr><td><b>${escHtml(sp.name)}</b>${sp.note?`<div class="hint" style="margin:2px 0 0">${escHtml(sp.note)}</div>`:''}</td><td class="num ${clsFor(sp.balance)}">${fmt(sp.balance)}</td><td>${dueBadge(sp.balance)}</td><td><button class="btn" style="padding:4px 9px" onclick="removeSupplierManual('${jsStr(sp.id)}')">حذف</button></td></tr>`;
+  });
+  if(!s.hasControl && !manualRows.length){
+    h += `<tr><td colspan="4"><div class="hint" style="margin:0">لا يوجد حساب ذمم موردين (AP) بالبيانات المستوردة، وما أضفت أي مورد يدوي بعد.</div></td></tr>`;
+  }
+  h += `<tr class="tot"><td>إجمالي الموردين</td><td class="num ${clsFor(s.net)}">${fmt(s.net)}</td><td>${dueBadge(s.net)}</td><td></td></tr>`;
+  h += `</tbody></table></div>`;
+  wrap.innerHTML = h;
+}
+
+function renderDue(){
+  const wrap = document.getElementById('dueWrap');
+  if(!wrap) return;
+  if(!GL){ wrap.innerHTML = emptyState(); return; }
+  const dateVal = document.getElementById('snapDate').value || '2025-12-31';
+  const m = dateToMonth(dateVal);
+  const g = grandTotalAt(m);
+  let h = `<div class="twrap"><table class="dt"><thead><tr><th>البند</th><th class="num">الصافي</th><th>الحالة</th></tr></thead><tbody>`;
+  h += `<tr><td>إجمالي البنوك</td><td class="num ${clsFor(g.banks)}">${fmt(g.banks)}</td><td>${dueBadge(g.banks)}</td></tr>`;
+  h += `<tr><td>إجمالي الموردين</td><td class="num ${clsFor(g.suppliers)}">${fmt(g.suppliers)}</td><td>${dueBadge(g.suppliers)}</td></tr>`;
+  h += `<tr class="tot"><td>المستحق الإجمالي (بنوك + موردون)</td><td class="num ${clsFor(g.grand)}"><b>${fmt(g.grand)}</b></td><td>${dueBadge(g.grand)}</td></tr>`;
+  h += `</tbody></table></div>`;
+  wrap.innerHTML = h;
+}
+
+function renderSnapshotAll(){ renderSnapshot(); renderSuppliers(); renderDue(); }
 
 /* ============================================================
    MONTHLY TREND
@@ -622,7 +753,7 @@ function renderMonthly(){
   let prevNet = null; const series = [];
   months.forEach(k=>{
     const a = aggAt(k); const delta = prevNet===null ? 0 : (a.net-prevNet);
-    const state = prevNet===null ? '—' : (delta>0.5 ? '<span class="badge bad">اقتراض إضافي</span>' : (delta<-0.5 ? '<span class="badge good">سداد</span>' : '<span class="badge mut">بدون تغيير</span>'));
+    const state = prevNet===null ? '—' : moveBadge(prevNet, a.net);
     h += `<tr><td class="mono">${k}</td><td class="num">${fmt(a.balanceMain)}</td><td class="num">${fmt(a.margin)}</td><td class="num">${fmt(a.chq)}</td><td class="num">${fmt(a.notes)}</td><td class="num ${clsFor(a.net)}"><b>${fmt(a.net)}</b></td><td class="num ${clsFor(delta)}">${prevNet===null?'—':fmt(delta)}</td><td>${state}</td></tr>`;
     series.push(a.net); prevNet = a.net;
   });
@@ -641,7 +772,7 @@ function sparkline(labels, series){
   const path = pts.map((p,i)=>(i===0?'M':'L')+p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ');
   const zeroY = y(0);
   const last = series[series.length-1]||0;
-  const lastColor = last>0.5 ? '#C2410C' : (last<-0.5 ? '#177552' : '#8A6A2E');
+  const lastColor = last<-0.5 ? '#C2410C' : (last>0.5 ? '#177552' : '#8A6A2E');
   let svg = `<svg viewBox="0 0 ${w} ${hgt}" style="width:100%;height:${hgt}px" preserveAspectRatio="none">`;
   svg += `<line x1="${pad}" y1="${zeroY.toFixed(1)}" x2="${w-pad}" y2="${zeroY.toFixed(1)}" stroke="#E2E6EE" stroke-dasharray="4 4"/>`;
   svg += `<path d="${path}" fill="none" stroke="${lastColor}" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>`;
@@ -666,12 +797,11 @@ function renderPeriod(){
   const Ts = totalsAt(mFrom), Te = totalsAt(mTo);
   let h = `<div class="twrap"><table class="dt"><thead><tr><th>البنك</th><th class="num">الصافي أول الفترة</th><th class="num">الصافي آخر الفترة</th><th class="num">التغيّر</th><th>الحالة</th></tr></thead><tbody>`;
   rows.forEach(r=>{
-    const state = r.delta>0.5 ? '<span class="badge bad">اقتراض إضافي</span>' : (r.delta<-0.5 ? '<span class="badge good">سداد</span>' : '<span class="badge mut">بدون تغيير</span>');
-    h += `<tr><td><b>${escHtml(r.bank)}</b></td><td class="num ${clsFor(r.s.net)}">${fmt(r.s.net)}</td><td class="num ${clsFor(r.e.net)}">${fmt(r.e.net)}</td><td class="num ${clsFor(r.delta)}"><b>${fmt(r.delta)}</b></td><td>${state}</td></tr>`;
+    h += `<tr><td><b>${escHtml(r.bank)}</b></td><td class="num ${clsFor(r.s.net)}">${fmt(r.s.net)}</td><td class="num ${clsFor(r.e.net)}">${fmt(r.e.net)}</td><td class="num ${clsFor(r.delta)}"><b>${fmt(r.delta)}</b></td><td>${moveBadge(r.s.net,r.e.net)}</td></tr>`;
   });
   const totDelta = Te.net-Ts.net;
-  h += `<tr class="tot"><td>إجمالي البنوك</td><td class="num">${fmt(Ts.net)}</td><td class="num">${fmt(Te.net)}</td><td class="num ${clsFor(totDelta)}">${fmt(totDelta)}</td><td>${totDelta>0.5?'<span class="badge bad">اقتراض إضافي</span>':(totDelta<-0.5?'<span class="badge good">سداد</span>':'<span class="badge mut">بدون تغيير</span>')}</td></tr>`;
-  h += `</tbody></table></div>`;
+  h += `<tr class="tot"><td>إجمالي البنوك</td><td class="num">${fmt(Ts.net)}</td><td class="num">${fmt(Te.net)}</td><td class="num ${clsFor(totDelta)}">${fmt(totDelta)}</td><td>${moveBadge(Ts.net,Te.net)}</td></tr>`;
+  h += `</tbody></table></div><p class="hint" style="margin-top:10px;color:var(--text-muted);font-size:12px">التغيّر موجب = تحسّن (سداد دين أو زيادة رصيد)، سالب = تراجع (اقتراض إضافي أو سحب من رصيد فائض).</p>`;
   wrap.innerHTML = rows.length ? h : emptyState();
 }
 
@@ -683,27 +813,28 @@ function renderSummary(){
   if(!GL){ kEl.innerHTML=''; bEl.innerHTML = emptyState(); mEl.innerHTML=''; return; }
   const dateVal = document.getElementById('sumDate').value || '2025-12-31';
   const m = dateToMonth(dateVal);
-  const rows = allBankNames().map(b=>bankAggAt(b,m)).sort((a,b)=>b.net-a.net);
-  const T = totalsAt(m);
+  const rows = allBankNames().map(b=>bankAggAt(b,m)).sort((a,b)=>a.net-b.net);
+  const T = totalsAt(m), S = suppliersAgg(m), grand = T.net+S.net;
   const top = rows[0], bottom = rows[rows.length-1];
   kEl.innerHTML = [
-    kpi('إجمالي الصافي مع كل البنوك', fmt(T.net), T.net>0?'bad':'good', 'حتى '+dateVal, T.net>0?'var(--bad)':'var(--good)'),
-    top ? kpi('أعلى بنك مديونية', escHtml(top.bank), '', fmt(top.net), 'var(--bad)') : '',
-    bottom && bottom.net<0 ? kpi('أعلى بنك رصيد فائض لنا', escHtml(bottom.bank), '', fmt(bottom.net), 'var(--good)') : '',
-    kpi('عدد البنوك المتعامل معها', allBankNames().length, '', '', 'var(--gold-d)'),
+    kpi('المستحق الإجمالي (بنوك + موردون)', fmt(grand), grand<0?'bad':'good', 'حتى '+dateVal, grand<0?'var(--bad)':'var(--good)'),
+    top && top.net<0 ? kpi('أعلى بنك مديونية', escHtml(top.bank), '', fmt(top.net), 'var(--bad)') : '',
+    bottom && bottom.net>0 ? kpi('أعلى بنك رصيد فائض لنا', escHtml(bottom.bank), '', fmt(bottom.net), 'var(--good)') : '',
+    kpi('صافي الموردين', fmt(S.net), '', '', S.net<0?'var(--bad)':'var(--good)'),
   ].join('');
-  document.getElementById('sumBankTitle').textContent = 'صافي المديونية لكل بنك — حتى '+dateVal;
+  document.getElementById('sumBankTitle').textContent = 'صافي كل بنك — حتى '+dateVal;
   const maxAbs = Math.max(1, ...rows.map(r=>Math.abs(r.net)));
   bEl.innerHTML = rows.length ? `<div class="twrap"><table class="dt"><thead><tr><th>البنك</th><th class="num">الرصيد</th><th class="num">الصافي</th><th>النسبة</th><th>الحالة</th></tr></thead><tbody>`+
-    rows.map(r=>`<tr><td><b>${escHtml(r.bank)}</b></td><td class="num">${fmt(r.balanceMain)}</td><td class="num ${clsFor(r.net)}"><b>${fmt(r.net)}</b></td><td><div class="rank-bar"><i style="width:${Math.max(3,Math.abs(r.net)/maxAbs*100)}%;background:${r.net>0?'var(--bad)':'var(--good)'}"></i></div></td><td>${netBadge(r.net)}</td></tr>`).join('')
+    rows.map(r=>`<tr><td><b>${escHtml(r.bank)}</b></td><td class="num">${fmt(r.balanceMain)}</td><td class="num ${clsFor(r.net)}"><b>${fmt(r.net)}</b></td><td><div class="rank-bar"><i style="width:${Math.max(3,Math.abs(r.net)/maxAbs*100)}%;background:${r.net<0?'var(--bad)':'var(--good)'}"></i></div></td><td>${netBadge(r.net)}</td></tr>`).join('')
+    +`<tr><td><b>ذمم الموردين</b></td><td class="num">—</td><td class="num ${clsFor(S.net)}"><b>${fmt(S.net)}</b></td><td></td><td>${dueBadge(S.net)}</td></tr>`
     +`</tbody></table></div>` : emptyState();
 
   const months = (function(){ const all = monthRange(DATA_MIN_MONTH||m, m); return all.length>12 ? all.slice(-12) : all; })();
-  let mh = `<div class="twrap"><table class="dt"><thead><tr><th>الشهر</th><th class="num">إجمالي الصافي</th><th class="num">التغيّر</th><th>الحالة</th></tr></thead><tbody>`;
+  let mh = `<div class="twrap"><table class="dt"><thead><tr><th>الشهر</th><th class="num">إجمالي صافي البنوك</th><th class="num">التغيّر</th><th>الحالة</th></tr></thead><tbody>`;
   let prev = null;
   months.forEach(k=>{
     const t = totalsAt(k); const delta = prev===null?0:(t.net-prev);
-    const state = prev===null?'—':(delta>0.5?'<span class="badge bad">اقتراض</span>':(delta<-0.5?'<span class="badge good">سداد</span>':'<span class="badge mut">بدون تغيير</span>'));
+    const state = prev===null?'—':moveBadge(prev,t.net);
     mh += `<tr><td class="mono">${k}</td><td class="num ${clsFor(t.net)}">${fmt(t.net)}</td><td class="num ${clsFor(delta)}">${prev===null?'—':fmt(delta)}</td><td>${state}</td></tr>`;
     prev = t.net;
   });
