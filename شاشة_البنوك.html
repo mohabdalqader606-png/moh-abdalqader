@@ -170,6 +170,37 @@ table.dt tr.detail-row>td{padding:0;border-bottom:1px solid var(--line);}
 
 footer{text-align:center;padding:20px;font-size:11px;color:var(--ink-faint);}
 
+/* ================= MOVEMENT REPORT ================= */
+.report-head{display:none;}
+.report-head.show{display:block;text-align:center;padding:10px 0 22px;border-bottom:2px solid var(--gold-d);margin-bottom:18px;}
+.report-head .rh-co{font-size:12px;color:var(--gold-d-ink);font-weight:700;letter-spacing:.5px;}
+.report-head .rh-ti{font-family:var(--font-head);font-size:24px;font-weight:800;color:var(--text);margin:4px 0;}
+.report-head .rh-sub{font-size:13px;color:var(--text-muted);}
+.rep-exec{font-size:13px;line-height:2;color:var(--text);margin:0 0 4px;}
+.rep-exec b{color:var(--gold-d-ink);}
+.rep-bank{background:var(--card);border:1px solid var(--line);border-radius:var(--r-card);box-shadow:var(--shadow);padding:16px 18px;margin-bottom:14px;}
+.rep-bank-h{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;}
+.rep-bank-h h4{margin:0;font-family:var(--font-head);font-size:15px;color:var(--text);}
+.rep-bank-h .rb-net{font-family:var(--font-mono);font-size:15px;font-weight:700;direction:ltr;}
+.rep-bank .rep-narr{font-size:12.5px;line-height:1.9;color:var(--text);margin:12px 0 0;padding-top:12px;border-top:1px dashed var(--line);}
+.rep-bank .rep-body{display:none;}
+.rep-bank.open .rep-body{display:block;}
+.rep-bank .chev{margin-inline-end:4px;}
+
+@media print{
+  .no-print, header, .sb, footer{display:none!important;}
+  main{max-width:100%!important;padding:0!important;margin:0!important;}
+  .app-shell{display:block!important;}
+  body{background:#fff!important;}
+  .report-head{display:none;}
+  #view-report .report-head.show{display:block!important;}
+  .rep-bank{break-inside:avoid;page-break-inside:avoid;box-shadow:none;border-color:#ccc;}
+  .rep-bank .rep-body{display:block!important;}
+  .rep-bank-h .chev{display:none;}
+  .twrap{overflow:visible;}
+  .kpi{break-inside:avoid;}
+}
+
 @media (max-width:900px){
   .sb{position:fixed;inset-inline-start:0;top:var(--hdr-h);height:calc(100vh - var(--hdr-h));width:min(80vw,280px);z-index:59;transform:translateX(100%);transition:transform .2s;box-shadow:0 14px 40px rgba(0,0,0,.4);}
   .sb.open{transform:translateX(0);}
@@ -200,6 +231,7 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--ink-faint);}
     <button class="nav-btn" data-v="monthly"><span class="ic">📅</span> الحركة الشهرية</button>
     <button class="nav-btn" data-v="period"><span class="ic">⇄</span> مقارنة بين فترتين</button>
     <button class="nav-btn" data-v="summary"><span class="ic">🧾</span> الملخص التنفيذي</button>
+    <button class="nav-btn" data-v="report"><span class="ic">📄</span> تقرير الحركة</button>
     <div class="sb-note" id="sbNote">استورد ملف نسخة احتياطية (JSON) من محرك القوائم الختامية لعرض بيانات البنوك.</div>
   </aside>
 
@@ -306,6 +338,21 @@ footer{text-align:center;padding:20px;font-size:11px;color:var(--ink-faint);}
       <div class="kpi-grid" id="sumKpis"></div>
       <div class="card"><h3 id="sumBankTitle">صافي كل بنك</h3><div id="sumBankTable"></div></div>
       <div class="card"><h3>الحركة الشهرية الإجمالية — سداد أو اقتراض</h3><div class="hint">آخر 12 شهراً تنتهي بتاريخ «حتى تاريخ» أعلاه. موجب = تحسّن الصافي (سداد)، سالب = تراجعه (اقتراض إضافي).</div><div id="sumMonthly"></div></div>
+    </section>
+
+    <!-- ===================== MOVEMENT REPORT ===================== -->
+    <section class="view" id="view-report">
+      <div class="pg no-print"><div><div class="eye">MOVEMENT REPORT</div><h2>تقرير الحركة — بنكاً بنكاً</h2><p>كيف تغيّر وضع الشركة مع كل بنك رئيسي بين تاريخين، مع تفسير لأهم أسباب التغيّر. اضغط «طباعة / PDF» لحفظه أو مشاركته كمستند.</p></div></div>
+      <div class="toolbar no-print">
+        <label>من تاريخ <input type="date" id="repFrom" value="2026-01-01" onchange="renderReport()"></label>
+        <label>إلى تاريخ <input type="date" id="repTo" value="2026-08-31" onchange="renderReport()"></label>
+        <div class="sp1"></div>
+        <button class="btn" onclick="expandAllReport(true)">توسيع الكل</button>
+        <button class="btn" onclick="expandAllReport(false)">طيّ الكل</button>
+        <button class="btn primary" onclick="window.print()">🖨️ طباعة / PDF</button>
+      </div>
+      <div id="repHead" class="report-head"></div>
+      <div id="repWrap"></div>
     </section>
   </main>
 </div>
@@ -564,7 +611,19 @@ function supplierBadge(displayVal){
   if(displayVal<-0.5) return '<span class="badge good">دفعنا مقدماً</span>';
   return '<span class="badge mut">متوازن</span>';
 }
-function dateToMonth(dateStr){ return (dateStr||'').slice(0,7); }
+/* البيانات شهرية (رصيد نهاية كل شهر فقط). "الرصيد بتاريخ" لأي يوم غير آخر يوم
+   بالشهر لازم يرجع رصيد نهاية الشهر السابق (أقرب رصيد فعلي معروف قبل أو بنفس
+   ذاك اليوم) — لا رصيد نهاية الشهر الحالي نفسه، لأنه لسا ما تحقق بعد. */
+function dateToMonth(dateStr){
+  if(!dateStr) return '';
+  const d = new Date(dateStr+'T00:00:00');
+  if(isNaN(d)) return String(dateStr).slice(0,7);
+  const y = d.getFullYear(), m = d.getMonth()+1, day = d.getDate();
+  const lastDay = new Date(y, m, 0).getDate();
+  if(day >= lastDay) return y+'-'+String(m).padStart(2,'0');
+  let py = y, pm = m-1; if(pm===0){ pm=12; py=y-1; }
+  return py+'-'+String(pm).padStart(2,'0');
+}
 function monthLabel(m){ if(!m) return '—'; const [y,mo]=m.split('-'); const N=['','يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر']; return N[+mo]+' '+y; }
 
 /* ============================================================
@@ -644,7 +703,7 @@ function escAttr(s){ return escHtml(s); }
 /* ============================================================
    NAVIGATION
    ============================================================ */
-const VIEW_TITLES = { overview:'نظرة عامة', snapshot:'كشف الأرصدة بتاريخ', monthly:'الحركة الشهرية', period:'مقارنة بين فترتين', summary:'الملخص التنفيذي' };
+const VIEW_TITLES = { overview:'نظرة عامة', snapshot:'كشف الأرصدة بتاريخ', monthly:'الحركة الشهرية', period:'مقارنة بين فترتين', summary:'الملخص التنفيذي', report:'تقرير الحركة' };
 function goView(v){
   document.querySelectorAll('.view').forEach(el=>el.classList.remove('active'));
   document.getElementById('view-'+v).classList.add('active');
@@ -655,7 +714,7 @@ function goView(v){
 document.querySelectorAll('.nav-btn').forEach(b=>b.addEventListener('click', ()=>goView(b.dataset.v)));
 
 function renderAll(){
-  renderOverview(); renderSnapshotAll(); renderMonthly(); renderPeriod(); renderSummary();
+  renderOverview(); renderSnapshotAll(); renderMonthly(); renderPeriod(); renderSummary(); renderReport();
 }
 
 /* ============================================================
@@ -868,6 +927,93 @@ function renderSummary(){
   });
   mh += `</tbody></table></div>`;
   mEl.innerHTML = months.length ? mh : emptyState();
+}
+
+/* ============================================================
+   MOVEMENT REPORT — بنكاً بنكاً بين تاريخين
+   ============================================================ */
+let REP_OPEN = {};
+function expandAllReport(open){ allBankNames().forEach(b=>REP_OPEN[b]=open); renderReport(); }
+function toggleReport(bank){ REP_OPEN[bank] = REP_OPEN[bank]===false; renderReport(); }
+function fmtDateAr(dateStr){
+  if(!dateStr) return '—';
+  const [y,m,d] = dateStr.split('-');
+  return d+'-'+m+'-'+y;
+}
+function reportNarrative(r){
+  const parts = [];
+  const delta = r.e.net - r.s.net;
+  if(Math.abs(delta) < 0.5){
+    return `لا توجد أي حركة تُذكر مع ${r.bank} خلال الفترة — الصافي بقي عند ${fmt(r.e.net)} د.أ تقريباً.`;
+  }
+  const dirWord = delta > 0 ? 'تحسّن' : 'تراجع';
+  parts.push(`${dirWord} الصافي مع ${escHtml(r.bank)} خلال الفترة بمقدار ${fmt(delta)} د.أ، من ${fmt(r.s.net)} د.أ إلى ${fmt(r.e.net)} د.أ (${moveLabel(r.s.net, r.e.net)}).`);
+  const dBalance = r.e.balanceMain-r.s.balanceMain, dMargin = r.e.margin-r.s.margin, dChq = r.e.chq-r.s.chq, dNotes = r.e.notes-r.s.notes;
+  const drivers = [];
+  if(Math.abs(dBalance) > 500) drivers.push(`${dBalance>0?'انخفض':'ارتفع'} الرصيد المدين على الحساب الجاري/التسهيلات بمقدار ${fmt(Math.abs(dBalance))} د.أ`);
+  if(Math.abs(dMargin) > 500) drivers.push(`${dMargin>0?'زادت':'انخفضت'} التأمينات النقدية بمقدار ${fmt(Math.abs(dMargin))} د.أ`);
+  if(Math.abs(dChq) > 500) drivers.push(`${dChq>0?'زادت':'انخفضت (تحصيل)'} شيكات برسم التحصيل بمقدار ${fmt(Math.abs(dChq))} د.أ`);
+  if(Math.abs(dNotes) > 500) drivers.push(`${dNotes>0?'زادت':'انخفضت (سداد)'} أوراق الدفع/الكمبيالات بمقدار ${fmt(Math.abs(dNotes))} د.أ`);
+  if(drivers.length) parts.push('أهم ما ساهم بهذا التغيّر: '+drivers.join('، ')+'.');
+  return parts.join(' ');
+}
+function renderReport(){
+  const wrap = document.getElementById('repWrap'), headEl = document.getElementById('repHead');
+  if(!GL){ wrap.innerHTML = emptyState(); headEl.className='report-head'; headEl.innerHTML=''; return; }
+  const fromVal = document.getElementById('repFrom').value || '2026-01-01';
+  const toVal = document.getElementById('repTo').value || '2026-08-31';
+  const mFrom = dateToMonth(fromVal), mTo = dateToMonth(toVal);
+  const rows = allBankNames().filter(b=>b!=='(بدون بنك)').map(b=>{
+    const s = bankAggAt(b,mFrom), e = bankAggAt(b,mTo);
+    const dBalance=e.balanceMain-s.balanceMain, dMargin=e.margin-s.margin, dChq=e.chq-s.chq, dNotes=e.notes-s.notes;
+    return { bank:b, s, e, delta:e.net-s.net, dBalance, dMargin, dChq, dNotes };
+  }).sort((a,b)=>Math.abs(b.delta)-Math.abs(a.delta));
+  const totS = rows.reduce((a,r)=>a+r.s.net,0), totE = rows.reduce((a,r)=>a+r.e.net,0), totDelta = totE-totS;
+  const improved = rows.filter(r=>r.delta>0.5).length, worsened = rows.filter(r=>r.delta<-0.5).length, flat = rows.length-improved-worsened;
+  const topImp = rows.slice().sort((a,b)=>b.delta-a.delta)[0], topWor = rows.slice().sort((a,b)=>a.delta-b.delta)[0];
+
+  headEl.className = 'report-head show';
+  headEl.innerHTML = `<div class="rh-co">مركز الكيلاني للأغذية</div><div class="rh-ti">تقرير حركة البنوك — بنكاً بنكاً</div><div class="rh-sub">من ${fmtDateAr(fromVal)} إلى ${fmtDateAr(toVal)}</div>`;
+
+  let h = '';
+  h += `<div class="kpi-grid">`;
+  h += kpi('التغيّر الإجمالي بكل البنوك', fmt(totDelta), totDelta>0?'good':(totDelta<0?'bad':''), 'من '+fmt(totS)+' إلى '+fmt(totE)+' د.أ', totDelta>0?'var(--good)':'var(--bad)');
+  h += kpi('بنوك تحسّن وضعها', improved, '', 'من أصل '+rows.length+' بنكاً', 'var(--good)');
+  h += kpi('بنوك تراجع وضعها', worsened, '', 'من أصل '+rows.length+' بنكاً', 'var(--bad)');
+  h += kpi('بدون حركة تُذكر', flat, '', '', 'var(--gold-d)');
+  h += `</div>`;
+
+  h += `<div class="card"><h3>الملخص التنفيذي</h3><p class="rep-exec">`+
+    `تحسّن صافي الشركة الإجمالي مع البنوك خلال الفترة بمقدار <b>${fmt(totDelta)}</b> د.أ، من ${fmt(totS)} د.أ في ${fmtDateAr(fromVal)} إلى ${fmt(totE)} د.أ في ${fmtDateAr(toVal)}.`+
+    (topImp && topImp.delta>0.5 ? ` أكبر تحسّن كان مع <b>${escHtml(topImp.bank)}</b> بمقدار ${fmt(topImp.delta)} د.أ.` : '')+
+    (topWor && topWor.delta<-0.5 ? ` أكبر تراجع كان مع <b>${escHtml(topWor.bank)}</b> بمقدار ${fmt(Math.abs(topWor.delta))} د.أ.` : '')+
+    `</p><p class="hint" style="margin:8px 0 0">الصافي = الرصيد الجاري/التسهيلات + التأمينات النقدية + شيكات برسم التحصيل + أوراق الدفع. سالب = علينا للبنك، موجب = رصيدنا فائض لدينا.</p></div>`;
+
+  h += `<div class="card"><h3>الملخص الإجمالي لكل البنوك</h3><div class="twrap"><table class="dt"><thead><tr><th>البنك</th><th class="num">الصافي ${fmtDateAr(fromVal)}</th><th class="num">الصافي ${fmtDateAr(toVal)}</th><th class="num">التغيّر</th><th>الحالة</th></tr></thead><tbody>`;
+  rows.forEach(r=>{
+    h += `<tr><td><b>${escHtml(r.bank)}</b></td><td class="num ${clsFor(r.s.net)}">${fmt(r.s.net)}</td><td class="num ${clsFor(r.e.net)}">${fmt(r.e.net)}</td><td class="num ${clsFor(r.delta)}"><b>${fmt(r.delta)}</b></td><td>${moveBadge(r.s.net,r.e.net)}</td></tr>`;
+  });
+  h += `<tr class="tot"><td>إجمالي البنوك</td><td class="num">${fmt(totS)}</td><td class="num">${fmt(totE)}</td><td class="num ${clsFor(totDelta)}">${fmt(totDelta)}</td><td>${moveBadge(totS,totE)}</td></tr>`;
+  h += `</tbody></table></div></div>`;
+
+  h += `<h3 style="font-family:var(--font-head);color:var(--text);margin:18px 0 10px">التفصيل — بنكاً بنكاً</h3>`;
+  rows.forEach(r=>{
+    const open = REP_OPEN[r.bank]!==false; // مفتوح افتراضياً
+    h += `<div class="rep-bank ${open?'open':''}">`;
+    h += `<div class="rep-bank-h" onclick="toggleReport('${jsStr(r.bank)}')"><h4><span class="chev ${open?'open':''}">▸</span> ${escHtml(r.bank)}</h4><span class="rb-net ${clsFor(r.delta)}">${fmt(r.delta)} د.أ</span></div>`;
+    h += `<div class="rep-body">`;
+    h += `<div class="twrap" style="margin-top:10px"><table class="dt"><thead><tr><th>البند</th><th class="num">${fmtDateAr(fromVal)}</th><th class="num">${fmtDateAr(toVal)}</th><th class="num">التغيّر</th></tr></thead><tbody>`+
+      `<tr><td>الرصيد (جاري/تسهيلات)</td><td class="num">${fmt(r.s.balanceMain)}</td><td class="num">${fmt(r.e.balanceMain)}</td><td class="num ${clsFor(r.dBalance)}">${fmt(r.dBalance)}</td></tr>`+
+      `<tr><td>التأمينات النقدية</td><td class="num">${fmt(r.s.margin)}</td><td class="num">${fmt(r.e.margin)}</td><td class="num ${clsFor(r.dMargin)}">${fmt(r.dMargin)}</td></tr>`+
+      `<tr><td>شيكات برسم التحصيل</td><td class="num">${fmt(r.s.chq)}</td><td class="num">${fmt(r.e.chq)}</td><td class="num ${clsFor(r.dChq)}">${fmt(r.dChq)}</td></tr>`+
+      `<tr><td>أوراق دفع (كمبيالات)</td><td class="num">${fmt(r.s.notes)}</td><td class="num">${fmt(r.e.notes)}</td><td class="num ${clsFor(r.dNotes)}">${fmt(r.dNotes)}</td></tr>`+
+      `<tr class="tot"><td>الصافي</td><td class="num">${fmt(r.s.net)}</td><td class="num">${fmt(r.e.net)}</td><td class="num ${clsFor(r.delta)}">${fmt(r.delta)}</td></tr>`+
+      `</tbody></table></div>`;
+    h += `<p class="rep-narr">${reportNarrative(r)}</p>`;
+    h += `</div></div>`;
+  });
+
+  wrap.innerHTML = h;
 }
 
 /* ============================================================
