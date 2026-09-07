@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v49.11-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v49.12-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -4508,22 +4508,29 @@ function queueBigCloudSaveFin(k){
   clearTimeout(cloudBigTimers[k]);
   cloudBigTimers[k]=setTimeout(()=>pushBigToCloudFin(k), 1500);
 }
+let lastBigSyncErrors={};
 async function pushBigToCloudFin(k, force){
-  if(!sb || !curUser || !roleEdit) return;
-  if(!force && !cloudSyncedFin) return;
+  if(!sb || !curUser || !roleEdit) return false;
+  if(!force && !cloudSyncedFin) return false;
   try{
     await sb.from('financials_app_bigdata').upsert({key:k, data:S[k]||null, updated_by:curUser.id, updated_at:new Date().toISOString()});
+    delete lastBigSyncErrors[k];
     const el=document.getElementById('cloudSyncMsgFin'); if(el){ el.textContent='✔ محفوظ على السيرفر المشترك · '+new Date().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}); el.className='status-msg ok'; }
+    return true;
   }catch(e){
+    lastBigSyncErrors[k]=(e&&(e.message||e.code))||'خطأ غير معروف';
+    console.error('pushBigToCloudFin failed for', k, e);
     const el=document.getElementById('cloudSyncMsgFin'); if(el){ el.textContent='⚠ تعذر رفع بعض البيانات الكبيرة للسيرفر المشترك — محفوظة محلياً بس'; el.className='status-msg err'; }
+    return false;
   }
 }
 async function pullBigDataFromCloudFin(){
-  if(!sb || !curUser) return;
+  if(!sb || !curUser) return [];
   try{ if(typeof _loadStateP!=='undefined') await _loadStateP; }catch(e){} // لازم نضمن اكتمال تحميل البيانات المحلية (IndexedDB) قبل ما نقرر أي مفتاح "ناقص" ويحتاج رفعاً للسحابة — وإلا بنفوّت مفاتيح لسا ما انقرت من القرص
+  const failed=[];
   try{
     const {data, error}=await sb.from('financials_app_bigdata').select('key, data');
-    if(error) return;
+    if(error) return failed;
     const cloudKeys=new Set((data||[]).map(r=>r.key));
     for(const row of (data||[])){
       if(BIGKEYS.includes(row.key) && row.data!=null){
@@ -4536,26 +4543,41 @@ async function pullBigDataFromCloudFin(){
     for(const k of BIGKEYS){
       const v=S[k];
       const hasData = Array.isArray(v) ? v.length>0 : (v && typeof v==='object' ? Object.keys(v).length>0 : !!v);
-      if(!cloudKeys.has(k) && hasData) await pushBigToCloudFin(k, true);
+      if(!cloudKeys.has(k) && hasData){
+        const ok=await pushBigToCloudFin(k, true);
+        if(!ok) failed.push(k);
+      }
     }
   }catch(e){}
+  return failed;
 }
 async function pullStateFromCloudFin(){
   if(!sb || !curUser) return;
   try{
     const {data, error}=await sb.from('financials_app_state').select('data, updated_at').eq('id','main').maybeSingle();
-    if(error || !data || !data.data){ await pullBigDataFromCloudFin(); cloudSyncedFin=true; return; }
+    if(error || !data || !data.data){ const failed=await pullBigDataFromCloudFin(); cloudSyncedFin=true; reportBigSyncStatusFin(failed); return; }
     let o=unpackState(data.data);
     S={...S,...o};
     S.settings={...S.settings,...(o.settings||{})};
     if(o.bench) Object.assign(BENCH, o.bench);
-    await pullBigDataFromCloudFin();
+    const failed=await pullBigDataFromCloudFin();
     await idbSet(LSK, packState());
     cloudSyncedFin=true;
-    const el=document.getElementById('cloudSyncMsgFin'); if(el){ el.textContent='✔ تم تحميل آخر نسخة من السيرفر المشترك'; el.className='status-msg ok'; }
+    reportBigSyncStatusFin(failed, '✔ تم تحميل آخر نسخة من السيرفر المشترك');
   }catch(e){
     cloudSyncedFin=true;
     const el=document.getElementById('cloudSyncMsgFin'); if(el){ el.textContent='⚠ تعذر التحميل من السيرفر المشترك — هذي آخر نسخة محلية عندك'; el.className='status-msg err'; }
+  }
+}
+function reportBigSyncStatusFin(failed, okMsg){
+  const el=document.getElementById('cloudSyncMsgFin'); if(!el) return;
+  if(failed && failed.length){
+    const detail=failed.map(k=>k+(lastBigSyncErrors[k]?' ('+lastBigSyncErrors[k]+')':'')).join('، ');
+    el.textContent='⚠ تعذر رفع بيانات: '+detail+' — الباقي وصل للسيرفر المشترك';
+    el.className='status-msg err';
+  }else if(okMsg){
+    el.textContent=okMsg;
+    el.className='status-msg ok';
   }
 }
 (async function bootAuth(){
