@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v49.9-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v49.10-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -2854,7 +2854,7 @@ async function idbGet(k){try{const db=await idb();return new Promise((res,rej)=>
 async function idbDel(k){try{const db=await idb();return new Promise((res)=>{const t=db.transaction('kv','readwrite');t.objectStore('kv').delete(k);t.oncomplete=()=>res(true);t.onerror=()=>res(false)})}catch(e){return false}}
 const BIGKEYS=['sales','purch','prof','deliv','ben','inv','transf','timing','payroll','emps','cust','due','pcMoves','coll','fifo'];
 const _bigRef={};async function saveBig(k){try{await idbSet(LSK+':'+k,S[k]||null);_bigRef[k]=S[k]}catch(e){console.error(e)}}
-async function saveBigDirty(){for(const k of BIGKEYS){if(S[k]!==_bigRef[k])await saveBig(k)}}
+async function saveBigDirty(){for(const k of BIGKEYS){if(S[k]!==_bigRef[k]){await saveBig(k);queueBigCloudSaveFin(k)}}}
 async function loadBig(){for(const k of BIGKEYS){try{const v=await idbGet(LSK+':'+k);if(v!=null){S[k]=v}_bigRef[k]=S[k]}catch(e){}}}
 function packState(){const mv={};Object.entries(S.moves).forEach(([k,m])=>{mv[k]={};Object.entries(m).forEach(([c,v])=>{mv[k][c]=[+v.d.toFixed(3),+v.c.toFixed(3)]})});const o={...S,moves:mv,_packed:1};BIGKEYS.forEach(k=>delete o[k]);return o}
 function unpackState(o){if(o&&o._packed){const mv={};Object.entries(o.moves||{}).forEach(([k,m])=>{mv[k]={};Object.entries(m).forEach(([c,v])=>{mv[k][c]={d:v[0],c:v[1]}})});o={...o,moves:mv};delete o._packed}return o}
@@ -4480,10 +4480,12 @@ async function onSignedIn(user){
   document.getElementById('appView').style.display = 'block';
 }
 /* ================= مزامنة سحابية (الجزء الأساسي: تصنيف، حسابات، أرصدة، قيود يدوية، إعدادات —
-   الكويريات الكبيرة زي المبيعات/المشتريات/الرواتب تضل محلية بس حالياً، BIGKEYS مستبعدة أصلاً من packState) =================
+   عبر financials_app_state) + BIGKEYS (المبيعات/المشتريات/تسوية التوقيت/الرواتب...إلخ) عبر
+   جدول منفصل financials_app_bigdata (سطر لكل مفتاح)، لكل مفتاح يُرفع فقط عند تغيّره فعلاً (لا نعيد
+   رفع كل البيانات الثقيلة على كل حفظة) =================
    حماية أساسية ضد فقدان بيانات: ما نسمح بأي رفع (push) للسيرفر قبل ما نكون سحبنا (pull) آخر نسخة موجودة أول —
    هيك جهاز جديد فاضي ما يقدر يستبدل بيانات حقيقية موجودة بالسيرفر بنسخة فاضية قبل ما يشوفها أصلاً. */
-let cloudSaveTimerFin=null, cloudSyncedFin=false;
+let cloudSaveTimerFin=null, cloudSyncedFin=false, cloudBigTimers={};
 function queueCloudSaveFin(){
   if(!sb || !curUser || !roleEdit) return;
   if(!cloudSyncedFin) return;
@@ -4501,15 +4503,52 @@ async function pushStateToCloudFin(){
     const el=document.getElementById('cloudSyncMsgFin'); if(el){ el.textContent='⚠ تعذر الحفظ على السيرفر المشترك — البيانات محفوظة محلياً بس'; el.className='status-msg err'; }
   }
 }
+function queueBigCloudSaveFin(k){
+  if(!sb || !curUser || !roleEdit || !cloudSyncedFin) return;
+  clearTimeout(cloudBigTimers[k]);
+  cloudBigTimers[k]=setTimeout(()=>pushBigToCloudFin(k), 1500);
+}
+async function pushBigToCloudFin(k, force){
+  if(!sb || !curUser || !roleEdit) return;
+  if(!force && !cloudSyncedFin) return;
+  try{
+    await sb.from('financials_app_bigdata').upsert({key:k, data:S[k]||null, updated_by:curUser.id, updated_at:new Date().toISOString()});
+    const el=document.getElementById('cloudSyncMsgFin'); if(el){ el.textContent='✔ محفوظ على السيرفر المشترك · '+new Date().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}); el.className='status-msg ok'; }
+  }catch(e){
+    const el=document.getElementById('cloudSyncMsgFin'); if(el){ el.textContent='⚠ تعذر رفع بعض البيانات الكبيرة للسيرفر المشترك — محفوظة محلياً بس'; el.className='status-msg err'; }
+  }
+}
+async function pullBigDataFromCloudFin(){
+  if(!sb || !curUser) return;
+  try{
+    const {data, error}=await sb.from('financials_app_bigdata').select('key, data');
+    if(error) return;
+    const cloudKeys=new Set((data||[]).map(r=>r.key));
+    for(const row of (data||[])){
+      if(BIGKEYS.includes(row.key) && row.data!=null){
+        S[row.key]=row.data;
+        await idbSet(LSK+':'+row.key, row.data);
+      }
+    }
+    for(const k of BIGKEYS) _bigRef[k]=S[k];
+    // مزامنة أولى: بيانات ثقيلة موجودة محلياً على هذا الجهاز ولسا ما وصلت لجدول السيرفر المشترك — نرفعها الآن
+    for(const k of BIGKEYS){
+      const v=S[k];
+      const hasData = Array.isArray(v) ? v.length>0 : (v && typeof v==='object' ? Object.keys(v).length>0 : !!v);
+      if(!cloudKeys.has(k) && hasData) await pushBigToCloudFin(k, true);
+    }
+  }catch(e){}
+}
 async function pullStateFromCloudFin(){
   if(!sb || !curUser) return;
   try{
     const {data, error}=await sb.from('financials_app_state').select('data, updated_at').eq('id','main').maybeSingle();
-    if(error || !data || !data.data){ cloudSyncedFin=true; return; }
+    if(error || !data || !data.data){ await pullBigDataFromCloudFin(); cloudSyncedFin=true; return; }
     let o=unpackState(data.data);
     S={...S,...o};
     S.settings={...S.settings,...(o.settings||{})};
     if(o.bench) Object.assign(BENCH, o.bench);
+    await pullBigDataFromCloudFin();
     await idbSet(LSK, packState());
     cloudSyncedFin=true;
     const el=document.getElementById('cloudSyncMsgFin'); if(el){ el.textContent='✔ تم تحميل آخر نسخة من السيرفر المشترك'; el.className='status-msg ok'; }
