@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v49.13-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v49.14-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -1105,6 +1105,7 @@ th.yd,td.yd{background:rgba(11,31,58,.035);font-size:.92em}th.yd{color:var(--mut
   <div class="userbox" id="userbox" style="display:none;">
     <div class="who"><b id="uName"></b><span id="uRole"></span></div>
     <span class="status-msg" id="cloudSyncMsgFin" style="margin:0 6px;"></span>
+    <span class="status-msg" id="cloudBigDiagFin" style="margin:0 6px;font-size:11px;opacity:.8;"></span>
     <button class="btn ghost sm" onclick="pullStateFromCloudFin().then(()=>{refreshUIFromState();toast('تم التحديث من السيرفر المشترك')})" title="سحب آخر نسخة من السيرفر المشترك يدوياً">🔄</button>
     <button class="btn ghost sm" onclick="doLogout()">خروج</button>
   </div>
@@ -4534,7 +4535,15 @@ async function pullBigDataFromCloudFin(){
   const failed=[];
   try{
     const {data, error}=await sb.from('financials_app_bigdata').select('key, data');
-    if(error) return failed;
+    if(error){ const el=document.getElementById('cloudBigDiagFin'); if(el) el.textContent='🔍 تعذر قراءة جدول البيانات الثقيلة: '+((error&&error.message)||'خطأ'); return failed; }
+    (function diag(){
+      const el=document.getElementById('cloudBigDiagFin'); if(!el) return;
+      const sizeOf=v=>Array.isArray(v)?v.length:(v&&typeof v==='object'?Object.keys(v).length:0);
+      const timingRow=(data||[]).find(r=>r.key==='timing');
+      const parts=['🔍 بالسحابة: '+(data||[]).length+' مفتاحاً'];
+      parts.push(timingRow ? 'timing: '+sizeOf(timingRow.data)+' سطر' : 'timing: غير موجود بالسحابة إطلاقاً');
+      el.textContent=parts.join(' — ');
+    })();
     const cloudKeys=new Set((data||[]).map(r=>r.key));
     for(const row of (data||[])){
       if(BIGKEYS.includes(row.key) && row.data!=null){
