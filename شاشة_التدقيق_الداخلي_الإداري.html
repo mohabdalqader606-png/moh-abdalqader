@@ -1056,8 +1056,9 @@
   <!-- QUERY LIBRARY VIEW -->
   <div class="view" id="view-qlibrary">
     <p style="color:var(--muted);font-size:12.5px;margin:0 0 12px 0;max-width:900px;">
-      <b>تنبيه قبل الاستخدام:</b> الكويريات المعبَّأة مسبقاً هنا (SAP Business One) قراءة فقط (SELECT)، بصياغة T-SQL —
-      عند التطبيق على HANA استبدل <code>SELECT TOP n</code> بـ <code>LIMIT n</code> وراجع دوال التاريخ.
+      <b>تنبيه قبل الاستخدام:</b> الكويريات المعبَّأة مسبقاً هنا (SAP Business One على HANA) قراءة فقط (SELECT)، بصياغة HANA الفعلية
+      (<code>IFNULL</code>، <code>DAYS_BETWEEN</code>، <code>LIMIT n</code>، معاملات موضعية <code>[%0]</code>/<code>[%1]</code> بصيغة SAP Query Manager) —
+      وليست بصياغة T-SQL عامة. بعض بنود التوثيق (مثل الإجراءات الرقابية غير المُنفَّذة كـSQL) قد تتضمن أمثلة مقارنة بمنصات أخرى ضمن تعليقات موثّقة صراحة.
       أسماء الجداول/الحقول قد تختلف حسب الإصدار والإضافات المُركّبة؛ اختبر كل كويري على بيئة غير إنتاجية ووثّق تاريخ الاختبار
       (حقل "آخر اختبار") قبل اعتماده ضمن برنامج تدقيق فعلي.
     </p>
@@ -1333,7 +1334,7 @@
   </div>
 </div>
 
-<footer>عمل بلا اتصال بالإنترنت — البيانات محفوظة محلياً على هذا الجهاز فقط عبر المتصفح. — الإصدار v2.4 (Internal Audit Management System + GRC + Executive Analytics Dashboard — تقرير المسؤول · أقسام قابلة للتعديل)</footer>
+<footer>عمل بلا اتصال بالإنترنت — البيانات محفوظة محلياً على هذا الجهاز فقط عبر المتصفح. — الإصدار v2.5 (Internal Audit Management System + GRC + Executive Analytics Dashboard — تقرير المسؤول · أقسام قابلة للتعديل · صيانة مكتبة الكويريات)</footer>
 <div class="ksh-scrim" id="kshScrim" aria-hidden="true"></div>
 <div class="ksh-status" role="contentinfo" aria-label="شريط الحالة">
   <span class="ksh-dot" aria-hidden="true"></span><span>حفظ محلي</span>
@@ -4694,7 +4695,7 @@ WHERE C."CardType" = 'C'
 ORDER BY C."CardName";`},
 
   {code:"KLN-COL-000009", title:"تحقق دقيق لعميل واحد — مطابقة كل تحصيل بشهر البيع الذي سدَّده فعلياً", category:"collect",
-    desc:"كويري إنتاجي فعلي (ثقيل حسابياً — لعميل واحد عند الحاجة لتحقيق دقيق، وليس لتعميمه على كل العملاء دفعة واحدة): يستخدم تقنية الفترات التراكمية المتداخلة (Window Functions) لمطابقة كل حركة تسديد (قبض/شيك/قيد يدوي) بالشهر الذي سدّدته فعلياً بترتيب زمني حقيقي (FIFO)، ويحسب عدد أيام التحصيل الفعلي لكل تخصيص.",
+    desc:"كويري إنتاجي فعلي (ثقيل حسابياً — لعميل واحد عند الحاجة لتحقيق دقيق، وليس لتعميمه على كل العملاء دفعة واحدة): يستخدم تقنية الفترات التراكمية المتداخلة (Window Functions) لمطابقة كل حركة تسديد (قبض/شيك/قيد يدوي) بالشهر الذي سدّدته فعلياً بترتيب زمني حقيقي (FIFO)، ويحسب عدد أيام التحصيل الفعلي لكل تخصيص. (ملاحظة توثيق: المصدر الأصلي احتوى رمز عميل حرفياً كمثال بدل معامل؛ استُبدل هنا بـ[%0] بمكانين اثنين ليعمل الكويري كأداة عامة قابلة لإعادة الاستخدام على أي عميل — المنطق والبنية والدوال جميعها حرفية 100% من المصدر، والتغيير الوحيد هو استبدال القيمة المثال بمعامل.)",
     params:"[%0] = رمز العميل (يُستبدل بمكانين اثنين داخل الكويري)", tags:["تحقق دقيق","waterfall","عميل واحد"],
     sql:`-- كويري تحقق دقيق لعميل واحد فقط (بديل استخدام: استبدل [%0] بمكانين اثنين أدناه)
 -- ياخذ القيود اليدوية والشيكات بعين الاعتبار فعلياً حسب ترتيبها الزمني الحقيقي
@@ -4801,8 +4802,73 @@ ORDER BY W."تاريخ الحركة", W."شهر الفواتير المخصص ل
               UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
         WHERE X."CardCode"=T0."ShortName" AND X."DocDate" < T0."RefDate"
           AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-1
-    ), 0)                                AS "M1 شهر قبل"
-    -- (الاختصار هنا لتوفير المساحة — النسخة الكاملة تمتد حتى M12plus بنفس نمط KLN-COL-000008)
+    ), 0)                                AS "M1 شهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" < T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-2
+    ), 0)                                AS "M2 شهرين قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" < T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-3
+    ), 0)                                AS "M3 3 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" < T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-4
+    ), 0)                                AS "M4 4 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" < T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-5
+    ), 0)                                AS "M5 5 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" < T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-6
+    ), 0)                                AS "M6 6 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" < T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-7
+    ), 0)                                AS "M7 7 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" < T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-8
+    ), 0)                                AS "M8 8 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" < T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-9
+    ), 0)                                AS "M9 9 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" < T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-10
+    ), 0)                                AS "M10 10 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" < T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-11
+    ), 0)                                AS "M11 11 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" < T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") <= YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-12
+    ), 0)                                AS "M12plus أقدم من 12 شهر"
 
 FROM "JDT1" T0
 INNER JOIN "OCRD" C ON T0."ShortName" = C."CardCode" AND C."CardType"='C'
@@ -5736,7 +5802,7 @@ WHERE ABS(DAYS_BETWEEN(T0."hireDate", T1."createDate")) > [%0];`},
 
   {code:"KLN-HR-005", title:"موظفون لم يأخذوا إجازة سنوية منذ فترة طويلة (ضابط كشف احتيال)", category:"hr",
     desc:"الإجازة الإلزامية الدورية من أقوى ضوابط كشف الاحتيال المالي — غياب الموظف الفعلي عن مركز عمله يكشف أي عملية كان يخفيها بحضوره المستمر.",
-    params:"@AsOfDate, [%0] (افتراضي 365)", tags:["إجازة إلزامية","مكافحة احتيال"],
+    params:"[%0] = الحد الأقصى لعدد الأيام دون إجازة كاملة قبل التصعيد (افتراضي 365)", tags:["إجازة إلزامية","مكافحة احتيال"],
     sql:`-- بيانات الإجازات عادة بنظام HR/رواتب منفصل عن B1؛ الإجراء العملي:
 -- استخراج تاريخ آخر إجازة سنوية فعلية لكل موظف بمنصب حساس مالياً (تحصيل، مشتريات، مخزون، محاسبة)
 -- وتصعيد أي موظف تجاوز [%0] يوماً دون إجازة كاملة أسبوع على الأقل.`},
@@ -5760,7 +5826,7 @@ ORDER BY T0."lastName";
 
   {code:"KLN-HR-008", title:"مطابقة سلف الموظفين (Employee Advances) بالخصومات المسجّلة على كشف الرواتب", category:"hr",
     desc:"يتحقق من أن كل سلفة صُرفت لموظف تُخصم فعلياً من راتبه اللاحق حسب الجدول الزمني المتفق عليه، ولا تبقى معلّقة بلا متابعة.",
-    params:"@AsOfDate, '[%0]'", tags:["سلف","رواتب"],
+    params:"'[%0]' = رمز حساب السلف (AcctCode) — يعرض كامل الحركة التاريخية على الحساب، بلا قيد تاريخي", tags:["سلف","رواتب"],
     sql:`SELECT T1."Account", T2."AcctName", T0."Memo", T1."Debit" AS "AdvanceAmount", T0."RefDate"
 FROM OJDT T0
 JOIN JDT1 T1 ON T1."TransId" = T0."TransId"
@@ -5782,7 +5848,7 @@ ORDER BY "ManualEntriesCount" DESC;`},
 
   {code:"KLN-FIN-005", title:"مطابقة رصيد حساب العملاء/الموردين الإجمالي بالأستاذ العام مقابل الأستاذ المساعد", category:"journal",
     desc:"رقابة إغلاق جوهرية: رصيد حساب الذمم/الدائنين الإجمالي بميزان المراجعة يجب أن يطابق تماماً مجموع أرصدة بطاقات العملاء/الموردين الفردية.",
-    params:"@AsOfDate, '[%0]'", tags:["مطابقة","إقفال"],
+    params:"'[%0]' = رمز حساب الذمم/الدائنين الإجمالي بدليل الحسابات (AcctCode) — الأرصدة لحظية (الآن) على الطرفين معاً", tags:["مطابقة","إقفال"],
     sql:`SELECT
   (SELECT SUM(T0."Balance") FROM OCRD T0 WHERE T0."CardType" = 'C') AS "SubledgerTotal_Customers",
   (SELECT T1."Balance" FROM OACT T1 WHERE T1."AcctCode" = '[%0]') AS "GLControlAccountBalance";`},
