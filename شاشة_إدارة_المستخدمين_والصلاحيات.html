@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>إدارة المستخدمين والصلاحيات — مركز الكيلاني للأغذية</title>
+<!--
+  هذه شاشة نظامية (system) — الوصول الفعلي محكوم بالكامل عبر RLS على Supabase
+  (public.is_permissions_admin: مدير عام قديم profiles.role='admin'، أو صلاحية ADMIN صريحة
+  على screen_id='user-permissions' بجدول public.user_screen_permissions). فحص الواجهة أدناه
+  هو تجربة استخدام فقط (UX) وليس الحماية الحقيقية — الحماية الفعلية بقاعدة البيانات نفسها.
+-->
+<style>
+  :root{
+    --navy:#152A4A; --navy-deep:#0E1E36; --paper:#F4F6F9; --card:#FFFFFF; --line:#E1E6EE;
+    --ink:#1B2536; --ink-soft:#5B667A;
+    --gold:#8A6416; --gold-bg:#FCEFD6;
+    --teal:#1F7A6C; --teal-bg:#E7F5F1;
+    --blue:#2B5FAD; --blue-bg:#E8F1FF;
+    --crimson:#B23A34; --crimson-bg:#FCEBEA;
+    --none-ink:#8792A3; --none-bg:#EEF1F5;
+    --mono:'IBM Plex Mono','Consolas',monospace; --disp:'Segoe UI',Tahoma,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--disp);}
+  body{padding-bottom:60px;}
+  header.topbar{background:linear-gradient(135deg,var(--navy-deep),var(--navy) 70%); color:#fff; padding:22px 28px 26px; position:relative; overflow:hidden;}
+  header.topbar::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(90deg, rgba(255,255,255,.035) 0 1px, transparent 1px 46px); pointer-events:none;}
+  .topbar-inner{position:relative; display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:14px;}
+  .eyebrow{font-size:12px; letter-spacing:.06em; color:#9FB0CC; margin-bottom:6px; font-weight:600;}
+  h1{margin:0; font-size:22px; font-weight:700;}
+  .sub{color:#B8C4DA; font-size:12.5px; margin-top:6px; max-width:640px; line-height:1.7;}
+
+  main{max-width:1280px; margin:0 auto; padding:0 24px;}
+  section.panel{background:var(--card); border:1px solid var(--line); border-radius:14px; margin-top:-18px; box-shadow:0 10px 30px -18px rgba(21,42,74,.25); position:relative; z-index:2;}
+
+  .summary{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; padding:20px 24px; border-bottom:1px solid var(--line);}
+  .stat{background:#FAFBFD; border:1px solid var(--line); border-radius:12px; padding:13px 16px;}
+  .stat .lbl{font-size:11px; color:var(--ink-soft); margin-bottom:6px;}
+  .stat .val{font-family:var(--mono); font-size:21px; font-weight:700; color:var(--navy);}
+
+  .toolbar{display:flex; align-items:center; gap:10px; padding:14px 24px; border-bottom:1px solid var(--line); flex-wrap:wrap;}
+  .search{border:1.5px solid var(--line); border-radius:9px; padding:8px 13px; font-size:12.5px; width:260px; font-family:var(--disp);}
+  .toolbar .spacer{flex:1;}
+  button{font-family:var(--disp); font-size:13px; font-weight:600; cursor:pointer; border-radius:9px; padding:9px 16px; border:none; transition:.15s;}
+  .btn-primary{background:var(--navy); color:#fff;}
+  .btn-primary:hover{background:var(--navy-deep);}
+  .btn-primary:disabled{background:#B8C4DA; cursor:not-allowed;}
+  .btn-ghost{background:#fff; color:var(--navy); border:1.5px solid var(--line);}
+  .btn-ghost:hover{border-color:var(--navy);}
+  .btn-sm{padding:6px 13px; font-size:12px; border-radius:8px;}
+
+  #unsavedBar{display:none; align-items:center; gap:10px; background:var(--gold-bg); border:1px solid #EBD9AC; color:var(--gold); border-radius:10px; padding:7px 8px 7px 14px; font-size:12.5px; font-weight:600;}
+
+  .matrix-wrap{overflow:auto; max-height:70vh; padding:0 24px 24px;}
+  table.matrix{border-collapse:separate; border-spacing:0; width:100%; font-size:12.5px;}
+  table.matrix thead th{position:sticky; top:0; background:#FAFBFD; z-index:3; border-bottom:2px solid var(--line); padding:10px 8px; text-align:center; font-size:11.5px; color:var(--ink-soft); min-width:118px;}
+  table.matrix thead th .th-ar{white-space:normal; line-height:1.35; font-weight:700; color:var(--ink); font-size:12px;}
+  table.matrix thead th .th-id{direction:ltr; font-family:var(--mono); font-size:9px; color:var(--none-ink); margin-top:3px;}
+  table.matrix thead th.userhead{position:sticky; top:0; right:0; z-index:4; text-align:start; background:#FAFBFD; min-width:220px;}
+  table.matrix thead th .frozen-badge{display:inline-block; margin-inline-start:5px; background:var(--crimson-bg); color:var(--crimson); font-size:9.5px; font-weight:700; padding:1px 6px; border-radius:20px; vertical-align:middle;}
+  table.matrix tbody td{border-bottom:1px solid var(--line); padding:6px 8px; text-align:center; background:#fff;}
+  table.matrix tbody td.usercell{position:sticky; right:0; z-index:2; background:#fff; text-align:start; box-shadow:-2px 0 4px rgba(0,0,0,.04); min-width:220px;}
+  table.matrix tbody tr:hover td{background:#FAFBFD;}
+  table.matrix tbody tr:hover td.usercell{background:#FAFBFD;}
+  .u-name{font-weight:700; font-size:12.5px;}
+  .u-email{color:var(--ink-soft); font-size:11px; direction:ltr; unicode-bidi:embed; text-align:end; display:block;}
+  .u-legacy{color:var(--none-ink); font-size:10px; margin-top:2px;}
+
+  select.permsel{border:1.5px solid transparent; border-radius:8px; padding:5px 6px; font-family:var(--mono); font-size:11px; font-weight:700; text-align:center; cursor:pointer; min-width:78px; appearance:none; -webkit-appearance:none;}
+  select.permsel.p-NONE{background:var(--none-bg); color:var(--none-ink);}
+  select.permsel.p-VIEW{background:var(--blue-bg); color:var(--blue);}
+  select.permsel.p-INPUT{background:var(--teal-bg); color:var(--teal);}
+  select.permsel.p-ADMIN{background:var(--gold-bg); color:var(--gold);}
+  select.permsel.dirty{border-color:var(--gold);}
+  select.permsel:disabled{opacity:.55; cursor:not-allowed;}
+
+  .empty{padding:50px 20px; text-align:center; color:var(--ink-soft); font-size:13.5px; line-height:1.9;}
+  .empty .big{font-size:30px; display:block; margin-bottom:10px;}
+
+  #loginView{max-width:400px; margin:70px auto; background:#fff; border:1px solid var(--line); border-radius:14px; padding:32px 30px; box-shadow:0 10px 30px -18px rgba(21,42,74,.25);}
+  #loginView h2{margin:0 0 4px; font-size:18px; color:var(--navy);}
+  #loginView .hint{color:var(--ink-soft); font-size:12.5px; line-height:1.7; margin-bottom:16px;}
+  #loginView label{display:block; font-size:12px; font-weight:600; margin:12px 0 5px;}
+  #loginView input{width:100%; padding:8px 10px; border:1.5px solid var(--line); border-radius:9px; font-family:var(--disp); font-size:13px;}
+  #loginView button{width:100%; margin-top:16px; padding:11px;}
+  .status-msg{font-size:12px; display:block;}
+  .status-msg.ok{color:var(--teal);} .status-msg.err{color:var(--crimson);}
+  .userbox{display:flex; align-items:center; gap:10px; color:#B8C4DA; font-size:11.5px;}
+  .userbox b{display:block; color:#fff; font-size:12.5px;}
+  .userbox button{background:rgba(255,255,255,.08); color:#fff; border:1px solid rgba(255,255,255,.2); padding:6px 12px; font-size:11.5px;}
+
+  .overlay{display:none; position:fixed; inset:0; background:rgba(14,30,54,.55); z-index:50; align-items:center; justify-content:center; padding:20px;}
+  .overlay.active{display:flex;}
+  .modal{background:#fff; border-radius:14px; padding:24px 26px; max-width:520px; width:100%; box-shadow:0 20px 60px -20px rgba(0,0,0,.4);}
+  .modal h2{margin:0 0 14px; font-size:16px; color:var(--navy);}
+  .modal .prev-line{display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px dashed var(--line); font-size:13px;}
+  .modal .prev-line b{font-family:var(--mono); color:var(--navy);}
+  .modal-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:18px;}
+  .modal .ops-list{max-height:220px; overflow:auto; margin-top:10px; font-size:11.5px; color:var(--ink-soft); border:1px solid var(--line); border-radius:8px; padding:8px 10px;}
+  .modal .ops-list div{padding:3px 0;}
+</style>
+</head>
+<body>
+
+<div id="loginView">
+  <h2>تسجيل الدخول</h2>
+  <div class="hint">إدارة المستخدمين والصلاحيات — مركز الكيلاني للأغذية. الدخول بالبريد وكلمة السر (لا يوجد تسجيل ذاتي — راجع المدير لإنشاء حساب أو منح صلاحية).</div>
+  <label>البريد الإلكتروني</label>
+  <input type="text" id="loginEmail" autocomplete="username" style="direction:ltr; text-align:left;">
+  <label>كلمة السر</label>
+  <input type="password" id="loginPass" autocomplete="current-password" onkeydown="if(event.key==='Enter') doLogin()">
+  <button class="btn-primary" id="loginBtn" onclick="doLogin()">دخول</button>
+  <div class="status-msg" id="loginMsg" style="margin-top:10px;"></div>
+</div>
+
+<div id="appView" style="display:none;">
+<header class="topbar">
+  <div class="topbar-inner">
+    <div>
+      <div class="eyebrow">النظام والإدارة</div>
+      <h1>إدارة المستخدمين والصلاحيات</h1>
+      <div class="sub">مصفوفة صلاحيات كل مستخدم على شاشات النظام التشغيلية — أربعة مستويات فقط: بدون صلاحية، عرض، إدخال، إدارة كاملة.</div>
+    </div>
+    <div class="userbox" id="userbox" style="display:none;">
+      <div><b id="uName"></b><span id="uRole"></span></div>
+      <button onclick="doLogout()">خروج</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <section class="panel" id="unauthorizedPanel" style="display:none;">
+    <div class="empty">
+      <span class="big">🚫</span>
+      هذا الحساب لا يملك صلاحية إدارة شاشة الصلاحيات.<br>
+      تواصل مع مدير معتمد لمنحك صلاحية ADMIN على هذه الشاشة، أو مع المدير العام للنظام.
+    </div>
+  </section>
+
+  <section class="panel" id="matrixPanel" style="display:none;">
+    <div class="empty" id="loadErrorBanner" style="display:none;color:var(--crimson);"></div>
+    <div id="matrixContent">
+      <div class="summary" id="headerStats">
+        <div class="stat"><div class="lbl">عدد المستخدمين</div><div class="val" id="statUsers">0</div></div>
+        <div class="stat"><div class="lbl">شاشات تشغيلية (Business)</div><div class="val">7</div></div>
+        <div class="stat"><div class="lbl">صلاحيات ممنوحة حالياً</div><div class="val" id="statGranted">0</div></div>
+        <div class="stat"><div class="lbl">آخر تحديث</div><div class="val" id="statLastUpdate" style="font-size:13px;">—</div></div>
+      </div>
+
+      <div class="toolbar">
+        <input type="text" class="search" id="searchUser" placeholder="ابحث عن مستخدم بالاسم أو البريد...">
+        <span class="status-msg" id="saveStatusMsg" style="margin-inline-start:8px;"></span>
+        <div class="spacer"></div>
+        <div id="unsavedBar">
+          <span id="unsavedCount">0 تغيير غير محفوظ</span>
+          <button class="btn-ghost btn-sm" id="cancelBtn">إلغاء</button>
+          <button class="btn-primary btn-sm" id="saveBtn">حفظ التغييرات</button>
+        </div>
+      </div>
+
+      <div class="matrix-wrap">
+        <table class="matrix" id="matrixTable">
+          <thead><tr id="matrixHeadRow"></tr></thead>
+          <tbody id="matrixBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+</div>
+
+<!-- PREVIEW MODAL -->
+<div class="overlay" id="previewOverlay">
+  <div class="modal">
+    <h2>معاينة التغييرات قبل الحفظ</h2>
+    <div class="prev-line"><span>عدد المستخدمين المتأثرين</span><b id="prevUsers">0</b></div>
+    <div class="prev-line"><span>عدد الخلايا المتغيّرة</span><b id="prevCells">0</b></div>
+    <div class="ops-list" id="prevOpsList"></div>
+    <div class="modal-actions">
+      <button class="btn-ghost" id="previewCancelBtn">رجوع</button>
+      <button class="btn-primary" id="previewConfirmBtn">تأكيد الحفظ</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+/* ==================== تسجيل الدخول (Supabase Auth) — نفس المشروع المستخدم بباقي شاشات المستودع ====================
+   هذه شاشة نظامية: لا بوابة allowed_apps هنا — أي حساب حقيقي يستطيع تسجيل الدخول، لكن محتوى
+   المصفوفة نفسه لا يظهر ولا يُقرأ فعلياً إلا لمن يحقق public.is_permissions_admin() على قاعدة
+   البيانات (مدير عام قديم profiles.role='admin'، أو ADMIN صريح على شاشة 'user-permissions'). */
+const SUPABASE_URL = 'https://fxjdmqqmcgccocfbgopm.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_NGtGX9SN8hXSoq-JRidGcQ_NfAyYCP5'; // مفتاح عام — الحماية عبر RLS
+let sb = null, curUser = null, curProfile = null, isPermsAdmin = false;
+function flash(elId, msg, ok){
+  const el = document.getElementById(elId);
+  if(!el) return;
+  el.textContent = msg; el.className = 'status-msg ' + (ok?'ok':'err');
+}
+async function doLogin(){
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass = document.getElementById('loginPass').value;
+  if(!email || !pass){ flash('loginMsg','أدخل البريد وكلمة السر', false); return; }
+  document.getElementById('loginBtn').disabled = true;
+  flash('loginMsg','جارٍ الدخول...', true);
+  const {data, error} = await sb.auth.signInWithPassword({email, password: pass});
+  document.getElementById('loginBtn').disabled = false;
+  if(error){ flash('loginMsg','فشل الدخول: تحقق من البريد وكلمة السر', false); return; }
+  await onSignedIn(data.user);
+}
+async function doLogout(){ await sb.auth.signOut(); location.reload(); }
+async function onSignedIn(user){
+  curUser = user;
+  const {data:prof} = await sb.from('profiles').select('*').eq('id', user.id).single();
+  curProfile = prof || {full_name:user.email, role:'viewer', allowed_apps:[]};
+  const roleAr = {admin:'مدير', editor:'مدخل بيانات', viewer:'مطالع'}[curProfile.role] || curProfile.role;
+  document.getElementById('uName').textContent = curProfile.full_name || user.email;
+  document.getElementById('uRole').textContent = user.email + ' · ' + roleAr;
+  document.getElementById('userbox').style.display = 'flex';
+  document.getElementById('loginView').style.display = 'none';
+  document.getElementById('appView').style.display = 'block';
+
+  const {data:isAdminData, error:isAdminErr} = await sb.rpc('is_permissions_admin');
+  const unauthorizedPanel = document.getElementById('unauthorizedPanel');
+  if(isAdminErr){
+    // فشل تقني بالتحقق نفسه (شبكة/اتصال) — لا نعرضه كـ"غير مخوَّل" لأن هذا غير مؤكَّد أصلاً
+    unauthorizedPanel.innerHTML = '<div class="empty"><span class="big">⚠️</span>تعذّر التحقق من صلاحيتك تقنياً — '
+      + escapeHtml(isAdminErr.message || 'خطأ اتصال غير معروف')
+      + '<br>حدّث الصفحة أو تحقق من الاتصال بالإنترنت. هذا لا يعني بالضرورة أنك غير مخوَّل.</div>';
+    unauthorizedPanel.style.display = 'block';
+    document.getElementById('matrixPanel').style.display = 'none';
+    return;
+  }
+  isPermsAdmin = isAdminData === true;
+  if(!isPermsAdmin){
+    unauthorizedPanel.innerHTML = '<div class="empty"><span class="big">🚫</span>هذا الحساب لا يملك صلاحية إدارة شاشة الصلاحيات.<br>'
+      + 'تواصل مع مدير معتمد لمنحك صلاحية ADMIN على هذه الشاشة، أو مع المدير العام للنظام.</div>';
+    unauthorizedPanel.style.display = 'block';
+    document.getElementById('matrixPanel').style.display = 'none';
+    return;
+  }
+  unauthorizedPanel.style.display = 'none';
+  document.getElementById('matrixPanel').style.display = 'block';
+  await loadMatrixData();
+}
+(async function bootAuth(){
+  if(!window.supabase){ flash('loginMsg','تعذر تحميل مكتبة الاتصال — تحقق من الإنترنت وحدّث الصفحة', false); return; }
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  const {data:{session}} = await sb.auth.getSession();
+  if(session && session.user) await onSignedIn(session.user);
+})();
+</script>
+<script>
+/* ==================== منطق المصفوفة (Users × Business Screens → Permission) ==================== */
+const PERM_LABELS = {NONE:'—', VIEW:'VIEW', INPUT:'INPUT', ADMIN:'ADMIN'};
+const PERM_ORDER = ['NONE','VIEW','INPUT','ADMIN'];
+
+let ALL_USERS = [];       // من profiles
+let ALL_SCREENS = [];     // من screens حيث screen_type='business'
+let ORIGINAL_PERMS = {};  // key: `${user_id}:${screen_id}` -> {permission, updated_by, updated_at}
+let CHANGES = {};         // نفس المفتاح -> القيمة الجديدة (لم تُحفَظ بعد)
+let searchTerm = '';
+
+function permKey(userId, screenId){ return userId + ':' + screenId; }
+function escapeHtml(s){ return String(s==null?'':s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function userLabel(u){ return u ? (u.full_name || u.email || u.id) : '—'; }
+
+async function loadMatrixData(){
+  const banner = document.getElementById('loadErrorBanner');
+  const content = document.getElementById('matrixContent');
+  const [usersRes, screensRes, permsRes] = await Promise.all([
+    sb.from('profiles').select('id, email, full_name, role').order('full_name', {ascending:true}),
+    sb.from('screens').select('id, name, status').eq('screen_type','business').order('id', {ascending:true}),
+    sb.from('user_screen_permissions').select('user_id, screen_id, permission, updated_by, updated_at')
+  ]);
+  const loadErrors = [usersRes.error, screensRes.error, permsRes.error].filter(Boolean);
+  if(loadErrors.length){
+    // فشل حقيقي بالتحميل — لا نعرض مصفوفة فارغة وكأنها نتيجة صحيحة (لا نجاح وهمي)
+    banner.innerHTML = '<span class="big">⚠️</span>تعذّر تحميل بيانات الشاشة:<br>'
+      + loadErrors.map(e => escapeHtml(e.message || 'خطأ غير معروف')).join('<br>')
+      + '<br>أعد تحميل الصفحة أو تحقق من الاتصال بالإنترنت.';
+    banner.style.display = 'block';
+    content.style.display = 'none';
+    return;
+  }
+  banner.style.display = 'none';
+  content.style.display = 'block';
+  ALL_USERS = usersRes.data || [];
+  ALL_SCREENS = screensRes.data || [];
+  ORIGINAL_PERMS = {};
+  (permsRes.data || []).forEach(r => {
+    ORIGINAL_PERMS[permKey(r.user_id, r.screen_id)] = {permission:r.permission, updated_by:r.updated_by, updated_at:r.updated_at};
+  });
+  CHANGES = {};
+  renderHeaderStats();
+  renderMatrixHead();
+  renderMatrixBody();
+  renderUnsavedBar();
+}
+
+function renderHeaderStats(){
+  document.getElementById('statUsers').textContent = ALL_USERS.length;
+  document.getElementById('statGranted').textContent = Object.keys(ORIGINAL_PERMS).length;
+  let last = null;
+  Object.values(ORIGINAL_PERMS).forEach(p => { if(p.updated_at && (!last || p.updated_at > last)) last = p.updated_at; });
+  document.getElementById('statLastUpdate').textContent = last ? new Date(last).toLocaleString('ar-EG', {dateStyle:'medium', timeStyle:'short'}) : 'لا يوجد بعد';
+}
+
+function renderMatrixHead(){
+  const row = document.getElementById('matrixHeadRow');
+  let html = '<th class="userhead">المستخدم</th>';
+  ALL_SCREENS.forEach(s => {
+    const frozen = s.status === 'frozen' ? '<span class="frozen-badge">FROZEN</span>' : '';
+    html += `<th title="${escapeHtml(s.id)}"><div class="th-ar">${escapeHtml(s.name)}</div><div class="th-id">${escapeHtml(s.id)}</div>${frozen}</th>`;
+  });
+  row.innerHTML = html;
+}
+
+function currentPermFor(userId, screenId){
+  const k = permKey(userId, screenId);
+  if(Object.prototype.hasOwnProperty.call(CHANGES, k)) return CHANGES[k];
+  const orig = ORIGINAL_PERMS[k];
+  return orig ? orig.permission : 'NONE';
+}
+
+function renderMatrixBody(){
+  const body = document.getElementById('matrixBody');
+  const term = searchTerm.trim().toLowerCase();
+  const users = ALL_USERS.filter(u => !term || userLabel(u).toLowerCase().includes(term) || (u.email||'').toLowerCase().includes(term));
+  if(!users.length){
+    body.innerHTML = `<tr><td colspan="${ALL_SCREENS.length+1}"><div class="empty">لا يوجد مستخدم مطابق للبحث.</div></td></tr>`;
+    return;
+  }
+  body.innerHTML = users.map(u => {
+    const legacyBit = u.role ? `<span class="u-legacy">Legacy: ${escapeHtml(u.role)}</span>` : '';
+    let cells = `<td class="usercell"><span class="u-name">${escapeHtml(userLabel(u))}</span><span class="u-email">${escapeHtml(u.email||'')}</span>${legacyBit}</td>`;
+    ALL_SCREENS.forEach(s => {
+      const val = currentPermFor(u.id, s.id);
+      const orig = ORIGINAL_PERMS[permKey(u.id, s.id)];
+      const dirty = Object.prototype.hasOwnProperty.call(CHANGES, permKey(u.id, s.id));
+      let title = '';
+      if(orig && orig.updated_at){
+        const byUser = ALL_USERS.find(x => x.id === orig.updated_by);
+        const byLabel = byUser ? userLabel(byUser) : (orig.updated_by || 'غير معروف');
+        title = `بواسطة ${byLabel} — ${new Date(orig.updated_at).toLocaleString('ar-EG',{dateStyle:'medium',timeStyle:'short'})}`;
+      }
+      const opts = PERM_ORDER.map(p => `<option value="${p}" ${p===val?'selected':''}>${PERM_LABELS[p]}</option>`).join('');
+      cells += `<td><select class="permsel p-${val}${dirty?' dirty':''}" title="${escapeHtml(title)}" data-user="${u.id}" data-screen="${s.id}">${opts}</select></td>`;
+    });
+    return `<tr>${cells}</tr>`;
+  }).join('');
+
+  body.querySelectorAll('select.permsel').forEach(sel => {
+    sel.addEventListener('change', onCellChange);
+  });
+}
+
+function onCellChange(e){
+  const sel = e.target;
+  const userId = sel.dataset.user, screenId = sel.dataset.screen;
+  const newVal = sel.value;
+  const k = permKey(userId, screenId);
+  const origVal = ORIGINAL_PERMS[k] ? ORIGINAL_PERMS[k].permission : 'NONE';
+  if(newVal === origVal){ delete CHANGES[k]; }
+  else { CHANGES[k] = newVal; }
+  sel.className = 'permsel p-' + newVal + (Object.prototype.hasOwnProperty.call(CHANGES,k) ? ' dirty' : '');
+  renderUnsavedBar();
+}
+
+function renderUnsavedBar(){
+  const bar = document.getElementById('unsavedBar');
+  const n = Object.keys(CHANGES).length;
+  bar.style.display = n ? 'flex' : 'none';
+  document.getElementById('unsavedCount').textContent = n + (n===1 ? ' تغيير غير محفوظ' : ' تغييرات غير محفوظة');
+}
+
+document.getElementById('cancelBtn').addEventListener('click', () => {
+  CHANGES = {};
+  renderMatrixBody();
+  renderUnsavedBar();
+});
+
+document.getElementById('searchUser').addEventListener('input', e => {
+  searchTerm = e.target.value;
+  renderMatrixBody();
+});
+
+document.getElementById('saveBtn').addEventListener('click', () => {
+  const keys = Object.keys(CHANGES);
+  if(!keys.length) return;
+  const affectedUsers = new Set(keys.map(k => k.split(':')[0]));
+  document.getElementById('prevUsers').textContent = affectedUsers.size;
+  document.getElementById('prevCells').textContent = keys.length;
+  const opsList = document.getElementById('prevOpsList');
+  opsList.innerHTML = keys.map(k => {
+    const [userId, screenId] = k.split(':');
+    const u = ALL_USERS.find(x => x.id === userId);
+    const newVal = CHANGES[k];
+    const op = newVal === 'NONE' ? 'حذف الصلاحية (DELETE)' : 'تعيين ' + newVal + ' (UPSERT)';
+    return `<div>${escapeHtml(userLabel(u))} — ${escapeHtml(screenId)}: ${op}</div>`;
+  }).join('');
+  document.getElementById('previewOverlay').classList.add('active');
+});
+
+document.getElementById('previewCancelBtn').addEventListener('click', () => {
+  document.getElementById('previewOverlay').classList.remove('active');
+});
+
+document.getElementById('previewConfirmBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('previewConfirmBtn');
+  btn.disabled = true; btn.textContent = 'جارٍ الحفظ...';
+  const keys = Object.keys(CHANGES);
+  const failedKeys = [];
+  const failedMessages = [];
+  for(const k of keys){
+    const [userId, screenId] = k.split(':');
+    const newVal = CHANGES[k];
+    try{
+      if(newVal === 'NONE'){
+        const {error} = await sb.from('user_screen_permissions').delete().eq('user_id', userId).eq('screen_id', screenId);
+        if(error) throw error;
+      }else{
+        const {error} = await sb.from('user_screen_permissions').upsert({
+          user_id: userId, screen_id: screenId, permission: newVal,
+          updated_by: curUser.id, updated_at: new Date().toISOString()
+        }, {onConflict:'user_id,screen_id'});
+        if(error) throw error;
+      }
+    }catch(err){
+      failedKeys.push(k);
+      failedMessages.push(k + ': ' + (err && err.message || 'خطأ غير معروف'));
+    }
+  }
+  btn.disabled = false; btn.textContent = 'تأكيد الحفظ';
+  document.getElementById('previewOverlay').classList.remove('active');
+  const succeededCount = keys.length - failedKeys.length;
+  const pendingChanges = {};
+  failedKeys.forEach(k => { pendingChanges[k] = CHANGES[k]; });
+  await loadMatrixData(); // يعيد التحميل من القاعدة (يشمل كل التغييرات الناجحة) ويصفّر CHANGES
+  const statusEl = document.getElementById('saveStatusMsg');
+  if(failedKeys.length){
+    CHANGES = pendingChanges; // التغييرات التي فشلت فقط تبقى معلَّقة محلياً لإعادة المحاولة
+    renderMatrixBody();
+    renderUnsavedBar();
+    statusEl.textContent = `✔ نجح ${succeededCount} من ${keys.length} — ⚠ فشل ${failedKeys.length}`;
+    statusEl.className = 'status-msg err';
+    alert('تعذّر حفظ بعض التغييرات (نتيجة واضحة، بلا نجاح وهمي):\n' + failedMessages.join('\n')
+      + `\n\nنجح فعلياً: ${succeededCount} من ${keys.length}. الباقي (${failedKeys.length}) ما زال معلَّقاً محلياً لإعادة المحاولة.`);
+  }else{
+    statusEl.textContent = `✔ تم حفظ ${succeededCount} تغيير بنجاح`;
+    statusEl.className = 'status-msg ok';
+    setTimeout(() => { if(statusEl.textContent.indexOf('✔ تم حفظ')===0) statusEl.textContent=''; }, 6000);
+  }
+});
+</script>
+
+</body>
+</html>
