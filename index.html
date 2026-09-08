@@ -559,9 +559,14 @@ function showUnauthorized(kind,title,msg){
 async function onSignedIn(user){
   curUser=user;
   const {data:prof}=await sb.from('profiles').select('*').eq('id',user.id).single();
-  curProfile=prof||{full_name:user.email, role:'viewer'};
+  curProfile=prof||{full_name:user.email, role:'viewer', allowed_apps:[]};
+  if(!(curProfile.allowed_apps||[]).includes('kfc-tax')){
+    await sb.auth.signOut();
+    setMsg('loginMsg','هذا الحساب ما إله صلاحية الدخول على هاي الشاشة — تواصل مع المدير.','err');
+    return;
+  }
 
-  // صلاحية هذه الشاشة تحديداً (user_screen_permissions) — تحل محل الاعتماد على profiles.role العام
+  // صلاحية هذه الشاشة تحديداً (user_screen_permissions) — طبقة إضافية فوق allowed_apps الموجودة
   const {data:permRow, error:permErr}=await sb.from('user_screen_permissions')
     .select('permission').eq('user_id',user.id).eq('screen_id','sales-tax-declaration').maybeSingle();
 
