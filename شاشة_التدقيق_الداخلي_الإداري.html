@@ -2283,6 +2283,14 @@
       <label>مهام التدقيق المرتبطة (WP)</label>
       <div id="engLinkedTasks" style="font-size:12.5px;line-height:1.8;"></div>
     </div>
+    <div class="field" id="engChecklistsField" style="display:none;">
+      <label>قوائم التحقق المرتبطة</label>
+      <div id="engChecklistsList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;"></div>
+      <div style="display:flex;gap:8px;">
+        <select id="engAssignTplSelect" style="flex:1;"></select>
+        <button type="button" class="btn btn-ghost btn-sm" id="engAssignTplBtn">+ تعيين</button>
+      </div>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-danger" id="deleteEngagementBtn" style="display:none;">حذف</button>
       <div style="display:flex;gap:8px;margin-right:auto;">
@@ -2430,6 +2438,33 @@
     <div class="modal-actions">
       <div style="display:flex;gap:8px;margin-right:auto;">
         <button class="btn btn-ghost" id="closeChecklistPreview">إغلاق</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CHECKLIST EXECUTION MODAL -->
+<div class="overlay" id="checklistExecOverlay">
+  <div class="modal" style="max-width:920px;">
+    <h2 id="checklistExecTitle">تنفيذ قائمة التحقق</h2>
+    <div id="checklistExecMeta" style="font-size:12px;color:var(--muted);margin:-8px 0 12px 0;"></div>
+    <div class="stat-cards" id="checklistExecStats" style="margin-bottom:14px;"></div>
+    <div class="row2" style="margin-bottom:12px;">
+      <div class="field" style="margin:0;">
+        <label>تم الاختبار بواسطة</label>
+        <input type="text" id="execTestedBy" placeholder="اسم المدقق">
+      </div>
+      <div class="field" style="margin:0;">
+        <label>تاريخ الاختبار</label>
+        <input type="date" id="execTestedDate">
+      </div>
+    </div>
+    <div id="checklistExecItems" style="display:flex;flex-direction:column;gap:10px;max-height:48vh;overflow:auto;padding-left:4px;"></div>
+    <div class="modal-actions">
+      <button class="btn btn-danger" id="removeExecBtn">إزالة من المهمة</button>
+      <div style="display:flex;gap:8px;margin-right:auto;">
+        <button class="btn btn-ghost" id="markExecCompletedBtn">تحديد كمكتملة</button>
+        <button class="btn btn-primary" id="closeChecklistExec">إغلاق</button>
       </div>
     </div>
   </div>
@@ -6324,10 +6359,10 @@ const DEFAULT_CHECKLIST_TEMPLATES = [
     items:[
       {controlObjective:"فصل المهام بدورة الشراء (طلب ← اعتماد ← استلام ← دفع)", auditProcedure:"مراجعة صلاحيات SAP لعينة من أوامر الشراء ومقارنة منشئ الطلب/المعتمد/مستلم البضاعة عبر مراحل PO → GRPO → AP Invoice", expectedResult:"لا يوجد شخص واحد يجمع بين أكثر من دور بنفس المعاملة", required:true, riskLevel:"high", evidenceRequired:true, notes:""},
       {controlObjective:"اعتماد أوامر الشراء ضمن السقوف المالية المعتمدة", auditProcedure:"مطابقة عينة من أوامر الشراء المتجاوزة للسقف بسجل الموافقات الرسمية (خطية أو بريد إلكتروني)", expectedResult:"كل تجاوز للسقف موثّق بموافقة مسبقة من الجهة المخوّلة", required:true, riskLevel:"high", evidenceRequired:true, notes:""},
-      {controlObjective:"المطابقة الثلاثية (أمر الشراء × سند الاستلام × فاتورة المورد)", auditProcedure:"لعينة من الفواتير: مطابقة الكمية والسعر بين PO وGRPO وAP Invoice", expectedResult:"لا فروقات جوهرية غير مبررة بين المستندات الثلاثة", required:true, riskLevel:"high", evidenceRequired:true, notes:""},
-      {controlObjective:"دقة تحميل تكلفة الاستيراد (Landed Cost)", auditProcedure:"لعينة من شحنات الاستيراد، مطابقة التكلفة النهائية المحمّلة على الصنف بالنظام مع مستندات الشحن والجمارك الفعلية", expectedResult:"التكلفة المحمّلة تعكس الشحن والرسوم الفعلية موزّعة بشكل صحيح", required:true, riskLevel:"medium", evidenceRequired:true, notes:"راجع أيضاً كويريات Landed Cost بمكتبة الكويريات"},
+      {controlObjective:"المطابقة الثلاثية (أمر الشراء × سند الاستلام × فاتورة المورد)", auditProcedure:"لعينة من الفواتير: مطابقة الكمية والسعر بين PO وGRPO وAP Invoice", expectedResult:"لا فروقات جوهرية غير مبررة بين المستندات الثلاثة", required:true, riskLevel:"high", evidenceRequired:true, notes:"", queryRefs:["KLN-PUR-002"]},
+      {controlObjective:"دقة تحميل تكلفة الاستيراد (Landed Cost)", auditProcedure:"لعينة من شحنات الاستيراد، مطابقة التكلفة النهائية المحمّلة على الصنف بالنظام مع مستندات الشحن والجمارك الفعلية", expectedResult:"التكلفة المحمّلة تعكس الشحن والرسوم الفعلية موزّعة بشكل صحيح", required:true, riskLevel:"medium", evidenceRequired:true, notes:"راجع أيضاً كويريات Landed Cost بمكتبة الكويريات", queryRefs:["KLN-PUR-000002"]},
       {controlObjective:"اكتمال مستندات الاستيراد", auditProcedure:"التحقق من توفر قائمة التعبئة وبوليصة الشحن وشهادة المنشأ والشهادة الصحية (وشهادة الحلال إن لزم) لكل شحنة", expectedResult:"ملف مستندات كامل ومؤرشف لكل شحنة مستوردة", required:true, riskLevel:"medium", evidenceRequired:true, notes:""},
-      {controlObjective:"تنويع مصادر التوريد للأصناف ذات الأهمية العالية", auditProcedure:"مراجعة نسبة الاعتماد على مورد واحد للأصناف الحرجة", expectedResult:"لا اعتماد كامل على مورد واحد بدون مبرر موثّق", required:false, riskLevel:"medium", evidenceRequired:false, notes:"بند استشاري وليس إلزامياً"},
+      {controlObjective:"تنويع مصادر التوريد للأصناف ذات الأهمية العالية", auditProcedure:"مراجعة نسبة الاعتماد على مورد واحد للأصناف الحرجة", expectedResult:"لا اعتماد كامل على مورد واحد بدون مبرر موثّق", required:false, riskLevel:"medium", evidenceRequired:false, notes:"بند استشاري وليس إلزامياً", queryRefs:["KLN-PUR-004"]},
       {controlObjective:"تقييم أداء الموردين الرئيسيين", auditProcedure:"التحقق من وجود تقييم دوري موثّق (الالتزام بالمواعيد، الجودة، استقرار الأسعار)", expectedResult:"يوجد تقييم موثّق خلال آخر 12 شهر لكل مورد رئيسي", required:true, riskLevel:"low", evidenceRequired:false, notes:""},
       {controlObjective:"تحقيق هدف توفر الأصناف (Target)", auditProcedure:"مقارنة نسبة توفر الأصناف الفعلية بالهدف المعتمد (95%)", expectedResult:"الانحراف عن الهدف، إن وجد، مبرر وموثّق", required:true, riskLevel:"medium", evidenceRequired:false, notes:""},
     ]},
@@ -6335,13 +6370,13 @@ const DEFAULT_CHECKLIST_TEMPLATES = [
     description:"قالب مرجعي لتدقيق الرقابة على المخزون بالمستودعات — الجرد، تتبع الدفعات وتواريخ الانتهاء، فصل المهام بالصرف والاستلام، ومعالجة الفروقات والتالف.",
     items:[
       {controlObjective:"مطابقة الجرد الفعلي بالرصيد النظامي", auditProcedure:"إجراء جرد فعلي لعينة من الأصناف/المستودعات ومطابقته بالرصيد بـSAP", expectedResult:"الفروقات ضمن الحد المقبول أو موثّقة ومعتمدة", required:true, riskLevel:"high", evidenceRequired:true, notes:""},
-      {controlObjective:"الالتزام بمبدأ الأقرب انتهاءً يُصرف أولاً (FEFO)", auditProcedure:"مراجعة عينة من عمليات الصرف والتحقق من صرف الدفعة الأقرب انتهاءً أولاً", expectedResult:"لا صرف لدفعة أحدث قبل دفعة أقدم بدون مبرر موثّق", required:true, riskLevel:"high", evidenceRequired:true, notes:""},
-      {controlObjective:"تتبع الدفعات وتواريخ الانتهاء (Batch/Expiry Tracking)", auditProcedure:"التحقق من تسجيل كل دفعة واردة برقم Batch وتاريخ انتهاء بالنظام", expectedResult:"لا أصناف مخزنة بدون ترقيم دفعة أو تاريخ صلاحية مسجَّل", required:true, riskLevel:"high", evidenceRequired:false, notes:""},
+      {controlObjective:"الالتزام بمبدأ الأقرب انتهاءً يُصرف أولاً (FEFO)", auditProcedure:"مراجعة عينة من عمليات الصرف والتحقق من صرف الدفعة الأقرب انتهاءً أولاً", expectedResult:"لا صرف لدفعة أحدث قبل دفعة أقدم بدون مبرر موثّق", required:true, riskLevel:"high", evidenceRequired:true, notes:"", queryRefs:["KLN-STK-002"]},
+      {controlObjective:"تتبع الدفعات وتواريخ الانتهاء (Batch/Expiry Tracking)", auditProcedure:"التحقق من تسجيل كل دفعة واردة برقم Batch وتاريخ انتهاء بالنظام", expectedResult:"لا أصناف مخزنة بدون ترقيم دفعة أو تاريخ صلاحية مسجَّل", required:true, riskLevel:"high", evidenceRequired:false, notes:"", queryRefs:["KLN-QLT-004","KLN-QLT-002"]},
       {controlObjective:"فصل المهام عند التحميل والتسليم من المستودع", auditProcedure:"التحقق من توقيع طرفين مختلفين (غير من جهّز التحميل) عند التحميل الفعلي وفق السياسة المعتمدة", expectedResult:"التوقيعان لشخصين مختلفين فعلياً على كل عملية تحميل", required:true, riskLevel:"high", evidenceRequired:true, notes:""},
-      {controlObjective:"معالجة فروقات الجرد (زيادة/نقص)", auditProcedure:"مراجعة نماذج معالجة الفروقات والتحقق من اعتمادها من أمين المستودع والمدير المالي", expectedResult:"كل فرق موثّق ومعتمد أصولياً، وأي فرق غير مبرر محمَّل على المسؤول", required:true, riskLevel:"high", evidenceRequired:true, notes:""},
-      {controlObjective:"التالف والمنتهي الصلاحية", auditProcedure:"مراجعة سجل الأصناف التالفة/منتهية الصلاحية والتحقق من اعتماد محضر الإتلاف/الشطب رسمياً", expectedResult:"لا شطب أو إتلاف بدون محضر معتمد", required:true, riskLevel:"medium", evidenceRequired:true, notes:""},
+      {controlObjective:"معالجة فروقات الجرد (زيادة/نقص)", auditProcedure:"مراجعة نماذج معالجة الفروقات والتحقق من اعتمادها من أمين المستودع والمدير المالي", expectedResult:"كل فرق موثّق ومعتمد أصولياً، وأي فرق غير مبرر محمَّل على المسؤول", required:true, riskLevel:"high", evidenceRequired:true, notes:"", queryRefs:["KLN-STK-005"]},
+      {controlObjective:"التالف والمنتهي الصلاحية", auditProcedure:"مراجعة سجل الأصناف التالفة/منتهية الصلاحية والتحقق من اعتماد محضر الإتلاف/الشطب رسمياً", expectedResult:"لا شطب أو إتلاف بدون محضر معتمد", required:true, riskLevel:"medium", evidenceRequired:true, notes:"", queryRefs:["KLN-STK-003"]},
       {controlObjective:"الحد الأدنى لمدة الصلاحية عند استلام مرتجعات الكاش فان", auditProcedure:"التحقق من عدم قبول بضاعة بمدة صلاحية متبقية أقل من الحد الأدنى المعتمد بالسياسة (6 أشهر)", expectedResult:"الحد الأدنى محقَّق لعينة من المرتجعات المستلمة", required:true, riskLevel:"medium", evidenceRequired:false, notes:""},
-      {controlObjective:"مطابقة سندات التحويل بين المستودعات", auditProcedure:"لعينة من سندات التحويل (بضمنها المؤسسة الاستهلاكية العسكرية)، مطابقة الكميات المرسلة بالمستلمة", expectedResult:"لا فروقات غير مفسَّرة بين الكميات المرسلة والمستلمة", required:true, riskLevel:"medium", evidenceRequired:true, notes:""},
+      {controlObjective:"مطابقة سندات التحويل بين المستودعات", auditProcedure:"لعينة من سندات التحويل (بضمنها المؤسسة الاستهلاكية العسكرية)، مطابقة الكميات المرسلة بالمستلمة", expectedResult:"لا فروقات غير مفسَّرة بين الكميات المرسلة والمستلمة", required:true, riskLevel:"medium", evidenceRequired:true, notes:"", queryRefs:["KLN-STK-000003","KLN-STK-000004"]},
     ]},
 ];
 
@@ -6370,6 +6405,7 @@ function seedDefaultChecklistTemplates(){
       riskLevel: it.riskLevel || "",
       evidenceRequired: !!it.evidenceRequired,
       notes: it.notes || "",
+      queryRefs: it.queryRefs || [],
     })),
     changelog: [{date: todayStr(), note: "استيراد ضمن مكتبة قوالب التدقيق القياسية v1"}],
     createdAt: todayStr(),
@@ -6435,6 +6471,7 @@ function loadDB(){
       if(!db.engagements) db.engagements = [];
       if(!db.evidence) db.evidence = [];
       if(!db.checklistTemplates) db.checklistTemplates = [];
+      if(!db.checklistExecutions) db.checklistExecutions = [];
       if(!db.settings) db.settings = defaultSettings();
       if(!db.settings.healthScoreWeights) db.settings.healthScoreWeights = {...DEFAULT_HEALTH_WEIGHTS};
       if(!db.settings.responsibleEmails) db.settings.responsibleEmails = {};
@@ -6444,7 +6481,7 @@ function loadDB(){
       return db;
     }
   }catch(e){}
-  return {tasks:[], queries:[], recurring:[], findings:[], risks:[], universe:[], counters:{}, samplingMethods:[], quickNotes:[], policies:[], authority:[], kpis:[], meetings:[], improvements:[], emails:[], engagements:[], evidence:[], checklistTemplates:[], settings: defaultSettings()};
+  return {tasks:[], queries:[], recurring:[], findings:[], risks:[], universe:[], counters:{}, samplingMethods:[], quickNotes:[], policies:[], authority:[], kpis:[], meetings:[], improvements:[], emails:[], engagements:[], evidence:[], checklistTemplates:[], checklistExecutions:[], settings: defaultSettings()};
 }
 function saveDB(){
   dashCache = null;
@@ -7498,7 +7535,9 @@ function renderTplItemsEditor(){
         </div>
       </div>
       <div class="field" style="margin:0;"><label style="font-size:11px;">ملاحظات</label><input type="text" class="it-notes" value="${escapeHtml(it.notes||"")}"></div>
+      ${(it.queryRefs&&it.queryRefs.length)? `<div style="margin-top:6px;"><label style="font-size:11px;color:var(--muted);">مرجع الكويري المركزي</label><div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:2px;">${it.queryRefs.map(c=>`<button type="button" class="kd-chip qref-btn" data-qcode="${escapeHtml(c)}" style="cursor:pointer;background:#EFF6FF;color:#2563EB;border:1px solid #BFDBFE;font-weight:700;">🔗 ${escapeHtml(c)}</button>`).join(" ")}</div></div>`:''}
     `;
+    row.querySelectorAll(".qref-btn").forEach(b=> b.onclick = ()=> openQueryByCode(b.dataset.qcode));
     row.querySelector(".it-obj").oninput = e=> tplItemsDraft[i].controlObjective = e.target.value;
     row.querySelector(".it-proc").oninput = e=> tplItemsDraft[i].auditProcedure = e.target.value;
     row.querySelector(".it-exp").oninput = e=> tplItemsDraft[i].expectedResult = e.target.value;
@@ -7538,6 +7577,7 @@ document.getElementById("saveChecklistTplBtn").onclick = ()=>{
     riskLevel: it.riskLevel||"",
     evidenceRequired: !!it.evidenceRequired,
     notes: (it.notes||"").trim(),
+    queryRefs: it.queryRefs || [],
   }));
   const payload = {
     id: id || uid(),
@@ -7585,6 +7625,12 @@ document.getElementById("deleteChecklistTplBtn").onclick = ()=>{
   renderChecklistLibrary();
 };
 
+function openQueryByCode(code){
+  const q = DB.queries.find(x=>x.code===code);
+  if(!q){ alert(`تعذر إيجاد الكويري بالكود: ${code}`); return; }
+  openQueryModal(q);
+}
+
 function openChecklistPreview(tpl){
   document.getElementById("checklistPreviewTitle").textContent = `معاينة — ${tpl.name}`;
   const cat_ = catMeta(tpl.category);
@@ -7596,6 +7642,7 @@ function openChecklistPreview(tpl){
       <div style="font-size:12px;color:var(--muted);">النتيجة المتوقعة: ${escapeHtml(it.expectedResult||"—")}</div>
       <div style="font-size:11px;color:var(--muted);margin-top:2px;">${it.riskLevel? `خطر: ${(SEVERITY_META[it.riskLevel]||{label:it.riskLevel}).label} · `:''}${it.evidenceRequired? 'يتطلب دليلاً':''}</div>
       ${it.notes? `<div style="font-size:11px;color:var(--muted);margin-top:2px;">ملاحظة: ${escapeHtml(it.notes)}</div>`:''}
+      ${(it.queryRefs&&it.queryRefs.length)? `<div style="margin-top:5px;display:flex;flex-wrap:wrap;gap:4px;">${it.queryRefs.map(c=>`<button type="button" class="kd-chip qref-btn" data-qcode="${escapeHtml(c)}" style="cursor:pointer;background:#EFF6FF;color:#2563EB;border:1px solid #BFDBFE;font-weight:700;">🔗 ${escapeHtml(c)}</button>`).join(" ")}</div>`:''}
     </div>`).join("") || `<p style="color:var(--muted);">لا بنود بهذا القالب.</p>`;
   document.getElementById("checklistPreviewBody").innerHTML = `
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">
@@ -7606,9 +7653,157 @@ function openChecklistPreview(tpl){
     </div>
     ${tpl.description? `<p style="font-size:13px;color:var(--muted);">${escapeHtml(tpl.description)}</p>`:''}
     <div>${itemsHtml}</div>`;
+  document.getElementById("checklistPreviewBody").querySelectorAll(".qref-btn").forEach(b=> b.onclick = ()=> openQueryByCode(b.dataset.qcode));
   document.getElementById("checklistPreviewOverlay").classList.add("active");
 }
 document.getElementById("closeChecklistPreview").onclick = ()=> document.getElementById("checklistPreviewOverlay").classList.remove("active");
+
+/* ===================== CHECKLIST EXECUTION (Batch 3b) ===================== */
+let currentExec = null;
+
+function checklistExecStats(ex){
+  const items = ex.items||[];
+  const total = items.length;
+  const done = items.filter(i=>i.result && i.result!=="pending").length;
+  const pct = total ? Math.round(done/total*100) : 0;
+  const failed = items.filter(i=>i.result==="fail").length;
+  const gaps = items.filter(i=>i.evidenceRequired && i.result && i.result!=="pending" && (!i.evidenceIds||!i.evidenceIds.length)).length;
+  return {total, done, pct, failed, gaps};
+}
+
+function refreshEngagementChecklistsIfOpen(){
+  if(!currentExec) return;
+  const eng = DB.engagements.find(x=>x.id===currentExec.engagementId);
+  if(eng && document.getElementById("engagementOverlay").classList.contains("active")) renderEngagementChecklists(eng);
+}
+
+function openChecklistExecution(ex){
+  currentExec = ex;
+  document.getElementById("execTestedBy").onchange = e=>{ ex.testedBy = e.target.value.trim(); ex.updatedAt = todayStr(); saveDB(); };
+  document.getElementById("execTestedDate").onchange = e=>{ ex.testedDate = e.target.value; ex.updatedAt = todayStr(); saveDB(); };
+  renderChecklistExecution(ex);
+  document.getElementById("checklistExecOverlay").classList.add("active");
+}
+
+function renderChecklistExecution(ex){
+  const eng = DB.engagements.find(e=>e.id===ex.engagementId);
+  document.getElementById("checklistExecTitle").textContent = `تنفيذ — ${ex.templateName} (v${ex.templateVersion})`;
+  const stMeta = CHECKLIST_EXEC_STATUS_META[ex.status] || CHECKLIST_EXEC_STATUS_META.not_started;
+  document.getElementById("checklistExecMeta").innerHTML = `${escapeHtml(ex.execCode)} · مهمة التدقيق: ${eng? escapeHtml(eng.refCode+' — '+eng.title) : '<span style="color:var(--kd-warn)">مهمة غير موجودة</span>'} · <span class="kd-chip" style="background:${stMeta.color}22;color:${stMeta.color};font-weight:700;">${stMeta.label}</span>`;
+  const s = checklistExecStats(ex);
+  document.getElementById("checklistExecStats").innerHTML = `
+    <div class="stat-card"><b>${s.pct}%</b><span>نسبة الإنجاز</span></div>
+    <div class="stat-card"><b>${s.done}/${s.total}</b><span>بنود مُختبرة</span></div>
+    <div class="stat-card"><b style="color:#DC2626">${s.failed}</b><span>بنود فاشلة</span></div>
+    <div class="stat-card"><b style="color:#F59E0B">${s.gaps}</b><span>أدلة ناقصة</span></div>
+  `;
+  document.getElementById("execTestedBy").value = ex.testedBy || "";
+  document.getElementById("execTestedDate").value = ex.testedDate || "";
+  renderExecItems(ex);
+}
+
+function renderExecItems(ex){
+  const box = document.getElementById("checklistExecItems");
+  box.innerHTML = "";
+  (ex.items||[]).forEach(item=>{
+    const riskMeta = item.riskLevel ? SEVERITY_META[item.riskLevel] : null;
+    const resMeta = CHECKLIST_RESULT_META[item.result||"pending"];
+    const linkedEvidence = (item.evidenceIds||[]).map(id=>DB.evidence.find(e=>e.id===id)).filter(Boolean);
+    const gap = item.evidenceRequired && item.result && item.result!=="pending" && !linkedEvidence.length;
+    const linkedFinding = item.findingId ? DB.findings.find(f=>f.id===item.findingId) : null;
+    const card = document.createElement("div");
+    card.style.cssText = "border:1px solid var(--border);border-radius:10px;padding:12px 14px;background:#fff;";
+    card.innerHTML = `
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">
+        <div style="flex:1;">
+          <div style="font-weight:700;font-size:13.5px;">${item.sequence}. ${escapeHtml(item.controlObjective||"—")} ${item.required? '<span class="kd-chip mut" style="font-size:10px;">إلزامي</span>':''} ${riskMeta? `<span class="kd-chip" style="background:${riskMeta.color}22;color:${riskMeta.color};font-size:10px;font-weight:700;">${riskMeta.label}</span>`:''}</div>
+          <div style="font-size:12px;color:var(--muted);margin-top:3px;">إجراء التدقيق: ${escapeHtml(item.auditProcedure||"—")}</div>
+          <div style="font-size:12px;color:var(--muted);">النتيجة المتوقعة: ${escapeHtml(item.expectedResult||"—")}</div>
+        </div>
+        <span class="kd-chip" style="background:${resMeta.color}22;color:${resMeta.color};font-weight:700;white-space:nowrap;">${resMeta.label}</span>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:8px;">
+        <button type="button" class="btn btn-sm res-btn" data-r="pass" style="background:${item.result==='pass'?'#16A34A':'transparent'};color:${item.result==='pass'?'#fff':'#16A34A'};border:1px solid #16A34A;">✓ ناجح</button>
+        <button type="button" class="btn btn-sm res-btn" data-r="fail" style="background:${item.result==='fail'?'#DC2626':'transparent'};color:${item.result==='fail'?'#fff':'#DC2626'};border:1px solid #DC2626;">✗ فاشل</button>
+        <button type="button" class="btn btn-sm res-btn" data-r="na" style="background:${item.result==='na'?'#64748B':'transparent'};color:${item.result==='na'?'#fff':'#64748B'};border:1px solid #64748B;">— لا ينطبق</button>
+      </div>
+      <div style="margin-top:8px;">
+        <textarea class="result-notes" placeholder="ملاحظة المختبر (اختياري)" style="width:100%;min-height:40px;font-size:12px;">${escapeHtml(item.resultNotes||"")}</textarea>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:center;">
+        ${item.evidenceRequired? `<span class="kd-chip" style="${gap? 'background:#F59E0B22;color:#F59E0B;font-weight:700;':'background:var(--kd-surface-2,#F1F5F9);color:var(--kd-muted,#64748B);'}">${gap? '⚠ يتطلب دليلاً':'📎 يتطلب دليلاً'}</span>`:''}
+        ${linkedEvidence.map(ev=>`<span class="kd-chip mut">📄 ${escapeHtml((ev.desc||"").slice(0,30))}</span>`).join("")}
+        <button type="button" class="btn btn-ghost btn-sm add-ev-btn">+ دليل</button>
+        ${item.result==="fail" ? (linkedFinding
+          ? `<button type="button" class="btn btn-ghost btn-sm open-finding-btn">📋 ${escapeHtml(linkedFinding.refCode)}</button>`
+          : `<button type="button" class="btn btn-ghost btn-sm add-finding-btn">+ إنشاء ملاحظة</button>`) : ''}
+        ${(item.queryRefs&&item.queryRefs.length)? item.queryRefs.map(c=>`<button type="button" class="kd-chip qref-btn" data-qcode="${escapeHtml(c)}" style="cursor:pointer;background:#EFF6FF;color:#2563EB;border:1px solid #BFDBFE;font-weight:700;">🔗 ${escapeHtml(c)}</button>`).join(" ") : ''}
+      </div>
+    `;
+    card.querySelectorAll(".res-btn").forEach(b=> b.onclick = ()=> setItemResult(ex, item, b.dataset.r));
+    card.querySelector(".result-notes").oninput = e=>{ item.resultNotes = e.target.value; ex.updatedAt = todayStr(); saveDB(); };
+    card.querySelector(".add-ev-btn").onclick = ()=> addEvidenceForItem(ex, item);
+    const findingBtn = card.querySelector(".add-finding-btn");
+    if(findingBtn) findingBtn.onclick = ()=> createFindingForItem(ex, item);
+    const openFindingBtn = card.querySelector(".open-finding-btn");
+    if(openFindingBtn) openFindingBtn.onclick = ()=>{ if(linkedFinding) openFindingModal(linkedFinding); };
+    card.querySelectorAll(".qref-btn").forEach(b=> b.onclick = ()=> openQueryByCode(b.dataset.qcode));
+    box.appendChild(card);
+  });
+}
+
+function setItemResult(ex, item, result){
+  item.result = result;
+  if(ex.status==="not_started") ex.status = "in_progress";
+  if(!ex.startedDate) ex.startedDate = todayStr();
+  ex.updatedAt = todayStr();
+  saveDB();
+  renderChecklistExecution(ex);
+  refreshEngagementChecklistsIfOpen();
+}
+
+function addEvidenceForItem(ex, item){
+  pendingChecklistEvidenceLink = {execId: ex.id, itemId: item.id};
+  openEvidenceModal(null, {engagementId: ex.engagementId});
+}
+
+function createFindingForItem(ex, item){
+  pendingChecklistFindingLink = {execId: ex.id, itemId: item.id};
+  openFindingModal(null);
+  document.getElementById("fTitle").value = `إخفاق ببند تدقيق: ${item.controlObjective}`;
+  const tpl = DB.checklistTemplates.find(t=>t.id===ex.templateId);
+  if(tpl) document.getElementById("fCategory").value = tpl.category;
+  document.getElementById("fEngagementId").value = ex.engagementId;
+  document.getElementById("fDesc").value = `نتج عن بند "${item.controlObjective}" ضمن تنفيذ قائمة تحقق "${ex.templateName}" (${ex.execCode}).\nإجراء التدقيق: ${item.auditProcedure}\nالنتيجة المتوقعة: ${item.expectedResult}\nملاحظة المُختبر: ${item.resultNotes||'—'}`;
+}
+
+document.getElementById("markExecCompletedBtn").onclick = ()=>{
+  if(!currentExec) return;
+  const requiredPending = (currentExec.items||[]).filter(i=>i.required && (!i.result || i.result==="pending"));
+  if(requiredPending.length){ alert(`لا يمكن تحديد القائمة كمكتملة — يوجد ${requiredPending.length} بنداً إلزامياً بلا نتيجة بعد.`); return; }
+  currentExec.status = "completed";
+  currentExec.completedDate = todayStr();
+  currentExec.updatedAt = todayStr();
+  saveDB();
+  renderChecklistExecution(currentExec);
+  refreshEngagementChecklistsIfOpen();
+};
+
+document.getElementById("removeExecBtn").onclick = ()=>{
+  if(!currentExec) return;
+  if(!confirm("هل تريد إزالة قائمة التحقق هذه من مهمة التدقيق؟ لن يتم حذف أي ملاحظات أو أدلة أُنشئت منها، فقط تُزال قائمة التنفيذ نفسها.")) return;
+  DB.checklistExecutions = DB.checklistExecutions.filter(x=>x.id!==currentExec.id);
+  saveDB();
+  document.getElementById("checklistExecOverlay").classList.remove("active");
+  refreshEngagementChecklistsIfOpen();
+  currentExec = null;
+};
+
+document.getElementById("closeChecklistExec").onclick = ()=>{
+  document.getElementById("checklistExecOverlay").classList.remove("active");
+  refreshEngagementChecklistsIfOpen();
+  currentExec = null;
+};
 
 /* ---- queries-only export / import ---- */
 function exportQueriesOnly(){
@@ -7981,6 +8176,7 @@ const CLOSE_CHECKLIST_ITEMS = [
   "تم التحقق من التنفيذ الفعلي (إعادة اختبار أو دليل إغلاق ملموس)",
 ];
 let pendingFindingPayload = null;
+let pendingChecklistFindingLink = null; /* {execId, itemId} — set when "+ إنشاء ملاحظة" is clicked from a failed checklist execution item */
 
 document.getElementById("saveFindingBtn").onclick = ()=>{
   const id = document.getElementById("fEditId").value;
@@ -8026,6 +8222,13 @@ function commitFindingSave(payload){
   saveDB();
   document.getElementById("findingOverlay").classList.remove("active");
   renderFindings();
+  if(pendingChecklistFindingLink){
+    const ex = DB.checklistExecutions.find(x=>x.id===pendingChecklistFindingLink.execId);
+    const it = ex ? ex.items.find(x=>x.id===pendingChecklistFindingLink.itemId) : null;
+    if(it){ it.findingId = payload.id; ex.updatedAt = todayStr(); saveDB(); }
+    pendingChecklistFindingLink = null;
+    if(ex && document.getElementById("checklistExecOverlay").classList.contains("active") && currentExec && currentExec.id===ex.id) renderChecklistExecution(ex);
+  }
 }
 document.getElementById("addFindingEvidenceBtn").onclick = ()=>{
   const fid = document.getElementById("fEditId").value;
@@ -8958,6 +9161,17 @@ const CHECKLIST_TPL_STATUS_META = {
   active:{label:"نشطة", color:"#16A34A"},
   retired:{label:"مؤرشفة", color:"#94A3B8"},
 };
+const CHECKLIST_EXEC_STATUS_META = {
+  not_started:{label:"لم تبدأ", color:"#64748B"},
+  in_progress:{label:"قيد التنفيذ", color:"#2563EB"},
+  completed:{label:"مكتملة", color:"#16A34A"},
+};
+const CHECKLIST_RESULT_META = {
+  pending:{label:"بانتظار الاختبار", color:"#94A3B8"},
+  pass:{label:"ناجح", color:"#16A34A"},
+  fail:{label:"فاشل", color:"#DC2626"},
+  na:{label:"لا ينطبق", color:"#64748B"},
+};
 const COMPLIANCE_META = {
   unknown:{label:"غير مُقيَّم", color:"#94A3B8"},
   full:{label:"التزام كامل", color:"#16A34A"},
@@ -9660,7 +9874,77 @@ function openEngagementModal(eng){
     linkedFindingsField.style.display = "none";
     linkedTasksField.style.display = "none";
   }
+  document.getElementById("engChecklistsField").style.display = eng ? "block" : "none";
+  if(eng) renderEngagementChecklists(eng);
   document.getElementById("engagementOverlay").classList.add("active");
+}
+
+function renderEngagementChecklists(eng){
+  const list = DB.checklistExecutions.filter(x=>x.engagementId===eng.id);
+  const box = document.getElementById("engChecklistsList");
+  box.innerHTML = list.length ? list.map(ex=>{
+    const total = (ex.items||[]).length;
+    const done = (ex.items||[]).filter(i=>i.result && i.result!=="pending").length;
+    const pct = total ? Math.round(done/total*100) : 0;
+    const failed = (ex.items||[]).filter(i=>i.result==="fail").length;
+    const stMeta = CHECKLIST_EXEC_STATUS_META[ex.status] || CHECKLIST_EXEC_STATUS_META.not_started;
+    return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:12.5px;">
+      <span><b>${escapeHtml(ex.templateName)}</b> <span class="kd-chip mut">v${ex.templateVersion}</span> — ${pct}% ${failed? `<span style="color:#DC2626;">· ${failed} فاشل</span>`:''}</span>
+      <span style="display:flex;gap:6px;align-items:center;">
+        <span class="kd-chip" style="background:${stMeta.color}22;color:${stMeta.color};font-weight:700;">${stMeta.label}</span>
+        <button type="button" class="btn btn-ghost btn-sm open-exec-btn" data-id="${ex.id}">فتح</button>
+      </span>
+    </div>`;
+  }).join("") : `<div style="font-size:12px;color:var(--muted);">لا قوائم تحقق مرتبطة بعد.</div>`;
+  box.querySelectorAll(".open-exec-btn").forEach(b=> b.onclick = ()=>{
+    const ex = DB.checklistExecutions.find(x=>x.id===b.dataset.id);
+    if(ex) openChecklistExecution(ex);
+  });
+  const sel = document.getElementById("engAssignTplSelect");
+  const activeTpls = DB.checklistTemplates.filter(t=>t.status==="active");
+  sel.innerHTML = activeTpls.length
+    ? activeTpls.map(t=>`<option value="${t.id}">${escapeHtml(t.name)} (v${t.version||1})</option>`).join("")
+    : `<option value="">لا قوالب نشطة متاحة</option>`;
+  document.getElementById("engAssignTplBtn").onclick = ()=>{
+    const tplId = sel.value;
+    const tpl = DB.checklistTemplates.find(t=>t.id===tplId);
+    if(!tpl){ alert("لا يوجد قالب نشط لتعيينه — أنشئ قالباً أولاً من مكتبة قوالب التدقيق."); return; }
+    const exec = {
+      id: uid(),
+      execCode: nextRefCode("CHKX","checklistExecution"),
+      templateId: tpl.id,
+      templateCode: tpl.code || "",
+      templateName: tpl.name,
+      templateVersion: tpl.version || 1,
+      engagementId: eng.id,
+      status: "not_started",
+      testedBy: "",
+      testedDate: "",
+      startedDate: "",
+      completedDate: "",
+      items: (tpl.items||[]).map(it=>({
+        id: uid(),
+        sequence: it.sequence,
+        controlObjective: it.controlObjective,
+        auditProcedure: it.auditProcedure,
+        expectedResult: it.expectedResult,
+        required: it.required,
+        riskLevel: it.riskLevel,
+        evidenceRequired: it.evidenceRequired,
+        notes: it.notes,
+        queryRefs: it.queryRefs || [],
+        result: "pending",
+        resultNotes: "",
+        findingId: null,
+        evidenceIds: [],
+      })),
+      createdAt: todayStr(),
+      updatedAt: todayStr(),
+    };
+    DB.checklistExecutions.push(exec);
+    saveDB();
+    renderEngagementChecklists(eng);
+  };
 }
 document.getElementById("saveEngagementBtn").onclick = ()=>{
   const id = document.getElementById("engEditId").value;
@@ -9739,6 +10023,7 @@ const EVIDENCE_TYPE_META = {
   email:{label:"مراسلة", icon:"✉️"}, confirmation:{label:"مصادقة", icon:"✅"}, other:{label:"أخرى", icon:"📎"},
 };
 let evidenceContext = {}; // {findingId, engagementId} preset when opened from another modal
+let pendingChecklistEvidenceLink = null; /* {execId, itemId} — set when "+ دليل" is clicked from a checklist execution item */
 document.getElementById("addEvidenceBtn").onclick = ()=> openEvidenceModal(null, {});
 document.getElementById("cancelEvidenceModal").onclick = ()=> document.getElementById("evidenceOverlay").classList.remove("active");
 
@@ -9782,6 +10067,13 @@ document.getElementById("saveEvidenceBtn").onclick = ()=>{
   document.getElementById("evidenceOverlay").classList.remove("active");
   if(document.getElementById("view-evidence").classList.contains("active")) renderEvidenceCenter();
   if(document.getElementById("findingOverlay").classList.contains("active")) renderFindingEvidenceList(document.getElementById("fEditId").value);
+  if(pendingChecklistEvidenceLink){
+    const ex = DB.checklistExecutions.find(x=>x.id===pendingChecklistEvidenceLink.execId);
+    const it = ex ? ex.items.find(x=>x.id===pendingChecklistEvidenceLink.itemId) : null;
+    if(it){ it.evidenceIds = [...(it.evidenceIds||[]), payload.id]; ex.updatedAt = todayStr(); saveDB(); }
+    pendingChecklistEvidenceLink = null;
+    if(ex && document.getElementById("checklistExecOverlay").classList.contains("active") && currentExec && currentExec.id===ex.id) renderChecklistExecution(ex);
+  }
 };
 document.getElementById("deleteEvidenceBtn").onclick = ()=>{
   const id = document.getElementById("evEditId").value;
