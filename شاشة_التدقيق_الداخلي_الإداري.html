@@ -1015,22 +1015,45 @@
   <div class="view" id="view-checklists">
     <div class="toolbar">
       <div class="toolbar-left">
-        <div class="kt-layer"><span class="kd-en">Reusable checklists</span><b>قوالب التدقيق</b><p>قوالب قابلة لإعادة الاستخدام لبناء برامج تدقيق منظّمة — القالب هنا مرجع ثابت فقط بهذه المرحلة، وربطه بمهام تدقيق فعلية سيُضاف لاحقاً.</p></div>
+        <div class="kt-layer"><span class="kd-en">Reusable checklists · execution tracking</span><b>قوالب التدقيق وتنفيذها</b><p>قوالب قابلة لإعادة الاستخدام لبناء برامج تدقيق منظّمة، وتُعيَّن لمهام تدقيق فعلية من داخل حوار "مهام التدقيق" — تبويب "لوحة التنفيذ" هنا يعرض كل التنفيذات القائمة عبر كل مهام التدقيق.</p></div>
       </div>
-      <div class="toolbar-left">
-        <div class="search-box"><input type="text" id="searchTpl" placeholder="بحث بالاسم أو الوصف أو بنود القالب..."></div>
-        <select id="filterTplCat"><option value="">كل الأقسام</option></select>
-        <select id="filterTplStatus">
-          <option value="">كل الحالات</option>
-          <option value="draft">مسودة</option>
-          <option value="active">نشطة</option>
-          <option value="retired">مؤرشفة</option>
-        </select>
-      </div>
-      <button class="btn btn-primary" id="addChecklistTplBtn">+ قالب جديد</button>
     </div>
-    <div class="stat-cards" id="tplStatCards"></div>
-    <div class="lib-grid kg-libgrid" id="checklistTplGrid"></div>
+    <div style="display:flex;gap:8px;margin-bottom:14px;">
+      <button type="button" class="btn btn-primary sub-tab-btn" id="checklistTabTpl" data-pane="tpl">📋 القوالب</button>
+      <button type="button" class="btn btn-ghost sub-tab-btn" id="checklistTabExec" data-pane="exec">⚙ لوحة التنفيذ</button>
+    </div>
+    <div id="checklistTplPane">
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <div class="search-box"><input type="text" id="searchTpl" placeholder="بحث بالاسم أو الوصف أو بنود القالب..."></div>
+          <select id="filterTplCat"><option value="">كل الأقسام</option></select>
+          <select id="filterTplStatus">
+            <option value="">كل الحالات</option>
+            <option value="draft">مسودة</option>
+            <option value="active">نشطة</option>
+            <option value="retired">مؤرشفة</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" id="addChecklistTplBtn">+ قالب جديد</button>
+      </div>
+      <div class="stat-cards" id="tplStatCards"></div>
+      <div class="lib-grid kg-libgrid" id="checklistTplGrid"></div>
+    </div>
+    <div id="checklistExecPane" style="display:none;">
+      <div class="stat-cards" id="execOverviewStats"></div>
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <div class="search-box"><input type="text" id="searchExec" placeholder="بحث بالقالب أو مهمة التدقيق..."></div>
+          <select id="filterExecStatus">
+            <option value="">كل الحالات</option>
+            <option value="not_started">لم تبدأ</option>
+            <option value="in_progress">قيد التنفيذ</option>
+            <option value="completed">مكتملة</option>
+          </select>
+        </div>
+      </div>
+      <div id="execOverviewList" class="task-list kt-host"></div>
+    </div>
   </div>
 
   <!-- STATS VIEW -->
@@ -2460,9 +2483,14 @@
       </div>
     </div>
     <div id="checklistExecItems" style="display:flex;flex-direction:column;gap:10px;max-height:48vh;overflow:auto;padding-left:4px;"></div>
+    <div class="field" id="checklistExecLogField" style="display:none;margin-top:10px;">
+      <label>سجل الأحداث (Audit Trail)</label>
+      <div id="checklistExecLogList" style="max-height:110px;overflow:auto;border:1px solid var(--border);border-radius:9px;padding:6px 10px;font-size:12px;background:#F8FAFC;"></div>
+    </div>
     <div class="modal-actions">
       <button class="btn btn-danger" id="removeExecBtn">إزالة من المهمة</button>
       <div style="display:flex;gap:8px;margin-right:auto;">
+        <button class="btn btn-ghost" id="reopenExecBtn" style="display:none;">إعادة فتح</button>
         <button class="btn btn-ghost" id="markExecCompletedBtn">تحديد كمكتملة</button>
         <button class="btn btn-primary" id="closeChecklistExec">إغلاق</button>
       </div>
@@ -6732,7 +6760,7 @@ function activateTab(viewName){
   if(viewName==="evidence") renderEvidenceCenter();
   if(viewName==="deptperf") renderDeptPerf();
   if(viewName==="timeanalysis") renderTimeAnalysis();
-  if(viewName==="checklists") renderChecklistLibrary();
+  if(viewName==="checklists"){ renderChecklistLibrary(); renderChecklistExecOverview(); }
   if(typeof kshSync==="function") kshSync(viewName); /* P1 shell: sidebar active state + breadcrumb + page header */
 }
 
@@ -7469,6 +7497,71 @@ document.getElementById("filterTplStatus").onchange = renderChecklistLibrary;
 document.getElementById("addChecklistTplBtn").onclick = ()=> openChecklistTemplateModal(null);
 document.getElementById("cancelChecklistTplModal").onclick = ()=> document.getElementById("checklistTplOverlay").classList.remove("active");
 
+document.querySelectorAll(".sub-tab-btn").forEach(b=>{
+  b.onclick = ()=>{
+    document.querySelectorAll(".sub-tab-btn").forEach(x=>{ x.classList.remove("btn-primary"); x.classList.add("btn-ghost"); });
+    b.classList.remove("btn-ghost"); b.classList.add("btn-primary");
+    document.getElementById("checklistTplPane").style.display = b.dataset.pane==="tpl" ? "block" : "none";
+    document.getElementById("checklistExecPane").style.display = b.dataset.pane==="exec" ? "block" : "none";
+    if(b.dataset.pane==="exec") renderChecklistExecOverview();
+  };
+});
+
+function renderChecklistExecOverview(){
+  const searchEl = document.getElementById("searchExec");
+  const statusEl = document.getElementById("filterExecStatus");
+  if(!searchEl || !statusEl) return;
+  const q = searchEl.value.trim().toLowerCase();
+  const st = statusEl.value;
+  let list = [...DB.checklistExecutions];
+  if(q) list = list.filter(ex=>{
+    const eng = DB.engagements.find(e=>e.id===ex.engagementId);
+    return (ex.templateName+" "+ex.execCode+" "+(eng? eng.title+" "+eng.refCode : "")).toLowerCase().includes(q);
+  });
+  if(st) list = list.filter(ex=>ex.status===st);
+  list.sort((a,b)=> (b.updatedAt||"").localeCompare(a.updatedAt||""));
+
+  const total = DB.checklistExecutions.length;
+  const completed = DB.checklistExecutions.filter(x=>x.status==="completed").length;
+  const inProgress = DB.checklistExecutions.filter(x=>x.status==="in_progress").length;
+  const notStarted = DB.checklistExecutions.filter(x=>x.status==="not_started").length;
+  const totalFailed = DB.checklistExecutions.reduce((s,x)=> s + checklistExecStats(x).failed, 0);
+  const totalGaps = DB.checklistExecutions.reduce((s,x)=> s + checklistExecStats(x).gaps, 0);
+  document.getElementById("execOverviewStats").innerHTML = `
+    <div class="stat-card"><b>${total}</b><span>إجمالي التنفيذات</span></div>
+    <div class="stat-card"><b style="color:#16A34A">${completed}</b><span>مكتملة</span></div>
+    <div class="stat-card"><b style="color:#2563EB">${inProgress}</b><span>قيد التنفيذ</span></div>
+    <div class="stat-card"><b style="color:#64748B">${notStarted}</b><span>لم تبدأ</span></div>
+    <div class="stat-card"><b style="color:#DC2626">${totalFailed}</b><span>إجمالي البنود الفاشلة</span></div>
+    <div class="stat-card"><b style="color:#F59E0B">${totalGaps}</b><span>إجمالي الأدلة الناقصة</span></div>
+  `;
+
+  const box = document.getElementById("execOverviewList");
+  box.innerHTML = "";
+  if(!list.length){
+    box.innerHTML = `<div class="empty"><h3>لا يوجد تنفيذ مطابق</h3><p>عيّن قالباً لمهمة تدقيق من داخل حوار "مهام التدقيق" لبدء أول تنفيذ.</p></div>`;
+    return;
+  }
+  const tbody = ktTable(box, [{l:"الكود",cls:"w"},{l:"القالب"},{l:"مهمة التدقيق"},{l:"الحالة",cls:"w"},{l:"الإنجاز",cls:"w"},{l:"",cls:"w"}], {ariaLabel:"تنفيذات قوائم التحقق", minWidth:760});
+  list.forEach(ex=>{
+    const eng = DB.engagements.find(e=>e.id===ex.engagementId);
+    const stMeta = CHECKLIST_EXEC_STATUS_META[ex.status] || CHECKLIST_EXEC_STATUS_META.not_started;
+    const s = checklistExecStats(ex);
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td class="w"><span class="ref">${escapeHtml(ex.execCode)}</span></td>
+      <td>${escapeHtml(ex.templateName)} <span class="kd-chip mut">v${ex.templateVersion}</span></td>
+      <td>${eng? escapeHtml(eng.refCode+' — '+eng.title) : '<span style="color:var(--kd-warn)">مهمة محذوفة</span>'}</td>
+      <td class="w"><span class="kd-chip" style="background:${stMeta.color}22;color:${stMeta.color};font-weight:700;">${stMeta.label}</span></td>
+      <td class="w">${s.pct}%${s.failed? ` <span class="sub" style="color:#DC2626">${s.failed} فاشل</span>`:''}</td>
+      <td class="w"><button type="button" class="btn btn-ghost btn-sm open-exec-row-btn">فتح</button></td>`;
+    tr.querySelector(".open-exec-row-btn").onclick = ()=> openChecklistExecution(ex);
+    tbody.appendChild(tr);
+  });
+}
+document.getElementById("searchExec").oninput = renderChecklistExecOverview;
+document.getElementById("filterExecStatus").onchange = renderChecklistExecOverview;
+
 let tplItemsDraft = [];
 
 function openChecklistTemplateModal(tpl){
@@ -7666,9 +7759,20 @@ function checklistExecStats(ex){
   const total = items.length;
   const done = items.filter(i=>i.result && i.result!=="pending").length;
   const pct = total ? Math.round(done/total*100) : 0;
+  const requiredItems = items.filter(i=>i.required);
+  const requiredDone = requiredItems.filter(i=>i.result && i.result!=="pending").length;
+  const requiredPct = requiredItems.length ? Math.round(requiredDone/requiredItems.length*100) : 100;
+  const passed = items.filter(i=>i.result==="pass").length;
   const failed = items.filter(i=>i.result==="fail").length;
+  const na = items.filter(i=>i.result==="na").length;
+  const pending = items.filter(i=>!i.result || i.result==="pending").length;
   const gaps = items.filter(i=>i.evidenceRequired && i.result && i.result!=="pending" && (!i.evidenceIds||!i.evidenceIds.length)).length;
-  return {total, done, pct, failed, gaps};
+  return {total, done, pct, requiredPct, passed, failed, na, pending, gaps};
+}
+
+function checklistExecLog(ex, note){
+  if(!ex.log) ex.log = [];
+  ex.log.push({date: todayStr(), note});
 }
 
 function refreshEngagementChecklistsIfOpen(){
@@ -7692,13 +7796,20 @@ function renderChecklistExecution(ex){
   document.getElementById("checklistExecMeta").innerHTML = `${escapeHtml(ex.execCode)} · مهمة التدقيق: ${eng? escapeHtml(eng.refCode+' — '+eng.title) : '<span style="color:var(--kd-warn)">مهمة غير موجودة</span>'} · <span class="kd-chip" style="background:${stMeta.color}22;color:${stMeta.color};font-weight:700;">${stMeta.label}</span>`;
   const s = checklistExecStats(ex);
   document.getElementById("checklistExecStats").innerHTML = `
-    <div class="stat-card"><b>${s.pct}%</b><span>نسبة الإنجاز</span></div>
-    <div class="stat-card"><b>${s.done}/${s.total}</b><span>بنود مُختبرة</span></div>
+    <div class="stat-card"><b>${s.pct}%</b><span>نسبة الإنجاز (الكل)</span></div>
+    <div class="stat-card"><b>${s.requiredPct}%</b><span>نسبة إنجاز الإلزامي</span></div>
+    <div class="stat-card"><b style="color:#94A3B8">${s.pending}</b><span>بانتظار الاختبار</span></div>
     <div class="stat-card"><b style="color:#DC2626">${s.failed}</b><span>بنود فاشلة</span></div>
+    <div class="stat-card"><b style="color:#64748B">${s.na}</b><span>لا ينطبق</span></div>
     <div class="stat-card"><b style="color:#F59E0B">${s.gaps}</b><span>أدلة ناقصة</span></div>
   `;
   document.getElementById("execTestedBy").value = ex.testedBy || "";
   document.getElementById("execTestedDate").value = ex.testedDate || "";
+  const log = ex.log || [];
+  document.getElementById("checklistExecLogField").style.display = log.length ? "block" : "none";
+  document.getElementById("checklistExecLogList").innerHTML = [...log].reverse().map(l=>`<div style="padding:3px 0;border-bottom:1px solid var(--border);"><span style="color:var(--muted);">${l.date}</span> — ${escapeHtml(l.note)}</div>`).join("");
+  document.getElementById("markExecCompletedBtn").style.display = ex.status==="completed" ? "none" : "inline-block";
+  document.getElementById("reopenExecBtn").style.display = ex.status==="completed" ? "inline-block" : "none";
   renderExecItems(ex);
 }
 
@@ -7732,7 +7843,7 @@ function renderExecItems(ex){
       </div>
       <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px;align-items:center;">
         ${item.evidenceRequired? `<span class="kd-chip" style="${gap? 'background:#F59E0B22;color:#F59E0B;font-weight:700;':'background:var(--kd-surface-2,#F1F5F9);color:var(--kd-muted,#64748B);'}">${gap? '⚠ يتطلب دليلاً':'📎 يتطلب دليلاً'}</span>`:''}
-        ${linkedEvidence.map(ev=>`<span class="kd-chip mut">📄 ${escapeHtml((ev.desc||"").slice(0,30))}</span>`).join("")}
+        ${linkedEvidence.map(ev=>`<button type="button" class="kd-chip mut open-ev-btn" data-evid="${ev.id}" style="cursor:pointer;">📄 ${escapeHtml((ev.desc||"").slice(0,30))}</button>`).join("")}
         <button type="button" class="btn btn-ghost btn-sm add-ev-btn">+ دليل</button>
         ${item.result==="fail" ? (linkedFinding
           ? `<button type="button" class="btn btn-ghost btn-sm open-finding-btn">📋 ${escapeHtml(linkedFinding.refCode)}</button>`
@@ -7743,6 +7854,7 @@ function renderExecItems(ex){
     card.querySelectorAll(".res-btn").forEach(b=> b.onclick = ()=> setItemResult(ex, item, b.dataset.r));
     card.querySelector(".result-notes").oninput = e=>{ item.resultNotes = e.target.value; ex.updatedAt = todayStr(); saveDB(); };
     card.querySelector(".add-ev-btn").onclick = ()=> addEvidenceForItem(ex, item);
+    card.querySelectorAll(".open-ev-btn").forEach(b=> b.onclick = ()=>{ const ev = DB.evidence.find(e=>e.id===b.dataset.evid); if(ev) openEvidenceModal(ev); });
     const findingBtn = card.querySelector(".add-finding-btn");
     if(findingBtn) findingBtn.onclick = ()=> createFindingForItem(ex, item);
     const openFindingBtn = card.querySelector(".open-finding-btn");
@@ -7754,7 +7866,10 @@ function renderExecItems(ex){
 
 function setItemResult(ex, item, result){
   item.result = result;
-  if(ex.status==="not_started") ex.status = "in_progress";
+  if(ex.status==="not_started"){
+    ex.status = "in_progress";
+    checklistExecLog(ex, "بدء التنفيذ (أول بند مُختبر)");
+  }
   if(!ex.startedDate) ex.startedDate = todayStr();
   ex.updatedAt = todayStr();
   saveDB();
@@ -7784,6 +7899,19 @@ document.getElementById("markExecCompletedBtn").onclick = ()=>{
   currentExec.status = "completed";
   currentExec.completedDate = todayStr();
   currentExec.updatedAt = todayStr();
+  checklistExecLog(currentExec, `تم إكمال التنفيذ (نسبة الإنجاز: ${checklistExecStats(currentExec).pct}%)`);
+  saveDB();
+  renderChecklistExecution(currentExec);
+  refreshEngagementChecklistsIfOpen();
+};
+
+document.getElementById("reopenExecBtn").onclick = ()=>{
+  if(!currentExec) return;
+  if(!confirm("هل تريد إعادة فتح هذا التنفيذ للتعديل؟ سيُسجَّل هذا بسجل الأحداث.")) return;
+  currentExec.status = "in_progress";
+  currentExec.completedDate = "";
+  currentExec.updatedAt = todayStr();
+  checklistExecLog(currentExec, "أُعيد فتح التنفيذ بعد إكماله");
   saveDB();
   renderChecklistExecution(currentExec);
   refreshEngagementChecklistsIfOpen();
@@ -9940,6 +10068,7 @@ function renderEngagementChecklists(eng){
       })),
       createdAt: todayStr(),
       updatedAt: todayStr(),
+      log: [{date: todayStr(), note: `تم تعيين القالب "${tpl.name}" (v${tpl.version||1}) لمهمة التدقيق`}],
     };
     DB.checklistExecutions.push(exec);
     saveDB();
