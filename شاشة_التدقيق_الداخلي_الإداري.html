@@ -950,9 +950,25 @@
         <select id="filterFStatus">
           <option value="">كل الحالات</option>
           <option value="open">مفتوحة</option>
+          <option value="action_plan">خطة إجراء</option>
           <option value="in_progress">قيد المعالجة</option>
-          <option value="retest">بانتظار إعادة الاختبار</option>
+          <option value="retest">بانتظار التحقق</option>
           <option value="closed">مغلقة</option>
+          <option value="reopened">أُعيد فتحها</option>
+        </select>
+        <select id="filterFRiskLevel" title="مستوى المخاطر">
+          <option value="">كل مستويات المخاطر</option>
+          <option value="critical">حرج</option>
+          <option value="high">مرتفع</option>
+          <option value="medium">متوسط</option>
+          <option value="low">منخفض</option>
+        </select>
+        <select id="filterFPriority" title="أولوية المعالجة">
+          <option value="">كل الأولويات</option>
+          <option value="critical">حرجة</option>
+          <option value="high">عالية</option>
+          <option value="medium">متوسطة</option>
+          <option value="low">منخفضة</option>
         </select>
         <select id="filterFCategory"><option value="">كل الأقسام</option></select>
       </div>
@@ -964,6 +980,20 @@
       </div>
     </div>
     <div class="stat-cards" id="findingStatCards"></div>
+    <div class="lib-grid kg-charts" style="margin-bottom:16px;">
+      <div class="lib-card kg-card">
+        <div class="lib-head kg-head" style="background:var(--navy);">حسب مستوى الخطر <span class="kd-en">By risk level</span></div>
+        <div style="padding:16px;" id="findingRiskLevelBox"></div>
+      </div>
+      <div class="lib-card kg-card">
+        <div class="lib-head kg-head" style="background:var(--navy);">حسب الأولوية <span class="kd-en">By priority</span></div>
+        <div style="padding:16px;" id="findingPriorityBox"></div>
+      </div>
+      <div class="lib-card kg-card">
+        <div class="lib-head kg-head" style="background:var(--navy);">حسب القسم <span class="kd-en">By department / category</span></div>
+        <div style="padding:16px;" id="findingCatBox"></div>
+      </div>
+    </div>
     <div class="kt-life" id="ktFindingLife" role="group" aria-label="دورة حياة الملاحظات"></div>
     <div class="dash-section" id="repeatFindingsBox" style="display:none;"></div>
     <div class="task-list kt-host" id="findingsList"></div>
@@ -1711,9 +1741,10 @@
 
 <!-- FINDING MODAL -->
 <div class="overlay" id="findingOverlay">
-  <div class="modal">
+  <div class="modal" style="max-width:820px;">
     <h2 id="findingModalTitle">إضافة ملاحظة تدقيق</h2>
     <input type="hidden" id="fEditId">
+    <div id="findingSourceField" style="display:none;margin-bottom:10px;font-size:12px;padding:8px 10px;background:#EFF6FF;border:1px solid #BFDBFE;border-radius:8px;"></div>
     <div class="row2">
       <div class="field">
         <label>عنوان الملاحظة</label>
@@ -1724,7 +1755,7 @@
         <select id="fCategory"></select>
       </div>
     </div>
-    <div class="row2">
+    <div class="row3">
       <div class="field">
         <label>درجة الخطورة</label>
         <select id="fSeverity">
@@ -1738,35 +1769,79 @@
         <label>الحالة</label>
         <select id="fStatus">
           <option value="open" selected>مفتوحة</option>
+          <option value="action_plan">خطة إجراء</option>
           <option value="in_progress">قيد المعالجة</option>
-          <option value="retest">بانتظار إعادة الاختبار</option>
+          <option value="retest">بانتظار التحقق</option>
           <option value="closed">مغلقة</option>
+          <option value="reopened">أُعيد فتحها</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>الخطر المرتبط (اختياري)</label>
+        <select id="fRiskId"><option value="">بدون ربط</option></select>
+      </div>
+    </div>
+    <div class="row2">
+      <div class="field">
+        <label>مستوى المخاطر (Risk Level)</label>
+        <select id="fRiskLevel">
+          <option value="">غير محدد</option>
+          <option value="low">منخفض</option>
+          <option value="medium">متوسط</option>
+          <option value="high">مرتفع</option>
+          <option value="critical">حرج</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>أولوية المعالجة (Priority)</label>
+        <select id="fPriority">
+          <option value="">غير محددة</option>
+          <option value="low">منخفضة</option>
+          <option value="medium">متوسطة</option>
+          <option value="high">عالية</option>
+          <option value="critical">حرجة</option>
         </select>
       </div>
     </div>
+    <div class="field" id="fReopenReasonField" style="display:none;">
+      <label>سبب إعادة الفتح (إلزامي)</label>
+      <textarea id="fReopenReason" placeholder="لماذا أُعيد فتح هذه الملاحظة بعد إغلاقها؟"></textarea>
+    </div>
     <div class="field">
-      <label>وصف الملاحظة</label>
+      <label>وصف الملاحظة — الوضع الفعلي (Condition)</label>
       <textarea id="fDesc" placeholder="ما الذي وُجد بالتحديد؟"></textarea>
     </div>
     <div class="field">
-      <label>السبب الجذري</label>
+      <label>معيار التدقيق — الوضع المتوقَّع (Criteria)</label>
+      <textarea id="fCriteria" placeholder="ما الذي كان يجب أن يكون عليه الوضع وفق السياسة أو الإجراء المعتمد؟"></textarea>
+    </div>
+    <div class="field">
+      <label>السبب الجذري (Root Cause)</label>
       <textarea id="fRootCause"></textarea>
+    </div>
+    <div class="field">
+      <label>الأثر / المخاطرة (Impact)</label>
+      <textarea id="fImpact" placeholder="ما الأثر الفعلي أو المحتمل لو استمر الوضع؟"></textarea>
     </div>
     <div class="field">
       <label>التوصية</label>
       <textarea id="fRecommendation"></textarea>
     </div>
     <div class="field">
-      <label>رد الإدارة / خطة المعالجة</label>
-      <textarea id="fManagementResponse"></textarea>
+      <label>رد الإدارة (Management Response)</label>
+      <textarea id="fManagementResponse" placeholder="رد الإدارة على الملاحظة"></textarea>
+    </div>
+    <div class="field">
+      <label>خطة الإجراء التصحيحي (Corrective Action Plan)</label>
+      <textarea id="fCorrectiveActionPlan" placeholder="الإجراءات التصحيحية المحددة لمعالجة السبب الجذري"></textarea>
     </div>
     <div class="row3">
       <div class="field">
-        <label>الشخص المسؤول</label>
+        <label>الشخص المسؤول (Owner)</label>
         <input type="text" id="fResponsible" placeholder="مثال: مدير المبيعات">
       </div>
       <div class="field">
-        <label>تاريخ مستهدف للإغلاق</label>
+        <label>تاريخ مستهدف للإغلاق (Due Date)</label>
         <input type="date" id="fTargetDate">
       </div>
       <div class="field">
@@ -1776,18 +1851,42 @@
     </div>
     <div class="row2">
       <div class="field">
-        <label>الخطر المرتبط (اختياري)</label>
-        <select id="fRiskId"><option value="">بدون ربط</option></select>
-      </div>
-      <div class="field">
         <label>مهمة التدقيق المرتبطة (اختياري)</label>
         <select id="fEngagementId"><option value="">بدون ربط</option></select>
+      </div>
+      <div class="field" style="display:flex;flex-direction:row;align-items:center;gap:8px;padding-top:22px;">
+        <input type="checkbox" id="fEvidenceRequired" checked><label for="fEvidenceRequired" style="font-size:13px;">يتطلب دليلاً قبل الإغلاق</label>
       </div>
     </div>
     <div class="field">
       <label>الأدلة المرتبطة (Evidence)</label>
       <div id="findingEvidenceList" style="border:1px dashed var(--border);border-radius:10px;padding:10px;font-size:12.5px;"></div>
       <button type="button" class="add-link-btn" id="addFindingEvidenceBtn" style="margin-top:8px;">+ إضافة دليل لهذه الملاحظة</button>
+    </div>
+    <div style="border-top:1px solid var(--border);margin:14px 0 10px 0;padding-top:10px;">
+      <b style="font-size:12.5px;color:var(--navy);">التحقق النهائي (Verification) — بواسطة المدقق الداخلي</b>
+    </div>
+    <div class="row3">
+      <div class="field">
+        <label>تم التحقق بواسطة</label>
+        <input type="text" id="fVerifiedBy" placeholder="اسم المدقق">
+      </div>
+      <div class="field">
+        <label>تاريخ التحقق</label>
+        <input type="date" id="fVerifiedDate">
+      </div>
+    </div>
+    <div class="field">
+      <label>ملاحظات التحقق</label>
+      <textarea id="fVerificationNotes"></textarea>
+    </div>
+    <div class="field">
+      <label>المتابعة وسجل الأحداث (Follow-up / Audit Trail)</label>
+      <div id="findingLogList" style="max-height:120px;overflow:auto;border:1px solid var(--border);border-radius:9px;padding:6px 10px;font-size:12px;background:#F8FAFC;margin-bottom:8px;"></div>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="fFollowUpNote" placeholder="أضف ملاحظة متابعة...">
+        <button type="button" class="btn btn-ghost btn-sm" id="addFindingFollowUpBtn" style="white-space:nowrap;">+ إضافة</button>
+      </div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-danger" id="deleteFindingBtn" style="display:none;">حذف</button>
@@ -2612,10 +2711,55 @@ const SEVERITY_ORDER = {critical:0, high:1, medium:2, low:3};
 
 const FINDING_STATUS_META = {
   open:{label:"مفتوحة", color:"#DC2626"},
+  action_plan:{label:"خطة إجراء", color:"#7C3AED"},
   in_progress:{label:"قيد المعالجة", color:"#2563EB"},
-  retest:{label:"بانتظار إعادة الاختبار", color:"#F59E0B"},
+  retest:{label:"بانتظار التحقق", color:"#F59E0B"},
   closed:{label:"مغلقة", color:"#16A34A"},
+  reopened:{label:"أُعيد فتحها", color:"#B91C1C"},
 };
+function riskLevelMeta(score){
+  if(score>=15) return {key:"critical", label:"حرج", color:"#B91C1C"};
+  if(score>=10) return {key:"high", label:"مرتفع", color:"#EA580C"};
+  if(score>=5) return {key:"medium", label:"متوسط", color:"#F59E0B"};
+  return {key:"low", label:"منخفض", color:"#16A34A"};
+}
+/* Risk Level (مستوى المخاطر المرتبطة بالملاحظة) — حقل مستقل مخزَّن على الملاحظة (f.riskLevel) */
+const RISK_LEVEL_META = {
+  critical:{label:"حرج", color:"#B91C1C"},
+  high:{label:"مرتفع", color:"#EA580C"},
+  medium:{label:"متوسط", color:"#F59E0B"},
+  low:{label:"منخفض", color:"#16A34A"},
+};
+/* Priority (أولوية معالجة الملاحظة) — حقل مستقل مخزَّن على الملاحظة (f.priority). (PRIORITY_META أعلاه خاص بالمهام ولم يُمس) */
+const FINDING_PRIORITY_META = {
+  critical:{label:"حرجة", color:"#7F1D1D"},
+  high:{label:"عالية", color:"#DC2626"},
+  medium:{label:"متوسطة", color:"#F59E0B"},
+  low:{label:"منخفضة", color:"#64748B"},
+};
+function findingRiskLevelKey(f){
+  /* الحقل المستقل المخزَّن أولاً؛ السجلات القديمة (بدون f.riskLevel) تُعرض بالاشتقاق السابق فقط للعرض ولا يُكتب شيء عليها */
+  if(f.riskLevel && RISK_LEVEL_META[f.riskLevel]) return f.riskLevel;
+  if(f.riskId){
+    const r = DB.risks.find(x=>x.id===f.riskId);
+    if(r) return riskLevelMeta(r.likelihood*r.impact).key;
+  }
+  return {critical:"critical", high:"high", medium:"medium", low:"low"}[f.severity] || "medium";
+}
+function findingRiskLevelChip(f){
+  const m = RISK_LEVEL_META[findingRiskLevelKey(f)];
+  const inferred = !(f.riskLevel && RISK_LEVEL_META[f.riskLevel]);
+  return `<span class="kd-chip" style="background:${m.color}1a;color:${m.color}" title="${inferred? 'مستوى مُستنتج (لم يُحدَّد صراحة بعد)' : 'مستوى المخاطر'}"><i></i>${m.label}${inferred? ' *' : ''}</span>`;
+}
+function findingPriorityChip(f){
+  const m = f.priority ? FINDING_PRIORITY_META[f.priority] : null;
+  if(!m) return '<span style="color:var(--kd-faint)">غير محددة</span>';
+  return `<span class="kd-chip" style="background:${m.color}1a;color:${m.color}"><i></i>${m.label}</span>`;
+}
+function findingLog(f, note){
+  if(!f.log) f.log = [];
+  f.log.push({date: todayStr(), note});
+}
 
 const UNIVERSE_STATUS_META = {
   planned:{label:"مخطط", color:"#64748B"},
@@ -8272,6 +8416,8 @@ document.getElementById("addFindingBtn").onclick = ()=> openFindingModal(null);
 document.getElementById("cancelFindingModal").onclick = ()=> document.getElementById("findingOverlay").classList.remove("active");
 document.getElementById("searchF").oninput = renderFindings;
 document.getElementById("filterFSeverity").onchange = renderFindings;
+document.getElementById("filterFRiskLevel").onchange = renderFindings;
+document.getElementById("filterFPriority").onchange = renderFindings;
 document.getElementById("filterFStatus").onchange = renderFindings;
 document.getElementById("filterFCategory").onchange = renderFindings;
 
@@ -8283,18 +8429,63 @@ function openFindingModal(f){
   document.getElementById("fCategory").value = f ? f.category : "sales";
   document.getElementById("fSeverity").value = f ? f.severity : "high";
   document.getElementById("fStatus").value = f ? f.status : "open";
+  document.getElementById("fReopenReasonField").style.display = "none";
+  document.getElementById("fReopenReason").value = "";
   document.getElementById("fDesc").value = f ? (f.desc||"") : "";
+  document.getElementById("fCriteria").value = f ? (f.criteria||"") : "";
   document.getElementById("fRootCause").value = f ? (f.rootCause||"") : "";
+  document.getElementById("fImpact").value = f ? (f.impact||"") : "";
   document.getElementById("fRecommendation").value = f ? (f.recommendation||"") : "";
   document.getElementById("fManagementResponse").value = f ? (f.managementResponse||"") : "";
+  document.getElementById("fCorrectiveActionPlan").value = f ? (f.correctiveActionPlan||"") : "";
+  /* سجل قديم بدون الحقل → "غير محدد" (لا نُسقط قيمة مشتقة عليه)؛ سجل جديد → افتراضي متوسط */
+  document.getElementById("fRiskLevel").value = f ? (f.riskLevel||"") : "medium";
+  document.getElementById("fPriority").value = f ? (f.priority||"") : "medium";
   document.getElementById("fResponsible").value = f ? (f.responsible||"") : "";
   document.getElementById("fTargetDate").value = f ? (f.targetDate||"") : "";
   document.getElementById("fRetestDate").value = f ? (f.retestDate||"") : "";
+  document.getElementById("fEvidenceRequired").checked = f ? (f.evidenceRequired!==false) : true;
+  document.getElementById("fVerifiedBy").value = f ? (f.verifiedBy||"") : "";
+  document.getElementById("fVerifiedDate").value = f ? (f.verifiedDate||"") : "";
+  document.getElementById("fVerificationNotes").value = f ? (f.verificationNotes||"") : "";
   fillRiskSelect(document.getElementById("fRiskId"), f ? f.riskId : "");
   fillEngagementSelect(document.getElementById("fEngagementId"), f ? f.engagementId : "");
   renderFindingEvidenceList(f ? f.id : null);
+  renderFindingLogList(f);
+  const srcField = document.getElementById("findingSourceField");
+  const srcExec = f && f.sourceChecklistExecId ? DB.checklistExecutions.find(x=>x.id===f.sourceChecklistExecId) : null;
+  if(srcExec){
+    srcField.style.display = "block";
+    srcField.innerHTML = `🔗 نشأت من بند فاشل بقائمة تحقق: <b>${escapeHtml(srcExec.templateName)}</b> (${escapeHtml(srcExec.execCode)}) — <button type="button" class="btn btn-ghost btn-sm" id="openSourceExecBtn">فتح التنفيذ</button>`;
+    document.getElementById("openSourceExecBtn").onclick = ()=> openChecklistExecution(srcExec);
+  } else {
+    srcField.style.display = "none";
+  }
   document.getElementById("findingOverlay").classList.add("active");
 }
+
+function renderFindingLogList(f){
+  const box = document.getElementById("findingLogList");
+  const log = f ? (f.log||[]) : [];
+  box.innerHTML = log.length
+    ? [...log].reverse().map(l=>`<div style="padding:3px 0;border-bottom:1px solid var(--border);"><span style="color:var(--muted);">${l.date}</span> — ${escapeHtml(l.note)}</div>`).join("")
+    : `<div style="color:var(--muted);">لا يوجد سجل بعد.</div>`;
+}
+document.getElementById("fStatus").onchange = e=>{
+  document.getElementById("fReopenReasonField").style.display = e.target.value==="reopened" ? "block" : "none";
+};
+document.getElementById("addFindingFollowUpBtn").onclick = ()=>{
+  const fid = document.getElementById("fEditId").value;
+  if(!fid){ alert("احفظ الملاحظة أولاً قبل إضافة متابعة."); return; }
+  const note = document.getElementById("fFollowUpNote").value.trim();
+  if(!note) return;
+  const f = DB.findings.find(x=>x.id===fid);
+  if(!f) return;
+  findingLog(f, note);
+  saveDB();
+  document.getElementById("fFollowUpNote").value = "";
+  renderFindingLogList(f);
+};
 
 const CLOSE_CHECKLIST_ITEMS = [
   "تم توثيق الدليل الداعم للملاحظة (رابط/مرجع/مستند)",
@@ -8319,9 +8510,14 @@ document.getElementById("saveFindingBtn").onclick = ()=>{
     severity: document.getElementById("fSeverity").value,
     status: document.getElementById("fStatus").value,
     desc: document.getElementById("fDesc").value.trim(),
+    criteria: document.getElementById("fCriteria").value.trim(),
     rootCause: document.getElementById("fRootCause").value.trim(),
+    impact: document.getElementById("fImpact").value.trim(),
     recommendation: document.getElementById("fRecommendation").value.trim(),
     managementResponse: document.getElementById("fManagementResponse").value.trim(),
+    correctiveActionPlan: document.getElementById("fCorrectiveActionPlan").value.trim(),
+    riskLevel: document.getElementById("fRiskLevel").value || "",
+    priority: document.getElementById("fPriority").value || "",
     responsible: document.getElementById("fResponsible").value.trim(),
     targetDate: document.getElementById("fTargetDate").value,
     retestDate: document.getElementById("fRetestDate").value,
@@ -8329,19 +8525,49 @@ document.getElementById("saveFindingBtn").onclick = ()=>{
     selfReviewDate: existing ? (existing.selfReviewDate||null) : null,
     riskId: document.getElementById("fRiskId").value || null,
     engagementId: document.getElementById("fEngagementId").value || null,
+    evidenceRequired: document.getElementById("fEvidenceRequired").checked,
+    verifiedBy: document.getElementById("fVerifiedBy").value.trim(),
+    verifiedDate: document.getElementById("fVerifiedDate").value,
+    verificationNotes: document.getElementById("fVerificationNotes").value.trim(),
+    sourceChecklistExecId: pendingChecklistFindingLink ? pendingChecklistFindingLink.execId : (existing ? (existing.sourceChecklistExecId||null) : null),
+    sourceChecklistItemId: pendingChecklistFindingLink ? pendingChecklistFindingLink.itemId : (existing ? (existing.sourceChecklistItemId||null) : null),
     closedDate: existing ? (existing.closedDate||null) : null,
+    log: existing ? (existing.log||[]) : [],
   };
+
+  const isReopening = existing && existing.status==="closed" && payload.status==="reopened";
+  let reopenReason = "";
+  if(isReopening){
+    reopenReason = document.getElementById("fReopenReason").value.trim();
+    if(!reopenReason){ alert("الرجاء إدخال سبب إعادة الفتح."); return; }
+  }
 
   const isNewlyClosing = payload.status==="closed" && (!existing || existing.status!=="closed");
   if(isNewlyClosing){
+    if(payload.evidenceRequired && !DB.evidence.some(e=>e.findingId===payload.id)){
+      alert("لا يمكن إغلاق هذه الملاحظة — الدليل مطلوب ولم يُرفق أي دليل بعد.");
+      return;
+    }
+    if(!payload.verifiedBy){
+      alert('لا يمكن إغلاق هذه الملاحظة قبل تعبئة حقل "تم التحقق بواسطة" بقسم التحقق النهائي.');
+      return;
+    }
     pendingFindingPayload = payload;
     openCloseChecklist();
     return;
   }
-  commitFindingSave(payload);
+  commitFindingSave(payload, {reopenReason});
 };
 
-function commitFindingSave(payload){
+function commitFindingSave(payload, meta){
+  meta = meta || {};
+  const existingBefore = DB.findings.find(x=>x.id===payload.id);
+  if(!payload.log) payload.log = existingBefore ? (existingBefore.log||[]) : [];
+  if(!existingBefore) findingLog(payload, "إنشاء الملاحظة");
+  else if(existingBefore.status !== payload.status) findingLog(payload, `تغيير الحالة: ${(FINDING_STATUS_META[existingBefore.status]||{label:existingBefore.status}).label} ← ${(FINDING_STATUS_META[payload.status]||{label:payload.status}).label}`);
+  if(existingBefore && (existingBefore.riskLevel||"") !== (payload.riskLevel||"")) findingLog(payload, `تغيير مستوى المخاطر: ${(RISK_LEVEL_META[existingBefore.riskLevel]||{label:"غير محدد"}).label} ← ${(RISK_LEVEL_META[payload.riskLevel]||{label:"غير محدد"}).label}`);
+  if(existingBefore && (existingBefore.priority||"") !== (payload.priority||"")) findingLog(payload, `تغيير الأولوية: ${(FINDING_PRIORITY_META[existingBefore.priority]||{label:"غير محددة"}).label} ← ${(FINDING_PRIORITY_META[payload.priority]||{label:"غير محددة"}).label}`);
+  if(meta.reopenReason) findingLog(payload, `سبب إعادة الفتح: ${meta.reopenReason}`);
   if(payload.status==="closed" && !payload.closedDate) payload.closedDate = todayStr();
   if(payload.status!=="closed") payload.closedDate = null;
   const id = payload.id;
@@ -8403,23 +8629,57 @@ function renderFindings(){
   const sev = document.getElementById("filterFSeverity").value;
   const st = document.getElementById("filterFStatus").value;
   const cat = document.getElementById("filterFCategory").value;
+  const rl = document.getElementById("filterFRiskLevel").value;
+  const pr = document.getElementById("filterFPriority").value;
   let list = [...DB.findings];
-  if(q) list = list.filter(x => (x.title+" "+x.desc+" "+x.refCode).toLowerCase().includes(q));
+  if(q) list = list.filter(x => (x.title+" "+(x.desc||"")+" "+x.refCode+" "+(x.correctiveActionPlan||"")+" "+(x.managementResponse||"")).toLowerCase().includes(q));
   if(sev) list = list.filter(x=>x.severity===sev);
   if(st) list = list.filter(x=>x.status===st);
   if(cat) list = list.filter(x=>x.category===cat);
+  if(rl) list = list.filter(x=>findingRiskLevelKey(x)===rl);
+  if(pr) list = list.filter(x=>(x.priority||"")===pr);
   list.sort((a,b)=> (SEVERITY_ORDER[a.severity]-SEVERITY_ORDER[b.severity]) || (a.targetDate||"").localeCompare(b.targetDate||""));
 
   const total = DB.findings.length;
   const open = DB.findings.filter(x=>x.status==="open").length;
-  const overdue = DB.findings.filter(x=>x.targetDate && x.targetDate<todayStr() && x.status!=="closed").length;
+  const actionPlan = DB.findings.filter(x=>x.status==="action_plan").length;
+  const inProgress = DB.findings.filter(x=>x.status==="in_progress").length;
+  const pendingVerification = DB.findings.filter(x=>x.status==="retest").length;
   const closed = DB.findings.filter(x=>x.status==="closed").length;
+  const reopened = DB.findings.filter(x=>x.status==="reopened").length;
+  const overdue = DB.findings.filter(x=>x.targetDate && x.targetDate<todayStr() && x.status!=="closed").length;
   document.getElementById("findingStatCards").innerHTML = `
     <div class="stat-card"><b>${total}</b><span>إجمالي الملاحظات</span></div>
     <div class="stat-card"><b style="color:#DC2626">${open}</b><span>مفتوحة</span></div>
+    <div class="stat-card"><b style="color:#7C3AED">${actionPlan}</b><span>خطة إجراء</span></div>
+    <div class="stat-card"><b style="color:#2563EB">${inProgress}</b><span>قيد المعالجة</span></div>
+    <div class="stat-card"><b style="color:#F59E0B">${pendingVerification}</b><span>بانتظار التحقق</span></div>
     <div class="stat-card"><b style="color:#B91C1C">${overdue}</b><span>متأخرة عن الإغلاق</span></div>
     <div class="stat-card"><b style="color:#16A34A">${closed}</b><span>مغلقة</span></div>
+    <div class="stat-card"><b style="color:#B91C1C">${reopened}</b><span>أُعيد فتحها</span></div>
   `;
+
+  const riskLevelBox = document.getElementById("findingRiskLevelBox");
+  if(riskLevelBox){
+    const rlKeys = ["critical","high","medium","low"];
+    const rlItems = rlKeys.map(k=>({key:k, label:RISK_LEVEL_META[k].label, value: DB.findings.filter(f=>findingRiskLevelKey(f)===k).length, color:RISK_LEVEL_META[k].color}));
+    riskLevelBox.innerHTML = kgBars(rlItems);
+    wireChartClicks(riskLevelBox, key=> drillTo("findings", {riskLevel:key, severity:"", priority:"", status:""}));
+  }
+  const priorityBox = document.getElementById("findingPriorityBox");
+  if(priorityBox){
+    const prKeys = ["critical","high","medium","low"];
+    const prItems = prKeys.map(k=>({key:k, label:FINDING_PRIORITY_META[k].label, value: DB.findings.filter(f=>(f.priority||"")===k).length, color:FINDING_PRIORITY_META[k].color}));
+    const unset = DB.findings.filter(f=>!f.priority).length;
+    priorityBox.innerHTML = kgBars(prItems) + (unset? `<div style="font-size:11.5px;color:var(--muted);margin-top:6px;">غير محددة الأولوية: <b>${unset}</b></div>` : "");
+    wireChartClicks(priorityBox, key=> drillTo("findings", {priority:key, severity:"", riskLevel:"", status:""}));
+  }
+  const catBox = document.getElementById("findingCatBox");
+  if(catBox){
+    const catItems = catsForAnalytics().map(c=>({key:c.id, label:c.name, value:DB.findings.filter(f=>f.category===c.id).length, color:c.hex}));
+    catBox.innerHTML = kgBars(catItems);
+    wireChartClicks(catBox, key=> drillTo("findings", {category:key, status:""}));
+  }
 
   renderFindingLife();
   if(ktStageSel!=null) list = list.filter(f=> ktFindingStage(f)===ktStageSel);
@@ -8429,19 +8689,21 @@ function renderFindings(){
     box.innerHTML = ktStageSel!=null ? `<div class="empty"><h3>لا ملاحظات في هذه المرحلة ضمن التصفية الحالية</h3></div>` : `<div class="empty"><h3>لا توجد ملاحظات</h3><p>اضغط "+ إضافة ملاحظة" لتسجيل أول نتيجة تدقيق.</p></div>`;
     return;
   }
-  const tbody = ktTable(box, [{l:"الملاحظة"},{l:"الخطورة",cls:"w",k:"sev"},{l:"المرحلة",cls:"w",k:"stage"},{l:"الحالة",cls:"w",k:"fst"},{l:"المسؤول",cls:"w wrap",k:"resp"},{l:"المستهدف",cls:"w",k:"date"},{l:"إعادة الاختبار",cls:"w",k:"date"},{l:"",cls:"w",k:"act"}], {ariaLabel:"سجل الملاحظات", minWidth:1120});
+  const tbody = ktTable(box, [{l:"الملاحظة"},{l:"الخطورة",cls:"w",k:"sev"},{l:"مستوى المخاطر",cls:"w",k:"rl"},{l:"الأولوية",cls:"w",k:"pr"},{l:"المرحلة",cls:"w",k:"stage"},{l:"الحالة",cls:"w",k:"fst"},{l:"المسؤول",cls:"w wrap",k:"resp"},{l:"المستهدف",cls:"w",k:"date"},{l:"إعادة الاختبار",cls:"w",k:"date"},{l:"",cls:"w",k:"act"}], {ariaLabel:"سجل الملاحظات", minWidth:1320});
   list.forEach(f=>{
     const sevMeta = SEVERITY_META[f.severity];
     const stMeta = FINDING_STATUS_META[f.status];
     const isOverdue = f.targetDate && f.targetDate<todayStr() && f.status!=="closed";
     const tr = document.createElement("tr"); tr.className = isOverdue ? "late" : "";
     tr.innerHTML = `
-      <td><span class="ttl">${escapeHtml(f.title)}</span>${f.refCode? ` <span class="ref">${escapeHtml(f.refCode)}</span>`:''}${f.selfReviewDate? ' <span class="kd-chip good"><i></i>روجعت ذاتياً</span>':''}${f.desc? `<span class="sub" title="${escapeHtml(f.desc)}">${escapeHtml(f.desc)}</span>`:''}${f.recommendation? `<span class="sub" title="${escapeHtml(f.recommendation)}">التوصية: ${escapeHtml(f.recommendation)}</span>`:''}<span class="sub">${ktCat(f.category)}</span></td>
+      <td><span class="ttl">${escapeHtml(f.title)}</span>${f.refCode? ` <span class="ref">${escapeHtml(f.refCode)}</span>`:''}${f.selfReviewDate? ' <span class="kd-chip good"><i></i>روجعت ذاتياً</span>':''}${f.desc? `<span class="sub" title="${escapeHtml(f.desc)}">${escapeHtml(f.desc)}</span>`:''}${f.recommendation? `<span class="sub" title="${escapeHtml(f.recommendation)}">التوصية: ${escapeHtml(f.recommendation)}</span>`:''}${f.correctiveActionPlan? `<span class="sub" title="${escapeHtml(f.correctiveActionPlan)}">الإجراء التصحيحي: ${escapeHtml(f.correctiveActionPlan)}</span>`:''}<span class="sub">${ktCat(f.category)}</span></td>
       <td class="w"><span class="kd-chip" style="background:${sevMeta.color}1a;color:${sevMeta.color}"><i></i>${sevMeta.label}</span></td>
+      <td class="w">${findingRiskLevelChip(f)}</td>
+      <td class="w">${findingPriorityChip(f)}</td>
       <td class="w">${ktMiniStepper(f)}</td>
       <td class="w"><span class="kd-chip" style="background:${stMeta.color}1a;color:${stMeta.color}"><i></i>${stMeta.label}</span></td>
       <td class="w wrap">${f.responsible? escapeHtml(f.responsible) : '<span style="color:var(--kd-faint)">غير مُسند</span>'}</td>
-      <td class="w">${ktDue(f.targetDate, isOverdue)}</td>
+      <td class="w">${ktDue(f.targetDate, isOverdue)}${isOverdue? ` <span class="kd-chip" style="background:#B91C1C1a;color:#B91C1C;font-weight:700;">${Math.round((new Date(todayStr())-new Date(f.targetDate))/86400000)} يوم</span>` : ''}</td>
       <td class="w">${f.retestDate? ktDue(f.retestDate,false) : '—'}</td>
       <td class="w"><button class="btn btn-ghost btn-sm edit-f-btn kt-edit" type="button">تعديل</button></td>`;
     tr.querySelector(".edit-f-btn").onclick = ()=> openFindingModal(f);
@@ -10608,6 +10870,8 @@ function drillTo(viewName, presetFilters, afterFn){
     if("severity" in presetFilters) document.getElementById("filterFSeverity").value = presetFilters.severity||"";
     if("status" in presetFilters) document.getElementById("filterFStatus").value = presetFilters.status||"";
     if("category" in presetFilters) document.getElementById("filterFCategory").value = presetFilters.category||"";
+    if("riskLevel" in presetFilters) document.getElementById("filterFRiskLevel").value = presetFilters.riskLevel||"";
+    if("priority" in presetFilters) document.getElementById("filterFPriority").value = presetFilters.priority||"";
   }
   if(viewName==="all"){
     if("category" in presetFilters) document.getElementById("filterCat").value = presetFilters.category||"";
