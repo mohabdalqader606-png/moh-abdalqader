@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v49.9-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v49.10-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -1105,7 +1105,7 @@ th.yd,td.yd{background:rgba(11,31,58,.035);font-size:.92em}th.yd{color:var(--mut
   <div class="userbox" id="userbox" style="display:none;">
     <div class="who"><b id="uName"></b><span id="uRole"></span></div>
     <span class="status-msg" id="cloudSyncMsgFin" style="margin:0 6px;"></span>
-    <button class="btn ghost sm" onclick="pullStateFromCloudFin().then(()=>{refreshUIFromState();toast('تم التحديث من السيرفر المشترك')})" title="سحب آخر نسخة من السيرفر المشترك يدوياً">🔄</button>
+    <button class="btn ghost sm" onclick="pullStateFromCloudFin().then(()=>{refreshUIFromState();if(months().length){try{refreshMonths();recalcAll()}catch(e){console.error(e)}}toast('تم التحديث من السيرفر المشترك')})" title="سحب آخر نسخة من السيرفر المشترك يدوياً">🔄</button>
     <button class="btn ghost sm" onclick="doLogout()">خروج</button>
   </div>
 </header>
@@ -4477,6 +4477,7 @@ async function onSignedIn(user){
   // نسحب آخر نسخة من السيرفر المشترك *قبل* ما نكشف الشاشة (نفس منطق شاشة المؤسسة العسكرية)
   await pullStateFromCloudFin();
   refreshUIFromState();
+  if(months().length){try{refreshMonths();recalcAll()}catch(e){console.error(e)}}
   document.getElementById('appView').style.display = 'block';
 }
 /* ================= مزامنة سحابية (الجزء الأساسي: تصنيف، حسابات، أرصدة، قيود يدوية، إعدادات —
@@ -4495,6 +4496,7 @@ async function pushStateToCloudFin(){
   if(!Object.keys(S.accounts||{}).length && !Object.keys(S.map||{}).length) return; // حماية: ما نرفع نسخة فاضية بالغلط
   try{
     const packed=packState();
+    packed.timing=S.timing||[];
     await sb.from('financials_app_state').upsert({id:'main', data:packed, updated_by:curUser.id, updated_at:new Date().toISOString()});
     const el=document.getElementById('cloudSyncMsgFin'); if(el){ el.textContent='✔ محفوظ على السيرفر المشترك · '+new Date().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}); el.className='status-msg ok'; }
   }catch(e){
@@ -4510,6 +4512,7 @@ async function pullStateFromCloudFin(){
     S={...S,...o};
     S.settings={...S.settings,...(o.settings||{})};
     if(o.bench) Object.assign(BENCH, o.bench);
+    if(o.timing!==undefined) await saveBig('timing');
     await idbSet(LSK, packState());
     cloudSyncedFin=true;
     const el=document.getElementById('cloudSyncMsgFin'); if(el){ el.textContent='✔ تم تحميل آخر نسخة من السيرفر المشترك'; el.className='status-msg ok'; }
