@@ -599,6 +599,9 @@
   :is(#view-engagements,#view-universe,#view-findings,#view-risks,#view-policies,#view-authority,#view-improvements,#view-emails,#view-stats) .stat-card span{font-size:11px;color:var(--kd-muted);font-weight:600;}
   /* findings lifecycle */
   .kt-life{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:6px;margin-bottom:12px;}
+  #ktEngLife{grid-template-columns:repeat(7,minmax(0,1fr));}
+  @media (max-width:900px){ #ktEngLife{grid-template-columns:repeat(4,minmax(0,1fr));} }
+  @media (max-width:640px){ #ktEngLife{grid-template-columns:repeat(2,minmax(0,1fr));} }
   .kt-lstage{background:var(--kd-surface);border:1px solid var(--kd-line);border-radius:10px;padding:8px 10px;font:inherit;text-align:center;cursor:pointer;color:var(--kd-ink);position:relative;}
   .kt-lstage::after{content:"›";position:absolute;inset-inline-start:-9px;top:50%;transform:translateY(-50%);color:var(--kd-faint);font-size:14px;} .kt-lstage:first-child::after{display:none;}
   .kt-lstage b{display:block;font-family:var(--k-font-mono);font-size:18px;font-weight:600;direction:ltr;} .kt-lstage span{display:block;font-size:11px;font-weight:700;} .kt-lstage .kd-en{font-size:7.5px;color:var(--kd-faint);}
@@ -931,7 +934,45 @@
       </div>
       <button class="btn btn-primary" id="addEngagementBtn">+ إضافة مهمة تدقيق</button>
     </div>
+    <div class="toolbar">
+      <div class="toolbar-left">
+        <div class="search-box"><input type="text" id="searchEng" placeholder="بحث بالمرجع أو الاسم أو الهدف أو المدقق..."></div>
+        <select id="filterEngStatus" title="الحالة">
+          <option value="">كل الحالات</option>
+          <option value="draft">مسودة</option>
+          <option value="planned">مخطط</option>
+          <option value="in_progress">قيد التنفيذ</option>
+          <option value="fieldwork_complete">اكتمل العمل الميداني</option>
+          <option value="under_review">قيد المراجعة</option>
+          <option value="closed">مغلقة</option>
+          <option value="reopened">أُعيد فتحها</option>
+        </select>
+        <select id="filterEngType" title="نوع التدقيق"><option value="">كل الأنواع</option></select>
+        <select id="filterEngCategory"><option value="">كل الأقسام</option></select>
+        <select id="sortEng" title="الترتيب">
+          <option value="planned">الترتيب: البداية المخططة</option>
+          <option value="ref">الترتيب: المرجع</option>
+          <option value="progress">الترتيب: نسبة الإنجاز</option>
+          <option value="overdue">الترتيب: المتأخرة أولاً</option>
+        </select>
+      </div>
+    </div>
     <div class="stat-cards" id="engagementStatCards"></div>
+    <div class="kt-life" id="ktEngLife" role="group" aria-label="دورة حياة مهام التدقيق"></div>
+    <div class="lib-grid kg-charts" style="margin-bottom:16px;">
+      <div class="lib-card kg-card">
+        <div class="lib-head kg-head" style="background:var(--navy);">حسب الحالة <span class="kd-en">By status</span></div>
+        <div style="padding:16px;" id="engStatusBox"></div>
+      </div>
+      <div class="lib-card kg-card">
+        <div class="lib-head kg-head" style="background:var(--navy);">حسب نوع التدقيق <span class="kd-en">By audit type</span></div>
+        <div style="padding:16px;" id="engTypeBox"></div>
+      </div>
+      <div class="lib-card kg-card">
+        <div class="lib-head kg-head" style="background:var(--navy);">حسب القسم <span class="kd-en">By department</span></div>
+        <div style="padding:16px;" id="engCatBox"></div>
+      </div>
+    </div>
     <div class="task-list kt-host" id="engagementsList"></div>
   </div>
 
@@ -2345,37 +2386,78 @@
 
 <!-- AUDIT ENGAGEMENT MODAL -->
 <div class="overlay" id="engagementOverlay">
-  <div class="modal">
+  <div class="modal" style="max-width:940px;">
     <h2 id="engagementModalTitle">إضافة مهمة تدقيق</h2>
     <input type="hidden" id="engEditId">
+    <div id="engSummaryBox" style="display:none;margin-bottom:12px;"></div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;" role="tablist" aria-label="أقسام مهمة التدقيق">
+      <button type="button" class="btn btn-primary btn-sm eng-tab-btn" data-pane="plan" role="tab" aria-selected="true">📝 التخطيط</button>
+      <button type="button" class="btn btn-ghost btn-sm eng-tab-btn" data-pane="team" role="tab" aria-selected="false">👥 الفريق والمخاطر</button>
+      <button type="button" class="btn btn-ghost btn-sm eng-tab-btn" data-pane="exec" role="tab" aria-selected="false">⚙ التنفيذ والروابط</button>
+      <button type="button" class="btn btn-ghost btn-sm eng-tab-btn" data-pane="close" role="tab" aria-selected="false">✅ المراجعة والإغلاق</button>
+      <button type="button" class="btn btn-ghost btn-sm eng-tab-btn" data-pane="log" role="tab" aria-selected="false">🕓 سجل الأحداث</button>
+    </div>
+
+    <!-- PANE: PLANNING -->
+    <div class="eng-pane" id="engPane-plan">
     <div class="row2">
       <div class="field">
         <label>اسم التدقيق</label>
         <input type="text" id="engTitle" placeholder="مثال: تدقيق التحصيل — أغسطس 2026">
       </div>
       <div class="field">
-        <label>القسم / المجال</label>
+        <label>القسم / المجال (Department)</label>
         <select id="engCategory"></select>
       </div>
     </div>
     <div class="row3">
       <div class="field">
-        <label>من فترة</label>
+        <label>نوع التدقيق (Audit Type)</label>
+        <select id="engType"></select>
+      </div>
+      <div class="field">
+        <label>العملية / الإجراء (Process)</label>
+        <input type="text" id="engProcess" placeholder="مثال: دورة التحصيل من العملاء">
+      </div>
+      <div class="field">
+        <label>مجال التدقيق بالخطة السنوية (Audit Universe)</label>
+        <select id="engUniverseId"><option value="">بدون ربط</option></select>
+      </div>
+    </div>
+    <div class="row3">
+      <div class="field">
+        <label>الفترة المدقَّقة — من</label>
         <input type="date" id="engFrom">
       </div>
       <div class="field">
-        <label>إلى فترة</label>
+        <label>الفترة المدقَّقة — إلى</label>
         <input type="date" id="engTo">
       </div>
       <div class="field">
         <label>الحالة</label>
         <select id="engStatus">
+          <option value="draft">مسودة</option>
           <option value="planned">مخطط</option>
           <option value="in_progress">قيد التنفيذ</option>
-          <option value="reporting">إعداد التقرير</option>
-          <option value="completed">مكتمل</option>
+          <option value="fieldwork_complete">اكتمل العمل الميداني</option>
+          <option value="under_review">قيد المراجعة</option>
+          <option value="closed">مغلقة</option>
+          <option value="reopened">أُعيد فتحها</option>
         </select>
       </div>
+    </div>
+    <div class="field" id="engReopenReasonField" style="display:none;">
+      <label>سبب إعادة الفتح (إلزامي)</label>
+      <textarea id="engReopenReason" placeholder="لماذا أُعيد فتح مهمة التدقيق بعد إغلاقها؟"></textarea>
+    </div>
+    <div style="border-top:1px solid var(--border);margin:6px 0 10px 0;padding-top:8px;"><b style="font-size:12.5px;color:var(--navy);">التواريخ المخططة مقابل الفعلية (Planned vs Actual)</b></div>
+    <div class="row2">
+      <div class="field"><label>البداية المخططة</label><input type="date" id="engPlannedStart"></div>
+      <div class="field"><label>النهاية المخططة</label><input type="date" id="engPlannedEnd"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>البداية الفعلية</label><input type="date" id="engActualStart"></div>
+      <div class="field"><label>النهاية الفعلية</label><input type="date" id="engActualEnd"></div>
     </div>
     <div class="field">
       <label>الهدف</label>
@@ -2397,22 +2479,124 @@
       <label>رابط التقرير النهائي</label>
       <input type="text" id="engFinalReport" style="direction:ltr;unicode-bidi:embed;" placeholder="مسار الملف أو رابطه">
     </div>
-    <div class="field" id="engLinkedFindingsField" style="display:none;">
-      <label>الملاحظات المرتبطة</label>
-      <div id="engLinkedFindings" style="font-size:12.5px;line-height:1.8;"></div>
     </div>
-    <div class="field" id="engLinkedTasksField" style="display:none;">
-      <label>مهام التدقيق المرتبطة (WP)</label>
-      <div id="engLinkedTasks" style="font-size:12.5px;line-height:1.8;"></div>
+
+    <!-- PANE: TEAM & RISK -->
+    <div class="eng-pane" id="engPane-team" style="display:none;">
+    <div class="row2">
+      <div class="field">
+        <label>المدقق الرئيسي (Lead Auditor)</label>
+        <input type="text" id="engLeadAuditor" placeholder="اسم المدقق المسؤول عن المهمة">
+      </div>
+      <div class="field">
+        <label>فريق التدقيق (Audit Team) — افصل الأسماء بفاصلة</label>
+        <input type="text" id="engTeam" placeholder="مثال: أحمد، سارة">
+      </div>
     </div>
+    <div style="border-top:1px solid var(--border);margin:6px 0 10px 0;padding-top:8px;"><b style="font-size:12.5px;color:var(--navy);">تقييم مخاطر المهمة (Engagement Risk Assessment)</b></div>
+    <div class="row3">
+      <div class="field">
+        <label>الاحتمالية (1-5)</label>
+        <select id="engRiskLikelihood">
+          <option value="">غير مقيَّم</option><option value="1">1 — نادر</option><option value="2">2 — غير محتمل</option><option value="3">3 — ممكن</option><option value="4">4 — محتمل</option><option value="5">5 — شبه مؤكد</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>الأثر (1-5)</label>
+        <select id="engRiskImpact">
+          <option value="">غير مقيَّم</option><option value="1">1 — ضئيل</option><option value="2">2 — بسيط</option><option value="3">3 — متوسط</option><option value="4">4 — كبير</option><option value="5">5 — جسيم</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>الدرجة / المستوى</label>
+        <div id="engRiskScoreView" style="padding:9px 11px;border:1px dashed var(--border);border-radius:9px;font-size:13px;min-height:38px;">—</div>
+      </div>
+    </div>
+    <div class="field">
+      <label>ملاحظات تقييم المخاطر</label>
+      <textarea id="engRiskNotes" placeholder="أهم المخاطر المتوقعة في هذه المهمة ومبررات التقييم"></textarea>
+    </div>
+    <div class="field">
+      <label>المخاطر المرتبطة من سجل المخاطر (Linked Risks)</label>
+      <div id="engRiskLinks" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;min-height:24px;"></div>
+      <div style="display:flex;gap:8px;">
+        <select id="engRiskAddSelect" style="flex:1;"></select>
+        <button type="button" class="btn btn-ghost btn-sm" id="engRiskAddBtn">+ ربط خطر</button>
+      </div>
+    </div>
+    </div>
+
+    <!-- PANE: EXECUTION & LINKS -->
+    <div class="eng-pane" id="engPane-exec" style="display:none;">
+    <div id="engExecEmptyHint" style="display:none;font-size:12.5px;color:var(--muted);padding:10px;border:1px dashed var(--border);border-radius:10px;">احفظ مهمة التدقيق أولاً لتتمكن من تعيين قوائم التحقق وربط الأدلة والملاحظات بها.</div>
     <div class="field" id="engChecklistsField" style="display:none;">
-      <label>قوائم التحقق المرتبطة</label>
+      <label>قوائم التحقق المرتبطة (Checklists / Executions)</label>
       <div id="engChecklistsList" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;"></div>
       <div style="display:flex;gap:8px;">
         <select id="engAssignTplSelect" style="flex:1;"></select>
         <button type="button" class="btn btn-ghost btn-sm" id="engAssignTplBtn">+ تعيين</button>
       </div>
     </div>
+    <div class="field" id="engLinkedFindingsField" style="display:none;">
+      <label>الملاحظات المرتبطة (Findings)</label>
+      <div id="engLinkedFindings" style="font-size:12.5px;line-height:1.8;"></div>
+      <button type="button" class="add-link-btn" id="engAddFindingBtn" style="margin-top:8px;">+ إضافة ملاحظة لهذه المهمة</button>
+    </div>
+    <div class="field" id="engActionsField" style="display:none;">
+      <label>الإجراءات التصحيحية وحالتها (Corrective Actions)</label>
+      <div id="engActionsList" style="font-size:12.5px;line-height:1.8;"></div>
+    </div>
+    <div class="field" id="engEvidenceField" style="display:none;">
+      <label>الأدلة المرتبطة بالمهمة (Evidence)</label>
+      <div id="engEvidenceList" style="font-size:12.5px;line-height:1.8;"></div>
+      <button type="button" class="add-link-btn" id="engAddEvidenceBtn" style="margin-top:8px;">+ إضافة دليل لهذه المهمة</button>
+    </div>
+    <div class="field" id="engLinkedTasksField" style="display:none;">
+      <label>مهام التدقيق المرتبطة (WP)</label>
+      <div id="engLinkedTasks" style="font-size:12.5px;line-height:1.8;"></div>
+    </div>
+    </div>
+
+    <!-- PANE: REVIEW & CLOSURE -->
+    <div class="eng-pane" id="engPane-close" style="display:none;">
+    <div style="margin:0 0 10px 0;"><b style="font-size:12.5px;color:var(--navy);">المراجعة النهائية والاعتماد (Final Review / Approval)</b></div>
+    <div class="row3">
+      <div class="field"><label>تمت المراجعة بواسطة</label><input type="text" id="engReviewBy" placeholder="اسم المراجع"></div>
+      <div class="field"><label>تاريخ المراجعة</label><input type="date" id="engReviewDate"></div>
+      <div class="field" style="display:flex;flex-direction:row;align-items:center;gap:8px;padding-top:22px;">
+        <input type="checkbox" id="engReviewApproved"><label for="engReviewApproved" style="font-size:13px;">معتمدة للإغلاق</label>
+      </div>
+    </div>
+    <div class="field"><label>ملاحظات المراجعة</label><textarea id="engReviewNotes"></textarea></div>
+    <div style="font-size:12.5px;padding:8px 10px;background:#FFFBEB;border:1px solid #FDE68A;border-radius:8px;margin-bottom:10px;">
+      ℹ️ إغلاق مهمة التدقيق لا يعني إغلاق جميع الإجراءات التصحيحية، ويمكن متابعة الإجراءات بعد إغلاق المهمة من سجل الملاحظات.
+    </div>
+    <div class="field">
+      <label>قواعد إغلاق المهمة (Closure Rules) — يُمنع الإغلاق حتى تتحقق كلها</label>
+      <div id="engClosureRulesBox" style="border:1px solid var(--border);border-radius:10px;padding:8px 12px;font-size:12.5px;"></div>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+        <button type="button" class="btn btn-primary btn-sm" id="engCloseBtn">🔒 إغلاق مهمة التدقيق</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="engReopenBtn" style="display:none;">↩ إعادة فتح المهمة</button>
+      </div>
+    </div>
+    </div>
+
+    <!-- PANE: AUDIT TRAIL -->
+    <div class="eng-pane" id="engPane-log" style="display:none;">
+    <div class="field">
+      <label>سجل الأحداث (Audit Trail) — مهمة التدقيق</label>
+      <div id="engLogList" style="max-height:160px;overflow:auto;border:1px solid var(--border);border-radius:9px;padding:6px 10px;font-size:12px;background:#F8FAFC;margin-bottom:8px;"></div>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="engFollowUpNote" placeholder="أضف ملاحظة متابعة على المهمة...">
+        <button type="button" class="btn btn-ghost btn-sm" id="engAddFollowUpBtn" style="white-space:nowrap;">+ إضافة</button>
+      </div>
+    </div>
+    <div class="field">
+      <label>الخط الزمني للنشاط (Activity Timeline) — المهمة + قوائم التحقق + الملاحظات + الأدلة</label>
+      <div id="engTimelineList" style="max-height:220px;overflow:auto;border:1px solid var(--border);border-radius:9px;padding:6px 10px;font-size:12px;"></div>
+    </div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn btn-danger" id="deleteEngagementBtn" style="display:none;">حذف</button>
       <div style="display:flex;gap:8px;margin-right:auto;">
@@ -6916,6 +7100,7 @@ function fillCategorySelects(){
   set("qCategory", catOptions("form"));
   set("filterQCat", `<option value="">كل الأقسام</option>` + catOptions("filter"));
   set("filterFCategory", `<option value="">كل الأقسام</option>` + catOptions("filter"));
+  set("filterEngCategory", `<option value="">كل الأقسام</option>` + catOptions("filter"));
   set("recCategory", catOptions("form"));
   set("tplCategory", catOptions("form"));
   set("filterTplCat", `<option value="">كل الأقسام</option>` + catOptions("filter"));
@@ -10222,10 +10407,33 @@ function renderEmails(){
 }
 
 /* ===================== AUDIT ENGAGEMENTS ===================== */
+/* Status lifecycle: draft → planned → in_progress → fieldwork_complete → under_review → closed (→ reopened).
+   Legacy values on old records (reporting / completed) are kept readable and mapped (display + stats only, never rewritten) via engNormStatus(). */
 const ENG_STATUS_META = {
-  planned:{label:"مخطط", color:"#64748B"}, in_progress:{label:"قيد التنفيذ", color:"#2563EB"},
-  reporting:{label:"إعداد التقرير", color:"#F59E0B"}, completed:{label:"مكتمل", color:"#16A34A"},
+  draft:{label:"مسودة", color:"#94A3B8"},
+  planned:{label:"مخطط", color:"#64748B"},
+  in_progress:{label:"قيد التنفيذ", color:"#2563EB"},
+  fieldwork_complete:{label:"اكتمل العمل الميداني", color:"#0891B2"},
+  under_review:{label:"قيد المراجعة", color:"#F59E0B"},
+  closed:{label:"مغلقة", color:"#16A34A"},
+  reopened:{label:"أُعيد فتحها", color:"#B91C1C"},
+  reporting:{label:"إعداد التقرير", color:"#F59E0B", legacy:"under_review"},
+  completed:{label:"مكتمل", color:"#16A34A", legacy:"closed"},
 };
+const ENG_LIFE = [["draft","مسودة","Draft"],["planned","مخطط","Planned"],["in_progress","قيد التنفيذ","In progress"],["fieldwork_complete","اكتمل الميداني","Fieldwork done"],["under_review","قيد المراجعة","Under review"],["closed","مغلقة","Closed"],["reopened","أُعيد فتحها","Reopened"]];
+const ENG_TYPE_META = {
+  financial:{label:"تدقيق مالي", color:"#1D4ED8"}, operational:{label:"تدقيق تشغيلي", color:"#0F766E"},
+  compliance:{label:"تدقيق التزام", color:"#7C3AED"}, it:{label:"تدقيق نظم معلومات", color:"#0891B2"},
+  investigation:{label:"فحص خاص / تحقيق", color:"#B91C1C"}, follow_up:{label:"متابعة", color:"#F59E0B"}, other:{label:"أخرى", color:"#64748B"},
+};
+function engNormStatus(s){ const m = ENG_STATUS_META[s]; if(!m) return "planned"; return m.legacy || s; }
+function engStatusMeta(s){ return ENG_STATUS_META[engNormStatus(s)]; }
+function engIsClosed(eng){ return engNormStatus(eng.status)==="closed"; }
+function engLog(eng, note){ if(!eng.log) eng.log = []; eng.log.push({date: todayStr(), note}); }
+function engTypeLabel(t){ return t && ENG_TYPE_META[t] ? ENG_TYPE_META[t].label : "غير محدد"; }
+let engStageSel = null;          /* lifecycle strip toggle (presentation filter only) */
+let engRiskIdsDraft = [];        /* linked risk ids while the modal is open; persisted on Save */
+
 function fillEngagementSelect(sel, current){
   sel.innerHTML = `<option value="">بدون ربط</option>` + DB.engagements.map(e=>`<option value="${e.id}">${escapeHtml(e.refCode)} — ${escapeHtml(e.title)}</option>`).join("");
   sel.value = current || "";
@@ -10234,40 +10442,307 @@ function fillRiskSelect(sel, current){
   sel.innerHTML = `<option value="">بدون ربط</option>` + DB.risks.map(r=>`<option value="${r.id}">${escapeHtml(r.title)}</option>`).join("");
   sel.value = current || "";
 }
+function fillEngTypeSelects(){
+  const opts = Object.keys(ENG_TYPE_META).map(k=>`<option value="${k}">${ENG_TYPE_META[k].label}</option>`).join("");
+  const f = document.getElementById("engType"); if(f) f.innerHTML = `<option value="">غير محدد</option>` + opts;
+  const fl = document.getElementById("filterEngType"); if(fl){ const keep = fl.value; fl.innerHTML = `<option value="">كل الأنواع</option>` + opts; fl.value = keep; }
+}
+fillEngTypeSelects();
+
+/* ---- engagement analytics (pure reads over existing entities; nothing is written) ---- */
+function engStats(eng){
+  const execs = DB.checklistExecutions.filter(x=>x.engagementId===eng.id);
+  const findings = DB.findings.filter(f=>f.engagementId===eng.id);
+  const tasks = DB.tasks.filter(t=>t.engagementId===eng.id);
+  const evidence = DB.evidence.filter(e=>e.engagementId===eng.id || (e.findingId && findings.some(f=>f.id===e.findingId)));
+  const items = execs.flatMap(x=>x.items||[]);
+  const itemsDone = items.filter(i=>i.result && i.result!=="pending").length;
+  const failed = items.filter(i=>i.result==="fail").length;
+  const pendingItems = items.length - itemsDone;
+  const requiredPending = items.filter(i=>i.required && (!i.result || i.result==="pending")).length;
+  const evidenceGaps = items.filter(i=>i.evidenceRequired && i.result && i.result!=="pending" && !(i.evidenceIds&&i.evidenceIds.length)).length;
+  const execsIncomplete = execs.filter(x=>x.status!=="completed").length;
+  const openFindings = findings.filter(f=>f.status!=="closed").length;
+  const overdueFindings = findings.filter(f=>f.targetDate && f.targetDate<todayStr() && f.status!=="closed").length;
+  const actions = findings.filter(f=>(f.correctiveActionPlan||"").trim() || (f.managementResponse||"").trim());
+  const overdueActions = actions.filter(f=>f.targetDate && f.targetDate<todayStr() && f.status!=="closed").length;
+  const findingsEvidenceGaps = findings.filter(f=>f.evidenceRequired!==false && f.status!=="closed" && !DB.evidence.some(e=>e.findingId===f.id)).length;
+  /* Closure rule for findings: closed → ok; action_plan / in_progress / retest → ok only with a complete remediation plan
+     (corrective action plan + responsible + due date), and they stay trackable after the engagement closes;
+     reopened → blocks; open without a plan → blocks. */
+  const hasPlan = f=> !!((f.correctiveActionPlan||"").trim() && (f.responsible||"").trim() && f.targetDate);
+  const blockingFindings = findings.filter(f=> f.status!=="closed" && (f.status==="reopened" || !hasPlan(f)));
+  const trackedAfterClose = findings.filter(f=> f.status!=="closed" && f.status!=="reopened" && hasPlan(f));
+  const tasksDone = tasks.filter(t=>t.status==="done").length;
+  const review = eng.finalReview || {};
+  const reviewDone = !!(review.approved && (review.reviewedBy||"").trim() && review.reviewedDate);
+  /* Progress: weighted over the components that exist — checklists 40 / findings 30 / tasks 10 / final review 20 (normalised) */
+  const w = [];
+  if(items.length) w.push([0.4, itemsDone/items.length]);
+  if(findings.length) w.push([0.3, (findings.length-openFindings)/findings.length]);
+  if(tasks.length) w.push([0.1, tasksDone/tasks.length]);
+  w.push([0.2, reviewDone ? 1 : 0]);
+  const wsum = w.reduce((s,x)=>s+x[0],0);
+  let progress = Math.round(w.reduce((s,x)=>s+x[0]*x[1],0)/wsum*100);
+  if(engIsClosed(eng)) progress = 100;
+  const plannedOverdue = !!(eng.plannedEnd && eng.plannedEnd<todayStr() && !engIsClosed(eng));
+  const riskScore = (eng.riskLikelihood && eng.riskImpact) ? (+eng.riskLikelihood)*(+eng.riskImpact) : null;
+  return {execs, findings, tasks, evidence, items, itemsDone, failed, pendingItems, requiredPending, evidenceGaps, execsIncomplete,
+    openFindings, overdueFindings, actions, overdueActions, findingsEvidenceGaps, blockingFindings, trackedAfterClose, tasksDone, reviewDone, progress, plannedOverdue, riskScore,
+    checklistPct: items.length ? Math.round(itemsDone/items.length*100) : null};
+}
+function engClosureRules(eng){
+  const s = engStats(eng);
+  return [
+    {key:"checklists", label:"كل قوائم التحقق المرتبطة مكتملة ولا بند إلزامي بلا نتيجة",
+      ok: s.execsIncomplete===0 && s.requiredPending===0,
+      detail: s.execs.length ? `${s.execs.length-s.execsIncomplete}/${s.execs.length} مكتملة · ${s.requiredPending} بند إلزامي معلّق` : "لا قوائم تحقق مرتبطة"},
+    {key:"findings", label:"لا ملاحظة مانعة: كل ملاحظة غير مغلقة لديها خطة إجراء تصحيحي + مسؤول + موعد استحقاق، ولا ملاحظة بحالة \"أُعيد فتحها\"",
+      ok: s.blockingFindings.length===0,
+      detail: s.findings.length
+        ? `${s.findings.length-s.openFindings}/${s.findings.length} مغلقة · ${s.trackedAfterClose.length} بخطة معالجة مكتملة تُتابع بعد الإغلاق · <b style="color:${s.blockingFindings.length?'#B91C1C':'inherit'}">${s.blockingFindings.length} مانعة</b>${s.blockingFindings.length? ' ('+s.blockingFindings.map(f=>escapeHtml(f.refCode||"")).join("، ")+')' : ''}`
+        : "لا ملاحظات مرتبطة"},
+    {key:"evidence", label:"لا فجوات أدلة إلزامية (بنود تحقق أو ملاحظات مفتوحة تتطلب دليلاً بلا دليل)",
+      ok: s.evidenceGaps===0 && s.findingsEvidenceGaps===0,
+      detail: `${s.evidenceGaps} فجوة ببنود التحقق · ${s.findingsEvidenceGaps} بالملاحظات`},
+    {key:"review", label:"المراجعة النهائية معتمدة (اسم المراجع + التاريخ + علامة الاعتماد)",
+      ok: s.reviewDone,
+      detail: s.reviewDone ? `اعتمدها ${escapeHtml(eng.finalReview.reviewedBy)} بتاريخ ${eng.finalReview.reviewedDate}` : "غير مكتملة"},
+  ];
+}
+
 document.getElementById("addEngagementBtn").onclick = ()=> openEngagementModal(null);
 document.getElementById("cancelEngagementModal").onclick = ()=> document.getElementById("engagementOverlay").classList.remove("active");
 
-function openEngagementModal(eng){
+/* modal sub-tabs (own class so the checklists-view .sub-tab-btn handler is not affected) */
+function engShowPane(name){
+  document.querySelectorAll(".eng-tab-btn").forEach(b=>{
+    const on = b.dataset.pane===name;
+    b.classList.toggle("btn-primary", on); b.classList.toggle("btn-ghost", !on); b.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  document.querySelectorAll(".eng-pane").forEach(p=>{ p.style.display = p.id==="engPane-"+name ? "block" : "none"; });
+}
+document.querySelectorAll(".eng-tab-btn").forEach(b=> b.onclick = ()=> engShowPane(b.dataset.pane));
+
+function engReadReviewFromForm(){
+  return {
+    reviewedBy: document.getElementById("engReviewBy").value.trim(),
+    reviewedDate: document.getElementById("engReviewDate").value,
+    approved: document.getElementById("engReviewApproved").checked,
+    notes: document.getElementById("engReviewNotes").value.trim(),
+  };
+}
+function engRenderRiskScore(){
+  const l = +document.getElementById("engRiskLikelihood").value, i = +document.getElementById("engRiskImpact").value;
+  const box = document.getElementById("engRiskScoreView");
+  if(!l || !i){ box.innerHTML = `<span style="color:var(--muted);">غير مقيَّم</span>`; return; }
+  const m = riskLevelMeta(l*i);
+  box.innerHTML = `<b style="font-family:var(--k-font-mono);">${l*i}</b> <span class="kd-chip" style="background:${m.color}1a;color:${m.color}"><i></i>${m.label}</span>`;
+}
+document.getElementById("engRiskLikelihood").onchange = engRenderRiskScore;
+document.getElementById("engRiskImpact").onchange = engRenderRiskScore;
+function engRenderRiskLinks(){
+  const box = document.getElementById("engRiskLinks");
+  const linked = engRiskIdsDraft.map(id=>DB.risks.find(r=>r.id===id)).filter(Boolean);
+  box.innerHTML = linked.length ? linked.map(r=>{
+    const m = riskLevelMeta(r.likelihood*r.impact);
+    return `<span class="kd-chip" style="background:${m.color}1a;color:${m.color};gap:6px;"><i></i>${escapeHtml(r.title)} <small>(${r.likelihood*r.impact})</small> <button type="button" class="eng-risk-rm" data-id="${r.id}" title="إزالة الربط" style="border:0;background:transparent;color:inherit;cursor:pointer;font-weight:700;">×</button></span>`;
+  }).join("") : `<span style="font-size:12px;color:var(--muted);">لا مخاطر مرتبطة بعد.</span>`;
+  box.querySelectorAll(".eng-risk-rm").forEach(b=> b.onclick = ()=>{ engRiskIdsDraft = engRiskIdsDraft.filter(x=>x!==b.dataset.id); engRenderRiskLinks(); });
+  const sel = document.getElementById("engRiskAddSelect");
+  const avail = DB.risks.filter(r=>!engRiskIdsDraft.includes(r.id));
+  sel.innerHTML = avail.length ? avail.map(r=>`<option value="${r.id}">${escapeHtml(r.title)} (${r.likelihood*r.impact})</option>`).join("") : `<option value="">لا مخاطر متاحة في سجل المخاطر</option>`;
+}
+document.getElementById("engRiskAddBtn").onclick = ()=>{
+  const id = document.getElementById("engRiskAddSelect").value;
+  if(!id){ alert("لا يوجد خطر متاح للربط — أضف المخاطر أولاً من سجل المخاطر."); return; }
+  if(!engRiskIdsDraft.includes(id)) engRiskIdsDraft.push(id);
+  engRenderRiskLinks();
+};
+document.getElementById("engStatus").onchange = e=>{
+  document.getElementById("engReopenReasonField").style.display = e.target.value==="reopened" ? "block" : "none";
+};
+
+function openEngagementModal(eng, pane){
   document.getElementById("engEditId").value = eng ? eng.id : "";
   document.getElementById("engagementModalTitle").textContent = eng ? `تعديل — ${eng.refCode}` : "إضافة مهمة تدقيق";
   document.getElementById("deleteEngagementBtn").style.display = eng ? "inline-block" : "none";
   document.getElementById("engTitle").value = eng ? eng.title : "";
   document.getElementById("engCategory").value = eng ? eng.category : "sales";
+  document.getElementById("engType").value = eng ? (eng.auditType||"") : "";
+  document.getElementById("engProcess").value = eng ? (eng.process||"") : "";
+  const uSel = document.getElementById("engUniverseId");
+  uSel.innerHTML = `<option value="">بدون ربط</option>` + DB.universe.map(u=>`<option value="${u.id}">${escapeHtml(u.name)}</option>`).join("");
+  uSel.value = eng ? (eng.universeId||"") : "";
   document.getElementById("engFrom").value = eng ? (eng.from||"") : "";
   document.getElementById("engTo").value = eng ? (eng.to||"") : "";
-  document.getElementById("engStatus").value = eng ? eng.status : "planned";
+  document.getElementById("engStatus").value = eng ? engNormStatus(eng.status) : "draft";
+  document.getElementById("engReopenReasonField").style.display = "none";
+  document.getElementById("engReopenReason").value = "";
+  document.getElementById("engPlannedStart").value = eng ? (eng.plannedStart||"") : "";
+  document.getElementById("engPlannedEnd").value = eng ? (eng.plannedEnd||"") : "";
+  document.getElementById("engActualStart").value = eng ? (eng.actualStart||"") : "";
+  document.getElementById("engActualEnd").value = eng ? (eng.actualEnd||"") : "";
   document.getElementById("engObjective").value = eng ? (eng.objective||"") : "";
   document.getElementById("engScope").value = eng ? (eng.scope||"") : "";
   document.getElementById("engProgram").value = eng ? (eng.program||"") : "";
   document.getElementById("engSampling").value = eng ? (eng.sampling||"") : "";
   document.getElementById("engFinalReport").value = eng ? (eng.finalReport||"") : "";
-  const linkedFindingsField = document.getElementById("engLinkedFindingsField");
-  const linkedTasksField = document.getElementById("engLinkedTasksField");
-  if(eng){
-    const lf = DB.findings.filter(f=>f.engagementId===eng.id);
-    const lt = DB.tasks.filter(t=>t.engagementId===eng.id);
-    linkedFindingsField.style.display = lf.length ? "block":"none";
-    linkedTasksField.style.display = lt.length ? "block":"none";
-    document.getElementById("engLinkedFindings").innerHTML = lf.map(f=>`<div>${escapeHtml(f.refCode)} — ${escapeHtml(f.title)}</div>`).join("") || "—";
-    document.getElementById("engLinkedTasks").innerHTML = lt.map(t=>`<div>${escapeHtml(t.wpRef||"")} — ${escapeHtml(t.title)}</div>`).join("") || "—";
-  } else {
-    linkedFindingsField.style.display = "none";
-    linkedTasksField.style.display = "none";
+  document.getElementById("engLeadAuditor").value = eng ? (eng.leadAuditor||"") : "";
+  document.getElementById("engTeam").value = eng ? (eng.team||[]).join("، ") : "";
+  document.getElementById("engRiskLikelihood").value = eng ? (eng.riskLikelihood||"") : "";
+  document.getElementById("engRiskImpact").value = eng ? (eng.riskImpact||"") : "";
+  document.getElementById("engRiskNotes").value = eng ? (eng.riskNotes||"") : "";
+  engRenderRiskScore();
+  engRiskIdsDraft = eng ? [...(eng.riskIds||[])] : [];
+  engRenderRiskLinks();
+  const rv = eng ? (eng.finalReview||{}) : {};
+  document.getElementById("engReviewBy").value = rv.reviewedBy||"";
+  document.getElementById("engReviewDate").value = rv.reviewedDate||"";
+  document.getElementById("engReviewApproved").checked = !!rv.approved;
+  document.getElementById("engReviewNotes").value = rv.notes||"";
+  document.getElementById("engExecEmptyHint").style.display = eng ? "none" : "block";
+  ["engChecklistsField","engLinkedFindingsField","engActionsField","engEvidenceField","engLinkedTasksField"].forEach(id=> document.getElementById(id).style.display = eng ? "block" : "none");
+  document.getElementById("engReopenBtn").style.display = eng && engIsClosed(eng) ? "inline-block" : "none";
+  document.getElementById("engCloseBtn").style.display = eng && !engIsClosed(eng) ? "inline-block" : "none";
+  if(eng){ renderEngagementChecklists(eng); renderEngagementLinks(eng); }
+  else {
+    document.getElementById("engSummaryBox").style.display = "none";
+    document.getElementById("engClosureRulesBox").innerHTML = `<span style="color:var(--muted);">تُعرض قواعد الإغلاق بعد حفظ المهمة.</span>`;
+    document.getElementById("engLogList").innerHTML = `<div style="color:var(--muted);">لا يوجد سجل بعد.</div>`;
+    document.getElementById("engTimelineList").innerHTML = `<div style="color:var(--muted);">—</div>`;
   }
-  document.getElementById("engChecklistsField").style.display = eng ? "block" : "none";
-  if(eng) renderEngagementChecklists(eng);
+  engShowPane(pane || "plan");
   document.getElementById("engagementOverlay").classList.add("active");
 }
+
+/* Linked sections (read-only views over Findings / Evidence / Tasks + summary KPIs + closure rules + audit trail + timeline) */
+function renderEngagementLinks(eng){
+  const s = engStats(eng);
+  const stMeta = engStatusMeta(eng.status);
+  const kpi = (en, t, v, m, color)=>`<div class="kt-st" style="text-align:start;"><span class="kd-en">${en}</span><div class="t">${t}</div><div class="v" style="${color? 'color:'+color : ''}">${v}</div>${m? `<div class="m">${m}</div>`:''}</div>`;
+  const sum = document.getElementById("engSummaryBox");
+  sum.style.display = "block";
+  sum.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;">
+    ${kpi("Progress","نسبة الإنجاز", `${s.progress}%`, `<span class="bar" style="display:inline-block;width:100%;height:6px;border-radius:4px;background:var(--kd-surface-2,#F1F5F9);overflow:hidden;"><i style="display:block;height:100%;width:${s.progress}%;background:${s.progress>=100?'#16A34A':'#2563EB'};border-radius:4px;"></i></span>`)}
+    ${kpi("Status","الحالة", `<span class="kd-chip" style="background:${stMeta.color}1a;color:${stMeta.color}"><i></i>${stMeta.label}</span>`, s.plannedOverdue ? `<span style="color:#B91C1C;font-weight:700;">⚠ تجاوزت النهاية المخططة</span>` : (eng.plannedEnd ? `النهاية المخططة: ${ktShortDate(eng.plannedEnd)}` : ""))}
+    ${kpi("Checklists","قوائم التحقق", s.execs.length ? `${s.execs.length-s.execsIncomplete}<small> / ${s.execs.length}</small>` : "0", s.items.length ? `${s.checklistPct}% من البنود · ${s.failed} فاشل · ${s.pendingItems} معلّق` : "لا بنود", s.execsIncomplete? "#F59E0B" : "#16A34A")}
+    ${kpi("Findings","الملاحظات", `${s.openFindings}<small> مفتوحة / ${s.findings.length}</small>`, `${s.overdueFindings} متأخرة`, s.openFindings? "#DC2626" : "#16A34A")}
+    ${kpi("Actions","الإجراءات التصحيحية", `${s.actions.length}`, `${s.overdueActions} متأخرة`, s.overdueActions? "#B91C1C" : undefined)}
+    ${kpi("Evidence","الأدلة", `${s.evidence.length}`, `${s.evidenceGaps+s.findingsEvidenceGaps} فجوة إلزامية`, (s.evidenceGaps+s.findingsEvidenceGaps)? "#F59E0B" : undefined)}
+    ${kpi("Risk","مخاطر المهمة", s.riskScore!=null ? `${s.riskScore}` : "—", s.riskScore!=null ? riskLevelMeta(s.riskScore).label + ` · ${(eng.riskIds||[]).length} خطر مرتبط` : `${(eng.riskIds||[]).length} خطر مرتبط`, s.riskScore!=null ? riskLevelMeta(s.riskScore).color : undefined)}
+  </div>`;
+
+  /* findings */
+  const fBox = document.getElementById("engLinkedFindings");
+  fBox.innerHTML = s.findings.length ? s.findings.map(f=>{
+    const sev = SEVERITY_META[f.severity]||SEVERITY_META.medium, fst = FINDING_STATUS_META[f.status]||{label:f.status,color:"#64748B"};
+    const late = f.targetDate && f.targetDate<todayStr() && f.status!=="closed";
+    return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;border-bottom:1px solid var(--border);padding:4px 0;">
+      <span class="ref">${escapeHtml(f.refCode||"")}</span><b style="flex:1;min-width:160px;">${escapeHtml(f.title)}</b>
+      <span class="kd-chip" style="background:${sev.color}1a;color:${sev.color}"><i></i>${sev.label}</span>
+      ${findingRiskLevelChip(f)} ${findingPriorityChip(f)}
+      <span class="kd-chip" style="background:${fst.color}1a;color:${fst.color}"><i></i>${fst.label}</span>
+      ${f.targetDate? ktDue(f.targetDate, late) : ''}
+      <button type="button" class="btn btn-ghost btn-sm eng-open-f" data-id="${f.id}">فتح</button>
+    </div>`;
+  }).join("") : `<div style="color:var(--muted);">لا ملاحظات مرتبطة بعد.</div>`;
+  fBox.querySelectorAll(".eng-open-f").forEach(b=> b.onclick = ()=>{ const f = DB.findings.find(x=>x.id===b.dataset.id); if(f) openFindingModal(f); });
+  document.getElementById("engAddFindingBtn").onclick = ()=>{ openFindingModal(null); document.getElementById("fEngagementId").value = eng.id; document.getElementById("fCategory").value = eng.category; };
+
+  /* corrective actions (findings carrying a plan / management response) */
+  const aBox = document.getElementById("engActionsList");
+  aBox.innerHTML = s.actions.length ? s.actions.map(f=>{
+    const fst = FINDING_STATUS_META[f.status]||{label:f.status,color:"#64748B"};
+    const late = f.targetDate && f.targetDate<todayStr() && f.status!=="closed";
+    const plan = (f.correctiveActionPlan||"").trim() || (f.managementResponse||"").trim();
+    return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;border-bottom:1px solid var(--border);padding:4px 0;">
+      <span class="ref">${escapeHtml(f.refCode||"")}</span><span style="flex:1;min-width:160px;" title="${escapeHtml(plan)}">${escapeHtml(plan.length>90 ? plan.slice(0,90)+"…" : plan)}</span>
+      <span style="color:var(--muted);">${f.responsible? escapeHtml(f.responsible) : "غير مُسند"}</span>
+      ${f.targetDate? ktDue(f.targetDate, late) : '<span style="color:var(--kd-faint)">بلا موعد</span>'}
+      <span class="kd-chip" style="background:${fst.color}1a;color:${fst.color}"><i></i>${fst.label}</span>
+    </div>`;
+  }).join("") : `<div style="color:var(--muted);">لا إجراءات تصحيحية مسجَّلة على ملاحظات هذه المهمة.</div>`;
+
+  /* evidence (direct + via findings) */
+  const eBox = document.getElementById("engEvidenceList");
+  eBox.innerHTML = s.evidence.length ? s.evidence.map(ev=>{
+    const via = ev.findingId ? DB.findings.find(f=>f.id===ev.findingId) : null;
+    const tm = EVIDENCE_TYPE_META[ev.docType] || EVIDENCE_TYPE_META.other;
+    return `<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;border-bottom:1px solid var(--border);padding:4px 0;">
+      <span class="ref">${escapeHtml(ev.evidenceId||"")}</span><span>${tm.icon}</span><b style="flex:1;min-width:160px;">${escapeHtml(ev.desc||"—")}</b>
+      <span style="color:var(--muted);">${ev.date? ktShortDate(ev.date) : ""}</span>
+      ${via? `<span class="kd-chip mut" title="عبر الملاحظة">${escapeHtml(via.refCode||"")}</span>` : '<span class="kd-chip mut">مباشر</span>'}
+      ${ev.link? `<a class="btn btn-ghost btn-sm" href="${escapeHtml(ev.link)}" target="_blank" rel="noopener">فتح الرابط</a>` : ''}
+      <button type="button" class="btn btn-ghost btn-sm eng-open-ev" data-id="${ev.id}">عرض</button>
+    </div>`;
+  }).join("") : `<div style="color:var(--muted);">لا أدلة مرتبطة بعد.</div>`;
+  eBox.querySelectorAll(".eng-open-ev").forEach(b=> b.onclick = ()=>{ const ev = DB.evidence.find(x=>x.id===b.dataset.id); if(ev) openEvidenceModal(ev); });
+  document.getElementById("engAddEvidenceBtn").onclick = ()=> openEvidenceModal(null, {engagementId: eng.id});
+
+  /* tasks */
+  document.getElementById("engLinkedTasks").innerHTML = s.tasks.length ? s.tasks.map(t=>`<div>${escapeHtml(t.wpRef||"")} — ${escapeHtml(t.title)} <span class="kd-chip" style="background:${TASK_STATUS_HEX[t.status]||'#94A3B8'}1a;color:${TASK_STATUS_HEX[t.status]||'#94A3B8'}"><i></i>${t.status==="done"?"منجزة":t.status==="in_progress"?"قيد التنفيذ":t.status==="deferred"?"مؤجلة":"لم تبدأ"}</span></div>`).join("") : `<div style="color:var(--muted);">لا مهام يومية مرتبطة.</div>`;
+
+  renderEngClosureRules(eng);
+  renderEngLogList(eng);
+  renderEngTimeline(eng);
+}
+function renderEngClosureRules(eng){
+  const withReview = {...eng, finalReview: document.getElementById("engagementOverlay").classList.contains("active") ? engReadReviewFromForm() : (eng.finalReview||{})};
+  const rules = engClosureRules(withReview);
+  const allOk = rules.every(r=>r.ok);
+  document.getElementById("engClosureRulesBox").innerHTML = rules.map(r=>`<div style="display:flex;gap:8px;align-items:flex-start;padding:4px 0;border-bottom:1px solid var(--border);">
+      <span style="font-weight:700;color:${r.ok?'#16A34A':'#DC2626'};">${r.ok?'✓':'✗'}</span>
+      <span style="flex:1;">${r.label}<div style="font-size:11.5px;color:var(--muted);">${r.detail}</div></span>
+    </div>`).join("") + `<div style="padding-top:6px;font-weight:700;color:${allOk?'#16A34A':'#B91C1C'};">${engIsClosed(eng) ? 'المهمة مغلقة.' : (allOk ? 'كل شروط الإغلاق متحققة — يمكن إغلاق المهمة.' : 'لا يمكن إغلاق المهمة قبل تحقق كل الشروط أعلاه.')}</div>`;
+}
+["engReviewBy","engReviewDate","engReviewApproved"].forEach(id=> document.getElementById(id).onchange = ()=>{
+  const eng = DB.engagements.find(x=>x.id===document.getElementById("engEditId").value);
+  if(eng) renderEngClosureRules(eng);
+});
+function renderEngLogList(eng){
+  const box = document.getElementById("engLogList");
+  const log = eng.log||[];
+  box.innerHTML = log.length
+    ? [...log].reverse().map(l=>`<div style="padding:3px 0;border-bottom:1px solid var(--border);"><span style="color:var(--muted);">${l.date}</span> — ${escapeHtml(l.note)}</div>`).join("")
+    : `<div style="color:var(--muted);">لا يوجد سجل بعد.</div>`;
+}
+document.getElementById("engAddFollowUpBtn").onclick = ()=>{
+  const id = document.getElementById("engEditId").value;
+  if(!id){ alert("احفظ مهمة التدقيق أولاً قبل إضافة متابعة."); return; }
+  const note = document.getElementById("engFollowUpNote").value.trim();
+  if(!note) return;
+  const eng = DB.engagements.find(x=>x.id===id);
+  if(!eng) return;
+  engLog(eng, note);
+  saveDB();
+  document.getElementById("engFollowUpNote").value = "";
+  renderEngLogList(eng); renderEngTimeline(eng);
+};
+function renderEngTimeline(eng){
+  const s = engStats(eng);
+  const ev = [];
+  (eng.log||[]).forEach(l=> ev.push({date:l.date, src:"المهمة", color:"#1E3A5F", note:l.note}));
+  s.execs.forEach(x=> (x.log||[]).forEach(l=> ev.push({date:l.date, src:x.execCode||"قائمة تحقق", color:"#0891B2", note:l.note})));
+  s.findings.forEach(f=> (f.log||[]).forEach(l=> ev.push({date:l.date, src:f.refCode||"ملاحظة", color:"#DC2626", note:l.note})));
+  s.evidence.forEach(e=> ev.push({date:e.date||"", src:e.evidenceId||"دليل", color:"#7C3AED", note:`دليل: ${e.desc||"—"}`}));
+  ev.sort((a,b)=> (b.date||"").localeCompare(a.date||""));
+  document.getElementById("engTimelineList").innerHTML = ev.length
+    ? ev.map(e=>`<div style="padding:3px 0;border-bottom:1px solid var(--border);"><span style="color:var(--muted);">${e.date||"—"}</span> <span class="kd-chip" style="background:${e.color}1a;color:${e.color}">${escapeHtml(e.src)}</span> ${escapeHtml(e.note)}</div>`).join("")
+    : `<div style="color:var(--muted);">لا نشاط بعد.</div>`;
+}
+/* Keep the engagement modal live when a child modal (finding / evidence / checklist execution) closes — observer only, no change to those modules */
+(function(){
+  const engOv = document.getElementById("engagementOverlay");
+  ["findingOverlay","evidenceOverlay","checklistExecOverlay"].forEach(id=>{
+    const el = document.getElementById(id); if(!el) return;
+    new MutationObserver(()=>{
+      if(el.classList.contains("active") || !engOv.classList.contains("active")) return;
+      const eng = DB.engagements.find(x=>x.id===document.getElementById("engEditId").value);
+      if(eng) renderEngagementLinks(eng);
+    }).observe(el, {attributes:true, attributeFilter:["class"]});
+  });
+})();
 
 function renderEngagementChecklists(eng){
   const list = DB.checklistExecutions.filter(x=>x.engagementId===eng.id);
@@ -10322,7 +10797,7 @@ function renderEngagementChecklists(eng){
         riskLevel: it.riskLevel,
         evidenceRequired: it.evidenceRequired,
         notes: it.notes,
-        queryRefs: it.queryRefs || [],
+        queryRefs: [...(it.queryRefs || [])], /* own copy — snapshot never aliases the template's array */
         result: "pending",
         resultNotes: "",
         findingId: null,
@@ -10333,76 +10808,228 @@ function renderEngagementChecklists(eng){
       log: [{date: todayStr(), note: `تم تعيين القالب "${tpl.name}" (v${tpl.version||1}) لمهمة التدقيق`}],
     };
     DB.checklistExecutions.push(exec);
+    engLog(eng, `تعيين قائمة تحقق: ${tpl.name} (v${tpl.version||1}) — ${exec.execCode}`);
     saveDB();
     renderEngagementChecklists(eng);
+    renderEngagementLinks(eng);
   };
 }
+
 document.getElementById("saveEngagementBtn").onclick = ()=>{
   const id = document.getElementById("engEditId").value;
   const title = document.getElementById("engTitle").value.trim();
-  if(!title){ alert("الرجاء إدخال اسم التدقيق"); return; }
+  if(!title){ alert("الرجاء إدخال اسم التدقيق"); engShowPane("plan"); return; }
   const existing = id ? DB.engagements.find(x=>x.id===id) : null;
+  const v = id_=> document.getElementById(id_).value;
   const payload = {
     id: id || uid(),
-    refCode: existing ? existing.refCode : nextRefCode("ENG","engagement"),
+    refCode: existing ? existing.refCode : null, /* minted at commit time so a blocked save never burns a number */
     title,
-    category: document.getElementById("engCategory").value,
-    from: document.getElementById("engFrom").value,
-    to: document.getElementById("engTo").value,
-    status: document.getElementById("engStatus").value,
-    objective: document.getElementById("engObjective").value.trim(),
-    scope: document.getElementById("engScope").value.trim(),
-    program: document.getElementById("engProgram").value.trim(),
-    sampling: document.getElementById("engSampling").value.trim(),
-    finalReport: document.getElementById("engFinalReport").value.trim(),
+    category: v("engCategory"),
+    auditType: v("engType") || "",
+    process: v("engProcess").trim(),
+    universeId: v("engUniverseId") || null,
+    from: v("engFrom"),
+    to: v("engTo"),
+    status: v("engStatus"),
+    plannedStart: v("engPlannedStart"), plannedEnd: v("engPlannedEnd"),
+    actualStart: v("engActualStart"), actualEnd: v("engActualEnd"),
+    objective: v("engObjective").trim(),
+    scope: v("engScope").trim(),
+    program: v("engProgram").trim(),
+    sampling: v("engSampling").trim(),
+    finalReport: v("engFinalReport").trim(),
+    leadAuditor: v("engLeadAuditor").trim(),
+    team: v("engTeam").split(/[،,]/).map(x=>x.trim()).filter(Boolean),
+    riskIds: [...engRiskIdsDraft],
+    riskLikelihood: v("engRiskLikelihood") ? +v("engRiskLikelihood") : null,
+    riskImpact: v("engRiskImpact") ? +v("engRiskImpact") : null,
+    riskNotes: v("engRiskNotes").trim(),
+    finalReview: engReadReviewFromForm(),
+    closedDate: existing ? (existing.closedDate||null) : null,
+    log: existing ? (existing.log||[]) : [],
     createdAt: existing ? existing.createdAt : todayStr(),
   };
+  if(payload.from && payload.to && payload.to < payload.from){ alert("نهاية الفترة المدقَّقة يجب أن تكون بعد بدايتها."); engShowPane("plan"); return; }
+  if(payload.plannedStart && payload.plannedEnd && payload.plannedEnd < payload.plannedStart){ alert("النهاية المخططة يجب أن تكون بعد البداية المخططة."); engShowPane("plan"); return; }
+  if(payload.actualStart && payload.actualEnd && payload.actualEnd < payload.actualStart){ alert("النهاية الفعلية يجب أن تكون بعد البداية الفعلية."); engShowPane("plan"); return; }
+
+  const prevNorm = existing ? engNormStatus(existing.status) : null;
+  const isReopening = existing && prevNorm==="closed" && payload.status==="reopened";
+  let reopenReason = "";
+  if(isReopening){
+    reopenReason = document.getElementById("engReopenReason").value.trim();
+    if(!reopenReason){ alert("الرجاء إدخال سبب إعادة فتح مهمة التدقيق."); engShowPane("plan"); return; }
+  }
+  if(!existing && payload.status==="closed"){ alert("لا يمكن إنشاء مهمة تدقيق بحالة مغلقة مباشرة — احفظها أولاً ثم أغلقها من تبويب المراجعة والإغلاق."); engShowPane("plan"); return; }
+  if(!existing && payload.status==="reopened"){ alert("حالة \"أُعيد فتحها\" لا تنطبق على مهمة جديدة."); engShowPane("plan"); return; }
+  const isClosing = existing && payload.status==="closed" && prevNorm!=="closed";
+  if(isClosing){
+    const failed = engClosureRules(payload).filter(r=>!r.ok);
+    if(failed.length){
+      alert("لا يمكن إغلاق مهمة التدقيق — شروط الإغلاق غير المتحققة:\n• " + failed.map(r=>r.label).join("\n• "));
+      renderEngClosureRules(payload); engShowPane("close");
+      return;
+    }
+  }
+  commitEngagementSave(payload, {reopenReason});
+};
+
+function commitEngagementSave(payload, meta){
+  meta = meta || {};
+  const before = DB.engagements.find(x=>x.id===payload.id);
+  if(!payload.refCode) payload.refCode = before && before.refCode ? before.refCode : nextRefCode("ENG","engagement");
+  if(!before) engLog(payload, "إنشاء مهمة التدقيق");
+  else {
+    const bN = engNormStatus(before.status), aN = payload.status;
+    if(bN !== aN) engLog(payload, `تغيير الحالة: ${ENG_STATUS_META[bN].label} ← ${ENG_STATUS_META[aN].label}`);
+    if((before.leadAuditor||"") !== payload.leadAuditor) engLog(payload, `المدقق الرئيسي: ${before.leadAuditor||"—"} ← ${payload.leadAuditor||"—"}`);
+    if((before.team||[]).join("،") !== payload.team.join("،")) engLog(payload, `فريق التدقيق: ${payload.team.join("، ")||"—"}`);
+    if((before.plannedStart||"")!==payload.plannedStart || (before.plannedEnd||"")!==payload.plannedEnd) engLog(payload, `التواريخ المخططة: ${payload.plannedStart||"—"} → ${payload.plannedEnd||"—"}`);
+    if((before.actualStart||"")!==payload.actualStart || (before.actualEnd||"")!==payload.actualEnd) engLog(payload, `التواريخ الفعلية: ${payload.actualStart||"—"} → ${payload.actualEnd||"—"}`);
+    const bR = [...(before.riskIds||[])].sort().join(","), aR = [...payload.riskIds].sort().join(",");
+    if(bR !== aR) engLog(payload, `تحديث المخاطر المرتبطة (${payload.riskIds.length})`);
+    const bs = (before.riskLikelihood&&before.riskImpact) ? before.riskLikelihood*before.riskImpact : null, as_ = (payload.riskLikelihood&&payload.riskImpact) ? payload.riskLikelihood*payload.riskImpact : null;
+    if(bs !== as_) engLog(payload, `تقييم مخاطر المهمة: ${bs!=null? bs : "—"} ← ${as_!=null? as_ : "—"}`);
+    const bv = before.finalReview||{}, av = payload.finalReview;
+    if(!bv.approved && av.approved) engLog(payload, `اعتماد المراجعة النهائية بواسطة ${av.reviewedBy||"—"}${av.reviewedDate? " بتاريخ "+av.reviewedDate : ""}`);
+    if(bv.approved && !av.approved) engLog(payload, "إلغاء اعتماد المراجعة النهائية");
+  }
+  if(meta.reopenReason) engLog(payload, `سبب إعادة الفتح: ${meta.reopenReason}`);
+  if(payload.status==="in_progress" && !payload.actualStart){ payload.actualStart = todayStr(); engLog(payload, "تسجيل البداية الفعلية تلقائياً عند بدء التنفيذ"); }
+  if(payload.status==="closed"){
+    /* only an actual transition sets dates — a legacy "completed" record re-saved as closed keeps its old data untouched */
+    const newlyClosed = !before || engNormStatus(before.status)!=="closed";
+    if(newlyClosed){
+      if(!payload.closedDate) payload.closedDate = todayStr();
+      if(!payload.actualEnd){ payload.actualEnd = todayStr(); engLog(payload, "تسجيل النهاية الفعلية تلقائياً عند الإغلاق"); }
+      engLog(payload, "إغلاق مهمة التدقيق بعد تحقق كل شروط الإغلاق");
+    }
+  } else {
+    payload.closedDate = null;
+  }
   const idx = DB.engagements.findIndex(x=>x.id===payload.id);
   if(idx>=0) DB.engagements[idx]=payload; else DB.engagements.push(payload);
   saveDB();
   document.getElementById("engagementOverlay").classList.remove("active");
   renderEngagements();
+}
+document.getElementById("engCloseBtn").onclick = ()=>{
+  const id = document.getElementById("engEditId").value;
+  if(!id){ alert("احفظ مهمة التدقيق أولاً."); return; }
+  document.getElementById("engStatus").value = "closed";
+  document.getElementById("saveEngagementBtn").click();
+};
+document.getElementById("engReopenBtn").onclick = ()=>{
+  document.getElementById("engStatus").value = "reopened";
+  document.getElementById("engReopenReasonField").style.display = "block";
+  engShowPane("plan");
+  document.getElementById("engReopenReason").focus();
 };
 document.getElementById("deleteEngagementBtn").onclick = ()=>{
   const id = document.getElementById("engEditId").value;
-  if(!id || !confirm("هل تريد حذف مهمة التدقيق هذه؟ (لن يُحذف ما ارتبط بها من مهام/ملاحظات، فقط يفقد الربط)")) return;
+  if(!id || !confirm("هل تريد حذف مهمة التدقيق هذه؟ (لن يُحذف ما ارتبط بها من مهام/ملاحظات/أدلة، فقط يفقد الربط)")) return;
   DB.engagements = DB.engagements.filter(x=>x.id!==id);
   DB.tasks.forEach(t=>{ if(t.engagementId===id) t.engagementId=null; });
   DB.findings.forEach(f=>{ if(f.engagementId===id) f.engagementId=null; });
+  DB.evidence.forEach(e=>{ if(e.engagementId===id) e.engagementId=null; });
   saveDB();
   document.getElementById("engagementOverlay").classList.remove("active");
   renderEngagements();
 };
+
+/* ---- list / dashboard ---- */
+["searchEng","filterEngStatus","filterEngType","filterEngCategory","sortEng"].forEach(id=>{
+  const el = document.getElementById(id); if(!el) return;
+  el[id==="searchEng" ? "oninput" : "onchange"] = renderEngagements;
+});
+function renderEngLife(){
+  const host = document.getElementById("ktEngLife"); if(!host) return;
+  const counts = ENG_LIFE.map(x=> DB.engagements.filter(e=>engNormStatus(e.status)===x[0]).length);
+  host.innerHTML = ENG_LIFE.map((x,i)=>`<button type="button" class="kt-lstage" data-k="${x[0]}" aria-pressed="${engStageSel===x[0]}"><b>${counts[i]}</b><span>${x[1]}</span><span class="kd-en">${x[2]}</span></button>`).join("");
+  host.querySelectorAll(".kt-lstage").forEach(el=>{ el.onclick = ()=>{ const k=el.dataset.k; engStageSel = engStageSel===k ? null : k; renderEngagements(); }; });
+}
 function renderEngagements(){
-  const total = DB.engagements.length;
-  const active = DB.engagements.filter(e=>e.status==="in_progress"||e.status==="reporting").length;
-  const completed = DB.engagements.filter(e=>e.status==="completed").length;
+  const all = DB.engagements;
+  const total = all.length;
+  const n = k=> all.filter(e=>engNormStatus(e.status)===k).length;
+  const statsById = new Map(all.map(e=>[e.id, engStats(e)]));
+  const overduePlanned = all.filter(e=>statsById.get(e.id).plannedOverdue).length;
+  const openFindingsAll = [...statsById.values()].reduce((s,x)=>s+x.openFindings,0);
+  const overdueActionsAll = [...statsById.values()].reduce((s,x)=>s+x.overdueActions,0);
+  const active = n("in_progress")+n("fieldwork_complete")+n("reopened");
   document.getElementById("engagementStatCards").innerHTML = `
     <div class="stat-card"><b>${total}</b><span>إجمالي مهام التدقيق</span></div>
-    <div class="stat-card"><b style="color:#2563EB">${active}</b><span>قيد التنفيذ</span></div>
-    <div class="stat-card"><b style="color:#16A34A">${completed}</b><span>مكتملة</span></div>
+    <div class="stat-card"><b style="color:#64748B">${n("draft")+n("planned")}</b><span>مسودة / مخطط</span></div>
+    <div class="stat-card"><b style="color:#2563EB">${active}</b><span>نشطة (تنفيذ / ميداني / أُعيد فتحها)</span></div>
+    <div class="stat-card"><b style="color:#F59E0B">${n("under_review")}</b><span>قيد المراجعة</span></div>
+    <div class="stat-card"><b style="color:#16A34A">${n("closed")}</b><span>مغلقة</span></div>
+    <div class="stat-card"><b style="color:#B91C1C">${overduePlanned}</b><span>تجاوزت النهاية المخططة</span></div>
+    <div class="stat-card"><b style="color:#DC2626">${openFindingsAll}</b><span>ملاحظات مفتوحة عبر المهام</span></div>
+    <div class="stat-card"><b style="color:#B91C1C">${overdueActionsAll}</b><span>إجراءات تصحيحية متأخرة</span></div>
   `;
+  renderEngLife();
+  const stBox = document.getElementById("engStatusBox");
+  if(stBox){
+    const keys = ENG_LIFE.map(x=>x[0]);
+    stBox.innerHTML = kgBars(keys.map(k=>({key:k, label:ENG_STATUS_META[k].label, value:n(k), color:ENG_STATUS_META[k].color})));
+    wireChartClicks(stBox, key=> drillTo("engagements", {status:key, type:"", category:""}));
+  }
+  const tyBox = document.getElementById("engTypeBox");
+  if(tyBox){
+    const keys = Object.keys(ENG_TYPE_META);
+    const items = keys.map(k=>({key:k, label:ENG_TYPE_META[k].label, value: all.filter(e=>(e.auditType||"")===k).length, color:ENG_TYPE_META[k].color}));
+    const unset = all.filter(e=>!e.auditType).length;
+    tyBox.innerHTML = kgBars(items) + (unset? `<div style="font-size:11.5px;color:var(--muted);margin-top:6px;">غير محدد النوع: <b>${unset}</b></div>` : "");
+    wireChartClicks(tyBox, key=> drillTo("engagements", {type:key, status:"", category:""}));
+  }
+  const catBox = document.getElementById("engCatBox");
+  if(catBox){
+    catBox.innerHTML = kgBars(catsForAnalytics().map(c=>({key:c.id, label:c.name, value: all.filter(e=>e.category===c.id).length, color:c.hex})));
+    wireChartClicks(catBox, key=> drillTo("engagements", {category:key, status:"", type:""}));
+  }
+
+  const q = (document.getElementById("searchEng").value||"").trim().toLowerCase();
+  const fst = document.getElementById("filterEngStatus").value;
+  const fty = document.getElementById("filterEngType").value;
+  const fcat = document.getElementById("filterEngCategory").value;
+  const sort = document.getElementById("sortEng").value;
+  let list = [...all];
+  if(q) list = list.filter(e=> [e.refCode, e.title, e.objective, e.scope, e.process, e.leadAuditor, (e.team||[]).join(" ")].map(x=>x||"").join(" ").toLowerCase().includes(q));
+  if(fst) list = list.filter(e=>engNormStatus(e.status)===fst);
+  if(fty) list = list.filter(e=>(e.auditType||"")===fty);
+  if(fcat) list = list.filter(e=>e.category===fcat);
+  if(engStageSel) list = list.filter(e=>engNormStatus(e.status)===engStageSel);
+  const startOf = e=> e.plannedStart || e.from || "";
+  if(sort==="ref") list.sort((a,b)=> (a.refCode||"").localeCompare(b.refCode||""));
+  else if(sort==="progress") list.sort((a,b)=> statsById.get(b.id).progress - statsById.get(a.id).progress);
+  else if(sort==="overdue") list.sort((a,b)=> (statsById.get(b.id).plannedOverdue?1:0) - (statsById.get(a.id).plannedOverdue?1:0) || startOf(b).localeCompare(startOf(a)));
+  else list.sort((a,b)=> startOf(b).localeCompare(startOf(a)));
+
   const box = document.getElementById("engagementsList");
   box.innerHTML = "";
-  if(!total){ box.innerHTML = `<div class="empty"><h3>لا توجد مهام تدقيق مسجّلة</h3><p>أنشئ ملف مهمة تدقيق رسمي (مثال: "تدقيق التحصيل — أغسطس 2026") واربط به المهام والملاحظات ذات الصلة.</p></div>`; return; }
-  const sorted = [...DB.engagements].sort((a,b)=> (b.from||"").localeCompare(a.from||""));
-  const tbody = ktTable(box, [{l:"المرجع",cls:"w",k:"ref"},{l:"مهمة التدقيق"},{l:"القسم",cls:"w",k:"cat"},{l:"الفترة",cls:"w period",k:"period"},{l:"الحالة",cls:"w",k:"fst"},{l:"المهام",cls:"n",k:"n"},{l:"الملاحظات",cls:"n",k:"n2"},{l:"إنجاز المهام المرتبطة",cls:"w",k:"prog"},{l:"",cls:"w",k:"act"}], {ariaLabel:"مهام التدقيق", minWidth:1100});
-  sorted.forEach(eng=>{
-    const stMeta = ENG_STATUS_META[eng.status];
-    const linkedTasks = DB.tasks.filter(t=>t.engagementId===eng.id), taskCount = linkedTasks.length, doneCount = linkedTasks.filter(t=>t.status==="done").length;
-    const findCount = DB.findings.filter(f=>f.engagementId===eng.id).length;
-    const pct = taskCount ? Math.round(doneCount/taskCount*100) : null;
-    const tr = document.createElement("tr");
+  if(!total){ box.innerHTML = `<div class="empty"><h3>لا توجد مهام تدقيق مسجّلة</h3><p>أنشئ ملف مهمة تدقيق رسمي (مثال: "تدقيق التحصيل — أغسطس 2026") واربط به قوائم التحقق والملاحظات والأدلة.</p></div>`; return; }
+  if(!list.length){ box.innerHTML = `<div class="empty"><h3>لا مهام تدقيق ضمن التصفية الحالية</h3></div>`; return; }
+  const tbody = ktTable(box, [{l:"المرجع",cls:"w",k:"ref"},{l:"مهمة التدقيق"},{l:"النوع",cls:"w",k:"type"},{l:"القسم",cls:"w",k:"cat"},{l:"المخطط ← الفعلي",cls:"w period",k:"period"},{l:"الحالة",cls:"w",k:"fst"},{l:"الإنجاز",cls:"w",k:"prog"},{l:"قوائم التحقق",cls:"n",k:"n"},{l:"الملاحظات (مفتوحة/الكل)",cls:"n",k:"n2"},{l:"متأخر",cls:"n",k:"n3"},{l:"",cls:"w",k:"act"}], {ariaLabel:"مهام التدقيق", minWidth:1360});
+  list.forEach(eng=>{
+    const s = statsById.get(eng.id);
+    const stMeta = engStatusMeta(eng.status);
+    const ty = eng.auditType && ENG_TYPE_META[eng.auditType];
+    const tr = document.createElement("tr"); tr.className = s.plannedOverdue ? "late" : "";
+    const planned = eng.plannedStart||eng.plannedEnd ? `${eng.plannedStart? ktShortDate(eng.plannedStart):'—'} → ${eng.plannedEnd? ktShortDate(eng.plannedEnd):'—'}` : (eng.from? `الفترة: ${ktShortDate(eng.from)}${eng.to? ' → '+ktShortDate(eng.to):''}` : '—');
+    const actual = eng.actualStart||eng.actualEnd ? `<span class="sub">فعلي: ${eng.actualStart? ktShortDate(eng.actualStart):'—'} → ${eng.actualEnd? ktShortDate(eng.actualEnd):'—'}</span>` : '';
     tr.innerHTML = `
       <td class="w"><span class="ref">${escapeHtml(eng.refCode||'')}</span></td>
-      <td><span class="ttl">${escapeHtml(eng.title)}</span>${eng.objective? `<span class="sub" title="${escapeHtml(eng.objective)}">الهدف: ${escapeHtml(eng.objective)}</span>`:''}${eng.scope? `<span class="sub" title="${escapeHtml(eng.scope)}">النطاق: ${escapeHtml(eng.scope)}</span>`:''}</td>
+      <td><span class="ttl">${escapeHtml(eng.title)}</span>${eng.leadAuditor? `<span class="sub">المدقق الرئيسي: ${escapeHtml(eng.leadAuditor)}${(eng.team||[]).length? ' · الفريق: '+escapeHtml(eng.team.join('، ')) : ''}</span>`:''}${eng.objective? `<span class="sub" title="${escapeHtml(eng.objective)}">الهدف: ${escapeHtml(eng.objective)}</span>`:''}${eng.process? `<span class="sub">العملية: ${escapeHtml(eng.process)}</span>`:''}</td>
+      <td class="w">${ty? `<span class="kd-chip" style="background:${ty.color}1a;color:${ty.color}"><i></i>${ty.label}</span>` : '<span style="color:var(--kd-faint)">—</span>'}</td>
       <td class="w">${ktCat(eng.category)}</td>
-      <td class="w period"><span class="due">${eng.from? ktShortDate(eng.from):'—'}${eng.to? ' → '+ktShortDate(eng.to):''}</span></td>
+      <td class="w period"><span class="due${s.plannedOverdue?' late':''}">${planned}${s.plannedOverdue? ' ⚠':''}</span>${actual}</td>
       <td class="w"><span class="kd-chip" style="background:${stMeta.color}1a;color:${stMeta.color}"><i></i>${stMeta.label}</span></td>
-      <td class="n">${taskCount}</td>
-      <td class="n">${findCount}</td>
-      <td class="w">${pct!=null? `<span class="bar"><i style="width:${pct}%"></i></span><span class="due">${pct}%</span>` : '<span style="color:var(--kd-faint)">لا مهام مرتبطة</span>'}</td>
-      <td class="w"><button class="btn btn-ghost btn-sm edit-eng-btn kt-edit" type="button">تعديل</button></td>`;
+      <td class="w"><span class="bar"><i style="width:${s.progress}%"></i></span><span class="due">${s.progress}%</span></td>
+      <td class="n">${s.execs.length? `${s.execs.length-s.execsIncomplete}/${s.execs.length}` : '0'}${s.failed? ` <span style="color:#DC2626;font-size:11px;">(${s.failed} فاشل)</span>`:''}</td>
+      <td class="n">${s.openFindings}/${s.findings.length}</td>
+      <td class="n">${(s.overdueActions||s.evidenceGaps||s.findingsEvidenceGaps)? `<span style="color:#B91C1C;font-weight:700;">${s.overdueActions}</span><span style="color:var(--muted);font-size:11px;"> إجراء · ${s.evidenceGaps+s.findingsEvidenceGaps} دليل</span>` : '<span style="color:var(--kd-faint)">—</span>'}</td>
+      <td class="w"><button class="btn btn-ghost btn-sm edit-eng-btn kt-edit" type="button">فتح</button></td>`;
     tr.querySelector(".edit-eng-btn").onclick = ()=> openEngagementModal(eng);
     tbody.appendChild(tr);
   });
@@ -10872,6 +11499,12 @@ function drillTo(viewName, presetFilters, afterFn){
     if("category" in presetFilters) document.getElementById("filterFCategory").value = presetFilters.category||"";
     if("riskLevel" in presetFilters) document.getElementById("filterFRiskLevel").value = presetFilters.riskLevel||"";
     if("priority" in presetFilters) document.getElementById("filterFPriority").value = presetFilters.priority||"";
+  }
+  if(viewName==="engagements"){
+    if("status" in presetFilters) document.getElementById("filterEngStatus").value = presetFilters.status||"";
+    if("type" in presetFilters) document.getElementById("filterEngType").value = presetFilters.type||"";
+    if("category" in presetFilters) document.getElementById("filterEngCategory").value = presetFilters.category||"";
+    engStageSel = null;
   }
   if(viewName==="all"){
     if("category" in presetFilters) document.getElementById("filterCat").value = presetFilters.category||"";
