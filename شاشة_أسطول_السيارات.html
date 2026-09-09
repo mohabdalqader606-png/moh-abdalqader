@@ -427,9 +427,9 @@ let dateFrom, dateTo;
 let driverExpanded = new Set();
 
 // ---- SQL text embedded so it can be copied straight from the screen into SAP Query Manager ----
-const QUERY_45_SQL = `/* SELECT T0."DocDate" FROM ODLN T0 WHERE T0."DocDate" BETWEEN [%0] AND [%1] */
+const QUERY_45_SQL = `/* SELECT T0."CreateDate" FROM ODLN T0 WHERE T0."CreateDate" BETWEEN [%0] AND [%1] */
 /*
-  KLN-VAN-000004  |  تتبّع رقم رحلة التوزيع (Pick No) لكل توصيلة — تصحيح المبلغ
+  KLN-VAN-000004  |  تتبّع رقم رحلة التوزيع (Pick No) لكل توصيلة — تصحيح المبلغ والتاريخ
   ======================================================================
   تصحيح جوهري: حقول المبلغ على الديليفري نفسه (ODLN.DocTotal/VatSum)
   غير موثوقة بنظامكم — مؤكَّد بمقارنة فعلية (رحلة 260007637 طلعت
@@ -437,7 +437,11 @@ const QUERY_45_SQL = `/* SELECT T0."DocDate" FROM ODLN T0 WHERE T0."DocDate" BET
   الموثوق هو الفاتورة المرتبطة نفسها (Reserve Invoice)، فصرنا نجيب
   المبلغ منها مباشرة بدل الديليفري.
 
-  Parameters: [%0] [%1] = نطاق تاريخ التوصيل
+  تصحيح التاريخ: "تاريخ التوصيل" بيعتمد على CreateDate (تاريخ إنشاء
+  المستند الفعلي بالنظام، نفس القيمة اللي بتظهر بـChange Log تحت
+  "Created") مش DocDate — مؤكَّد بمقارنة فعلية إنه أدق وأوثق.
+
+  Parameters: [%0] [%1] = نطاق تاريخ إنشاء مستند التوصيل (CreateDate)
   ======================================================================
 */
 SELECT
@@ -445,7 +449,7 @@ SELECT
 
     T0."DocEntry"                    AS "رقم داخلي",
     T0."DocNum"                      AS "رقم التوصيلة",
-    T0."DocDate"                     AS "تاريخ التوصيل",
+    T0."CreateDate"                  AS "تاريخ التوصيل",
 
     -- رقم الفاتورة المرتبطة
     (SELECT MAX(I."DocNum")
@@ -492,19 +496,19 @@ SELECT
     -- === أعمدة تجميعية لكل رحلة (Pick No) مكرّرة بكل صف ===
     (SELECT COUNT(DISTINCT D2."CardCode") FROM ODLN D2
      WHERE D2."U_ST_PickNo" = T0."U_ST_PickNo" AND D2."CANCELED"='N'
-       AND D2."DocDate" BETWEEN [%0] AND [%1])
+       AND D2."CreateDate" BETWEEN [%0] AND [%1])
                                       AS "عدد العملاء بالرحلة",
 
     (SELECT COUNT(DISTINCT I2."DocNum") FROM ODLN D2
      INNER JOIN DLN1 L2 ON D2."DocEntry" = L2."DocEntry" AND L2."BaseType" = 13
      INNER JOIN OINV I2 ON L2."BaseEntry" = I2."DocEntry"
      WHERE D2."U_ST_PickNo" = T0."U_ST_PickNo" AND D2."CANCELED"='N'
-       AND D2."DocDate" BETWEEN [%0] AND [%1])
+       AND D2."CreateDate" BETWEEN [%0] AND [%1])
                                       AS "عدد الفواتير بالرحلة",
 
     (SELECT SUM(D2."Weight") / 1000000.0 FROM ODLN D2
      WHERE D2."U_ST_PickNo" = T0."U_ST_PickNo" AND D2."CANCELED"='N'
-       AND D2."DocDate" BETWEEN [%0] AND [%1])
+       AND D2."CreateDate" BETWEEN [%0] AND [%1])
                                       AS "إجمالي وزن الرحلة (طن)",
 
     T0."DocStatus"                   AS "حالة المستند",
@@ -514,12 +518,12 @@ SELECT
 FROM ODLN T0
 LEFT JOIN OSLP S ON T0."SlpCode" = S."SlpCode"
 
-WHERE T0."DocDate" BETWEEN [%0] AND [%1]
+WHERE T0."CreateDate" BETWEEN [%0] AND [%1]
   AND T0."CANCELED" = 'N'
 
 ORDER BY
     T0."U_ST_PickNo",
-    T0."DocDate",
+    T0."CreateDate",
     T0."DocNum"`;
 
 const QUERY_50_SQL = `/* SELECT T0."DocDate" FROM OWTR T0 WHERE T0."DocDate" BETWEEN [%0] AND [%1] */
@@ -569,7 +573,7 @@ ORDER BY T0."DocDate", T0."DocNum"`;
 
 const QUERY_51_SQL = `SELECT
     T0."U_ST_PickNo"        AS "رقم رحلة التوصيل (Pick No)",
-    T0."DocDate"             AS "تاريخ التوصيل",
+    T0."CreateDate"          AS "تاريخ التوصيل",
     T0."U_ST_DriverName"     AS "اسم السائق",
     L1."ItemCode"            AS "كود الصنف",
     I."ItemName"             AS "اسم الصنف",
@@ -577,7 +581,7 @@ const QUERY_51_SQL = `SELECT
 FROM ODLN T0
 INNER JOIN DLN1 L1 ON T0."DocEntry" = L1."DocEntry"
 LEFT JOIN OITM I ON L1."ItemCode" = I."ItemCode"
-WHERE T0."DocDate" BETWEEN [%0] AND [%1]
+WHERE T0."CreateDate" BETWEEN [%0] AND [%1]
   AND T0."CANCELED" = 'N'
 ORDER BY T0."U_ST_PickNo", L1."ItemCode"`;
 
