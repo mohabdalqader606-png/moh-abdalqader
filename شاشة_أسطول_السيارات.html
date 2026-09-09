@@ -536,6 +536,16 @@ const QUERY_50_SQL = `/* SELECT T0."DocDate" FROM OWTR T0 WHERE T0."DocDate" BET
 
   Parameters: [%0] [%1] = نطاق التاريخ
   ======================================================================
+
+  KLN-VAN-000010  |  حصر الترانسفيرات بمستودع التوزيع المباشر (011) فقط
+  ======================================================================
+  الشاشة تتابع فقط الترانسفيرات المباشرة لمستودع 011 (المؤسسة
+  العسكرية). شرط T1."WhsCode" = '011' بيحل مشكلتين مع بعض:
+  1) يقصر النتيجة على الترانسفيرات المقصودة فعلاً.
+  2) يستبعد تلقائياً أي مستند إلغاء/عكس (Cancellation) لترانسفير
+     سابق — لأنه مستند العكس بيقلب الاتجاه (011 بيصير مصدر "من
+     مستودع" مش وجهة "إلى مستودع")، فما بيحقق الشرط ومنستبعد تلقائياً.
+  ======================================================================
 */
 SELECT
     T0."U_ST_PickNo"                 AS "رقم الرحلة",
@@ -565,6 +575,7 @@ LEFT JOIN OITM IT ON T1."ItemCode" = IT."ItemCode"
 
 WHERE T0."DocDate" BETWEEN [%0] AND [%1]
   AND T0."CANCELED" = 'N'
+  AND T1."WhsCode" = '011'
 
 GROUP BY T0."U_ST_PickNo", T0."U_ST_DriverName", T0."DocNum", T0."DocDate",
          T1."FromWhsCod", T1."WhsCode", T0."U_Branch", T0."Comments"
@@ -599,6 +610,7 @@ INNER JOIN WTR1 T1 ON T0."DocEntry" = T1."DocEntry"
 LEFT JOIN OITM IT ON T1."ItemCode" = IT."ItemCode"
 WHERE T0."DocDate" BETWEEN [%0] AND [%1]
   AND T0."CANCELED" = 'N'
+  AND T1."WhsCode" = '011'
 ORDER BY T0."DocDate", T0."DocNum"`;
 
 document.getElementById('q45Code').textContent = QUERY_45_SQL;
@@ -771,8 +783,8 @@ function parseTransferData(text){
     if(cells.length < 3) continue;
     const pickNo = (cells[colIdx['PickNo']]||'').trim();
     const toWhsCode = colIdx['ToWhsCode']!==undefined ? (cells[colIdx['ToWhsCode']]||'').trim() : '';
-    // ترانسفير بلا رقم رحلة: نحتفظ فيه فقط إذا وجهته مستودع التوزيع المباشر (011) — بيُربط بالسائق مباشرة لاحقاً
-    if(!pickNo && !isDirectDriverWhs(toWhsCode)) continue;
+    // نعرض فقط الترانسفيرات المتجهة لمستودع التوزيع المباشر (011 — المؤسسة العسكرية)، سواء كان مرتبط برقم رحلة أو لأ
+    if(!isDirectDriverWhs(toWhsCode)) continue;
     rows.push({
       PickNo: pickNo,
       Date: parseDate(cells[colIdx['Date']]),
@@ -837,7 +849,8 @@ function parseTransferItems(text){
     if(cells.length < 2) continue;
     const pickNo = colIdx['PickNo']!==undefined ? (cells[colIdx['PickNo']]||'').trim() : '';
     const toWhsCode = colIdx['ToWhsCode']!==undefined ? (cells[colIdx['ToWhsCode']]||'').trim() : '';
-    if(!pickNo && !isDirectDriverWhs(toWhsCode)) continue;
+    // نعرض فقط أصناف الترانسفيرات المتجهة لمستودع التوزيع المباشر (011)، بما يطابق فلترة سندات التحويل نفسها
+    if(!isDirectDriverWhs(toWhsCode)) continue;
     rows.push({
       PickNo: pickNo,
       DriverRaw: colIdx['DriverRaw']!==undefined ? (cells[colIdx['DriverRaw']]||'').trim() : '',
