@@ -707,6 +707,14 @@
   .status-msg.ok{color:var(--good);}
   .status-msg.err{color:var(--bad);}
 
+  /* ==================== لوحة الحجب (صلاحية الشاشة) ==================== */
+  #unauthorizedView{max-width:420px; margin:70px auto; background:#fff; border:1px solid var(--border); border-radius:16px; padding:34px 32px; box-shadow:var(--elev-2); text-align:center;}
+  #unauthorizedView h2{margin:0 0 10px; font-size:18px; font-family:var(--k-font-head);}
+  #unauthorizedView.err h2{color:var(--bad);}
+  #unauthorizedView.warn h2{color:var(--warn);}
+  #unauthorizedView p{font-size:12.5px; color:var(--muted); line-height:1.8; margin:0 0 18px;}
+  @media print{ #unauthorizedView{display:none!important;} }
+
   /* صندوق المستخدم بالهيدر */
   .userbox{display:flex; align-items:center; gap:10px; background:rgba(255,255,255,.06); border:1px solid var(--k-border); border-radius:10px; padding:6px 12px; font-size:11.5px; color:var(--k-muted); min-width:0;}
   .userbox b{display:block; color:var(--k-ink); font-size:12.5px;}
@@ -729,6 +737,12 @@
   <input type="password" id="loginPass" autocomplete="current-password" onkeydown="if(event.key==='Enter') doLogin()">
   <button class="btn btn-primary" id="loginBtn" onclick="doLogin()">دخول</button>
   <div class="status-msg" id="loginMsg" style="margin-top:10px;"></div>
+</div>
+
+<div id="unauthorizedView" style="display:none;">
+  <h2 id="uaTitle">🚫 لا تملك صلاحية الدخول</h2>
+  <p id="uaMsg">حسابك غير مخوَّل بالدخول على هذه الشاشة. راجع مدير الصلاحيات.</p>
+  <button class="btn btn-ghost" onclick="doLogout()">خروج</button>
 </div>
 
 <div id="appView" style="display:none;">
@@ -2344,6 +2358,15 @@ async function doLogin(){
   await onSignedIn(data.user);
 }
 async function doLogout(){ await sb.auth.signOut(); location.reload(); }
+function showUnauthorized(kind, title, msg){
+  document.getElementById('loginView').style.display = 'none';
+  document.getElementById('appView').style.display = 'none';
+  const box = document.getElementById('unauthorizedView');
+  box.className = kind;
+  document.getElementById('uaTitle').textContent = title;
+  document.getElementById('uaMsg').textContent = msg;
+  box.style.display = 'block';
+}
 async function onSignedIn(user){
   curUser = user;
   const {data:prof} = await sb.from('profiles').select('*').eq('id', user.id).single();
@@ -2353,11 +2376,29 @@ async function onSignedIn(user){
     flash('loginMsg','هذا الحساب ما إله صلاحية الدخول على هاي الشاشة — تواصل مع المدير.', false);
     return;
   }
-  roleEdit = ['admin','editor'].includes(curProfile.role);
-  isAdmin = curProfile.role === 'admin';
-  const roleAr = {admin:'مدير', editor:'مدخل بيانات', viewer:'مطالع'}[curProfile.role] || curProfile.role;
+
+  // صلاحية هذه الشاشة تحديداً (user_screen_permissions) — طبقة إضافية فوق allowed_apps الموجودة
+  const {data:permRow, error:permErr} = await sb.from('user_screen_permissions')
+    .select('permission').eq('user_id', user.id).eq('screen_id', APP_ID).maybeSingle();
+
+  if(permErr){
+    showUnauthorized('warn', '⚠️ تعذّر التحقق من صلاحيتك',
+      'حصل خطأ تقني أثناء التحقق من صلاحيتك على هذه الشاشة (مشكلة اتصال بالسيرفر). حدّث الصفحة وحاول مجدداً، وإذا تكرر راجع مدير الصلاحيات.');
+    return;
+  }
+  const screenPerm = permRow ? permRow.permission : null; // null = NONE (لا صف)
+  if(!screenPerm){
+    showUnauthorized('err', '🚫 لا تملك صلاحية الدخول',
+      'حسابك غير مخوَّل بالدخول على شاشة التدقيق الداخلي والحوكمة. راجع مدير الصلاحيات لمنحك صلاحية (VIEW/INPUT/ADMIN) من شاشة إدارة المستخدمين والصلاحيات.');
+    return;
+  }
+
+  roleEdit = screenPerm === 'INPUT' || screenPerm === 'ADMIN';
+  isAdmin = screenPerm === 'ADMIN';
+  const roleAr = {ADMIN:'مدير', INPUT:'مدخل بيانات', VIEW:'مطالع'}[screenPerm] || screenPerm;
   document.getElementById('authUName').textContent = curProfile.full_name || user.email;
   document.getElementById('authURole').textContent = user.email + ' · ' + roleAr;
+  document.getElementById('unauthorizedView').style.display = 'none';
   document.getElementById('userbox').style.display = 'flex';
   document.getElementById('loginView').style.display = 'none';
   document.getElementById('appView').style.display = 'block';
