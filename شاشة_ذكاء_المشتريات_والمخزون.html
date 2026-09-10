@@ -886,7 +886,14 @@ const DEP_LABELS = {
 };
 
 function buildIssues(list){
-  return list.filter(x=>x[1]>0).map(x=>({type:x[0], count:x[1], label:x[2]}));
+  // x = [type, count, label, samples?] — samples: أمثلة فعلية (أرقام أصناف عادةً) لتشخيص أسرع
+  return list.filter(x=>x[1]>0).map(x=>({type:x[0], count:x[1], label:x[2], samples:x[3]&&x[3].length?x[3]:null}));
+}
+function newSampleSet(cap){
+  const s = new Set();
+  s.cap = cap||8;
+  s.tryAdd = function(v){ if(v && this.size<this.cap) this.add(v); };
+  return s;
 }
 // نقاط جودة من 0-100 لكل مصدر — تبدأ 100 وتُخصَم حسب نسبة السجلات المتأثرة بكل مشكلة
 // (سقف خصم لكل نوع مشكلة عشان مشكلة وحدة ما تصفّر النتيجة بالكامل لحالها)
@@ -1149,14 +1156,21 @@ function processAllDataHeavy(){
     if(iCode<0 || iDate<0 || iQty<0){ msg.textContent='تعذر إيجاد أعمدة كويري المبيعات (رمز الصنف/التاريخ/الكمية)'; msg.className='status-msg err'; return; }
     let salesBlankCount=0, salesInvalidQtyCount=0, salesInvalidDateCount=0, salesUnknownItemCount=0, salesDupCount=0;
     const salesDupKeys = new Set();
+    const salesUnknownSamples = newSampleSet(8);
+    // مفتاح التكرار: نضيف رمز/اسم العميل لو متوفر (كويري المبيعات ما فيه رقم فاتورة) —
+    // بدونه، فاتورتين مختلفتين لعميلين مختلفين بنفس الصنف/التاريخ/الكمية/المستودع كانت
+    // بتتحسب "مكرر" غلطاً؛ بإضافة العميل تنخفض النتائج الكاذبة كتير (رغم إنها تبقى تقريبية
+    // بدون رقم فاتورة حقيقي)
+    const hasCustKey = iCustCode>=0 || iCustName>=0;
     state.salesRaw = rows.map(r=>{
       const code=r[iCode], qty=toNum(r[iQty]), dateRaw=r[iDate];
       if(!code) salesBlankCount++;
       else if(isNaN(qty)) salesInvalidQtyCount++;
       else {
         if(dateRaw && !parseDateFlexible(dateRaw)) salesInvalidDateCount++;
-        if(!state.itemsRaw[code]) salesUnknownItemCount++;
-        const k = code+'|'+dateRaw+'|'+qty+'|'+(iWhs>=0?r[iWhs]:'');
+        if(!state.itemsRaw[code]){ salesUnknownItemCount++; salesUnknownSamples.tryAdd(code); }
+        const custPart = iCustCode>=0 ? r[iCustCode] : (iCustName>=0 ? r[iCustName] : '');
+        const k = code+'|'+dateRaw+'|'+qty+'|'+(iWhs>=0?r[iWhs]:'')+'|'+custPart;
         if(salesDupKeys.has(k)) salesDupCount++; else salesDupKeys.add(k);
       }
       return {
@@ -1170,8 +1184,10 @@ function processAllDataHeavy(){
       ['blank_key', salesBlankCount, 'سطر بدون رمز صنف (تجوهل)'],
       ['invalid_qty', salesInvalidQtyCount, 'كمية غير رقمية (تجوهل السطر)'],
       ['invalid_date', salesInvalidDateCount, 'تاريخ غير مفهوم (استُبعد السطر من التحليل الزمني)'],
-      ['unknown_item', salesUnknownItemCount, 'رمز صنف غير موجود بجدول الأصناف الحالي'],
-      ['duplicate', salesDupCount, 'سطر مطابق تماماً لسطر آخر (نفس الصنف/التاريخ/الكمية/المستودع)']
+      ['unknown_item', salesUnknownItemCount, 'رمز صنف غير موجود بجدول الأصناف الحالي', Array.from(salesUnknownSamples)],
+      ['duplicate', salesDupCount, hasCustKey
+        ? 'سطر مطابق تماماً لسطر آخر (نفس الصنف/التاريخ/الكمية/المستودع/العميل — تقريبي بدون رقم فاتورة)'
+        : 'سطر مطابق تماماً لسطر آخر (نفس الصنف/التاريخ/الكمية/المستودع — ⚠ بدون عمود عميل أو فاتورة بالكويري، الرقم مبالغ فيه غالباً)']
     ])});
   }
 
@@ -1188,10 +1204,11 @@ function processAllDataHeavy(){
     if(iCode<0 || iOnHand<0){ msg.textContent='تعذر إيجاد أعمدة كويري المخزون (رمز الصنف/الرصيد الحالي)'; msg.className='status-msg err'; return; }
     let invBlankCount=0, invInvalidCount=0, invUnknownItemCount=0, invConflictCount=0;
     const invSeenKeys = {};
+    const invUnknownSamples = newSampleSet(8);
     state.invRaw = rows.map(r=>{
       const code=r[iCode]; if(!code){ invBlankCount++; return null; }
       if(isNaN(toNum(r[iOnHand]))) invInvalidCount++;
-      if(!state.itemsRaw[code]) invUnknownItemCount++;
+      if(!state.itemsRaw[code]){ invUnknownItemCount++; invUnknownSamples.tryAdd(code); }
       const whs = iWhs>=0 ? r[iWhs] : '';
       const onHand = toNum(r[iOnHand])||0;
       const key = code+'|'+whs;
@@ -1202,7 +1219,7 @@ function processAllDataHeavy(){
     noteImport('inventory','المخزون الحالي', { count: state.invRaw.length, issues: buildIssues([
       ['blank_key', invBlankCount, 'سطر بدون رمز صنف (تجوهل)'],
       ['invalid_qty', invInvalidCount, 'رصيد غير رقمي (اعتُبر صفر)'],
-      ['unknown_item', invUnknownItemCount, 'رمز صنف غير موجود بجدول الأصناف الحالي'],
+      ['unknown_item', invUnknownItemCount, 'رمز صنف غير موجود بجدول الأصناف الحالي', Array.from(invUnknownSamples)],
       ['conflict', invConflictCount, 'نفس الصنف/المستودع برصيد مختلف بأكثر من سطر (اعتُمد آخر سطر)']
     ])});
   }
@@ -1218,16 +1235,17 @@ function processAllDataHeavy(){
     const iSupplier = colIndex(headers, ['المورد','CardCode','CardName','Customer/Vendor Code']);
     if(iCode>=0 && iOrder>=0){
       let poOrdBlankCount=0, poOrdInvalidDateCount=0, poOrdUnknownItemCount=0;
+      const poOrdUnknownSamples = newSampleSet(8);
       state.poOrdersRaw = rows.map(r=>{
         const code=r[iCode]; if(!code){ poOrdBlankCount++; return null; }
         if(r[iOrder] && !parseDateFlexible(r[iOrder])) poOrdInvalidDateCount++;
-        if(!state.itemsRaw[code]) poOrdUnknownItemCount++;
+        if(!state.itemsRaw[code]){ poOrdUnknownItemCount++; poOrdUnknownSamples.tryAdd(code); }
         return { code, orderDate:r[iOrder], qty: iQty>=0 ? toNum(r[iQty]) : NaN, supplier: iSupplier>=0 ? r[iSupplier] : '' };
       }).filter(r=>r && r.code);
       noteImport('poOrders','تاريخ أوامر الشراء', { count: state.poOrdersRaw.length, issues: buildIssues([
         ['blank_key', poOrdBlankCount, 'سطر بدون رمز صنف (تجوهل)'],
         ['invalid_date', poOrdInvalidDateCount, 'تاريخ طلب غير مفهوم'],
-        ['unknown_item', poOrdUnknownItemCount, 'رمز صنف غير موجود بجدول الأصناف الحالي']
+        ['unknown_item', poOrdUnknownItemCount, 'رمز صنف غير موجود بجدول الأصناف الحالي', Array.from(poOrdUnknownSamples)]
       ])});
     }
   }
@@ -1251,9 +1269,10 @@ function processAllDataHeavy(){
       const iCrit = colIndex(headers, ['الأهمية','Criticality']);
       const critMap = {'عالية':'High','متوسطة':'Medium','منخفضة':'Low',high:'High',medium:'Medium',low:'Low'};
       let paramsBlankCount=0, paramsUnknownItemCount=0;
+      const paramsUnknownSamples = newSampleSet(8);
       rows.forEach(r=>{
         const code = r[iCode]; if(!code){ paramsBlankCount++; return; }
-        if(!state.itemsRaw[code]) paramsUnknownItemCount++;
+        if(!state.itemsRaw[code]){ paramsUnknownItemCount++; paramsUnknownSamples.tryAdd(code); }
         if(!state.params[code]) state.params[code] = { supplier:'', leadTimeDays:'', moq:'', orderMultiple:1, shelfLifeDays:'', minRemainShelfLife:'', unitCost:'', serviceLevel:95, criticality:'Medium', leadTimeIsDefault:false, moqIsDefault:false };
         const p = state.params[code];
         if(iSupplier>=0 && r[iSupplier]) p.supplier = r[iSupplier];
@@ -1269,7 +1288,7 @@ function processAllDataHeavy(){
       });
       noteImport('params','بارامترات الشراء (Lead Time/MOQ)', { count: paramsUpdatedCount, issues: buildIssues([
         ['blank_key', paramsBlankCount, 'سطر بدون رمز صنف (تجوهل)'],
-        ['unknown_item', paramsUnknownItemCount, 'رمز صنف غير موجود بجدول الأصناف الحالي (أُنشئ له سجل بارامترات يتيم)']
+        ['unknown_item', paramsUnknownItemCount, 'رمز صنف غير موجود بجدول الأصناف الحالي (أُنشئ له سجل بارامترات يتيم)', Array.from(paramsUnknownSamples)]
       ])});
     } else {
       msg.textContent = 'تعذر إيجاد عمود "رمز الصنف" بكويري البارامترات — تجاهلته';
@@ -1290,18 +1309,19 @@ function processAllDataHeavy(){
     const iPrice = colIndex(headers, ['السعر','Price']);
     if(iCode>=0 && iSupplier>=0 && iDoc>=0 && iQty>=0){
       let apBlankCount=0, apInvalidDateCount=0, apUnknownItemCount=0;
+      const apUnknownSamples = newSampleSet(8);
       state.apInvoiceRaw = rows.map(r=>{
         const code=r[iCode], supplier=r[iSupplier], docEntry=r[iDoc];
         if(!code || !supplier || !docEntry){ apBlankCount++; return null; }
         if(iDate>=0 && r[iDate] && !parseDateFlexible(r[iDate])) apInvalidDateCount++;
-        if(!state.itemsRaw[code]) apUnknownItemCount++;
+        if(!state.itemsRaw[code]){ apUnknownItemCount++; apUnknownSamples.tryAdd(code); }
         return {code, supplier, docEntry, qty:toNum(r[iQty]), date: iDate>=0?r[iDate]:'', price: iPrice>=0 ? toNum(r[iPrice]) : NaN};
       }).filter(r=>r && r.code && r.supplier && r.docEntry);
       columnDiagnostics.push('كويري 6 — الكمية: "'+headers[iQty]+'"'+(iPrice>=0 ? '، السعر: "'+headers[iPrice]+'"' : '، السعر: غير موجود'));
       noteImport('apInvoices','استلام البضاعة (GRPO)', { count: state.apInvoiceRaw.length, issues: buildIssues([
         ['blank_key', apBlankCount, 'سطر بدون رمز صنف/مورد/رقم مستند (تجوهل)'],
         ['invalid_date', apInvalidDateCount, 'تاريخ استلام غير مفهوم'],
-        ['unknown_item', apUnknownItemCount, 'رمز صنف غير موجود بجدول الأصناف الحالي']
+        ['unknown_item', apUnknownItemCount, 'رمز صنف غير موجود بجدول الأصناف الحالي', Array.from(apUnknownSamples)]
       ])});
     }
   }
@@ -1317,19 +1337,20 @@ function processAllDataHeavy(){
     const iSup = colIndex(headers, ['المورد','CardName','CardCode','Customer/Vendor Code']);
     if(iCode>=0 && iQty>=0){
       let poBlankCount=0, poInvalidQtyCount=0, poInvalidDateCount=0, poUnknownItemCount=0;
+      const poUnknownSamples = newSampleSet(8);
       state.poRaw = rows.map(r=>{
         const code=r[iCode], qty=toNum(r[iQty]);
         if(!code){ poBlankCount++; return null; }
         if(isNaN(qty)) poInvalidQtyCount++;
         if(iArr>=0 && r[iArr] && !parseDateFlexible(r[iArr])) poInvalidDateCount++;
-        if(!state.itemsRaw[code]) poUnknownItemCount++;
+        if(!state.itemsRaw[code]){ poUnknownItemCount++; poUnknownSamples.tryAdd(code); }
         return {code, qty, arrivalDate: iArr>=0?r[iArr]:'', supplier: iSup>=0?r[iSup]:''};
       }).filter(r=>r && r.code && !isNaN(r.qty));
       noteImport('po','طلبات الشراء المفتوحة', { count: state.poRaw.length, issues: buildIssues([
         ['blank_key', poBlankCount, 'سطر بدون رمز صنف (تجوهل)'],
         ['invalid_qty', poInvalidQtyCount, 'كمية غير رقمية (تجوهل السطر)'],
         ['invalid_date', poInvalidDateCount, 'تاريخ وصول متوقع غير مفهوم'],
-        ['unknown_item', poUnknownItemCount, 'رمز صنف غير موجود بجدول الأصناف الحالي']
+        ['unknown_item', poUnknownItemCount, 'رمز صنف غير موجود بجدول الأصناف الحالي', Array.from(poUnknownSamples)]
       ])});
     } else {
       msg.textContent = 'تعذر إيجاد أعمدة كويري طلبات الشراء المفتوحة (رمز الصنف/الكمية)';
@@ -1360,6 +1381,7 @@ function processAllDataHeavy(){
     const iLcAmount = colIndex(headers, ['Landed Cost Amount']);
     if(iCode>=0 && iDate>=0 && iAddedCost>=0){
       let acBlankCount=0, acInvalidDateCount=0, acUnknownItemCount=0;
+      const acUnknownSamples = newSampleSet(8);
       state.actualCostRaw = rows.map(r=>{
         const code=r[iCode];
         const basePrice = iBasePrice>=0 ? toNum(r[iBasePrice]) : NaN;
@@ -1367,7 +1389,7 @@ function processAllDataHeavy(){
         const cost = !isNaN(basePrice) ? basePrice + addedCostPerUnit : addedCostPerUnit;
         if(!code || isNaN(cost)){ acBlankCount++; return null; }
         if(r[iDate] && !parseDateFlexible(r[iDate])) acInvalidDateCount++;
-        if(!state.itemsRaw[code]) acUnknownItemCount++;
+        if(!state.itemsRaw[code]){ acUnknownItemCount++; acUnknownSamples.tryAdd(code); }
         const rate = iRate>=0 ? toNum(r[iRate]) : NaN;
         // Rate بـ SAP هو سعر صرف عملة المستند (سعر المنشأ) مقابل الدينار. الكلفة الإضافية
         // (Final Unit Cost/TtlCostLC) دايماً بالدينار مباشرة من SAP بغض النظر عن عملة
@@ -1393,7 +1415,7 @@ function processAllDataHeavy(){
       noteImport('actualCost','اللاندد كوست (Landed Cost)', { count: state.actualCostRaw.length, issues: buildIssues([
         ['blank_key', acBlankCount, 'سطر بدون رمز صنف أو كلفة غير صالحة (تجوهل)'],
         ['invalid_date', acInvalidDateCount, 'تاريخ مستند غير مفهوم'],
-        ['unknown_item', acUnknownItemCount, 'رمز صنف غير موجود بجدول الأصناف الحالي']
+        ['unknown_item', acUnknownItemCount, 'رمز صنف غير موجود بجدول الأصناف الحالي', Array.from(acUnknownSamples)]
       ])});
     }
   }
@@ -2045,6 +2067,10 @@ function runEngine(){
       costHistory: actualCostHistoryByItem[code] || [],
       lastActualCost: (actualCostHistoryByItem[code] && actualCostHistoryByItem[code][0]) ? actualCostHistoryByItem[code][0].cost : null,
       lastActualCostJod: (actualCostHistoryByItem[code] && actualCostHistoryByItem[code][0]) ? actualCostHistoryByItem[code][0].costJod : null,
+      // سعر المنشأ (Base Doc. Price) من مستند اللاندد كوست نفسه (كويري 8) — غير "آخر سعر
+      // منشأ (الفاتورة)" يلي مصدره كويري 6 (GRPO)؛ بنعرضهم بعمودين منفصلين بالتقرير حتى
+      // ما يختلطوا مع بعض (نفس التسمية تقريباً بس مصدرين مختلفين)
+      lastLandedCostBasePrice: (actualCostHistoryByItem[code] && actualCostHistoryByItem[code][0]) ? actualCostHistoryByItem[code][0].basePrice : null,
       lastLandedCostDocNum: (actualCostHistoryByItem[code] && actualCostHistoryByItem[code][0]) ? actualCostHistoryByItem[code][0].docNum : null,
       lastCostIncreasePct: (actualCostHistoryByItem[code] && actualCostHistoryByItem[code][0] && !isNaN(actualCostHistoryByItem[code][0].increasePct)) ? actualCostHistoryByItem[code][0].increasePct : null,
       monthly
@@ -2080,7 +2106,9 @@ function sourceCardHtml(src){
   const st = sourceStatus(src.key);
   const fresh = freshnessInfo(meta && meta.lastImportAt);
   const issuesHtml = (meta && meta.issues && meta.issues.length)
-    ? '<ul class="dh-issues">'+meta.issues.map(i=>'<li>'+esc(i.label)+': <b>'+i.count.toLocaleString('en-US')+'</b></li>').join('')+'</ul>'
+    ? '<ul class="dh-issues">'+meta.issues.map(i=>'<li>'+esc(i.label)+': <b>'+i.count.toLocaleString('en-US')+'</b>'
+        +(i.samples ? ' <span style="color:var(--ink-soft);font-weight:400;">— مثال: '+i.samples.slice(0,8).map(esc).join('، ')+'</span>' : '')
+        +'</li>').join('')+'</ul>'
     : (liveCount ? '<div class="dh-noissue">✔ لا مشاكل مكتشفة'+(meta&&meta.qualityScore!=null?'':' (لم تُفحص بهالمتصفح — البيانات وصلت من السيرفر)')+'</div>' : '');
   return ''
     +'<div class="dh-card">'
@@ -2389,6 +2417,7 @@ function renderReport(){
     if(key==='lastReceiptDate') return r.lastReceiptDate;
     if(key==='lastReceiptQty') return r.lastReceiptQty;
     if(key==='lastPrice') return r.lastPrice;
+    if(key==='lastLandedCostBasePrice') return r.lastLandedCostBasePrice;
     if(key==='lastActualCost') return r.lastActualCost;
     if(key==='lastActualCostJod') return r.lastActualCostJod;
     if(key==='lastLandedCostDocNum') return r.lastLandedCostDocNum;
@@ -2419,7 +2448,8 @@ function renderReport(){
     + rth('supplier','اسم المورد','freeze freeze-3')
     + rth('lastReceiptDate','تاريخ آخر استلام','freeze freeze-4')
     + rth('lastReceiptQty','كمية آخر استلام','freeze freeze-5')
-    + rth('lastPrice','آخر سعر منشأ (الفاتورة)')
+    + rth('lastPrice','آخر سعر منشأ (الفاتورة — استلام بضاعة)')
+    + rth('lastLandedCostBasePrice','سعر المنشأ (مستند اللاندد كوست)')
     + rth('lastActualCost','آخر كلفة نهائية (Landed Cost)')
     + rth('lastActualCostJod','الكلفة بالدينار (JOD)')
     + rth('lastLandedCostDocNum','رقم اللاندد كوست')
@@ -2449,6 +2479,7 @@ function renderReport(){
       }
       priceCell = '<td class="num" style="cursor:pointer;color:var(--navy);text-decoration:underline;" onclick="showPriceDrilldown(this,\''+r.code+'\')">'+fmtPrice(r.lastPrice)+changeHtml+'</td>';
     }
+    const landedBasePriceCell = '<td class="num">'+(r.lastLandedCostBasePrice!=null?fmtPrice(r.lastLandedCostBasePrice):'—')+'</td>';
     let costCell;
     if(r.lastActualCost==null){
       costCell = '<td class="num">—</td>';
@@ -2469,6 +2500,7 @@ function renderReport(){
       + '<td class="freeze freeze-4">'+esc(lastRecvDate)+'</td>'
       + '<td class="num freeze freeze-5">'+esc(lastRecvQty)+'</td>'
       + priceCell
+      + landedBasePriceCell
       + costCell
       + '<td class="num">'+(r.lastActualCostJod!=null?fmtPrice(r.lastActualCostJod)+' د.أ':'—')+'</td>'
       + '<td class="item-code">'+(r.lastLandedCostDocNum?esc(r.lastLandedCostDocNum):'—')+'</td>'
