@@ -1368,12 +1368,16 @@ function processAllDataHeavy(){
         if(!code || isNaN(cost)){ acBlankCount++; return null; }
         if(r[iDate] && !parseDateFlexible(r[iDate])) acInvalidDateCount++;
         if(!state.itemsRaw[code]) acUnknownItemCount++;
-        const increasePct = (!isNaN(basePrice) && basePrice!==0) ? (addedCostPerUnit/basePrice*100) : NaN;
         const rate = iRate>=0 ? toNum(r[iRate]) : NaN;
-        // Rate بـ SAP هو سعر صرف عملة المستند مقابل العملة المحلية (دينار) — لو موجود
-        // نحوّل الكلفة للدينار، ولو مش موجود (أو الكويري أصلاً بالدينار) نعتبر الكلفة
-        // نفسها بالدينار أصلاً بدون تحويل
-        const costJod = (!isNaN(rate) && rate>0) ? cost*rate : cost;
+        // Rate بـ SAP هو سعر صرف عملة المستند (سعر المنشأ) مقابل الدينار. الكلفة الإضافية
+        // (Final Unit Cost/TtlCostLC) دايماً بالدينار مباشرة من SAP بغض النظر عن عملة
+        // المستند (لاحقة LC = Local Currency) — مؤكَّد من المستخدم. لازم نحوّل سعر المنشأ
+        // بس للدينار ونضيف الكلفة الإضافية بدون تحويلها ثانية — تحويلها كان يقلّل الكلفة
+        // الفعلية بالدينار خطأً (تحويل مزدوج لقيمة أصلاً محلية).
+        const hasRate = !isNaN(rate) && rate>0;
+        const basePriceJod = !isNaN(basePrice) ? (hasRate ? basePrice*rate : basePrice) : NaN;
+        const costJod = !isNaN(basePriceJod) ? basePriceJod + addedCostPerUnit : addedCostPerUnit;
+        const increasePct = (!isNaN(basePriceJod) && basePriceJod!==0) ? (addedCostPerUnit/basePriceJod*100) : NaN;
         return {
           code, date:r[iDate], cost, addedCostPerUnit, costJod, rate,
           docNum: iDocNum>=0 ? r[iDocNum] : '', vendor: iVendor>=0 ? r[iVendor] : '',
@@ -3038,8 +3042,17 @@ async function pullStateFromCloud(){
     if(po.length) state.poRaw = po.map(r=>({code:r.item_code, qty:r.qty, arrivalDate:r.arrival_date, supplier:r.supplier||''}));
     if(actualCost.length) state.actualCostRaw = actualCost.map(r=>{
       const rate = r.rate??NaN;
-      const costJod = (!isNaN(rate) && rate>0) ? r.cost*rate : r.cost;
-      return {code:r.item_code, date:r.cost_date, cost:r.cost, costJod, rate, docNum:r.doc_num||'', vendor:r.vendor||'', warehouse:r.warehouse||'', batch:r.batch||'', qty:r.qty??NaN, currency:r.currency||'', basePrice:r.base_price??NaN, increasePct:r.increase_pct??NaN, landedCostAmount:r.landed_cost_amount??NaN, addedCostPerUnit:r.added_cost_per_unit??NaN};
+      const basePrice = r.base_price??NaN;
+      const addedCostPerUnit = r.added_cost_per_unit??NaN;
+      // نفس تصحيح تحويل العملة يلي بمسار الاستيراد المحلي (سعر المنشأ بعملة أجنبية،
+      // الكلفة الإضافية بالدينار مباشرة) — لازم يُعاد حسابه هون كمان لبيانات محفوظة
+      // سابقاً بالصيغة القديمة الخاطئة، مش بس الاستيراد الجديد
+      const hasRate = !isNaN(rate) && rate>0;
+      const basePriceJod = !isNaN(basePrice) ? (hasRate ? basePrice*rate : basePrice) : NaN;
+      const addedSafe = isNaN(addedCostPerUnit) ? 0 : addedCostPerUnit;
+      const costJod = !isNaN(basePriceJod) ? basePriceJod + addedSafe : r.cost;
+      const increasePct = (!isNaN(basePriceJod) && basePriceJod!==0) ? (addedSafe/basePriceJod*100) : (r.increase_pct??NaN);
+      return {code:r.item_code, date:r.cost_date, cost:r.cost, costJod, rate, docNum:r.doc_num||'', vendor:r.vendor||'', warehouse:r.warehouse||'', batch:r.batch||'', qty:r.qty??NaN, currency:r.currency||'', basePrice, increasePct, landedCostAmount:r.landed_cost_amount??NaN, addedCostPerUnit};
     });
     if(supSettings.length){
       state.supplierSettings = {};
