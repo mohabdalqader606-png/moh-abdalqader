@@ -278,16 +278,21 @@ SELECT
           AND YEAR(X."DocDate")*12+MONTH(X."DocDate") &lt;= YEAR(I."DocDate")*12+MONTH(I."DocDate")-9
     ), 0)                                AS "M9plus أقدم من 9 أشهر",
 
-    IFNULL((
-        SELECT CASE W."Status" WHEN 'Y' THEN 'Approved' WHEN 'N' THEN 'Rejected' WHEN 'W' THEN 'Waiting' ELSE W."Status" END
-        FROM "OWDD" W
-        WHERE W."DocEntry" = I."DocEntry" AND W."ObjType" = '13'
-          AND W."IsDraft" = 'N' AND W."WtmCode" = 14
-    ), 'لم تذهب للموافقة')              AS "حالة الموافقة"
+    CASE
+        WHEN W."WddCode" IS NULL THEN 'لم تذهب للموافقة'
+        ELSE CASE W."Status"
+                WHEN 'Y' THEN 'Approved'
+                WHEN 'N' THEN 'Rejected'
+                WHEN 'W' THEN 'Waiting'
+                ELSE W."Status"
+             END
+    END                                 AS "حالة الموافقة"
 
 FROM "OINV" I
 LEFT JOIN "OCRD" C  ON I."CardCode" = C."CardCode"
 LEFT JOIN "OCTG" TG ON I."GroupNum" = TG."GroupNum"
+LEFT JOIN "OWDD" W  ON W."DocEntry" = I."DocEntry" AND W."ObjType" = '13'
+                    AND W."IsDraft" = 'N' AND W."WtmCode" = 14
 WHERE I."CANCELED" = 'N'
   AND I."DocDate" BETWEEN '[%0]' AND '[%1]'
 ORDER BY I."CardCode", I."DocDate"</code>
