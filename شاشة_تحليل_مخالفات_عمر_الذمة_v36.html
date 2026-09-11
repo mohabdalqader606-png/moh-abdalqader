@@ -360,7 +360,117 @@ ORDER BY R."CardCode", K."DueDate"</code>
     <div class="input-panel">
       <details class="opt" open>
         <summary><span class="num" style="display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:6px;background:var(--navy);color:#fff;font-size:11.5px;font-family:var(--mono);margin-inline-end:4px;">8</span> كويري عمر الذمة (رصيد JDT1 موثوق + آخر 12 شهر)</summary>
-        <div class="hint" style="margin-top:8px;">الرصيد ياخذ مباشرة من دفتر الأستاذ (نفس الطريقة المؤكدة رياضياً)، والشهر المستهدف يُحدَّد باستهلاك تنازلي بسيط على آخر ١٢ شهر — نفس منطق تبويب "مراجعة الموافقات" تماماً، بس على مستوى العميل الحالي كامل مو فاتورة لحالها.</div>
+        <div class="hint" style="margin-top:8px;">
+          الرصيد ياخذ مباشرة من دفتر الأستاذ (نفس الطريقة المؤكدة رياضياً)، والشهر المستهدف يُحدَّد باستهلاك تنازلي بسيط على آخر ١٢ شهر — نفس منطق تبويب "مراجعة الموافقات" تماماً، بس على مستوى العميل الحالي كامل مو فاتورة لحالها:
+          <code class="block">/* SELECT C."CardCode" FROM OCRD C WHERE C."CreateDate" &lt; [%0] */
+SELECT
+    C."CardCode"                       AS "رمز العميل",
+    C."CardName"                       AS "اسم العميل",
+    S."SlpName"                        AS "المندوب",
+    C."Phone1"                         AS "رقم الهاتف",
+    C."E_Mail"                         AS "البريد الإلكتروني",
+    C."CreditLine"                     AS "السقف الائتماني",
+    IFNULL(TG."ExtraDays", 0)          AS "أيام السماح",
+
+    IFNULL((
+        SELECT SUM(J1."Debit" - J1."Credit")
+        FROM JDT1 J1
+        WHERE J1."ShortName" = C."CardCode" AND J1."ShortName" &lt;&gt; J1."Account"
+          AND J1."RefDate" &lt;= '[%0]'
+    ), 0)                               AS "الرصيد حتى تاريخ اللقطة",
+
+    IFNULL((
+        SELECT SUM(K."CheckSum")
+        FROM RCT1 K INNER JOIN ORCT R ON K."DocNum" = R."DocEntry"
+        WHERE R."Canceled" = 'N' AND R."CardCode" = C."CardCode"
+          AND R."DocDate" &lt;= '[%0]' AND K."DueDate" &gt; '[%0]'
+    ), 0)                               AS "الشيكات المؤجلة",
+
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-0
+    ), 0)                                AS "M0 الشهر الحالي (حتى تاريخ اللقطة)",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-1
+    ), 0)                                AS "M1 شهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-2
+    ), 0)                                AS "M2 شهرين قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-3
+    ), 0)                                AS "M3 3 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-4
+    ), 0)                                AS "M4 4 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-5
+    ), 0)                                AS "M5 5 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-6
+    ), 0)                                AS "M6 6 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-7
+    ), 0)                                AS "M7 7 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-8
+    ), 0)                                AS "M8 8 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-9
+    ), 0)                                AS "M9 9 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-10
+    ), 0)                                AS "M10 10 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-11
+    ), 0)                                AS "M11 11 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") &lt;= YEAR('[%0]')*12+MONTH('[%0]')-12
+    ), 0)                                AS "M12plus أقدم من 12 شهر"
+
+FROM "OCRD" C
+LEFT JOIN "OSLP" S  ON C."SlpCode" = S."SlpCode"
+LEFT JOIN "OCTG" TG ON C."GroupNum" = TG."GroupNum"
+WHERE C."CardType" = 'C'
+ORDER BY C."CardName"</code>
+        </div>
         <textarea id="agingPasteArea" placeholder="الصق هنا نتيجة كويري ٨..."></textarea>
       </details>
       <details class="opt">
@@ -432,7 +542,83 @@ ORDER BY R."CardCode", K."DueDate"</code>
     <div class="input-panel">
       <details class="opt" open>
         <summary><span class="num" style="display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:6px;background:var(--navy);color:#fff;font-size:11.5px;font-family:var(--mono);margin-inline-end:4px;">9</span> كويري التحقق الدقيق لعميل واحد</summary>
-        <div class="hint" style="margin-top:8px;">شغّل كويري ٩ بعد ما تغيّر رمز العميل بالمكانين المعلّمين ⬅⬅⬅ داخل الكويري، والصق نتيجته هون. بيوريك كل حركة قبض/شيك/قيد يدوي وأي شهر مبيعات سدّدته بالضبط.</div>
+        <div class="hint" style="margin-top:8px;">
+          شغّل كويري ٩ بعد ما تغيّر رمز العميل بالمكانين المعلّمين ⬅⬅⬅ داخل الكويري، والصق نتيجته هون. بيوريك كل حركة قبض/شيك/قيد يدوي وأي شهر مبيعات سدّدته بالضبط:
+          <code class="block">/* SELECT T0."RefDate" FROM JDT1 T0 WHERE T0."RefDate" BETWEEN [%0] AND [%1] */
+-- كويري تحقق دقيق لعميل واحد فقط (بديل استخدام: غيّر رمز العميل بالسطر المعلّم أدناه)
+-- ياخذ القيود اليدوية والشيكات بعين الاعتبار فعلياً حسب ترتيبها الزمني الحقيقي
+SELECT
+    W."رقم القيد",
+    W."تاريخ الحركة",
+    W."نوع الحركة",
+    W."تصنيف الحركة",
+    W."الحساب المقابل",
+    W."مبلغ الحركة الكامل",
+    W."شهر الفواتير المخصص له",
+    W."المبلغ المخصص لهذا الشهر",
+    W."تاريخ نهاية شهر الفواتير",
+    W."تاريخ استحقاق الحركة (خام)",
+    DAYS_BETWEEN(W."تاريخ نهاية شهر الفواتير", W."تاريخ_للاحتساب") AS "عدد أيام التحصيل"
+FROM (
+    SELECT
+        PMT."TransId"        AS "رقم القيد",
+        PMT."RefDate"        AS "تاريخ الحركة",
+        PMT."TransType"      AS "نوع الحركة",
+        CASE
+            WHEN PMT."TransType" = '24' THEN 'قبض (نقد/شيك)'
+            WHEN PMT."ContraAct" LIKE 'V%' THEN 'مقاصة مع مورد'
+            ELSE 'تسوية / تعديل'
+        END AS "تصنيف الحركة",
+        PMT."ContraAct"      AS "الحساب المقابل",
+        PMT."Amount"         AS "مبلغ الحركة الكامل",
+        TO_VARCHAR(SM."SalesMonth", 'YYYY-MM') AS "شهر الفواتير المخصص له",
+        (CASE WHEN PMT."Amount" &gt;= 0 THEN 1 ELSE -1 END) *
+        GREATEST(
+            LEAST(GREATEST(PMT."PrevCumPayment", PMT."CumPayment"), SM."CumSales")
+            - GREATEST(LEAST(PMT."PrevCumPayment", PMT."CumPayment"), SM."PrevCumSales"),
+            0
+        ) AS "المبلغ المخصص لهذا الشهر",
+        LAST_DAY(SM."SalesMonth") AS "تاريخ نهاية شهر الفواتير",
+        PMT."DueDate" AS "تاريخ استحقاق الحركة (خام)",
+        CASE
+            WHEN PMT."TransType" = '24' AND PMT."DueDate" IS NOT NULL AND PMT."DueDate" &gt;= PMT."RefDate" THEN PMT."DueDate"
+            WHEN PMT."TransType" = '24' THEN PMT."RefDate"
+            ELSE NULL
+        END AS "تاريخ_للاحتساب"
+    FROM (
+        SELECT
+            X."TransId", X."Line_ID", X."RefDate", X."DueDate", X."TransType", X."ContraAct", X."Amount",
+            SUM(X."Amount") OVER (ORDER BY X."RefDate", X."TransId", X."Line_ID" ROWS UNBOUNDED PRECEDING) AS "CumPayment",
+            SUM(X."Amount") OVER (ORDER BY X."RefDate", X."TransId", X."Line_ID" ROWS UNBOUNDED PRECEDING) - X."Amount" AS "PrevCumPayment"
+        FROM (
+            SELECT T0."TransId", T0."Line_ID", T0."RefDate", T0."DueDate", T0."TransType", T0."ContraAct",
+                   (T0."Credit" - T0."Debit") AS "Amount"
+            FROM "KAYLANI_LIVE"."JDT1" T0
+            WHERE T0."ShortName" = 'C0001456'   -- ⬅⬅⬅ غيّر رمز العميل هون
+              AND T0."TransType" NOT IN ('13','14')
+        ) X
+    ) PMT
+    INNER JOIN (
+        SELECT
+            Y."SalesMonth", Y."NetSales",
+            SUM(Y."NetSales") OVER (ORDER BY Y."SalesMonth" ROWS UNBOUNDED PRECEDING) AS "CumSales",
+            SUM(Y."NetSales") OVER (ORDER BY Y."SalesMonth" ROWS UNBOUNDED PRECEDING) - Y."NetSales" AS "PrevCumSales"
+        FROM (
+            SELECT
+                TO_DATE(TO_VARCHAR(T0."RefDate", 'YYYY-MM') || '-01', 'YYYY-MM-DD') AS "SalesMonth",
+                SUM(T0."Debit" - T0."Credit") AS "NetSales"
+            FROM "KAYLANI_LIVE"."JDT1" T0
+            WHERE T0."ShortName" = 'C0001456'   -- ⬅⬅⬅ ونفس رمز العميل هون كمان
+              AND T0."TransType" IN ('13','14')
+            GROUP BY TO_DATE(TO_VARCHAR(T0."RefDate", 'YYYY-MM') || '-01', 'YYYY-MM-DD')
+        ) Y
+    ) SM
+    ON LEAST(PMT."PrevCumPayment", PMT."CumPayment") &lt; SM."CumSales"
+    AND GREATEST(PMT."PrevCumPayment", PMT."CumPayment") &gt; SM."PrevCumSales"
+) W
+WHERE W."المبلغ المخصص لهذا الشهر" &lt;&gt; 0
+ORDER BY W."تاريخ الحركة", W."شهر الفواتير المخصص له"</code>
+        </div>
         <textarea id="singlePasteArea" placeholder="الصق هنا نتيجة كويري ٩ لعميل واحد..."></textarea>
       </details>
       <div class="row-actions">
@@ -458,7 +644,113 @@ ORDER BY R."CardCode", K."DueDate"</code>
     <div class="input-panel">
       <details class="opt" open>
         <summary><span class="num" style="display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:6px;background:var(--navy);color:#fff;font-size:11.5px;font-family:var(--mono);margin-inline-end:4px;">10</span> كويري التحصيل اليومي</summary>
-        <div class="hint" style="margin-top:8px;">لكل تحصيل (قبض نقدي/شيك) بفترة معينة، بيوريك رصيد العميل والأشهر قبل هالتحصيل، وبتحسب الشاشة هل انسدد <b>مبكر</b>، <b>حسب التعريف</b>، أو <b>متأخر</b> (وكم يوم).</div>
+        <div class="hint" style="margin-top:8px;">
+          لكل تحصيل (قبض نقدي/شيك) بفترة معينة، بيوريك رصيد العميل والأشهر قبل هالتحصيل، وبتحسب الشاشة هل انسدد <b>مبكر</b>، <b>حسب التعريف</b>، أو <b>متأخر</b> (وكم يوم):
+          <code class="block">/* SELECT T0."RefDate" FROM JDT1 T0 WHERE T0."RefDate" BETWEEN [%0] AND [%1] */
+SELECT
+    T0."TransId"                       AS "رقم القيد",
+    T0."RefDate"                       AS "تاريخ التحصيل",
+    T0."DueDate"                       AS "تاريخ استحقاق الشيك (إن وجد)",
+    T0."ShortName"                     AS "رمز العميل",
+    C."CardName"                       AS "اسم العميل",
+    S."SlpName"                        AS "المندوب",
+    (T0."Credit" - T0."Debit")         AS "قيمة التحصيل",
+    IFNULL(TG."ExtraDays", 0)          AS "أيام السماح",
+
+    IFNULL((
+        SELECT SUM(J1."Debit" - J1."Credit")
+        FROM JDT1 J1
+        WHERE J1."ShortName" = T0."ShortName" AND J1."ShortName" &lt;&gt; J1."Account"
+          AND J1."RefDate" &lt;= T0."RefDate" AND J1."TransId" &lt;&gt; T0."TransId"
+    ), 0)                               AS "الرصيد قبل هذا التحصيل",
+
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-0
+    ), 0)                                AS "M0 الشهر الحالي (حتى يوم قبل التحصيل)",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-1
+    ), 0)                                AS "M1 شهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-2
+    ), 0)                                AS "M2 شهرين قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-3
+    ), 0)                                AS "M3 3 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-4
+    ), 0)                                AS "M4 4 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-5
+    ), 0)                                AS "M5 5 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-6
+    ), 0)                                AS "M6 6 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-7
+    ), 0)                                AS "M7 7 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-8
+    ), 0)                                AS "M8 8 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-9
+    ), 0)                                AS "M9 9 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-10
+    ), 0)                                AS "M10 10 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-11
+    ), 0)                                AS "M11 11 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") &lt;= YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-12
+    ), 0)                                AS "M12plus أقدم من 12 شهر"
+
+FROM "JDT1" T0
+INNER JOIN "OCRD" C ON T0."ShortName" = C."CardCode" AND C."CardType"='C'
+LEFT JOIN "OSLP" S ON C."SlpCode" = S."SlpCode"
+LEFT JOIN "OCTG" TG ON C."GroupNum" = TG."GroupNum"
+WHERE T0."TransType" = '24'
+  AND T0."RefDate" BETWEEN '[%0]' AND '[%1]'
+ORDER BY T0."ShortName", T0."RefDate"</code>
+        </div>
         <textarea id="dailyPasteArea" placeholder="الصق هنا نتيجة كويري ١٠..."></textarea>
       </details>
       <div class="row-actions">
