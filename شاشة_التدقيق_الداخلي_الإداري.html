@@ -314,6 +314,19 @@
   .alert-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
   .alert-empty{text-align:center;color:var(--muted);padding:34px 10px;font-size:12.5px;}
 
+  .kd-toplist{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:7px;max-height:440px;overflow-y:auto;}
+  .kd-toplist li{display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:9px 11px;border-radius:11px;background:#F8FAFC;cursor:pointer;font-size:12px;transition:background .16s ease;}
+  .kd-toplist li:hover{background:#fff;box-shadow:var(--elev-1);}
+  .kd-toplist .rank{font-weight:800;color:var(--muted);width:26px;flex-shrink:0;}
+  .kd-toplist .ttl{flex:1;min-width:180px;font-weight:600;color:var(--text);}
+  .kd-toplist .ref{color:var(--muted);font-weight:400;}
+  .kd-toplist .score{margin-inline-start:auto;font-size:14px;color:var(--navy);}
+  .kd-cockpit{display:flex;flex-direction:column;gap:7px;}
+  .kd-cockpit-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 13px;border-radius:11px;background:#F8FAFC;border:none;font-family:inherit;font-size:12.5px;color:var(--text);cursor:pointer;text-align:right;width:100%;transition:background .16s ease;}
+  .kd-cockpit-row:hover{background:#fff;box-shadow:var(--elev-1);}
+  .kd-cockpit-row.bad{border-right:4px solid var(--bad);background:linear-gradient(90deg,#FEF2F2,#F8FAFC 55%);}
+  .kd-cockpit-row b{font-size:15px;color:var(--navy);}
+
   .chart-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:20px;}
   @media (max-width:1000px){ .chart-grid{grid-template-columns:1fr;} }
   .chart-card{
@@ -992,6 +1005,18 @@
       <section class="kd-panel ksh-op-only" aria-labelledby="kdTodayTitle">
         <div class="kd-ph"><h3 id="kdTodayTitle">عمل اليوم</h3><button type="button" class="kd-link" id="kdOpenToday">فتح اليوم ←</button></div>
         <div id="dashTodayMini"></div>
+      </section>
+    </div>
+
+    <div class="kd-tier"><span class="kd-en">Auditor Attention</span><span>ماذا يجب أن يعمل المدقق الآن؟</span><span class="ln"></span></div>
+    <div class="kd-grid2">
+      <section class="kd-panel" aria-labelledby="kdTopIssuesTitle">
+        <div class="kd-ph"><h3 id="kdTopIssuesTitle">أعلى 10 قضايا تحتاج انتباه المدقق</h3><span class="kd-hint">Risk × Impact × Age × Repeat × Control Failure</span></div>
+        <div id="topIssuesList"></div>
+      </section>
+      <section class="kd-panel" aria-labelledby="kdCockpitTitle">
+        <div class="kd-ph"><h3 id="kdCockpitTitle">قمرة قيادة المدقق</h3><span class="kd-hint">My Audit Cockpit</span></div>
+        <div id="auditCockpitBox"></div>
       </section>
     </div>
 
@@ -14220,6 +14245,8 @@ function computeDashboardStats(){
   const findings = findingsAll.filter(f=> passDateFilter(f.identifiedDate));
   const risks = DB.risks.filter(r=> passCatFilter(r.category));
   const universe = DB.universe.filter(u=> passCatFilter(u.category));
+  const exceptionsAll = DB.exceptions.filter(x=> passCatFilter(x.category) && (!dashFilters.severity || x.severity===dashFilters.severity));
+  const exceptionsOpen = exceptionsAll.filter(exceptionIsOpen);
 
   // ---- Tasks / plan execution ----
   const totalTasks = tasks.length;
@@ -14248,6 +14275,12 @@ function computeDashboardStats(){
   const risksNoControl = risks.filter(r=> !r.controlType || r.controlType==="none");
   const risksIneffective = risks.filter(r=> r.controlType && r.controlType!=="none" && r.controlEff==="ineffective");
   const riskTreatmentPct = risks.length ? Math.round(risks.filter(r=>r.controlEff==="effective").length/risks.length*100) : null;
+  const activeRisksCount = risks.filter(riskIsOpen).length;
+
+  // ---- Continuous Audit Exceptions (Phase 2) ----
+  const exceptionsCritical = exceptionsOpen.filter(x=>x.severity==="critical").length;
+  const exceptionsHigh = exceptionsOpen.filter(x=>x.severity==="high").length;
+  const exceptionsOverdue = exceptionsOpen.filter(exceptionIsOverdue).length;
 
   // ---- Timeliness ----
   const overdueUnits = totalFindings+totalTasks;
@@ -14280,15 +14313,120 @@ function computeDashboardStats(){
 
   const stats = {
     today, tasks, tasksAll, findings, findingsAll, risks, universe,
+    exceptionsAll, exceptionsOpen, exceptionsCritical, exceptionsHigh, exceptionsOverdue,
     totalTasks, doneTasks, overdueTasks, taskCompletionPct,
     planExecPct, coveragePct, overdueUniverse, highRiskUnaudited, dueUniverse, auditedUniverse,
     totalFindings, openFindings, critHighFindings, overdueFindings, closedFindings, findingsClosurePct, docQualityPct,
-    highCritRisks, risksNoControl, risksIneffective, riskTreatmentPct,
+    highCritRisks, risksNoControl, risksIneffective, riskTreatmentPct, activeRisksCount,
     timelinessPct, health, alerts,
     repeatFindings: detectRepeatFindings(),
   };
   dashCache = stats;
   return stats;
+}
+
+/* ===================== AUDITOR PRIORITY SCORE (Phase 3) =====================
+   يُبنى فقط من بيانات محفوظة فعلياً: الخطورة/مستوى الخطر، أيام التأخير، فعالية الضابط
+   المرتبط، التكرار (كشف تلقائي)، والأثر المالي (حقل Amount عند وجوده بالاستثناءات).
+   لا يوجد حقل "أهمية إدارية" محفوظ فعلياً بأي كيان، لذا يُستبعد هذا العامل من الصيغة
+   بدل اختلاقه (التزاماً بعدم عرض أرقام وهمية). */
+const SEVERITY_SCORE = {critical:40, high:30, medium:15, low:5};
+function auditorPriorityScore(item){
+  let score = SEVERITY_SCORE[item.severity] || 10;
+  if(item.overdueDays>0) score += Math.min(item.overdueDays, 30);
+  if(item.amount) score += Math.min(item.amount/1000, 20);
+  if(item.repeat) score += 15;
+  if(item.controlFailure) score += 20;
+  return Math.round(score);
+}
+function computeTopIssues(stats){
+  const today = stats.today;
+  const repeatTitles = new Set();
+  (stats.repeatFindings||[]).forEach(g=> g.members.forEach(m=> repeatTitles.add(m.id)));
+  const items = [];
+  stats.findings.filter(f=>f.status!=="closed").forEach(f=>{
+    const overdueDays = f.targetDate && f.targetDate<today ? Math.round((new Date(today)-new Date(f.targetDate))/86400000) : 0;
+    const risk = f.riskId ? DB.risks.find(r=>r.id===f.riskId) : null;
+    const controlFailure = !!(risk && riskControls(risk).some(c=>c.effectiveness==="ineffective"));
+    const item = {type:"finding", id:f.id, refCode:f.refCode, title:f.title, severity: f.severity, overdueDays, repeat: repeatTitles.has(f.id), controlFailure, go:"findings"};
+    items.push({...item, score: auditorPriorityScore(item)});
+  });
+  stats.risks.filter(r=> riskIsOpen(r) && r.likelihood*r.impact>=10).forEach(r=>{
+    const controlFailure = !riskControls(r).length || riskControls(r).every(c=>c.effectiveness==="ineffective"||c.effectiveness==="not_tested");
+    const item = {type:"risk", id:r.id, refCode:r.refCode, title:r.title, severity: riskLevelMeta(r.likelihood*r.impact).key, overdueDays:0, repeat:false, controlFailure, go:"risks"};
+    items.push({...item, score: auditorPriorityScore(item)});
+  });
+  stats.exceptionsOpen.forEach(x=>{
+    const overdueDays = x.dueDate && x.dueDate<today ? Math.round((new Date(today)-new Date(x.dueDate))/86400000) : 0;
+    const risk = x.riskId ? DB.risks.find(r=>r.id===x.riskId) : null;
+    const controlFailure = !!(risk && riskControls(risk).some(c=>c.effectiveness==="ineffective"));
+    const item = {type:"exception", id:x.id, refCode:x.refCode, title:x.docNumber||x.desc||x.refCode, severity: x.severity, overdueDays, amount:x.amount, repeat:false, controlFailure, go:"exceptions"};
+    items.push({...item, score: auditorPriorityScore(item)});
+  });
+  return items.sort((a,b)=> b.score-a.score).slice(0,10);
+}
+const TYPE_LABEL_AR = {finding:"ملاحظة", risk:"خطر", exception:"استثناء"};
+function renderTopIssues(stats){
+  const box = document.getElementById("topIssuesList");
+  if(!box) return;
+  const list = computeTopIssues(stats);
+  if(!list.length){ box.innerHTML = `<div class="alert-empty">لا توجد قضايا مفتوحة حالياً ضمن نطاق الفلاتر.</div>`; return; }
+  box.innerHTML = `<ol class="kd-toplist">` + list.map((it,i)=>{
+    const sevMeta = SEVERITY_META[it.severity] || QUERY_SEVERITY_META[it.severity] || {label:it.severity, color:"#64748B"};
+    return `<li data-i="${i}" tabindex="0">
+      <span class="rank">#${i+1}</span>
+      <span class="ttl">${escapeHtml(TYPE_LABEL_AR[it.type])} — ${escapeHtml(it.title)}${it.refCode? ` <span class="ref">${escapeHtml(it.refCode)}</span>`:''}</span>
+      <span class="kd-chip" style="background:${sevMeta.color}1a;color:${sevMeta.color}"><i></i>${sevMeta.label}</span>
+      ${it.overdueDays>0? `<span class="kd-chip" style="background:#B91C1C1a;color:#B91C1C;">${it.overdueDays} يوم تأخير</span>`:''}
+      ${it.controlFailure? `<span class="kd-chip" style="background:#B91C1C1a;color:#B91C1C;">إخفاق ضابط</span>`:''}
+      ${it.repeat? `<span class="kd-chip" style="background:#7C3AED1a;color:#7C3AED;">متكررة</span>`:''}
+      <b class="score">${it.score}</b>
+    </li>`;
+  }).join("") + `</ol>`;
+  box.querySelectorAll("li[data-i]").forEach(li=>{
+    const it = list[+li.dataset.i];
+    const go = ()=>{
+      if(it.type==="finding"){ const f=DB.findings.find(x=>x.id===it.id); drillTo("findings", {}, ()=> f && openFindingModal(f)); }
+      else if(it.type==="risk"){ const r=DB.risks.find(x=>x.id===it.id); drillTo("risks", {}, ()=> r && openRiskModal(r)); }
+      else if(it.type==="exception"){ const x=DB.exceptions.find(v=>v.id===it.id); drillTo("exceptions", {}, ()=> x && openExceptionModal(x)); }
+    };
+    li.onclick = go; li.onkeydown = e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); go(); } };
+  });
+}
+
+/* ===================== MY AUDIT COCKPIT (Phase 3) ===================== */
+function computeAuditCockpit(stats){
+  const today = stats.today;
+  const in7 = new Date(today); in7.setDate(in7.getDate()+7);
+  const in7Str = in7.toISOString().slice(0,10);
+  const needsNow = stats.findings.filter(f=> f.status!=="closed" && (f.severity==="critical"||f.severity==="high"))
+    .concat(stats.exceptionsOpen.filter(x=> x.severity==="critical"||x.severity==="high"));
+  const pendingVerification = stats.findings.filter(f=> f.status==="retest");
+  const overdue = stats.findings.filter(f=> f.targetDate && f.targetDate<today && f.status!=="closed")
+    .concat(stats.exceptionsOpen.filter(exceptionIsOverdue));
+  const todayQueue = stats.tasksAll.filter(t=> t.status!=="done" && (t.date===today || t.from===today));
+  const thisWeek = stats.findings.filter(f=> f.targetDate && f.targetDate>=today && f.targetDate<=in7Str && f.status!=="closed")
+    .concat(stats.exceptionsOpen.filter(x=> x.dueDate && x.dueDate>=today && x.dueDate<=in7Str));
+  const upcoming = stats.dueUniverse.filter(u=> u.status!=="completed");
+  return {needsNow, pendingVerification, overdue, todayQueue, thisWeek, upcoming};
+}
+function renderAuditCockpit(stats){
+  const box = document.getElementById("auditCockpitBox");
+  if(!box) return;
+  const c = computeAuditCockpit(stats);
+  const rows = [
+    {label:"يحتاج تدخلاً الآن (حرج/مرتفع)", n:c.needsNow.length, go:"findings", tone: c.needsNow.length?"bad":""},
+    {label:"بانتظار تحقق المدقق", n:c.pendingVerification.length, go:"findings", goFilters:{status:"retest"}},
+    {label:"متأخر عن الموعد", n:c.overdue.length, go:"findings", tone: c.overdue.length?"bad":""},
+    {label:"طابور اليوم", n:c.todayQueue.length, go:"today"},
+    {label:"مستحق خلال 7 أيام", n:c.thisWeek.length, go:"findings"},
+    {label:"خطط تدقيق مستحقة (Universe)", n:c.upcoming.length, go:"universe"},
+  ];
+  box.innerHTML = `<div class="kd-cockpit">` + rows.map(r=>`
+    <button type="button" class="kd-cockpit-row${r.tone==='bad'&&r.n>0?' bad':''}" data-go="${r.go}">
+      <span>${escapeHtml(r.label)}</span><b>${r.n}</b>
+    </button>`).join("") + `</div>`;
+  box.querySelectorAll(".kd-cockpit-row").forEach((el,i)=>{ el.onclick = ()=> drillTo(rows[i].go, rows[i].goFilters||{}); });
 }
 
 function computeHealthScore(components){
@@ -14569,6 +14707,16 @@ function renderExecCards(stats){
       sub:`<b>${stats.risksNoControl.length}</b> بدون ضابط · <b>${stats.risksIneffective.length}</b> ضابط غير فعّال`, q:"الاحتمالية × الأثر ≥ 10" },
     { label:"تغطية التدقيق", en:"Audit coverage", value: stats.coveragePct, unit:"%", color:"var(--kd-good)", go:"universe",
       sub:`<b>${stats.auditedUniverse}</b> من <b>${stats.universe.length}</b> مجالات مدقَّقة · <b>${stats.highRiskUnaudited}</b> عالية غير مدققة`, q:"مجالات لها تدقيق سابق ÷ الكل" },
+    { label:"استثناءات حرجة (تدقيق مستمر)", en:"Critical exceptions", value: stats.exceptionsCritical, color:"#B91C1C", go:"exceptions", tone: stats.exceptionsCritical>0?"bad":"",
+      sub:`من أصل <b>${stats.exceptionsOpen.length}</b> استثناء مفتوح`, q:"استثناءات مفتوحة بدرجة خطورة حرجة" },
+    { label:"استثناءات مرتفعة الخطورة", en:"High-risk exceptions", value: stats.exceptionsHigh, color:"#EA580C", go:"exceptions", tone: stats.exceptionsHigh>0?"warn":"",
+      sub:`<b>${stats.exceptionsOverdue}</b> متأخرة عن الاستحقاق`, q:"استثناءات مفتوحة بدرجة خطورة مرتفعة" },
+    { label:"المخاطر النشطة", en:"Active risks", value: stats.activeRisksCount, color:"var(--kd-azure)", go:"risks",
+      sub:`من أصل <b>${stats.risks.length}</b> خطر مسجَّل`, q:"مخاطر بحالة نشط أو تحت المراقبة" },
+    { label:"ضوابط فاشلة", en:"Failed controls", value: stats.risksIneffective.length, color:"#B91C1C", go:"risks", tone: stats.risksIneffective.length>0?"bad":"",
+      sub:`<b>${stats.risksNoControl.length}</b> خطر بدون أي ضابط موثَّق`, q:"ضوابط مقيَّمة «غير فعّالة» على مخاطر مسجَّلة" },
+    { label:"فعالية الضوابط", en:"Control effectiveness", value: stats.riskTreatmentPct, unit:"%", color:"var(--kd-good)", go:"risks",
+      sub:`ضوابط فعّالة ÷ إجمالي المخاطر المسجَّلة`, q:"نسبة المخاطر التي أفضل ضابط لها «فعّال»" },
   ];
   grid.innerHTML = cards.map(kdKpi).join("");
   grid.querySelectorAll(".kd-kpi").forEach((el,i)=>{ const c=cards[i]; const go=()=>{ if(c.go==="findings") drillTo("findings", c.goFilters||{severity:"",status:""}); else drillTo(c.go); }; el.onclick=go; el.onkeydown=e=>{ if(e.key==="Enter"||e.key===" "){ e.preventDefault(); go(); } }; });
@@ -14834,6 +14982,8 @@ function renderDashboard(){
   renderExecCards(stats);
   renderHealthScoreBox(stats);
   renderAlertCenter(stats);
+  renderTopIssues(stats);
+  renderAuditCockpit(stats);
   renderDashCharts(stats);
   renderDashTodayMini(); kdUpdateFilterSummary();
   document.getElementById("dashDeptPerfBox").innerHTML = deptPerfTableHtml(computeDeptPerf(null));
