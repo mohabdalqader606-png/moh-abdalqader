@@ -122,6 +122,11 @@
   .userbox{display:flex; align-items:center; gap:10px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.16); border-radius:10px; padding:8px 14px; font-size:12px;}
   .userbox .who b{display:block; font-size:12.5px;}
   .userbox .who span{color:#9FB0CC; font-size:11px;}
+  #unauthorizedView{max-width:420px; margin:60px auto; background:#fff; border:1px solid var(--line); border-radius:16px; padding:34px 32px; box-shadow:0 18px 44px -20px rgba(21,42,74,.35); text-align:center;}
+  #unauthorizedView h2{margin:0 0 10px; font-size:18px;}
+  #unauthorizedView.err h2{color:var(--crimson);}
+  #unauthorizedView.warn h2{color:var(--gold);}
+  #unauthorizedView p{font-size:12.5px; color:var(--ink-soft); line-height:1.8; margin:0 0 18px;}
 </style>
 </head>
 <body>
@@ -135,6 +140,12 @@
   <input type="password" id="loginPass" autocomplete="current-password" onkeydown="if(event.key==='Enter') doLogin()">
   <button class="btn-primary" id="loginBtn" onclick="doLogin()">دخول</button>
   <div class="status-msg" id="loginMsg" style="margin-top:10px;"></div>
+</div>
+
+<div id="unauthorizedView" style="display:none;">
+  <h2 id="uaTitle">🚫 لا تملك صلاحية الدخول</h2>
+  <p id="uaMsg">حسابك غير مخوَّل بالدخول على شاشة تحليل مخالفات عمر الذمة. راجع مدير الصلاحيات لمنحك صلاحية.</p>
+  <button class="btn-ghost" onclick="doLogout()">خروج</button>
 </div>
 
 <div id="appView" style="display:none;">
@@ -180,7 +191,112 @@
       </div>
       <details class="opt" open>
         <summary><span class="num" style="display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:6px;background:var(--navy);color:#fff;font-size:11.5px;font-family:var(--mono);margin-inline-end:4px;">1</span> كويري الفواتير + الأشهر (إلزامي)</summary>
-        <div class="hint" style="margin-top:8px;">الصق نتيجة الكويري الرئيسي (فاتورة، رصيد قبلها، سقف ائتماني، وأعمدة M0..M9plus).</div>
+        <div class="hint" style="margin-top:8px;">
+          شغّل هالكويري وألصق نتيجته تحت (يشمل كل فواتير الفترة — مش بس اللي راحت لموافقة):
+          <code class="block">/* لتحديد نطاق [%0] و[%1]: SELECT I."DocDate" FROM OINV I WHERE I."DocDate" BETWEEN [%0] AND [%1] */
+SELECT
+    I."DocNum"                         AS "رقم الفاتورة",
+    I."DocDate"                        AS "تاريخ الفاتورة",
+    I."CardCode"                       AS "رمز العميل",
+    I."CardName"                       AS "اسم العميل",
+    I."DocTotal"                       AS "قيمة الفاتورة",
+    IFNULL(I."ExtraDays", IFNULL(TG."ExtraDays", 0)) AS "أيام السماح",
+    C."CreditLine"                     AS "السقف الائتماني",
+
+    IFNULL((
+        SELECT SUM(J1."Debit" - J1."Credit")
+        FROM JDT1 J1 INNER JOIN OJDT J0 ON J1."TransId" = J0."TransId"
+        WHERE J1."ShortName" = I."CardCode" AND J1."ShortName" &lt;&gt; J1."Account"
+          AND J0."RefDate" &lt;= I."DocDate" AND J1."TransId" &lt;&gt; I."TransId"
+    ), 0)                               AS "الرصيد قبل الفاتورة",
+
+    IFNULL((
+        SELECT SUM(K."CheckSum")
+        FROM RCT1 K INNER JOIN ORCT R ON K."DocNum" = R."DocEntry"
+        WHERE R."Canceled" = 'N' AND R."CardCode" = I."CardCode"
+          AND R."DocDate" &lt; I."DocDate" AND K."DueDate" &gt;= I."DocDate"
+    ), 0)                               AS "الشيكات المؤجلة",
+
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-0
+    ), 0)                                AS "M0 الشهر الحالي (حتى يوم قبل الفاتورة)",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-1
+    ), 0)                                AS "M1 شهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-2
+    ), 0)                                AS "M2 شهرين قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-3
+    ), 0)                                AS "M3 3 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-4
+    ), 0)                                AS "M4 4 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-5
+    ), 0)                                AS "M5 5 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-6
+    ), 0)                                AS "M6 6 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-7
+    ), 0)                                AS "M7 7 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-8
+    ), 0)                                AS "M8 8 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") &lt;= YEAR(I."DocDate")*12+MONTH(I."DocDate")-9
+    ), 0)                                AS "M9plus أقدم من 9 أشهر",
+
+    CASE
+        WHEN W."WddCode" IS NULL THEN 'لم تذهب للموافقة'
+        ELSE CASE W."Status"
+                WHEN 'Y' THEN 'Approved'
+                WHEN 'N' THEN 'Rejected'
+                WHEN 'W' THEN 'Waiting'
+                ELSE W."Status"
+             END
+    END                                 AS "حالة الموافقة"
+
+FROM "OINV" I
+LEFT JOIN "OCRD" C  ON I."CardCode" = C."CardCode"
+LEFT JOIN "OCTG" TG ON I."GroupNum" = TG."GroupNum"
+LEFT JOIN "OWDD" W  ON W."DocEntry" = I."DocEntry" AND W."ObjType" = '13'
+                    AND W."IsDraft" = 'N' AND W."WtmCode" = 14
+WHERE I."CANCELED" = 'N'
+  AND I."DocDate" BETWEEN '[%0]' AND '[%1]'
+ORDER BY I."CardCode", I."DocDate"</code>
+        </div>
         <textarea id="pasteArea" placeholder="الصق هنا نتيجة الكويري الرئيسي..."></textarea>
       </details>
 
@@ -1983,6 +2099,16 @@ async function doLogin(){
   await onSignedIn(data.user);
 }
 async function doLogout(){ await sb.auth.signOut(); location.reload(); }
+function showUnauthorized(kind, title, msg){
+  document.getElementById('loginView').style.display = 'none';
+  document.getElementById('appView').style.display = 'none';
+  document.getElementById('userbox').style.display = 'none';
+  const box = document.getElementById('unauthorizedView');
+  box.className = kind;
+  document.getElementById('uaTitle').textContent = title;
+  document.getElementById('uaMsg').textContent = msg;
+  box.style.display = 'block';
+}
 async function onSignedIn(user){
   curUser = user;
   const {data:prof} = await sb.from('profiles').select('*').eq('id', user.id).single();
@@ -1992,12 +2118,30 @@ async function onSignedIn(user){
     authMsg('هذا الحساب ما إله صلاحية الدخول على هاي الشاشة — تواصل مع المدير.', false);
     return;
   }
-  roleEdit = ['admin','editor'].includes(curProfile.role);
-  isAdmin = curProfile.role === 'admin';
-  const roleAr = {admin:'مدير', editor:'مدخل بيانات', viewer:'مطالع'}[curProfile.role] || curProfile.role;
+
+  // صلاحية هذه الشاشة تحديداً (user_screen_permissions) — طبقة إضافية فوق allowed_apps الموجودة
+  const {data:permRow, error:permErr} = await sb.from('user_screen_permissions')
+    .select('permission').eq('user_id', user.id).eq('screen_id', 'debt-aging').maybeSingle();
+
+  if(permErr){
+    showUnauthorized('warn', '⚠️ تعذّر التحقق من صلاحيتك',
+      'حصل خطأ تقني أثناء التحقق من صلاحيتك على هذه الشاشة (مشكلة اتصال بالسيرفر). حدّث الصفحة وحاول مجدداً، وإذا تكرر راجع مدير الصلاحيات.');
+    return;
+  }
+  const screenPerm = permRow ? permRow.permission : null; // null = NONE (لا صف)
+  if(!screenPerm){
+    showUnauthorized('err', '🚫 لا تملك صلاحية الدخول',
+      'حسابك غير مخوَّل بالدخول على شاشة تحليل مخالفات عمر الذمة. راجع مدير الصلاحيات لمنحك صلاحية (VIEW/INPUT/ADMIN) من شاشة إدارة المستخدمين والصلاحيات.');
+    return;
+  }
+
+  roleEdit = screenPerm === 'INPUT' || screenPerm === 'ADMIN';
+  isAdmin = screenPerm === 'ADMIN';
+  const roleAr = {ADMIN:'مدير', INPUT:'مدخل بيانات', VIEW:'مطالع'}[screenPerm] || screenPerm;
   document.getElementById('uName').textContent = curProfile.full_name || user.email;
-  document.getElementById('uRole').textContent = user.email + ' · ' + roleAr;
+  document.getElementById('uRole').textContent = user.email + ' · ' + roleAr + (roleEdit ? '' : ' · 👁 مطالعة فقط');
   document.getElementById('userbox').style.display = 'flex';
+  document.getElementById('unauthorizedView').style.display = 'none';
   document.getElementById('loginView').style.display = 'none';
   document.getElementById('appView').style.display = 'block';
   await pullStateFromCloud();
