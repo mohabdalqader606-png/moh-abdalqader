@@ -11581,6 +11581,8 @@ const CTRL_FREQ_LABEL = {per_transaction:"لكل عملية", daily:"يومي", 
 const TREAT_STRATEGY_META = {avoid:{label:"تجنّب", color:"#7C3AED"}, reduce:{label:"تخفيض", color:"#2563EB"}, transfer:{label:"نقل", color:"#0891B2"}, accept:{label:"قبول", color:"#64748B"}};
 const TREAT_STATUS_META = {not_started:{label:"لم تبدأ", color:"#94A3B8"}, in_progress:{label:"قيد التنفيذ", color:"#2563EB"}, completed:{label:"مكتملة", color:"#16A34A"}, overdue:{label:"متأخرة", color:"#B91C1C"}, none:{label:"بلا خطة", color:"#94A3B8"}};
 const RISK_SIGNALS = [
+  ["auditorAttention","🔴 يحتاج انتباه المدقق","High/Critical risk + ineffective or no control","#B91C1C"],
+  ["auditCoverageGap","⚠ فجوة تغطية تدقيقية","Stale or missing audit coverage","#EA580C"],
   ["noRecentAudit","مرتفع/حرج بلا تدقيق حديث","High/Critical · no audit in 12 months","#B91C1C"],
   ["neverAudited","لم يُدقَّق بعد","Never audited","#EA580C"],
   ["openFindings","لديه ملاحظات مفتوحة","Open findings","#DC2626"],
@@ -11636,13 +11638,18 @@ function riskLinks(r){
 }
 function riskSignals(r){
   const l = riskLinks(r), rr = residualRisk(r), open = riskIsOpen(r);
+  const noRecentAudit = open && rr.inherent>=10 && !l.recentAudit;
+  const neverAudited = open && !l.engagements.length;
+  const weakControls = open && (!rr.hasControl || rr.factor>=0.9);
   return {
-    noRecentAudit: open && rr.inherent>=10 && !l.recentAudit,
-    neverAudited: open && !l.engagements.length,
+    noRecentAudit, neverAudited,
     openFindings: l.openFindings.length>0,
-    weakControls: open && (!rr.hasControl || rr.factor>=0.9),
+    weakControls,
     reviewDue: open && (riskReviewState(r)==="due" || riskReviewState(r)==="overdue"),
     treatOverdue: riskTreatState(r)==="overdue",
+    /* Phase 5: أعلام مركّبة صريحة الاسم — تُشتق من نفس الإشارات أعلاه، بلا بيانات جديدة */
+    auditorAttention: open && rr.inherent>=10 && weakControls,
+    auditCoverageGap: noRecentAudit || neverAudited,
   };
 }
 function riskLevelChip(score){ const m = riskLevelMeta(score); return `<span class="kd-chip" style="background:${m.color}1a;color:${m.color}"><i></i>${m.label}</span>`; }
@@ -12042,6 +12049,8 @@ function renderRisks(){
     <div class="stat-card"><b style="color:#16A34A">${lvl("low")}</b><span>منخفضة</span></div>
     <div class="stat-card"><b style="color:#B91C1C">${noCtl}</b><span>بدون ضوابط</span></div>
     <div class="stat-card"><b style="color:#DC2626">${ineff}</b><span>ضوابط غير فعّالة / غير مختبرة</span></div>
+    <div class="stat-card"><b style="color:#B91C1C">${cnt("auditorAttention")}</b><span>🔴 يحتاج انتباه المدقق</span></div>
+    <div class="stat-card"><b style="color:#EA580C">${cnt("auditCoverageGap")}</b><span>⚠ فجوة تغطية تدقيقية</span></div>
     <div class="stat-card"><b style="color:#EA580C">${cnt("noRecentAudit")}</b><span>بلا تدقيق حديث (مرتفع/حرج)</span></div>
     <div class="stat-card"><b style="color:#DC2626">${cnt("openFindings")}</b><span>لديها ملاحظات مفتوحة</span></div>
     <div class="stat-card"><b style="color:#B91C1C">${cnt("treatOverdue")}</b><span>خطط معالجة متأخرة</span></div>
@@ -12168,6 +12177,25 @@ document.getElementById("deleteUniverseBtn").onclick = ()=>{
   renderUniverse();
 };
 
+/* ===================== AUDIT UNIVERSE — LINKED DATA (Phase 5) =====================
+   روابط حقيقية موجودة فعلاً: risk.universeIds[] (خطر ← مجال) وengagement.universeId (مهمة ← مجال)؛
+   لا حقل processId جديد على المجال نفسه — لا داعي له طالما الربط عبر الخطر/المهمة كافٍ وحقيقي. */
+function universeLinkedRisks(u){ return DB.risks.filter(r=> (r.universeIds||[]).includes(u.id)); }
+function universeLinkedEngagements(u){ return DB.engagements.filter(e=> e.universeId===u.id); }
+function universeOpenFindings(u){
+  const riskIds = new Set(universeLinkedRisks(u).map(r=>r.id));
+  const engIds = new Set(universeLinkedEngagements(u).map(e=>e.id));
+  return DB.findings.filter(f=> f.status!=="closed" && ((f.riskId && riskIds.has(f.riskId)) || (f.engagementId && engIds.has(f.engagementId))));
+}
+function universeOpenExceptions(u){ return DB.exceptions.filter(x=> x.category===u.category && exceptionIsOpen(x)); }
+function universeRiskStatus(u){
+  const risks = universeLinkedRisks(u);
+  const hasAttention = risks.some(r=> r.likelihood*r.impact>=10 && (!riskControls(r).length || riskControls(r).every(c=>c.effectiveness==="ineffective"||c.effectiveness==="not_tested")));
+  if(hasAttention) return {label:"🔴 يحتاج انتباه", color:"#B91C1C"};
+  const stale = !u.lastAudit || ((new Date(todayStr())-new Date(u.lastAudit))/86400000 > 365);
+  if(universeOpenFindings(u).length>0 || (stale && u.risk!=="low")) return {label:"🟡 يحتاج متابعة", color:"#F59E0B"};
+  return {label:"🟢 جيد", color:"#16A34A"};
+}
 function renderUniverse(){
   const total = DB.universe.length;
   const completed = DB.universe.filter(u=>u.status==="completed").length;
@@ -12183,6 +12211,7 @@ function renderUniverse(){
     <div class="stat-card"><b style="color:#DC2626">${highRisk}</b><span>مخاطر مرتفعة</span></div>
     <div class="stat-card"><b style="color:#7F1D1D">${highRiskUnaudited}</b><span>عالية المخاطر لم تُدقّق بعد</span></div>
     <div class="stat-card"><b style="color:#0F2F4F">${coveragePct!=null? coveragePct+'%':'—'}</b><span>Audit Coverage %</span></div>
+    <div class="stat-card"><b style="color:#B91C1C">${DB.universe.filter(u=>universeRiskStatus(u).label.includes('🔴')).length}</b><span>مجالات تحتاج انتباه المدقق</span></div>
   `;
 
   const box = document.getElementById("universeList");
@@ -12192,12 +12221,16 @@ function renderUniverse(){
     box.innerHTML = `<div class="empty"><h3>لا توجد مجالات مضافة</h3><p>أضف كل دورات الشركة القابلة للتدقيق (مبيعات، مشتريات، مخزون، رواتب...) لبناء الخطة السنوية.</p></div>`;
     return;
   }
-  const tbody = ktTable(box, [{l:"المجال"},{l:"القسم",cls:"w",k:"cat"},{l:"المخاطر",cls:"w",k:"risk"},{l:"آخر تدقيق",cls:"w",k:"date"},{l:"القادم المخطط",cls:"w",k:"next"},{l:"الدورية",cls:"w wrap",k:"cycle"},{l:"أشهر منذ آخر تدقيق",cls:"n",k:"months"},{l:"الحالة",cls:"w",k:"eff"},{l:"",cls:"w",k:"act"}], {ariaLabel:"مجالات التدقيق", minWidth:1120});
+  const tbody = ktTable(box, [{l:"المجال"},{l:"القسم",cls:"w",k:"cat"},{l:"المخاطر",cls:"w",k:"risk"},{l:"آخر تدقيق",cls:"w",k:"date"},{l:"القادم المخطط",cls:"w",k:"next"},{l:"الدورية",cls:"w wrap",k:"cycle"},{l:"أشهر منذ آخر تدقيق",cls:"n",k:"months"},{l:"مخاطر مرتبطة",cls:"n",k:"lr"},{l:"ملاحظات مفتوحة",cls:"n",k:"of"},{l:"استثناءات القسم",cls:"n",k:"ex"},{l:"الحالة",cls:"w",k:"eff"},{l:"حالة المخاطر",cls:"w",k:"rst"},{l:"",cls:"w",k:"act"}], {ariaLabel:"مجالات التدقيق", minWidth:1440});
   sorted.forEach(u=>{
     const riskMeta = UNIVERSE_RISK_META[u.risk];
     const stMeta = UNIVERSE_STATUS_META[u.status];
     const isOverdue = u.nextAudit && u.nextAudit<todayStr() && u.status!=="completed";
     const months = u.lastAudit ? Math.floor((new Date(todayStr())-new Date(u.lastAudit))/2629800000) : null;
+    const linkedRisks = universeLinkedRisks(u);
+    const openFindings = universeOpenFindings(u);
+    const openExceptions = universeOpenExceptions(u);
+    const rst = universeRiskStatus(u);
     const tr = document.createElement("tr"); tr.className = isOverdue ? "late" : "";
     tr.innerHTML = `
       <td><span class="ttl">${escapeHtml(u.name)}</span>${u.notes? `<span class="sub" title="${escapeHtml(u.notes)}">${escapeHtml(u.notes)}</span>`:''}</td>
@@ -12207,7 +12240,11 @@ function renderUniverse(){
       <td class="w">${ktDue(u.nextAudit, isOverdue)}${isOverdue? ' <span class="kd-chip bad"><i></i>متأخر</span>':''}</td>
       <td class="w wrap">${u.frequency? 'كل '+escapeHtml(u.frequency)+' شهر' : '—'}</td>
       <td class="n">${months!=null? months : '—'}</td>
+      <td class="n">${linkedRisks.length||'—'}</td>
+      <td class="n">${openFindings.length||'—'}</td>
+      <td class="n">${openExceptions.length||'—'}</td>
       <td class="w"><span class="kd-chip" style="background:${stMeta.color}1a;color:${stMeta.color}"><i></i>${stMeta.label}</span></td>
+      <td class="w"><span class="kd-chip" style="background:${rst.color}1a;color:${rst.color}"><i></i>${rst.label}</span></td>
       <td class="w"><button class="btn btn-ghost btn-sm edit-u-btn kt-edit" type="button">تعديل</button></td>`;
     tr.querySelector(".edit-u-btn").onclick = ()=> openUniverseModal(u);
     tbody.appendChild(tr);
@@ -13579,8 +13616,12 @@ function engStats(eng){
   if(engIsClosed(eng)) progress = 100;
   const plannedOverdue = !!(eng.plannedEnd && eng.plannedEnd<todayStr() && !engIsClosed(eng));
   const riskScore = (eng.riskLikelihood && eng.riskImpact) ? (+eng.riskLikelihood)*(+eng.riskImpact) : null;
+  /* Phase 5: استثناءات التدقيق المستمر لمخاطر هذه المهمة (via exception.riskId ∈ eng.riskIds) — عرض فقط، لا تدخل في حساب Progress/Closure */
+  const exceptions = DB.exceptions.filter(x=> x.riskId && (eng.riskIds||[]).includes(x.riskId));
+  const openExceptions = exceptions.filter(exceptionIsOpen).length;
   return {execs, findings, tasks, evidence, items, itemsDone, failed, pendingItems, requiredPending, evidenceGaps, execsIncomplete,
     openFindings, overdueFindings, actions, overdueActions, findingsEvidenceGaps, blockingFindings, trackedAfterClose, tasksDone, reviewDone, progress, plannedOverdue, riskScore,
+    exceptions, openExceptions,
     checklistPct: items.length ? Math.round(itemsDone/items.length*100) : null};
 }
 function engClosureRules(eng){
@@ -13723,6 +13764,7 @@ function renderEngagementLinks(eng){
     ${kpi("Actions","الإجراءات التصحيحية", `${s.actions.length}`, `${s.overdueActions} متأخرة`, s.overdueActions? "#B91C1C" : undefined)}
     ${kpi("Evidence","الأدلة", `${s.evidence.length}`, `${s.evidenceGaps+s.findingsEvidenceGaps} فجوة إلزامية`, (s.evidenceGaps+s.findingsEvidenceGaps)? "#F59E0B" : undefined)}
     ${kpi("Risk","مخاطر المهمة", s.riskScore!=null ? `${s.riskScore}` : "—", s.riskScore!=null ? riskLevelMeta(s.riskScore).label + ` · ${(eng.riskIds||[]).length} خطر مرتبط` : `${(eng.riskIds||[]).length} خطر مرتبط`, s.riskScore!=null ? riskLevelMeta(s.riskScore).color : undefined)}
+    ${kpi("Exceptions","استثناءات تدقيق مستمر", `${s.exceptions.length}`, s.exceptions.length? `${s.openExceptions} مفتوحة (عبر مخاطر المهمة)` : "لا استثناءات مرتبطة بمخاطر المهمة", s.openExceptions? "#DC2626" : undefined)}
   </div>`;
 
   /* findings */
