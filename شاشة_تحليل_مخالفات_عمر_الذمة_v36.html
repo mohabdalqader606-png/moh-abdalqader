@@ -349,13 +349,21 @@ ORDER BY R."CardCode", K."DueDate"</code>
       <label style="display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--ink-soft); cursor:pointer;">
         <input type="checkbox" id="showHiddenChk" onchange="renderList()"> إظهار المخفي (<span id="hiddenCount">0</span>)
       </label>
-      <button class="print-btn" onclick="window.print()">🖨️ طباعة</button>
+      <div style="display:flex; gap:4px;">
+        <button class="print-btn" onclick="printFilteredList('all','كل الحالات')">🖨️ الكل</button>
+        <button class="print-btn" style="border-color:var(--crimson); color:var(--crimson);" onclick="printFilteredList('gap','ثغرات (مخالفة بدون موافقة)')">🖨️ الثغرات</button>
+        <button class="print-btn" style="border-color:var(--crimson); color:var(--crimson);" onclick="printFilteredList('warn','فيهم مخالفة')">🖨️ فيهم مخالفة</button>
+        <button class="print-btn" style="border-color:var(--gold); color:var(--gold);" onclick="printFilteredList('grace','ضمن السماحية')">🖨️ ضمن السماحية</button>
+        <button class="print-btn" style="border-color:#7A8599; color:#7A8599;" onclick="printFilteredList('immaterial','غير مؤثر مادياً')">🖨️ غير مؤثر مادياً</button>
+        <button class="print-btn" style="border-color:var(--teal); color:var(--teal);" onclick="printFilteredList('ok','طبيعي')">🖨️ طبيعي</button>
+      </div>
       <button class="btn-ghost btn-sm" style="border-color:var(--crimson); color:var(--crimson);" onclick="toggleViolationReport()">📄 تقرير مخالفات للإرسال</button>
       <button class="btn-ghost btn-sm" onclick="exportCsv()">تصدير CSV</button>
       <button class="btn-ghost btn-sm" onclick="expandAll()">فتح الكل</button>
       <button class="btn-ghost btn-sm" onclick="collapseAll()">طي الكل</button>
     </div>
 
+    <div id="approvalsPrintHeader" class="print-report-header" style="display:none;"></div>
     <div id="violationReportWrap" style="display:none; padding:0 24px 18px;"></div>
 
     <div class="list" id="listWrap">
@@ -1159,6 +1167,33 @@ function renderSummary(){
 }
 
 function setFilter(f){ currentFilter=f; document.querySelectorAll('#filterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===f)); renderList(); }
+
+function printFilteredList(status, label){
+  const prevFilter = currentFilter;
+  currentFilter = status;
+  document.querySelectorAll('#filterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===status));
+  renderList();
+
+  const custCount = document.querySelectorAll('#listWrap .cust').length;
+  const invCount = document.querySelectorAll('#listWrap .inv-block').length;
+  const header = document.getElementById('approvalsPrintHeader');
+  header.innerHTML = `
+    <div class="prh-title">مركز الكيلاني للأغذية — تقرير مراجعة موافقات الفواتير: ${label}</div>
+    <div class="prh-sub">تاريخ الطباعة: ${fmtDate(new Date())}</div>
+    <div class="prh-stats">
+      <div>عدد العملاء<b>${custCount}</b></div>
+      <div>عدد الفواتير<b>${invCount}</b></div>
+    </div>`;
+  header.style.display='block';
+
+  window.print();
+  setTimeout(()=>{
+    currentFilter = prevFilter;
+    document.querySelectorAll('#filterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===prevFilter));
+    renderList();
+    header.style.display='none';
+  }, 500);
+}
 
 function chunksTableHtml(r){
   if(r.chunkResults.length===0) return '<div style="font-size:11.5px;color:var(--ink-soft);padding:8px 0;">ما في تفاصيل استهلاك (تحقق من وجود بيانات الأشهر أو الرصيد=0).</div>';
