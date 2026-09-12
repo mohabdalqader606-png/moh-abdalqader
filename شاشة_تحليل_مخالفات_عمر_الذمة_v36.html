@@ -1133,15 +1133,30 @@ function pctCardsHtml(items){
 }
 
 function renderSummary(){
-  const total = INVOICES.length;
-  const warn = INVOICES.filter(r=>r.hasViolation).length;
-  const grace = INVOICES.filter(r=>!r.hasViolation && r.hasGrace).length;
-  const immaterial = INVOICES.filter(r=>!r.hasViolation && !r.hasGrace && r.hasImmaterial).length;
-  const creditWarn = INVOICES.filter(r=>r.creditFlag===true).length;
-  const gaps = INVOICES.filter(r=>{
+  const dateFromEl = document.getElementById('dateFromFilter');
+  const dateToEl = document.getElementById('dateToFilter');
+  const dateFrom = dateFromEl ? parseSapDate(dateFromEl.value) : null;
+  const dateTo = dateToEl ? parseSapDate(dateToEl.value) : null;
+  let invoices = INVOICES;
+  if(dateFrom || dateTo){
+    invoices = INVOICES.filter(r => {
+      if(!r.invoiceDate) return false;
+      if(dateFrom && r.invoiceDate < dateFrom) return false;
+      if(dateTo && r.invoiceDate > dateTo) return false;
+      return true;
+    });
+  }
+
+  const total = invoices.length;
+  const warn = invoices.filter(r=>r.hasViolation).length;
+  const grace = invoices.filter(r=>!r.hasViolation && r.hasGrace).length;
+  const immaterial = invoices.filter(r=>!r.hasViolation && !r.hasGrace && r.hasImmaterial).length;
+  const creditWarn = invoices.filter(r=>r.creditFlag===true).length;
+  const gaps = invoices.filter(r=>{
     const went = r.apprStatus && r.apprStatus.trim()!=='' && r.apprStatus.trim()!=='لم تذهب للموافقة';
     return r.hasViolation && !went;
   }).length;
+  const custCount = new Set(invoices.map(r=>r.cardCode)).size;
   const box = document.getElementById('summaryRow');
   box.style.display='grid';
   box.innerHTML = `
@@ -1152,7 +1167,7 @@ function renderSummary(){
     <div class="card warn"><div class="lbl">فيها مخالفة عمر ذمة</div><div class="val">${warn}</div></div>
     <div class="card warn" style="border-color:var(--crimson);"><div class="lbl">🚨 مخالفة ولم تذهب للموافقة</div><div class="val">${gaps}</div></div>
     <div class="card warn"><div class="lbl">تجاوزت السقف الائتماني</div><div class="val">${creditWarn}</div></div>
-    <div class="card"><div class="lbl">عدد العملاء</div><div class="val">${CUSTOMERS.length}</div></div>
+    <div class="card"><div class="lbl">عدد العملاء</div><div class="val">${custCount}</div></div>
   `;
   const pctBox = document.getElementById('summaryPctRow');
   pctBox.style.display='grid';
@@ -1237,6 +1252,7 @@ function chunksTableHtml(r){
 }
 
 function renderList(){
+  renderSummary();
   const wrap = document.getElementById('listWrap');
   const search = (document.getElementById('searchBox').value||'').trim().toLowerCase();
   const showHidden = document.getElementById('showHiddenChk').checked;
