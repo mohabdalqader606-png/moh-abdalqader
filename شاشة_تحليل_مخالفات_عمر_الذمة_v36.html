@@ -338,6 +338,13 @@ ORDER BY R."CardCode", K."DueDate"</code>
         <button data-f="ok" onclick="setFilter('ok')">طبيعي ✓</button>
       </div>
       <input type="text" class="search" id="searchBox" placeholder="بحث برمز/اسم العميل..." oninput="renderList()">
+      <label style="display:flex; align-items:center; gap:5px; font-size:11.5px; color:var(--ink-soft);">من تاريخ الفاتورة
+        <input type="date" id="dateFromFilter" onchange="renderList()" style="border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12px;">
+      </label>
+      <label style="display:flex; align-items:center; gap:5px; font-size:11.5px; color:var(--ink-soft);">إلى
+        <input type="date" id="dateToFilter" onchange="renderList()" style="border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12px;">
+      </label>
+      <button class="btn-ghost btn-sm" onclick="document.getElementById('dateFromFilter').value=''; document.getElementById('dateToFilter').value=''; renderList();">تفريغ التاريخ</button>
       <div class="spacer"></div>
       <label style="display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--ink-soft); cursor:pointer;">
         <input type="checkbox" id="showHiddenChk" onchange="renderList()"> إظهار المخفي (<span id="hiddenCount">0</span>)
@@ -511,6 +518,13 @@ ORDER BY R."CardCode", K."DueDate"</code>
         <option value="name">ترتيب حسب: اسم العميل</option>
       </select>
       <input type="text" class="search" id="agingSearchBox" placeholder="بحث برمز/اسم العميل أو المندوب..." oninput="renderAging()">
+      <label style="display:flex; align-items:center; gap:5px; font-size:11.5px; color:var(--ink-soft);">متأخر من (يوم)
+        <input type="number" id="agingDaysFrom" min="0" placeholder="مثلاً 30" onchange="renderAging()" style="width:70px; border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12px;">
+      </label>
+      <label style="display:flex; align-items:center; gap:5px; font-size:11.5px; color:var(--ink-soft);">إلى (يوم)
+        <input type="number" id="agingDaysTo" min="0" placeholder="مثلاً 90" onchange="renderAging()" style="width:70px; border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12px;">
+      </label>
+      <button class="btn-ghost btn-sm" onclick="document.getElementById('agingDaysFrom').value=''; document.getElementById('agingDaysTo').value=''; renderAging();">تفريغ المدة</button>
       <div class="spacer"></div>
       <button class="btn-primary btn-sm" onclick="generateReminders()">✉️ توليد رسائل تذكير للمحددين</button>
       <div style="display:flex; gap:4px;">
@@ -770,6 +784,13 @@ ORDER BY T0."ShortName", T0."RefDate"</code>
         <button data-f="early" onclick="setDailyFilter('early')">🔵 مبكر</button>
       </div>
       <input type="text" class="search" id="dailySearchBox" placeholder="بحث برمز/اسم العميل أو المندوب..." oninput="renderDaily()">
+      <label style="display:flex; align-items:center; gap:5px; font-size:11.5px; color:var(--ink-soft);">من تاريخ التحصيل
+        <input type="date" id="dailyDateFromFilter" onchange="renderDaily()" style="border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12px;">
+      </label>
+      <label style="display:flex; align-items:center; gap:5px; font-size:11.5px; color:var(--ink-soft);">إلى
+        <input type="date" id="dailyDateToFilter" onchange="renderDaily()" style="border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12px;">
+      </label>
+      <button class="btn-ghost btn-sm" onclick="document.getElementById('dailyDateFromFilter').value=''; document.getElementById('dailyDateToFilter').value=''; renderDaily();">تفريغ التاريخ</button>
       <div class="spacer"></div>
       <div style="display:flex; gap:4px;">
         <button class="print-btn" onclick="printFilteredDaily('all','كل التحصيلات')">🖨️ الكل</button>
@@ -1180,8 +1201,29 @@ function renderList(){
   const showHidden = document.getElementById('showHiddenChk').checked;
   document.getElementById('hiddenCount').textContent = HIDDEN.size;
 
+  const dateFrom = parseSapDate(document.getElementById('dateFromFilter').value);
+  const dateTo = parseSapDate(document.getElementById('dateToFilter').value);
+
   let list = CUSTOMERS.slice();
   if(!showHidden) list = list.filter(c => !HIDDEN.has('cust:'+c.cardCode));
+  if(dateFrom || dateTo){
+    list = list.map(c => {
+      const rows = c.rows.filter(r => {
+        if(!r.invoiceDate) return false;
+        if(dateFrom && r.invoiceDate < dateFrom) return false;
+        if(dateTo && r.invoiceDate > dateTo) return false;
+        return true;
+      });
+      let warnCount=0, graceCount=0, immaterialCount=0, gapCount=0;
+      rows.forEach(r => {
+        if(r.hasViolation) warnCount++;
+        else if(r.hasGrace) graceCount++;
+        else if(r.hasImmaterial) immaterialCount++;
+        if(r.hasGap) gapCount++;
+      });
+      return {...c, rows, warnCount, graceCount, immaterialCount, gapCount};
+    }).filter(c => c.rows.length>0);
+  }
   if(currentFilter==='gap') list = list.filter(c=>c.gapCount>0);
   else if(currentFilter==='warn') list = list.filter(c=>c.warnCount>0);
   else if(currentFilter==='grace') list = list.filter(c=>c.warnCount===0 && c.graceCount>0);
@@ -1602,8 +1644,15 @@ function renderAging(){
   const wrap = document.getElementById('agingTableWrap');
   const search = (document.getElementById('agingSearchBox').value||'').trim().toLowerCase();
   const sortMode = document.getElementById('agingSortSel').value;
+  const daysFromVal = document.getElementById('agingDaysFrom').value;
+  const daysToVal = document.getElementById('agingDaysTo').value;
   let rows = AGING_ROWS.slice();
 
+  if(daysFromVal!=='' || daysToVal!==''){
+    const minD = daysFromVal!=='' ? parseFloat(daysFromVal) : -Infinity;
+    const maxD = daysToVal!=='' ? parseFloat(daysToVal) : Infinity;
+    rows = rows.filter(r => (r.status==='overdue' || r.status==='immaterial') && r.daysDiff>=minD && r.daysDiff<=maxD);
+  }
   if(agingFilter!=='all') rows = rows.filter(r=>r.status===agingFilter);
   if(search) rows = rows.filter(r =>
     (r.cardCode||'').toLowerCase().includes(search) ||
@@ -2116,7 +2165,11 @@ function sortDailyByColumn(key){
 function renderDaily(){
   const wrap = document.getElementById('dailyTableWrap');
   const search = (document.getElementById('dailySearchBox').value||'').trim().toLowerCase();
+  const dateFrom = parseSapDate(document.getElementById('dailyDateFromFilter').value);
+  const dateTo = parseSapDate(document.getElementById('dailyDateToFilter').value);
   let rows = DAILY_ROWS.slice();
+  if(dateFrom) rows = rows.filter(r=>r.collectDate && r.collectDate>=dateFrom);
+  if(dateTo) rows = rows.filter(r=>r.collectDate && r.collectDate<=dateTo);
   if(dailyFilter!=='all') rows = rows.filter(r=>r.status===dailyFilter);
   if(search) rows = rows.filter(r =>
     (r.cardCode||'').toLowerCase().includes(search) ||
