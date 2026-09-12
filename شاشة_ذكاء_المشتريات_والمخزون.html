@@ -353,6 +353,13 @@
   .pcc-alert b{color:var(--crimson); font-size:13.5px; display:block; margin-bottom:3px;}
   .pcc-alert span{font-size:12px; color:#7a2c26; line-height:1.7;}
 
+  /* فرصة تجميع مع أصناف من نفس المورد (Tower + Command Center) — لون تيل للفرصة
+     الإيجابية، ذهبي للتحذير من طلب منفرد صغير */
+  .callout{background:var(--teal-bg); border:1px solid rgba(31,122,108,.3); border-radius:10px; padding:10px 14px; font-size:12px; color:#0f4a41; line-height:1.8;}
+  .callout.warning{background:var(--gold-bg); border-color:rgba(138,100,22,.3); color:#6b4c10;}
+  .callout .label{display:block; font-weight:700; margin-bottom:4px; color:var(--teal);}
+  .callout.warning .label{color:var(--gold);}
+
   .pcc-kpis{display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:18px;}
   .pcc-kpi{border:1px solid var(--line); border-radius:12px; padding:12px 14px; background:#fff; cursor:pointer; transition:.12s; text-align:right;}
   .pcc-kpi:hover{border-color:var(--navy); box-shadow:0 4px 14px -8px rgba(21,42,74,.25);}
@@ -1009,6 +1016,11 @@ let state = {
   itemsRaw:{}, salesRaw:[], invRaw:[], leadTimeRaw:[], poOrdersRaw:[], apInvoiceRaw:[], poRaw:[], actualCostRaw:[],
   params:{}, // itemCode -> {supplier, leadTimeDays, moq, orderMultiple, shelfLifeDays, minRemainShelfLife, unitCost, serviceLevel, criticality}
   supplierSettings:{}, // supplierKey(normalized) -> {relationshipType:'normal'|'contract'|'target', note}
+  // poResolutions: مفتاح صف PO (رمز الصنف+المورد+الكمية+تاريخ الوصول الأصلي كما وصل من
+  // SAP) -> {action:'updated'|'cancelled', newDate?, resolvedAt} — لحسم أي طلب شراء
+  // بتاريخ وصول متوقَّع فات (ماضٍ) بدل ما يُحتسَب صامتاً كأنه "واصل بكرا". محفوظة محلياً
+  // فقط حالياً (localStorage) — ما إلها مزامنة سحابية لعدم إضافة جدول Supabase جديد بدون طلب صريح
+  poResolutions:{},
   warehouseNames:{}, // whsCode -> whsName
   customerNames:{}, // normalized customer code -> اسم العميل الموثوق (من كشف SAP)
   computed:[], demandWindowDays:90,
@@ -1817,16 +1829,23 @@ function median(arr){
 /* تحليل حمولة الشحنة المعتادة لكل مورد من تاريخ فواتير الشراء الفعلية، لمعرفة
    هل يُطلَب الصنف لحاله أو يُجمَّع مع أصناف تانية جاهزة من نفس المورد */
 function normSupplierKey(s){ return String(s||'').trim().toLowerCase(); }
+// مفتاح ثابت لصف PO واحد (رمز الصنف+المورد+الكمية+تاريخ الوصول الأصلي كما وصل من SAP) —
+// يبقى نفسه عبر أي إعادة لصق لاحقة لنفس الكويري طالما SAP رجّع نفس القيم بالضبط، حتى
+// يضل قرار المستخدم (تحديث/إلغاء) متذكَّر ولا يُسأل عن نفس الصف من جديد بلا داعٍ
+function poRowKey(r){ return [r.code, normSupplierKey(r.supplier), r.qty, r.arrivalDate].join('|'); }
+// مصادر الاستلام الفعلي (لربط المورد وتحليل التجميع وجدوى الطلب): كويري GRPO (رقم 6) +
+// كويري مدة التوريد (رقم 4) لو فيه عمود مورد — الثاني مصدره أمر الشراء نفسه (OPOR.CardName)
+// وعادة أوثق من حقل المورد الحر (UDF) بجدول الأصناف. دالة واحدة مشتركة حتى ما يتكرر نفس
+// الدمج بمكانين (computeConsolidation وcomputeShipmentFeasibility)
+function buildReceiptSources(){
+  return state.apInvoiceRaw.concat(
+    (state.leadTimeRaw||[]).filter(r=>r.supplier).map(r=>({code:r.code, supplier:r.supplier, docEntry:r.docEntry||'', qty:r.qty}))
+  );
+}
 function computeConsolidation(results){
   const resultByCode = {};
   results.forEach(r=>{ resultByCode[r.code]=r; });
-
-  // مصادر الاستلام الفعلي (لربط المورد وتحليل التجميع): كويري GRPO (رقم 6) + كويري
-  // مدة التوريد (رقم 4) لو فيه عمود مورد — الثاني مصدره أمر الشراء نفسه (OPOR.CardName)
-  // وعادة أوثق من حقل المورد الحر (UDF) بجدول الأصناف.
-  const receiptSources = state.apInvoiceRaw.concat(
-    (state.leadTimeRaw||[]).filter(r=>r.supplier).map(r=>({code:r.code, supplier:r.supplier, docEntry:r.docEntry||'', qty:r.qty}))
-  );
+  const receiptSources = buildReceiptSources();
 
   // ربط الصنف بالمورد: نفضّل حقل المورد الموثّق بجدول البارامترات (من SAP مباشرة عادةً)،
   // ولا نلجأ لاستنتاجه من تكرار الاستلامات إلا لو كان فاضياً. المطابقة بمفتاح مُطبَّع
@@ -1875,41 +1894,80 @@ function computeConsolidation(results){
 
   if(!receiptSources.length) return;
 
-  const shipMap = {}; // normKey|docEntry -> {supplierKey, supplierDisplay, items:Set, value}
+  const shipMap = {}; // normKey|docEntry -> {supplierKey, supplierDisplay, items:Set, value, qty}
   receiptSources.forEach(r=>{
     if(!r.docEntry) return; // بدون رقم مستند ما فينا نجمّع أصناف نفس الشحنة
     const nk = normSupplierKey(r.supplier);
     const key = nk+'|'+r.docEntry;
-    const s = shipMap[key] = shipMap[key] || {supplierKey:nk, supplierDisplay:r.supplier, items:new Set(), value:0};
+    const s = shipMap[key] = shipMap[key] || {supplierKey:nk, supplierDisplay:r.supplier, items:new Set(), value:0, qty:0};
     s.items.add(r.code);
+    s.qty += r.qty||0;
     const cost = toNum((state.params[r.code]||{}).unitCost);
-    if(!isNaN(cost)) s.value += (r.qty||0) * cost;
+    if(!isNaN(cost) && cost>0) s.value += (r.qty||0) * cost;
   });
   const shipments = {}; // normKey -> [shipment,...]
   Object.values(shipMap).forEach(s=>{ (shipments[s.supplierKey] = shipments[s.supplierKey] || []).push(s); });
 
+  // "الحمولة المعتادة" بالدينار (أدق، بتاخذ فرق سعر كل صنف بعين الاعتبار) لو أسعار
+  // الوحدة متوفرة؛ وإلا نرجع للكمية (وحدة) كبديل — أهم من عرض الميزة فاضية دايماً على
+  // بيانات حقيقية ما فيها أسعار تكلفة إطلاقاً (حالة شائعة بملفات SAP الأساسية)
   const supplierTypical = {};
   Object.keys(shipments).forEach(nk=>{
     const list = shipments[nk];
-    supplierTypical[nk] = { typicalValue: median(list.map(s=>s.value).filter(v=>v>0)), shipmentCount: list.length };
+    const typicalValue = median(list.map(s=>s.value).filter(v=>v>0));
+    const typicalQty = median(list.map(s=>s.qty).filter(v=>v>0));
+    supplierTypical[nk] = {
+      typicalValue, typicalQty, shipmentCount: list.length,
+      metric: typicalValue>0 ? 'value' : 'qty'
+    };
   });
 
   results.forEach(r=>{
     const nk = itemSupplierKey[r.code];
     if(!nk || !(r.decision==='BUY_NOW'||r.decision==='BUY_SOON')) return;
     const typical = supplierTypical[nk];
-    if(!typical || !typical.typicalValue) return;
+    if(!typical) return;
+    const useValue = typical.metric==='value';
+    const typicalMetric = useValue ? typical.typicalValue : typical.typicalQty;
+    if(!typicalMetric) return;
     const dueSiblings = (supplierItems[nk]||[]).filter(c=>c!==r.code)
       .map(c=>resultByCode[c]).filter(x=>x && (x.decision==='BUY_NOW'||x.decision==='BUY_SOON'));
-    const combinedValue = (r.recommendedQty||0)*r.unitCost + dueSiblings.reduce((a,x)=>a+((x.recommendedQty||0)*x.unitCost),0);
+    const combinedMetric = useValue
+      ? ((r.recommendedQty||0)*r.unitCost + dueSiblings.reduce((a,x)=>a+((x.recommendedQty||0)*x.unitCost),0))
+      : ((r.recommendedQty||0) + dueSiblings.reduce((a,x)=>a+(x.recommendedQty||0),0));
     r.consolidation = {
       supplier: itemSupplierDisplay[r.code],
-      typicalValue: Math.round(typical.typicalValue),
+      metric: typical.metric,
+      typicalValue: Math.round(typicalMetric),
       shipmentCount: typical.shipmentCount,
       dueSiblings: dueSiblings.map(x=>x.name),
-      combinedValue: Math.round(combinedValue),
-      ratio: Math.round((combinedValue/typical.typicalValue)*100)
+      combinedValue: Math.round(combinedMetric),
+      ratio: Math.round((combinedMetric/typicalMetric)*100)
     };
+  });
+}
+// جدوى الطلب حسب الاستلامات الفعلية التاريخية — مستقلة عن تجميع الموردين أعلاه: هون
+// منظورنا الصنف لحاله (بغض النظر عن أي مورد)، وبنسأل "هل المورد أصلاً بيقبل يرسل كمية
+// أصغر من كذا لهالصنف؟" بالاعتماد على أصغر شحنة استُلمت فعلياً بالتاريخ. نطلب شحنتين
+// سابقتين ع الأقل حتى الحد الأدنى يكون له معنى إحصائي بسيط (شحنة وحدة ممكن تكون استثناء
+// نادر، مش نمط حقيقي) — وبدون هيك القاعدة، بنعرض نص واضح بدل رقم مخترَع.
+function computeShipmentFeasibility(results){
+  const receiptSources = buildReceiptSources();
+  if(!receiptSources.length) return;
+  const itemShipmentQty = {}; // code -> {docEntry: qty مجموع بهالمستند}
+  receiptSources.forEach(r=>{
+    if(!r.docEntry || !r.code || !(r.qty>0)) return;
+    const m = itemShipmentQty[r.code] = itemShipmentQty[r.code] || {};
+    m[r.docEntry] = (m[r.docEntry]||0) + r.qty;
+  });
+  results.forEach(r=>{
+    const doc = itemShipmentQty[r.code]; if(!doc) return;
+    const qtys = Object.values(doc);
+    if(qtys.length < 2) return;
+    const minQty = Math.min(...qtys);
+    if(r.recommendedQty>0 && r.recommendedQty < minQty){
+      r.shipmentFeasibility = { minQty, shipmentCount: qtys.length, recommendedQty: r.recommendedQty };
+    }
   });
 }
 
@@ -2042,10 +2100,22 @@ function runEngine(){
       }
     }
   }
-  // شحنات الشراء المفتوحة القادمة، مجمَّعة لكل صنف ومرتَّبة بتاريخ الوصول
+  // شحنات الشراء المفتوحة القادمة، مجمَّعة لكل صنف ومرتَّبة بتاريخ الوصول — أي صف تاريخ
+  // وصوله المتوقَّع الأصلي (كما وصل من SAP) ماضٍ بالنسبة لليوم، ولسا ما انحسم وضعه (تحديث
+  // تاريخ أو إلغاء)، ما بيُحتسَب توريداً مؤكَّداً بالمحاكاة إطلاقاً — بيروح لقائمة "يحتاج
+  // مراجعة" بدل ما يُعامَل صامتاً وكأنه "واصل بكرا" (كان هيك قبل هالإصلاح)
   const poByItem = {};
+  state.poNeedsReview = [];
   state.poRaw.forEach(r=>{
-    const d = parseDateFlexible(r.arrivalDate);
+    const key = poRowKey(r);
+    const res = state.poResolutions[key];
+    if(res && res.action==='cancelled') return; // المستخدم أكّد إن الطلب ملغى — نتجاهلها نهائياً
+    const effectiveDateRaw = (res && res.action==='updated' && res.newDate) ? res.newDate : r.arrivalDate;
+    const d = parseDateFlexible(effectiveDateRaw);
+    if(!res && d && d < now){
+      state.poNeedsReview.push({key, code:r.code, qty:r.qty, supplier:r.supplier, arrivalDate:r.arrivalDate});
+      return;
+    }
     (poByItem[r.code] = poByItem[r.code] || []).push({date:d, qty:r.qty||0});
   });
   Object.keys(poByItem).forEach(code=>poByItem[code].sort((a,b)=>{
@@ -2452,6 +2522,7 @@ function runEngine(){
   });
 
   computeConsolidation(results);
+  computeShipmentFeasibility(results);
   computeSupplierStats(results);
   applySupplierRelationshipOverrides(results);
   results.sort((a,b)=> b.priorityScore - a.priorityScore);
@@ -2732,6 +2803,7 @@ function pccDetailHtml(r){
       + '<div class="pcc-detail-section"><h4>🚚 أوامر الشراء المفتوحة</h4>'
         + (r.datedPoLots&&r.datedPoLots.length ? r.datedPoLots.map(l=>kv('شحنة مؤرَّخة', fmtNum(l.qty)+' — '+fmtDate(l.date))).join('') : '<div style="font-size:11px;color:var(--ink-soft);">لا يوجد أمر شراء مؤرَّخ مفتوح</div>')
         + (r.openPoEtaMissing? ('<div style="font-size:11px;color:var(--gold);margin-top:6px;">⚠ يوجد أيضاً '+fmtNum(r.undatedPoQty)+' بدون تاريخ وصول مؤكَّد — لم تُحتسَب متوفرة بالحساب</div>') : '')
+        + (poItemNeedsReviewNote(r.code))
       + '</div>'
       + '<div class="pcc-detail-section"><h4>🏭 التوريد</h4>'
         + kv('المورد', esc(supDisplay))
@@ -2755,6 +2827,8 @@ function pccDetailHtml(r){
       + '</div>'
       + multiSupplierGap
     + '</div>'
+    + consolidationCalloutHtml(r)
+    + shipmentFeasibilityCalloutHtml(r)
     + '<div style="font-size:12px;color:var(--ink);margin-top:14px;line-height:1.8;padding:12px 14px;background:#fff;border:1px solid var(--line);border-radius:10px;">'+esc(r.decisionReason)+(r.qtyNotes.length?(' — '+esc(r.qtyNotes.join(' · '))):'')+'</div>';
 }
 // فتح/إغلاق التفاصيل — Accessibility كاملة: aria-expanded يتحدَّث دايماً، وإدارة تركيز
@@ -2842,6 +2916,48 @@ const ROW_ACTION_BTN = {
   BUY_NOW:'📋 تجهيز للشراء', BUY_SOON:'📋 تجهيز للشراء', EXPEDITE:'🚨 تفاصيل التعجيل',
   WAIT_FOR_OPEN_PO:'👁 عرض التفاصيل', DO_NOT_BUY:'👁 عرض التفاصيل', EXCESS:'👁 عرض التفاصيل', REVIEW:'⚠️ مراجعة'
 };
+// مصدر واحد لمنطق "فرصة تجميع مع أصناف تانية من نفس المورد" — مُستخدَم بمركز التحكم
+// (Tower) وبمركز التحكم الجديد (Command Center) معاً، بدل تكرار نفس الحساب بمكانين
+function consolidationBadgeHtml(r){
+  if(!r.consolidation) return '';
+  if(r.consolidation.dueSiblings.length) return ' <span class="badge info" title="فرصة تجميع مع أصناف تانية من نفس المورد">🔗 تجميع</span>';
+  if(r.consolidation.ratio<40) return ' <span class="badge warn" title="طلب منفرد صغير مقارنة بحمولة المورد المعتادة">⚠ طلب صغير</span>';
+  return '';
+}
+function consolidationCalloutHtml(r){
+  if(!r.consolidation) return '';
+  const c = r.consolidation;
+  // بديل بالكمية (وحدة) عند غياب سعر التكلفة — بدل قيمة الشحنة بالدينار، يعتمد على
+  // إجمالي الكمية المستلَمة تاريخياً بنفس الشحنة (نفس فكرة "الحمولة المعتادة" بمقياس تاني)
+  const unitLabel = c.metric==='value' ? 'د.أ' : 'وحدة';
+  const metricNote = c.metric==='value' ? '' : ' (بالكمية، لعدم توفر سعر تكلفة لهالأصناف)';
+  const ratioTxt = c.ratio+'٪ من الحمولة المعتادة'+metricNote+' ('+c.typicalValue.toLocaleString('en-US')+' '+unitLabel+' من '+c.shipmentCount+' شحنة سابقة)';
+  if(c.dueSiblings.length){
+    return '<div class="callout" style="margin:10px 0 0;padding:10px 14px;"><span class="label">🔗 فرصة تجميع — '+esc(c.supplier)+'</span>'
+      + 'أصناف تانية من نفس المورد قريبة من الطلب هلق: <b>'+esc(c.dueSiblings.join('، '))+'</b>. '
+      + 'إجمالي '+(c.metric==='value'?'القيمة':'الكمية')+' لو انطلبوا سوا ≈ '+c.combinedValue.toLocaleString('en-US')+' '+unitLabel+' — '+ratioTxt+'.</div>';
+  }
+  if(c.ratio < 40){
+    return '<div class="callout warning" style="margin:10px 0 0;padding:10px 14px;"><span class="label">⚠ طلب منفرد صغير — '+esc(c.supplier)+'</span>'
+      + 'هالطلب لحاله ≈ '+c.combinedValue.toLocaleString('en-US')+' '+unitLabel+' بس '+ratioTxt+'. مفيش صنف تاني من نفس المورد جاهز يُطلب هلق — فكّر تطلبه لحاله (إذا الخطر حقيقي) أو تنتظر شوي لين يقرب صنف تاني.</div>';
+  }
+  return '';
+}
+// جدوى الطلب حسب أصغر شحنة استُلمت تاريخياً لهالصنف لحاله (بغض النظر عن المورد) —
+// مستقلة عن شارة/نص التجميع أعلاه لأنها منظور تاني (الصنف لحاله، مش حمولة المورد ككل)
+function shipmentFeasibilityBadgeHtml(r){
+  if(!r.shipmentFeasibility) return '';
+  return ' <span class="badge warn" title="الكمية المقترحة أقل من أصغر شحنة استُلمت تاريخياً لهالصنف لحاله">📉 كمية أقل من المعتاد</span>';
+}
+function shipmentFeasibilityCalloutHtml(r){
+  if(!r.shipmentFeasibility) return '';
+  const f = r.shipmentFeasibility;
+  const bundleTip = (r.consolidation && r.consolidation.dueSiblings.length)
+    ? ' فكّر تجمّعها مع الأصناف المرافقة المذكورة فوق من نفس المورد.'
+    : ' ما في صنف تاني جاهز يُطلب هلق من نفس المورد لتجميعها معه حالياً — راجع الكمية يدوياً مع المورد قبل الطلب.';
+  return '<div class="callout warning" style="margin:10px 0 0;padding:10px 14px;"><span class="label">⚠ كمية أقل من أصغر شحنة تاريخية لهالصنف لحاله</span>'
+    + 'الكمية المقترحة حالياً ('+fmtNum(f.recommendedQty)+') أقل من أصغر شحنة استُلمت تاريخياً لهالصنف لحاله ('+fmtNum(f.minQty)+' — من أصل '+f.shipmentCount+' شحنة سابقة مسجَّلة). قد ما يقبل المورد يرسل كمية أصغر من هيك لحاله.'+bundleTip+'</div>';
+}
 function pccRowHtml(r){
   const supDisplay = primarySupplierDisplay(r);
   const badgeCls = DECISION_BADGE_CLASS[r.decision] || 'gray';
@@ -2854,7 +2970,7 @@ function pccRowHtml(r){
   return ''
     +'<tr class="pcc-trow" id="pcc-row-'+esc(r.code)+'" tabindex="0" role="button" aria-expanded="false" aria-controls="pcc-detail-'+esc(r.code)+'" onclick="toggleRecRow(\''+esc(r.code)+'\')" onkeydown="onRecRowKeydown(event,\''+esc(r.code)+'\')">'
       +'<td class="pcc-check-cell" onclick="event.stopPropagation()"><input type="checkbox" aria-label="تحديد الصنف" '+(checked?'checked':'')+' onclick="toggleRecSelect(\''+esc(r.code)+'\', event)"></td>'
-      +'<td><span class="badge '+badgeCls+'">'+r.decisionLabel+'</span><div class="pcc-action-tag">'+esc(r.actionVerb)+'</div></td>'
+      +'<td><span class="badge '+badgeCls+'">'+r.decisionLabel+'</span>'+consolidationBadgeHtml(r)+shipmentFeasibilityBadgeHtml(r)+'<div class="pcc-action-tag">'+esc(r.actionVerb)+'</div></td>'
       +'<td><div class="pcc-item-name">'+esc(r.name)+'</div><div class="pcc-item-code">'+esc(r.code)+'</div></td>'
       +'<td class="pcc-secondary">'+esc(supDisplay)+'</td>'
       +'<td><span class="pcc-qty-cell">'+qtyDisplay(r)+'</span><span class="pcc-qty-unit">'+esc(r.uom||'وحدة')+'</span></td>'
@@ -3293,6 +3409,54 @@ function readinessBannerHtml(r){
   }
   return '';
 }
+// أوامر شراء بتاريخ وصول متوقَّع فات ولسا ما انحسم وضعها — بدل ما تُحتسَب صامتاً كأنها
+// "واصلة بكرا" (خلل حقيقي مكتشَف على بيانات SAP فعلية: كل صف بملف PO ETA كان بتاريخ
+// ماضٍ)، لازم المستخدم يأكّد إما تاريخ وصول جديد أو إلغاء الطلب قبل ما تُحتسَب بالحساب
+function poNeedsReviewHtml(){
+  const list = state.poNeedsReview || [];
+  if(!list.length) return '';
+  const rows = list.map(x=>{
+    const name = (state.itemsRaw[x.code]||{}).name || x.code;
+    return '<tr>'
+      + '<td class="freeze-name">'+esc(name)+'<br><span class="item-code">'+esc(x.code)+'</span></td>'
+      + '<td>'+esc(x.supplier||'—')+'</td>'
+      + '<td class="num">'+fmtNum(x.qty)+'</td>'
+      + '<td>'+esc(x.arrivalDate)+'</td>'
+      + '<td style="white-space:nowrap;">'
+        + '<input type="date" id="podate-'+esc(x.key)+'" style="font-family:var(--mono);border:1px solid var(--line);border-radius:6px;padding:3px 6px;font-size:11px;">'
+        + ' <button class="btn-ghost btn-sm" type="button" onclick="var el=document.getElementById(\'podate-'+esc(x.key)+'\'); if(el.value) resolvePoUpdateDate(\''+esc(x.key)+'\', el.value); else alert(\'اختاري تاريخاً أولاً\');">📅 تحديث التاريخ</button>'
+        + ' <button class="btn-ghost btn-sm" type="button" style="color:var(--crimson);border-color:rgba(178,58,52,.4);" onclick="resolvePoCancelled(\''+esc(x.key)+'\')">❌ تم إلغاء الطلب</button>'
+      + '</td>'
+    + '</tr>';
+  }).join('');
+  return '<div class="dh-banner crit"><b>🚩 '+list.length+' أمر شراء بتاريخ وصول متوقَّع ماضٍ — يحتاج تأكيد قبل ما يُحتسَب بالحساب</b>'
+    + '<span>هالأصناف عندها شحنة تاريخ وصولها المتوقَّع فات (قبل اليوم). لحد ما تأكّدي وضعها، ما بتُحتسَب توريداً مؤكَّداً بحساب القرار — بدل الوضع القديم يلي كان يعاملها كأنها "واصلة بكرا".</span></div>'
+    + '<div class="tbl-scroll" style="margin-bottom:16px;"><table class="minitbl" style="width:100%;"><thead><tr><th class="freeze-name">الصنف</th><th>المورد</th><th>الكمية</th><th>تاريخ الوصول الأصلي</th><th>الإجراء</th></tr></thead><tbody>'+rows+'</tbody></table></div>';
+}
+// إشارة قصيرة أينما ظهرت تفاصيل صنف له شحنة مستبعَدة مؤقَّتاً بسبب تاريخ ماضٍ لم يُحسَم
+// بعد — حتى ما يبدو للمستخدم إنه "PO اختفى" بدون تفسير؛ التفاصيل الكاملة والإجراء
+// (تحديث/إلغاء) بمركز البيانات فقط، هون مجرد تنبيه وتوجيه
+function poItemNeedsReviewNote(code){
+  const n = (state.poNeedsReview||[]).filter(x=>x.code===code).length;
+  if(!n) return '';
+  return '<div style="font-size:11px;color:var(--crimson);margin-top:6px;">🚩 '+n+' شحنة لهالصنف تاريخ وصولها المتوقَّع ماضٍ ولسا ما انحسم وضعها — مستبعَدة مؤقَّتاً من الحساب. راجعيها بـ"مركز البيانات".</div>';
+}
+function poResolvedHtml(){
+  const keys = Object.keys(state.poResolutions||{});
+  if(!keys.length) return '';
+  const rows = keys.map(key=>{
+    const res = state.poResolutions[key];
+    const code = key.split('|')[0];
+    const origDate = key.split('|')[3];
+    const name = (state.itemsRaw[code]||{}).name || code;
+    const actionTxt = res.action==='cancelled' ? 'تم إلغاء الطلب' : ('تحديث التاريخ إلى '+esc(res.newDate));
+    return '<tr><td class="freeze-name">'+esc(name)+'<br><span class="item-code">'+esc(code)+'</span></td>'
+      + '<td>'+esc(origDate)+'</td><td>'+actionTxt+'</td>'
+      + '<td><button class="btn-ghost btn-sm" type="button" onclick="undoPoResolution(\''+esc(key)+'\')">↩️ تراجع</button></td></tr>';
+  }).join('');
+  return '<details class="dh-history"><summary>✅ '+keys.length+' قرار محسوم على أوامر شراء بتاريخ ماضٍ</summary>'
+    + '<div class="tbl-scroll"><table class="minitbl" style="width:100%;"><thead><tr><th class="freeze-name">الصنف</th><th>التاريخ الأصلي</th><th>القرار</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div></details>';
+}
 function renderDataHub(){
   const el = document.getElementById('dataHubPanel'); if(!el) return;
   const r = computeReadiness();
@@ -3304,6 +3468,7 @@ function renderDataHub(){
   el.innerHTML = ''
     +'<div class="dh-wrap">'
     +readinessBannerHtml(r)
+    +poNeedsReviewHtml()
     +'<div class="dh-hero">'
       +'<div class="dh-score-box '+scoreCls+'"><div class="dh-score-num">'+r.overall+'%</div>'
         +'<div class="dh-score-lbl">جاهزية ذكاء المشتريات<br><span>Procurement Intelligence Readiness</span></div></div>'
@@ -3337,6 +3502,7 @@ function renderDataHub(){
       +suppChipHtml('customerNames','أسماء العملاء')
     +'</div>'
     +'<details class="dh-history"><summary>🕘 سجل الاستيراد (Import History)</summary>'+importHistoryHtml()+'</details>'
+    +poResolvedHtml()
     +'</div>';
 }
 
@@ -3439,25 +3605,14 @@ function renderTower(){
     if(r.poLots && r.poLots.length){
       reasons.push(['بضاعة بالطريق', r.poLots.map(l=>fmtNum(l.qty)+' — '+(l.date?fmtDate(l.date):'بدون تاريخ')).join(' · ')]);
     }
+    { const reviewNote = poItemNeedsReviewNote(r.code); if(reviewNote) reasons.push(['🚩 يحتاج مراجعة', (state.poNeedsReview||[]).filter(x=>x.code===r.code).length+' شحنة بتاريخ ماضٍ لم يُحسَم وضعها — راجعيها بمركز البيانات']); }
     reasons.push(['احتمال الانقطاع قبل وصول الطلب', r.stockoutProb!=null? r.stockoutProb+'٪':'—']);
     reasons.push(['مخزون الأمان / نقطة إعادة الطلب', (r.safetyStock??'—')+' / '+(r.rop??'—')]);
     reasons.push(['تصنيف ABC/XYZ', r.abc+r.xyz]);
     reasons.push(['مستوى الثقة بالتوصية', r.confidence+'٪']);
     if(r.qtyNotes.length) reasons.push(['ملاحظات على الكمية', r.qtyNotes.join(' · ')]);
     if(r.missing.length) reasons.push(['بيانات ناقصة', r.missing.join('، ')]);
-    let consolidationHtml = '';
-    if(r.consolidation){
-      const c = r.consolidation;
-      const ratioTxt = c.ratio+'٪ من الحمولة المعتادة ('+c.typicalValue.toLocaleString('en-US')+' من '+c.shipmentCount+' شحنة سابقة)';
-      if(c.dueSiblings.length){
-        consolidationHtml = '<div class="callout" style="margin:10px 0 0;padding:10px 14px;"><span class="label">🔗 فرصة تجميع — '+esc(c.supplier)+'</span>'
-          + 'أصناف تانية من نفس المورد قريبة من الطلب هلق: <b>'+esc(c.dueSiblings.join('، '))+'</b>. '
-          + 'إجمالي القيمة لو انطلبوا سوا ≈ '+c.combinedValue.toLocaleString('en-US')+' — '+ratioTxt+'.</div>';
-      } else if(c.ratio < 40){
-        consolidationHtml = '<div class="callout warning" style="margin:10px 0 0;padding:10px 14px;"><span class="label">⚠ طلب منفرد صغير — '+esc(c.supplier)+'</span>'
-          + 'هالطلب لحاله ≈ '+c.combinedValue.toLocaleString('en-US')+' بس '+ratioTxt+'. مفيش صنف تاني من نفس المورد جاهز يُطلب هلق — فكّر تطلبه لحاله (إذا الخطر حقيقي) أو تنتظر شوي لين يقرب صنف تاني.</div>';
-      }
-    }
+    const consolidationHtml = consolidationCalloutHtml(r) + shipmentFeasibilityCalloutHtml(r);
 
     return '<div class="rowc" id="row-'+idx+'">'
       + '<div class="rowc-head" onclick="toggleRow('+idx+')">'
@@ -3469,8 +3624,7 @@ function renderTower(){
         + '<div class="num">'+(r.recommendedQty??'—')+'<br><span style="color:var(--ink-soft);font-size:9.5px;">كمية مقترحة</span></div>'
         + '<div>'+(r.priorityScore?('أولوية '+r.priorityScore):'')+'</div>'
         + '<div><span class="badge '+(badgeClass[r.decision]||'gray')+'">'+r.decisionLabel+'</span>'
-          + (r.consolidation && r.consolidation.dueSiblings.length ? ' <span class="badge info" title="فرصة تجميع مع أصناف تانية من نفس المورد">🔗 تجميع</span>' : '')
-          + (r.consolidation && !r.consolidation.dueSiblings.length && r.consolidation.ratio<40 ? ' <span class="badge warn" title="طلب منفرد صغير مقارنة بحمولة المورد المعتادة">⚠ طلب صغير</span>' : '')
+          + consolidationBadgeHtml(r) + shipmentFeasibilityBadgeHtml(r)
         + '</div>'
         + '<span></span>'
       + '</div>'
@@ -3984,6 +4138,35 @@ function updateSupplierSetting(key, field, value){
   renderSuppliers();
   renderTower();
   scheduleCloudSave(['suppliers']);
+}
+// حسم أوامر الشراء بتاريخ وصول متوقَّع ماضٍ: إما تحديث التاريخ الفعلي الجديد (لو المورد
+// أكّد موعداً جديداً) أو تأكيد إلغاء الطلب أصلاً — بالحالتين القرار محفوظ محلياً (poResolutions)
+// حتى ما يُعاد سؤال المستخدم عن نفس الصف بكل مرة يعيد فيها لصق نفس الكويري. لا مزامنة
+// سحابية لهالقرار حالياً (بدون جدول Supabase جديد إلا بطلب صريح) — محفوظ بمتصفح المستخدم فقط.
+function resolvePoUpdateDate(key, newDateValue){
+  if(!newDateValue) return;
+  state.poResolutions[key] = {action:'updated', newDate:newDateValue, resolvedAt:new Date().toISOString()};
+  runEngine();
+  renderDataHub();
+  renderRecommendations();
+  renderTower();
+  saveStateLocal();
+}
+function resolvePoCancelled(key){
+  state.poResolutions[key] = {action:'cancelled', resolvedAt:new Date().toISOString()};
+  runEngine();
+  renderDataHub();
+  renderRecommendations();
+  renderTower();
+  saveStateLocal();
+}
+function undoPoResolution(key){
+  delete state.poResolutions[key];
+  runEngine();
+  renderDataHub();
+  renderRecommendations();
+  renderTower();
+  saveStateLocal();
 }
 function importSupplierNames(){
   const msg = document.getElementById('supplierNamesMsg');
