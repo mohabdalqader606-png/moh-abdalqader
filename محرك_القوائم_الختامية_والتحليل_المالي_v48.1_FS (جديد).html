@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v49.11-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v49.12-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -1166,7 +1166,8 @@ th.yd,td.yd{background:rgba(11,31,58,.035);font-size:.92em}th.yd{color:var(--mut
   <label for="pYearTo">إلى سنة</label><select id="pYearTo" onchange="quickYear()"><option value="">(نفس السنة)</option></select>
   <label for="pFrom">الفترة من</label><select id="pFrom"></select>
   <label for="pTo">إلى</label><select id="pTo"></select>
-  <label for="pCmp">مقارنة</label><select id="pCmp"><option value="prev">الفترة السابقة المماثلة</option><option value="ly">نفس الفترة سنة سابقة</option><option value="none">بدون</option></select>
+  <label for="pCmp">مقارنة</label><select id="pCmp" onchange="pCmpToggle()"><option value="prev">الفترة السابقة المماثلة</option><option value="ly">نفس الفترة سنة سابقة</option><option value="custom">فترة مخصصة</option><option value="none">بدون</option></select>
+  <span id="pCmpCustom" style="display:none"><label for="pCmpFrom">من</label><select id="pCmpFrom"></select><label for="pCmpTo">إلى</label><select id="pCmpTo"></select></span>
   <button class="btn gold sm" onclick="recalcAll()">احتساب</button>
   <span class="fs-calcat" id="fsCalcAt"></span>
 </div>
@@ -1479,6 +1480,7 @@ th.yd,td.yd{background:rgba(11,31,58,.035);font-size:.92em}th.yd{color:var(--mut
 <!-- ============ BOARD ============ -->
 <section class="tab" id="tab-board">
  <div class="row noprint"><button class="btn gold" onclick="printTab('board')">طباعة تقرير مجلس الإدارة</button><span class="hint">صفحة واحدة تنفيذية بأسلوب التقارير السنوية للشركات العالمية</span></div>
+ <div class="row noprint"><button class="btn gold" onclick="printBoardPackage()">📄 الملف الشامل لمجلس الإدارة (PDF): القوائم + البنوك</button><span class="hint">قائمة الدخل والمركز المالي والتدفقات النقدية والنسب المالية بالمجاميع فقط مع شرح لكل رقم، بالإضافة لمركز البنوك — للفترة وفترة المقارنة المحدَّدتين أعلى الشاشة (يدعم "فترة مخصصة" بقائمة المقارنة). افتح ثم اطبع/احفظ PDF من المتصفح.</span></div>
  <div class="board" id="boardPage"></div>
 </section>
 </main>
@@ -1660,10 +1662,13 @@ function refreshMonths(){
  const from=document.getElementById('pFrom'),to=document.getElementById('pTo');const fv=from.value,tv=to.value;
  from.innerHTML=to.innerHTML=ks.map(k=>`<option>${k}</option>`).join('');
  from.value=ks.includes(fv)?fv:ks[0];to.value=ks.includes(tv)?tv:ks[ks.length-1];
+ const cf=document.getElementById('pCmpFrom'),ct=document.getElementById('pCmpTo');
+ if(cf&&ct){const cfv=cf.value,ctv=ct.value;cf.innerHTML=ct.innerHTML=ks.map(k=>`<option>${k}</option>`).join('');cf.value=ks.includes(cfv)?cfv:ks[0];ct.value=ks.includes(ctv)?ctv:ks[0];pCmpToggle()}
  const yrs=[...new Set(ks.map(k=>k.slice(0,4)))];const py=document.getElementById('pYear'),pyt=document.getElementById('pYearTo');
  if(py){const cy=py.value;py.innerHTML='<option value="">اختر…</option><option value="ALL">كل الفترة</option>'+yrs.map(y=>`<option>${y}</option>`).join('');py.value=(yrs.includes(cy)||cy==='ALL')?cy:''}
  if(pyt){const cy2=pyt.value;pyt.innerHTML='<option value="">(نفس السنة)</option>'+yrs.map(y=>`<option>${y}</option>`).join('');pyt.value=yrs.includes(cy2)?cy2:''}
 }
+function pCmpToggle(){const el=document.getElementById('pCmpCustom');if(el)el.style.display=document.getElementById('pCmp').value==='custom'?'':'none'}
 function quickYear(){
  const ks=months();if(!ks.length)return;
  const fv=document.getElementById('pYear').value;if(!fv)return;
@@ -1810,8 +1815,10 @@ function calc(from,to,noSelf){
  const RAT=rat(IS.TOT,BSc,BSo);const RATm={};let pb=BSo;per.forEach(k=>{RATm[k]=rat(IS[k],BSm[k],pb,days/nMo,ann*nMo);pb=BSm[k]});
  // Comparison period
  let CMP=null;const mode=document.getElementById('pCmp').value;
- if(mode!=='none'&&per.length){const n=per.length;let cf_,ct_;if(mode==='ly'){cf_=prevKey(per[0],12);ct_=prevKey(per[per.length-1],12)}else{ct_=prevKey(per[0],1);cf_=prevKey(per[0],n)}
-  const cper=range(cf_,ct_);if(cper.length){const sub=calcCore(cf_,ct_);CMP={per:cper,IS:sub.IS,BSc:sub.BSc,BSo:sub.BSo,RAT:sub.RAT,CF:sub.CF,L:sub.L,label:cf_+' → '+ct_}}}
+ if(mode!=='none'&&per.length){const n=per.length;let cf_,ct_;
+  if(mode==='custom'){const el1=document.getElementById('pCmpFrom'),el2=document.getElementById('pCmpTo');cf_=el1&&el1.value;ct_=el2&&el2.value}
+  else if(mode==='ly'){cf_=prevKey(per[0],12);ct_=prevKey(per[per.length-1],12)}else{ct_=prevKey(per[0],1);cf_=prevKey(per[0],n)}
+  const cper=cf_&&ct_?range(cf_,ct_):[];if(cper.length){const sub=calcCore(cf_,ct_);CMP={per:cper,IS:sub.IS,BSc:sub.BSc,BSo:sub.BSo,RAT:sub.RAT,CF:sub.CF,L:sub.L,label:cf_+' → '+ct_}}}
  // Self-benchmark: trailing average of the same calendar period in prior years (your own history, not an external standard)
  let SELF=null;
  if(!noSelf&&per.length){try{
@@ -4189,6 +4196,125 @@ function renderBoard(){const is=R.IS.TOT,r=R.RAT,cf=R.CF,b=R.BSc,cm=R.CMP,cur=S.
  <div><h3>المركز المالي الملخص</h3><table>${row('الأصول المتداولة',fmt(b.CA),cm&&fmt(cm.BSc.CA))}${row('الأصول غير المتداولة',fmt(b.NCA),cm&&fmt(cm.BSc.NCA))}${row('الالتزامات المتداولة',fmt(b.CL),cm&&fmt(cm.BSc.CL))}${row('الالتزامات غير المتداولة',fmt(b.NCL),cm&&fmt(cm.BSc.NCL))}${row('حقوق الملكية',fmt(b.EQ),cm&&fmt(cm.BSc.EQ))}</table></div>
  <div><h3>المؤشرات الرئيسية</h3><table>${['GM','NM','CR','DSO','DIO','DPO','CCC','ROA','DE','ICR'].map(k=>`<tr class="drill" onclick="ratioDetail('${k}')"><td>${BENCH[k].n}</td><td class="num"><b>${rfmt(k,r[k])}</b></td><td><span class="badge ${grade(k,r[k])[0]}">${grade(k,r[k])[1]}</span></td></tr>`).join('')}</table></div></div>
  <h3>القراءة التنفيذية</h3><div class="narr">${document.getElementById('narrative').innerHTML}</div>`}
+
+/* ================= BOARD PACKAGE (PDF): IS/BS/CF/ratios summary + banks, with per-line explanation ================= */
+function printBoardPackage(){
+ if(!R){alert('يجب الاحتساب أولاً (اضغط زر "احتساب" أعلى الشاشة).');return}
+ const is=R.IS.TOT,b=R.BSc,cf=R.CF,rt=R.RAT,cm=R.CMP,cur=S.settings.cur,co=S.settings.co;
+ const cmpLabel=cm?cm.label:null;
+ const today=new Date().toLocaleDateString('ar-JO');
+ const dirA=v=>v>0.004?'ارتفع':v<-0.004?'انخفض':'استقر';
+ const clsA=v=>v<-0.004?'neg':v>0.004?'pos':'';
+ const amtRow=(label,curV,cmpVal,pctBase)=>{
+  const pctTxt=pctBase?` (${pct(curV/pctBase)} من صافي المبيعات)`:'';
+  if(cmpVal==null)return `<tr><td>${label}</td><td class="num"><b>${fmt(curV)}</b></td><td class="num">—</td><td class="num">—</td><td class="ex">بلغ ${fmt(curV)}${pctTxt} خلال الفترة، بدون فترة مقارنة محدَّدة.</td></tr>`;
+  const d=curV-cmpVal,p=chg(curV,cmpVal);
+  const chgClause=(Math.abs(d)>0.004&&p!=null)?('، أي '+dirA(d)+' بنسبة '+pct(Math.abs(p))):'';
+  const note=`${dirA(d)} من ${fmt(cmpVal)} إلى ${fmt(curV)}${chgClause} مقارنة بـ${cmpLabel}${pctTxt}.`;
+  return `<tr><td>${label}</td><td class="num"><b>${fmt(curV)}</b></td><td class="num">${fmt(cmpVal)}</td><td class="num ${clsA(d)}">${fmt(d)}</td><td class="ex">${note}</td></tr>`;
+ };
+ const ratRow=(k)=>{
+  const v=rt[k],cmpVal=cm?cm.RAT[k]:null,g=grade(k,v);
+  if(v==null)return `<tr><td>${BENCH[k].n}</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="c"><span class="badge">—</span></td><td class="ex">غير محتسب لعدم توفر بيانات كافية بالفترة.</td></tr>`;
+  const rangeTxt=`(النطاق المرجعي ${rfmt(k,BENCH[k].lo)}–${rfmt(k,BENCH[k].hi)})`;
+  if(cmpVal==null)return `<tr><td>${BENCH[k].n}</td><td class="num"><b>${rfmt(k,v)}</b></td><td class="num">—</td><td class="num">—</td><td class="c"><span class="badge ${g[0]}">${g[1]}</span></td><td class="ex">بلغ ${rfmt(k,v)} خلال الفترة ${rangeTxt}.</td></tr>`;
+  const d=v-cmpVal,dTxt=BENCH[k].fmt==='%'?pct(d):d.toFixed(2);
+  const note=`${dirA(d)} من ${rfmt(k,cmpVal)} إلى ${rfmt(k,v)} مقارنة بـ${cmpLabel} ${rangeTxt}.`;
+  return `<tr><td>${BENCH[k].n}</td><td class="num"><b>${rfmt(k,v)}</b></td><td class="num">${rfmt(k,cmpVal)}</td><td class="num">${dTxt}</td><td class="c"><span class="badge ${g[0]}">${g[1]}</span></td><td class="ex">${note}</td></tr>`;
+ };
+ // بنوك: إعادة احتساب مستقلة (بدون لمس renderBankPos) من نفس مصادر البيانات: S.bank/S.banks/S.bankManual + R
+ const brows={};
+ Object.entries(S.bank||{}).forEach(([c,bb])=>{if(!bb.role||!bb.bank)return;brows[bb.bank]=brows[bb.bank]||{DR:[],CR:[],MARGIN:[],CHQ:[],NOTES:[]};(brows[bb.bank][bb.role]=brows[bb.bank][bb.role]||[]).push(c)});
+ const balAt=(c,k)=>k?(R.bal[k]?R.bal[k][c]||0:0):(R.endBal[c]||0);
+ const sumC=(cs,k)=>cs.reduce((a,c)=>a+balAt(c,k),0);
+ const sumO=cs=>cs.reduce((a,c)=>a+((R.openBal&&R.openBal[c])||0),0);
+ const bk=Object.keys(brows).sort((a,x)=>x.length-a.length);
+ const BT={O:0,MOV:0,E:0,MARGIN:0,CHQ:0,NOTES:0,NET:0};
+ const bankRowsHTML=bk.map(bn=>{
+  const r=brows[bn],m=(S.bankManual||{})[bn]||{};
+  const o=sumO(r.DR)+sumO(r.CR),dr=sumC(r.DR),cr=sumC(r.CR),e=dr+cr,mov=e-o,mg=sumC(r.MARGIN),ch=sumC(r.CHQ),nt=-sumC(r.NOTES)+(m.notes||0),n2=e+mg+ch-nt;
+  BT.O+=o;BT.MOV+=mov;BT.E+=e;BT.MARGIN+=mg;BT.CHQ+=ch;BT.NOTES+=nt;BT.NET+=n2;
+  return `<tr><td>${bn}</td><td class="num">${fmt(o)}</td><td class="num ${clsA(mov)}">${fmt(mov)}</td><td class="num">${fmt(e)}</td><td class="num">${fmt(mg)}</td><td class="num">${fmt(ch)}</td><td class="num">${fmt(nt)}</td><td class="num ${clsA(n2)}"><b>${fmt(n2)}</b></td><td class="c">${n2>=0?'لي عند البنك':'عليّ للبنك'}</td></tr>`;
+ }).join('');
+ const banksSection=bk.length?`<h2>خامساً — مركز البنوك (نهاية الفترة)</h2>
+ <table><thead><tr><th>البنك</th><th>رصيد أول الفترة</th><th>صافي حركة الفترة</th><th>رصيد آخر الفترة</th><th>التأمينات النقدية</th><th>شيكات تحصيل</th><th>كمبيالات دفع</th><th>صافي المركز</th><th>الحالة</th></tr></thead>
+ <tbody>${bankRowsHTML}</tbody>
+ <tfoot><tr><td>الإجمالي</td><td class="num">${fmt(BT.O)}</td><td class="num ${clsA(BT.MOV)}">${fmt(BT.MOV)}</td><td class="num">${fmt(BT.E)}</td><td class="num">${fmt(BT.MARGIN)}</td><td class="num">${fmt(BT.CHQ)}</td><td class="num">${fmt(BT.NOTES)}</td><td class="num ${clsA(BT.NET)}"><b>${fmt(BT.NET)}</b></td><td class="c">${BT.NET>=0?'صافي لي':'صافي عليّ'}</td></tr></tfoot></table>
+ <p class="note">صافي المركز البنكي الإجمالي ${BT.NET>=0?'لصالح الشركة':'مديونية على الشركة'} بمبلغ ${fmt(Math.abs(BT.NET))} ${cur} في نهاية الفترة.</p>`:`<h2>خامساً — مركز البنوك</h2><p class="hint">لا توجد بنوك محدَّدة بعد بشاشة "البنوك".</p>`;
+ const scaleTxt=S.settings.scale===1000?' (آلاف)':S.settings.scale===1000000?' (ملايين)':'';
+ const doc=`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>ملف مجلس الإدارة — ${co}</title><style>
+ body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;color:#1c2733;margin:28px;background:#fff}
+ h1{font-size:20px;color:#1f3a5f;margin:0 0 2px;border-bottom:3px solid #c9a227;padding-bottom:8px}
+ .sub{color:#5a6b7d;font-size:12px;margin:6px 0 18px;line-height:1.7}
+ h2{font-size:15px;color:#1f3a5f;margin:22px 0 8px}
+ table{border-collapse:collapse;width:100%;font-size:11.5px}
+ th{background:#1f3a5f;color:#fff;padding:7px 8px;font-weight:600;text-align:right}
+ td{border:1px solid #d7dee6;padding:6px 8px;vertical-align:top}
+ tr:nth-child(even) td{background:#f6f8fa}
+ .num{text-align:left;direction:ltr;font-variant-numeric:tabular-nums;white-space:nowrap}.c{text-align:center}
+ .ex{font-size:11px;color:#3a4a5c;line-height:1.6;max-width:280px}
+ .neg{color:#b3261e}.pos{color:#1a7f37}
+ tfoot td{background:#eef2f7!important;font-weight:700;border-top:2px solid #1f3a5f}
+ .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10.5px;background:#eef1f5;color:#444}
+ .badge.ok{background:#e6f4ea;color:#1a7f37}.badge.warn{background:#fff4d9;color:#8a6d1a}.badge.bad{background:#fbe9e7;color:#b3261e}
+ .hint{color:#8a97a6;font-size:12px}
+ .note{color:#5a6b7d;font-size:11px;margin-top:10px;line-height:1.7}
+ .sig{display:flex;gap:40px;margin-top:38px;font-size:12px}
+ .sig div{flex:1;text-align:center}.sig .line{border-top:1px solid #1c2733;margin-top:34px;padding-top:5px}
+ .noprint{position:fixed;top:12px;left:12px}
+ .noprint button{background:#1f3a5f;color:#fff;border:0;border-radius:8px;padding:9px 18px;font-size:14px;cursor:pointer;font-family:inherit}
+ @media print{.noprint{display:none}body{margin:8mm}h2{break-before:auto}table{break-inside:auto}tr{break-inside:avoid}}
+ @page{size:A4;margin:12mm}
+ </style></head><body>
+ <div class="noprint"><button onclick="window.print()">🖨 طباعة / حفظ PDF</button></div>
+ <h1>${co}</h1>
+ <div class="sub">ملف مجلس الإدارة — ملخص القوائم المالية والتحليل المالي (بالمجاميع)، مع شرح لكل رقم<br>
+ الفترة: ${R.per[0]} → ${R.per[R.per.length-1]} (${R.nMo} شهر) &nbsp;•&nbsp; فترة المقارنة: ${cmpLabel||'بدون مقارنة'} &nbsp;•&nbsp; الأرقام بـ${cur}${scaleTxt} &nbsp;•&nbsp; تاريخ الإصدار: ${today} &nbsp;•&nbsp; أُعدّ آلياً من محرك القوائم الختامية</div>
+
+ <h2>أولاً — قائمة الدخل (الإجماليات)</h2>
+ <table><thead><tr><th>البند</th><th>الفترة الحالية</th><th>فترة المقارنة</th><th>التغير</th><th>الشرح</th></tr></thead><tbody>
+ ${amtRow('صافي المبيعات',is.NETSALES,cm&&cm.IS.TOT.NETSALES)}
+ ${amtRow('مجمل الربح',is.GP,cm&&cm.IS.TOT.GP,is.NETSALES)}
+ ${amtRow('EBITDA',is.EBITDA,cm&&cm.IS.TOT.EBITDA,is.NETSALES)}
+ ${amtRow('EBIT',is.EBIT,cm&&cm.IS.TOT.EBIT,is.NETSALES)}
+ ${amtRow('الربح قبل الضريبة',is.EBT,cm&&cm.IS.TOT.EBT,is.NETSALES)}
+ ${amtRow('صافي الربح',is.NI,cm&&cm.IS.TOT.NI,is.NETSALES)}
+ </tbody></table>
+
+ <h2>ثانياً — المركز المالي (الإجماليات، نهاية الفترة)</h2>
+ <table><thead><tr><th>البند</th><th>الفترة الحالية</th><th>فترة المقارنة</th><th>التغير</th><th>الشرح</th></tr></thead><tbody>
+ ${amtRow('الأصول المتداولة',b.CA,cm&&cm.BSc.CA)}
+ ${amtRow('الأصول غير المتداولة',b.NCA,cm&&cm.BSc.NCA)}
+ ${amtRow('إجمالي الأصول',b.TA,cm&&cm.BSc.TA)}
+ ${amtRow('الالتزامات المتداولة',b.CL,cm&&cm.BSc.CL)}
+ ${amtRow('الالتزامات غير المتداولة',b.NCL,cm&&cm.BSc.NCL)}
+ ${amtRow('إجمالي الالتزامات',b.TL,cm&&cm.BSc.TL)}
+ ${amtRow('حقوق الملكية',b.EQ,cm&&cm.BSc.EQ)}
+ ${amtRow('رأس المال العامل (متداول − متداول)',b.WC,cm&&cm.BSc.WC)}
+ </tbody></table>
+
+ <h2>ثالثاً — التدفقات النقدية (الإجماليات)</h2>
+ <table><thead><tr><th>البند</th><th>الفترة الحالية</th><th>فترة المقارنة</th><th>التغير</th><th>الشرح</th></tr></thead><tbody>
+ ${amtRow('التدفق النقدي التشغيلي',cf.CFO,cm&&cm.CF.CFO)}
+ ${amtRow('التدفق النقدي الاستثماري',cf.CFI,cm&&cm.CF.CFI)}
+ ${amtRow('التدفق النقدي التمويلي',cf.CFF,cm&&cm.CF.CFF)}
+ ${amtRow('صافي التغيّر بالنقد',cf.NET,cm&&cm.CF.NET)}
+ ${amtRow('رصيد النقد أول الفترة',cf.CASH0,cm&&cm.CF.CASH0)}
+ ${amtRow('رصيد النقد آخر الفترة',cf.CASH1,cm&&cm.CF.CASH1)}
+ </tbody></table>
+
+ <h2>رابعاً — أهم النسب المالية</h2>
+ <table><thead><tr><th>المؤشر</th><th>الفترة الحالية</th><th>فترة المقارنة</th><th>التغير</th><th>الحالة</th><th>الشرح</th></tr></thead><tbody>
+ ${['GM','EBITDAM','NM','CR','QR','DSO','DIO','DPO','CCC','DE','ICR','ROA','ROE','Z'].map(ratRow).join('')}
+ </tbody></table>
+
+ ${banksSection}
+
+ <p class="note">ملاحظة منهجية: كل الأرقام أعلاه مُستخرجة آلياً من محرك القوائم الختامية حسب تصنيف الحسابات والفترة وفترة المقارنة المحدَّدتين أعلى الشاشة وقت إصدار هذا الملف. الأرقام الموضوعة بين قوسين تعني قيمة سالبة. عمود "الشرح" يوضّح الاتجاه والمقدار الفعليين فقط، دون افتراض أسباب تفصيلية غير متوفرة صراحة بالبيانات المحمَّلة.</p>
+ <div class="sig"><div><b>أعدّه</b><div class="line">التدقيق الداخلي</div></div><div><b>راجعه</b><div class="line">&nbsp;</div></div><div><b>اعتمده</b><div class="line">&nbsp;</div></div></div>
+ </body></html>`;
+ const blob=new Blob([doc],{type:'text/html'});window.open(URL.createObjectURL(blob),'_blank');
+}
 
 /* ---------- Tooltips & Voice ---------- */
 const TIPS={
