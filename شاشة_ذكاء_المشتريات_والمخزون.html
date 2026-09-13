@@ -1337,7 +1337,7 @@ function processAllDataHeavy(){
       const name = iName>=0 ? (r[iName]||'') : '';
       if(!name) itemNoNameCount++;
       state.itemsRaw[code] = { code, name: name || code };
-      if(!state.params[code]) state.params[code] = { supplier:'', leadTimeDays:'', moq:'', orderMultiple:1, shelfLifeDays:'', minRemainShelfLife:'', unitCost:'', serviceLevel:95, criticality:'Medium', leadTimeIsDefault:false, moqIsDefault:false };
+      if(!state.params[code]) state.params[code] = { supplier:'', leadTimeDays:'', moq:'', orderMultiple:'', shelfLifeDays:'', minRemainShelfLife:'', unitCost:'', serviceLevel:95, criticality:'Medium', leadTimeIsDefault:false, moqIsDefault:false, orderMultipleIsDefault:false };
     });
     noteImport('items','الأصناف', { count: seenItemCodes.size, issues: buildIssues([
       ['duplicate', itemDupCount, 'رمز صنف مكرر بنفس اللصقة (اعتُمد آخر ظهور له)'],
@@ -1479,12 +1479,15 @@ function processAllDataHeavy(){
       rows.forEach(r=>{
         const code = r[iCode]; if(!code){ paramsBlankCount++; return; }
         if(!state.itemsRaw[code]){ paramsUnknownItemCount++; paramsUnknownSamples.tryAdd(code); }
-        if(!state.params[code]) state.params[code] = { supplier:'', leadTimeDays:'', moq:'', orderMultiple:1, shelfLifeDays:'', minRemainShelfLife:'', unitCost:'', serviceLevel:95, criticality:'Medium', leadTimeIsDefault:false, moqIsDefault:false };
+        if(!state.params[code]) state.params[code] = { supplier:'', leadTimeDays:'', moq:'', orderMultiple:'', shelfLifeDays:'', minRemainShelfLife:'', unitCost:'', serviceLevel:95, criticality:'Medium', leadTimeIsDefault:false, moqIsDefault:false, orderMultipleIsDefault:false };
         const p = state.params[code];
         if(iSupplier>=0 && r[iSupplier]) p.supplier = r[iSupplier];
         if(iLT>=0 && r[iLT]!=='' && !isNaN(toNum(r[iLT])) && toNum(r[iLT])>0){ p.leadTimeDays = toNum(r[iLT]); p.leadTimeIsDefault=false; }
         if(iMOQ>=0 && r[iMOQ]!=='' && !isNaN(toNum(r[iMOQ]))){ p.moq = toNum(r[iMOQ]); p.moqIsDefault=false; }
-        if(iMult>=0 && r[iMult]!=='' && !isNaN(toNum(r[iMult])) && toNum(r[iMult])>0) p.orderMultiple = toNum(r[iMult]);
+        // مضاعف الطلب = 0 بمصدر SAP يُعتبَر NOT_AVAILABLE بالضبط متل الفاضي — ما منفترض
+        // 1 كقيمة مؤكَّدة (هالنقطة بالذات كانت مطلوبة صراحةً وتحقَّق فعلياً إنها 100٪ من
+        // بيانات المستخدم الحقيقية = 0.000)؛ نتركه فاضياً لحد ما يتأكَّد من مصدر حقيقي
+        if(iMult>=0 && r[iMult]!=='' && !isNaN(toNum(r[iMult])) && toNum(r[iMult])>0){ p.orderMultiple = toNum(r[iMult]); p.orderMultipleIsDefault=false; }
         if(iShelf>=0 && r[iShelf]!=='' && !isNaN(toNum(r[iShelf]))) p.shelfLifeDays = toNum(r[iShelf]);
         if(iMinShelf>=0 && r[iMinShelf]!=='' && !isNaN(toNum(r[iMinShelf]))) p.minRemainShelfLife = toNum(r[iMinShelf]);
         if(iCost>=0 && r[iCost]!=='' && !isNaN(toNum(r[iCost]))) p.unitCost = toNum(r[iCost]);
@@ -1710,7 +1713,7 @@ function renderParamsTable(){
       + '<td><input value="'+esc(p.supplier||'')+'" onchange="updateParam(\''+code+'\',\'supplier\',this.value)"></td>'
       + '<td><input type="number" value="'+(p.leadTimeDays??'')+'" title="'+(p.leadTimeIsDefault?'قيمة افتراضية عامة — غير مؤكَّدة':'')+'" style="'+(p.leadTimeIsDefault?'border-color:var(--gold);background:var(--gold-bg);':'')+'" onchange="updateParam(\''+code+'\',\'leadTimeDays\',this.value)"></td>'
       + '<td><input type="number" value="'+(p.moq??'')+'" title="'+(p.moqIsDefault?'قيمة افتراضية عامة — غير مؤكَّدة':'')+'" style="'+(p.moqIsDefault?'border-color:var(--gold);background:var(--gold-bg);':'')+'" onchange="updateParam(\''+code+'\',\'moq\',this.value)"></td>'
-      + '<td><input type="number" value="'+(p.orderMultiple??1)+'" onchange="updateParam(\''+code+'\',\'orderMultiple\',this.value)"></td>'
+      + '<td><input type="number" value="'+(p.orderMultiple??'')+'" title="'+(p.orderMultipleIsDefault?'قيمة افتراضية (1) — غير مؤكَّدة من المورد':'')+'" style="'+(p.orderMultipleIsDefault?'border-color:var(--gold);background:var(--gold-bg);':'')+'" onchange="updateParam(\''+code+'\',\'orderMultiple\',this.value)"></td>'
       + '<td><input type="number" value="'+(p.shelfLifeDays??'')+'" onchange="updateParam(\''+code+'\',\'shelfLifeDays\',this.value)"></td>'
       + '<td><input type="number" value="'+(p.minRemainShelfLife??'')+'" onchange="updateParam(\''+code+'\',\'minRemainShelfLife\',this.value)"></td>'
       + '<td><input type="number" value="'+(p.unitCost??'')+'" onchange="updateParam(\''+code+'\',\'unitCost\',this.value)"></td>'
@@ -1728,6 +1731,7 @@ function updateParam(code, field, value){
   state.params[code][field] = (field==='supplier'||field==='criticality') ? value : (value===''? '' : parseFloat(value));
   if(field==='leadTimeDays') state.params[code].leadTimeIsDefault = false;
   if(field==='moq') state.params[code].moqIsDefault = false;
+  if(field==='orderMultiple') state.params[code].orderMultipleIsDefault = false;
   runEngine();
   renderTower();
   renderDataHub();
@@ -1744,7 +1748,7 @@ function applyDefaults(){
     let touched = false;
     if(!isNaN(defLT) && (p.leadTimeDays===''||p.leadTimeDays==null)){ p.leadTimeDays = defLT; p.leadTimeIsDefault = true; touched=true; }
     if(!isNaN(defMOQ) && (p.moq===''||p.moq==null)){ p.moq = defMOQ; p.moqIsDefault = true; touched=true; }
-    if(!isNaN(defMult) && defMult>0 && (p.orderMultiple===''||p.orderMultiple==null)){ p.orderMultiple = defMult; touched=true; }
+    if(!isNaN(defMult) && defMult>0 && (p.orderMultiple===''||p.orderMultiple==null)){ p.orderMultiple = defMult; p.orderMultipleIsDefault = true; touched=true; }
     if(touched) count++;
   });
   const el = document.getElementById('defaultsMsg');
@@ -1842,14 +1846,14 @@ function buildReceiptSources(){
     (state.leadTimeRaw||[]).filter(r=>r.supplier).map(r=>({code:r.code, supplier:r.supplier, docEntry:r.docEntry||'', qty:r.qty}))
   );
 }
-function computeConsolidation(results){
-  const resultByCode = {};
-  results.forEach(r=>{ resultByCode[r.code]=r; });
+// ربط كل صنف بمورده — يعمل على مستوى الأكواد مباشرة (Object.keys(state.itemsRaw))
+// حتى يشتغل قبل بناء results بالكامل (تحتاجه دقة مدة التوريد المستنتَجة من المورد
+// وحقل r.supplier المحمي بالنتيجة النهائية، وكمان تجميع الموردين لاحقاً). نفضّل حقل
+// المورد الموثّق بجدول البارامترات (من SAP مباشرة عادةً)، ولا نلجأ لاستنتاجه من تكرار
+// الاستلامات إلا لو كان فاضياً. المطابقة بمفتاح مُطبَّع (Trim + Lowercase) حتى ما ينكسر
+// الربط بفرق بسيط بالكتابة بين المصدرين.
+function resolveSupplierMapping(){
   const receiptSources = buildReceiptSources();
-
-  // ربط الصنف بالمورد: نفضّل حقل المورد الموثّق بجدول البارامترات (من SAP مباشرة عادةً)،
-  // ولا نلجأ لاستنتاجه من تكرار الاستلامات إلا لو كان فاضياً. المطابقة بمفتاح مُطبَّع
-  // (Trim + Lowercase) حتى ما ينكسر الربط بفرق بسيط بالكتابة بين المصدرين.
   const itemSupplierFreq = {};
   const knownSupplierKeysFromReceipts = {};
   receiptSources.forEach(r=>{
@@ -1869,7 +1873,7 @@ function computeConsolidation(results){
     return false;
   }
   const itemSupplierKey = {}, itemSupplierDisplay = {}, itemSupplierRawCode = {}, supplierItems = {};
-  Object.keys(resultByCode).forEach(code=>{
+  Object.keys(state.itemsRaw).forEach(code=>{
     let display = (state.params[code]||{}).supplier || '';
     let nk = normSupplierKey(display);
     if(nk && !looksLikeRealSupplierValue(display, nk)){ display = ''; nk = ''; }
@@ -1891,6 +1895,12 @@ function computeConsolidation(results){
   state.itemSupplierKey = itemSupplierKey;
   state.itemSupplierDisplay = itemSupplierDisplay;
   state.itemSupplierRawCode = itemSupplierRawCode;
+  return { supplierItems, receiptSources };
+}
+function computeConsolidation(results, supplierItems, receiptSources){
+  const resultByCode = {};
+  results.forEach(r=>{ resultByCode[r.code]=r; });
+  const itemSupplierDisplay = state.itemSupplierDisplay;
 
   if(!receiptSources.length) return;
 
@@ -1923,7 +1933,7 @@ function computeConsolidation(results){
   });
 
   results.forEach(r=>{
-    const nk = itemSupplierKey[r.code];
+    const nk = state.itemSupplierKey[r.code];
     if(!nk || !(r.decision==='BUY_NOW'||r.decision==='BUY_SOON')) return;
     const typical = supplierTypical[nk];
     if(!typical) return;
@@ -2080,6 +2090,11 @@ function deriveLeadTimeFromOrders(){
 }
 function runEngine(){
   deriveLeadTimeFromOrders();
+  // ربط الموردين مبكراً (قبل بناء results) — لازم هيك حتى نقدر نستخدم itemSupplierKey
+  // بحساب مدة توريد مستنتَجة من نفس المورد لصنف ناقصة بياناته، وحتى نبني r.supplier
+  // بالنتيجة النهائية من القيمة المُتحقَّق منها مباشرة (بدل حقل خام ممكن يكون فيه وصف
+  // صنف غلط بدل اسم مورد فعلي)
+  const { supplierItems, receiptSources } = resolveSupplierMapping();
   const now = new Date(); now.setHours(0,0,0,0);
   const windowDays = state.demandWindowDays || 90;
   const windowStart = new Date(now.getTime() - windowDays*86400000);
@@ -2156,6 +2171,22 @@ function runEngine(){
     (ltByItem[r.code] = ltByItem[r.code] || []).push(d);
   });
 
+  // مدة توريد احتياطية مستنتَجة من نفس المورد — لصنف ما عنده لا مدة توريد فعلية (تاريخ
+  // شراء) ولا تعاقدية يدوية، لكن أصناف تانية مؤكَّدة من نفس المورد فعلاً عندها. أوثق من
+  // "افتراضي عام" (لأنه مرتبط بمورد فعلي)، لكن أقل ثقة من مدة الصنف نفسه المؤكَّدة —
+  // ولذلك نضلّ نعتبره غير موثوق لمخزون الأمان (نفس معاملة leadTimeIsDefault تماماً)
+  const supplierLtFallback = {};
+  Object.keys(supplierItems).forEach(nk=>{
+    const lts = supplierItems[nk].map(c=>{
+      const actual = ltByItem[c];
+      if(actual && actual.length>=3) return mean(actual);
+      const pp = state.params[c]||{};
+      if(!pp.leadTimeIsDefault && !isNaN(toNum(pp.leadTimeDays)) && toNum(pp.leadTimeDays)>0) return toNum(pp.leadTimeDays);
+      return null;
+    }).filter(v=>v!=null);
+    if(lts.length>=1) supplierLtFallback[nk] = { avg: mean(lts), sampleSize: lts.length };
+  });
+
   // آخر استلام فعلي لكل صنف — من بيانات استلام البضاعة GRPO (رقم 6) أو كويري
   // مدة التوريد (رقم 4) لو فيه تاريخ استلام لهالصنف، أيهما أحدث
   const lastReceiptByItem = {};
@@ -2216,7 +2247,10 @@ function runEngine(){
     // يُعتبر "بيانات ناقصة" مش "رصيد صفر حقيقي"، وإلا بيطلع BUY_NOW كاذب لأي صنف
     // ما انلصق له سطر مخزون أصلاً (مش نفس شي إنه فعلاً صفر بالمستودعات)
     if(!invByItem[code]) missing.push('المخزون الحالي');
-    if(p.leadTimeDays==='' || p.leadTimeDays==null || isNaN(p.leadTimeDays)) missing.push('Lead Time');
+    // فحص "Lead Time مفقود" انتقل لتحت (بعد حساب ltAvg الفعلي) — كان قبل هالإصلاح يفحص
+    // فقط الحقل التعاقدي اليدوي (p.leadTimeDays)، فكان يفرض REVIEW حتى لو الصنف عنده
+    // فعلياً مدة توريد حقيقية مشتقّة من تاريخ الشراء (أوثق مصدر أصلاً) — خلل حقيقي
+    // مكتشَف على بيانات SAP فعلية
     if(p.moq==='' || p.moq==null || isNaN(p.moq)) missing.push('MOQ');
     if(daysWithSalesData < 5) missing.push('تاريخ مبيعات كافٍ');
 
@@ -2228,18 +2262,30 @@ function runEngine(){
     const dAvg = dailyVals.length ? (dailyVals.reduce((a,b)=>a+b,0) / observedDays) : 0;
     const dStd = stdev(dailyVals.length ? dailyVals.concat(Array(Math.max(0,observedDays-dailyVals.length)).fill(0)) : [0]);
 
-    // مدة التوريد
+    // مدة التوريد — بالأولوية: (1) فعلي من تاريخ شراء حقيقي، (2) تعاقدي يدوي مؤكَّد،
+    // (3) مستنتَج من متوسط مدة توريد أصناف أخرى مؤكَّدة لنفس المورد، (4) افتراضي عام،
+    // (5) غير متوفر إطلاقاً
     const ltActual = ltByItem[code];
-    let ltAvg, ltStd, ltSource;
+    let ltAvg, ltStd, ltSource, leadTimeIsSupplierInferred = false;
     if(ltActual && ltActual.length>=3){
       ltAvg = mean(ltActual); ltStd = stdev(ltActual); ltSource='فعلي من تاريخ الشراء';
-    } else if(!isNaN(toNum(p.leadTimeDays))){
-      ltAvg = toNum(p.leadTimeDays);
-      if(p.leadTimeIsDefault){ ltStd = ltAvg*0.40; ltSource='⚠ افتراضي عام — غير مرتبط بمورد فعلي، يحتاج تأكيد'; }
-      else { ltStd = ltAvg*0.20; ltSource='تعاقدي يدوي + افتراض تذبذب 20٪'; }
+    } else if(!p.leadTimeIsDefault && !isNaN(toNum(p.leadTimeDays))){
+      ltAvg = toNum(p.leadTimeDays); ltStd = ltAvg*0.20; ltSource='تعاقدي يدوي + افتراض تذبذب 20٪';
     } else {
-      ltAvg = null; ltStd = null; ltSource='غير متوفر';
+      const nk = state.itemSupplierKey[code];
+      const fb = nk ? supplierLtFallback[nk] : null;
+      if(fb){
+        ltAvg = fb.avg; ltStd = ltAvg*0.40;
+        ltSource = 'مستنتج من متوسط مدة توريد '+fb.sampleSize+' صنف آخر مؤكَّد لنفس المورد — غير مؤكَّد لهالصنف تحديداً';
+        leadTimeIsSupplierInferred = true;
+      } else if(!isNaN(toNum(p.leadTimeDays))){
+        // p.leadTimeIsDefault=true بدون أي بديل أفضل (لا تاريخ شراء ولا مورد بأصناف مؤكَّدة)
+        ltAvg = toNum(p.leadTimeDays); ltStd = ltAvg*0.40; ltSource='⚠ افتراضي عام — غير مرتبط بمورد فعلي، يحتاج تأكيد';
+      } else {
+        ltAvg = null; ltStd = null; ltSource='غير متوفر';
+      }
     }
+    if(ltAvg==null) missing.push('Lead Time');
 
     // ============ محاكاة زمنية-مرحلية للمخزون (Time-Phased Inventory Simulation) ============
     // بدل معاملة كل البضاعة "بالطريق" كأنها متوفرة اليوم (الخلل الجوهري بالنسخة السابقة:
@@ -2260,7 +2306,7 @@ function runEngine(){
     const criticalityBoost = {High:1.15, Medium:1.0, Low:0.9}[p.criticality||'Medium'];
     // موثوقية مخزون الأمان: القيمة الإحصائية صالحة فقط لو مصدر مدة التوريد مش "افتراضي
     // عام" (غير مرتبط بمورد فعلي) — غير هيك التذبذب المفترض (40٪) رقم مخترع مش محسوب
-    const safetyStockReliable = ltAvg!=null && !p.leadTimeIsDefault;
+    const safetyStockReliable = ltAvg!=null && !p.leadTimeIsDefault && !leadTimeIsSupplierInferred;
     let safetyStock = null, rop = null, daysCover = null, stockoutDate = null, safetyBreachDate = null, stockoutDateNoPO = null, stockoutProb = null;
     let simAsIsArr = null, simNoPoArr = null;
     const SIM_DAYS = 730;
@@ -2478,11 +2524,15 @@ function runEngine(){
     )));
 
     return {
-      code, name: it.name, supplier: p.supplier||'—',
+      // r.supplier: القيمة المحمية المُتحقَّق منها (state.itemSupplierDisplay)، مش p.supplier
+      // الخام مباشرة — اكتُشف فعلياً على بيانات حقيقية إن p.supplier أحياناً معبّى بوصف
+      // صنف غلط بدل اسم مورد؛ هيك أي مكان بالتطبيق بيعرض r.supplier (مركز التحكم Tower،
+      // تقرير الأصناف، تصدير CSV) بيصير محمياً تلقائياً من نفس النقطة
+      code, name: it.name, supplier: state.itemSupplierDisplay[code] || 'مورد غير محدَّد',
       onHand: inv.onHand, onOrder: effectiveOnOrder, poLots, datedPoLots, warehouses: inv.warehouses,
       dAvg: Math.round(dAvg*100)/100, dStd: Math.round(dStd*100)/100,
       daysWithSalesData, demandTrend, demandMethod, seasonalityNote,
-      ltAvg, ltStd, ltSource, safetyStockReliable,
+      ltAvg, ltStd, ltSource, safetyStockReliable, leadTimeIsSupplierInferred,
       safetyStock: safetyStock!=null ? Math.round(safetyStock) : null,
       safetyStockZ: z, serviceLevel: p.serviceLevel||95,
       rop: rop!=null ? Math.round(rop) : null,
@@ -2502,7 +2552,13 @@ function runEngine(){
       decision, decisionLabel, decisionReason,
       priorityScore, confidence,
       unitCost: toNum(p.unitCost)||0, criticality: p.criticality||'Medium', uom: p.uom||'',
-      moq: toNum(p.moq), orderMultiple: toNum(p.orderMultiple)||1, shelfLifeDays: toNum(p.shelfLifeDays),
+      // orderMultipleIsDefault هون بمعنى أوسع من leadTimeIsDefault/moqIsDefault المشابهين:
+      // مش بس "المستخدم ضغط تطبيق افتراضي" — كمان "القيمة أصلاً غير مؤكَّدة من أي مصدر"
+      // (بدون ما نفرض REVIEW على الصنف كامل بسببها متل Lead Time/MOQ، لأن أثرها على
+      // الكمية النهائية أخف بكتير — تقريب فوق بس، مش قرار الشراء نفسه)
+      moq: toNum(p.moq), orderMultiple: toNum(p.orderMultiple)||1,
+      orderMultipleIsDefault: !!p.orderMultipleIsDefault || p.orderMultiple===''||p.orderMultiple==null||isNaN(toNum(p.orderMultiple)),
+      shelfLifeDays: toNum(p.shelfLifeDays),
       lastReceiptDate: lastReceipt ? lastReceipt.date : null,
       lastReceiptQty: lastReceipt ? lastReceipt.qty : null,
       priceHistory: priceHistoryByItem[code] || [],
@@ -2521,7 +2577,7 @@ function runEngine(){
     };
   });
 
-  computeConsolidation(results);
+  computeConsolidation(results, supplierItems, receiptSources);
   computeShipmentFeasibility(results);
   computeSupplierStats(results);
   applySupplierRelationshipOverrides(results);
@@ -2810,7 +2866,7 @@ function pccDetailHtml(r){
         + kv('مدة التوريد', r.ltAvg!=null?(Math.round(r.ltAvg)+' يوم'):'—')
         + kv('مصدر مدة التوريد', esc(r.ltSource||'—'))
         + kv('MOQ (الحد الأدنى)', r.moq||'—')
-        + kv('مضاعف الطلب', r.orderMultiple||1)
+        + kv('مضاعف الطلب', (r.orderMultiple||1)+(r.orderMultipleIsDefault?' (غير متوفر من المورد — افتراضي 1)':''))
         + kv('كلفة الوحدة', r.unitCost?(fmtPrice(r.unitCost)+' د.أ'):'N/A — السعر غير متوفر')
       + '</div>'
       + '<div class="pcc-detail-section"><h4>🧮 الكمية</h4>'
@@ -3121,7 +3177,7 @@ function pccSupplierViewHtml(filtered){
       +'<td class="num">'+qtyDisplay(r)+'</td>'
       +'<td class="num">'+(r.actualRequirement>0?fmtNum(r.actualRequirement):'—')+'</td>'
       +'<td class="num">'+(r.moq||'—')+'</td>'
-      +'<td class="num">'+(r.orderMultiple||1)+'</td>'
+      +'<td class="num">'+(r.orderMultiple||1)+(r.orderMultipleIsDefault?' <span title="غير متوفر من المورد — افتراضي" style="color:var(--gold);">؟</span>':'')+'</td>'
       +'<td class="num">'+(r.unitCost?fmtPrice(r.unitCost):'N/A')+'</td>'
       +'<td class="num">'+(r.unitCost?Math.round((r.recommendedQty||0)*r.unitCost).toLocaleString('en-US'):'N/A')+'</td>'
       +'<td class="num">'+(r.ltAvg!=null?Math.round(r.ltAvg)+'ي':'—')+'</td>'
@@ -4209,7 +4265,7 @@ function importItemsMaster(){
     // إضافة فقط — أصناف موجودة أصلاً (من الكويري رقم 1) ما بتتلمس ولا حتى لو الاسم مختلف
     if(state.itemsRaw[code]){ skipped++; return; }
     state.itemsRaw[code] = { code, name: iName>=0 ? (r[iName]||code) : code };
-    if(!state.params[code]) state.params[code] = { supplier:'', leadTimeDays:'', moq:'', orderMultiple:1, shelfLifeDays:'', minRemainShelfLife:'', unitCost:'', serviceLevel:95, criticality:'Medium', leadTimeIsDefault:false, moqIsDefault:false };
+    if(!state.params[code]) state.params[code] = { supplier:'', leadTimeDays:'', moq:'', orderMultiple:'', shelfLifeDays:'', minRemainShelfLife:'', unitCost:'', serviceLevel:95, criticality:'Medium', leadTimeIsDefault:false, moqIsDefault:false, orderMultipleIsDefault:false };
     count++;
   });
   msg.textContent = '✔ أُضيف '+count+' صنف جديد'+(skipped?(' — '+skipped+' موجود مسبقاً ما انلمس'):'');
@@ -4479,10 +4535,13 @@ async function pullStateFromCloud(){
       state.params = {};
       params.forEach(r=>{ state.params[r.item_code] = {
         supplier: r.supplier||'', leadTimeDays: r.lead_time_days ?? '', moq: r.moq ?? '',
-        orderMultiple: r.order_multiple ?? 1, shelfLifeDays: r.shelf_life_days ?? '',
+        // لا عمود سحابي لـorder_multiple_is_default حالياً (بدون إضافة جدول/عمود جديد
+        // بدون طلب صريح) — العلم بيرجع false افتراضياً بعد إعادة تحميل من السحابة، وبيتصحّح
+        // فوراً لو المستخدم ضغط "تطبيق على الفاضي بس" من جديد أو عدّل القيمة يدوياً
+        orderMultiple: r.order_multiple ?? '', shelfLifeDays: r.shelf_life_days ?? '',
         minRemainShelfLife: r.min_remain_shelf_life ?? '', unitCost: r.unit_cost ?? '',
         serviceLevel: r.service_level ?? 95, criticality: r.criticality || 'Medium',
-        leadTimeIsDefault: !!r.lead_time_is_default, moqIsDefault: !!r.moq_is_default
+        leadTimeIsDefault: !!r.lead_time_is_default, moqIsDefault: !!r.moq_is_default, orderMultipleIsDefault:false
       };});
     }
     if(inv.length) state.invRaw = inv.map(r=>({code:r.item_code, onHand:r.on_hand||0, onOrder:r.on_order||0, whs:r.whs||'', whsName:r.whs_name||''}));
