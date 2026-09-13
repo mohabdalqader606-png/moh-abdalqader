@@ -122,6 +122,11 @@
   .userbox{display:flex; align-items:center; gap:10px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.16); border-radius:10px; padding:8px 14px; font-size:12px;}
   .userbox .who b{display:block; font-size:12.5px;}
   .userbox .who span{color:#9FB0CC; font-size:11px;}
+  #unauthorizedView{max-width:420px; margin:60px auto; background:#fff; border:1px solid var(--line); border-radius:16px; padding:34px 32px; box-shadow:0 18px 44px -20px rgba(21,42,74,.35); text-align:center;}
+  #unauthorizedView h2{margin:0 0 10px; font-size:18px;}
+  #unauthorizedView.err h2{color:var(--crimson);}
+  #unauthorizedView.warn h2{color:var(--gold);}
+  #unauthorizedView p{font-size:12.5px; color:var(--ink-soft); line-height:1.8; margin:0 0 18px;}
 </style>
 </head>
 <body>
@@ -135,6 +140,12 @@
   <input type="password" id="loginPass" autocomplete="current-password" onkeydown="if(event.key==='Enter') doLogin()">
   <button class="btn-primary" id="loginBtn" onclick="doLogin()">دخول</button>
   <div class="status-msg" id="loginMsg" style="margin-top:10px;"></div>
+</div>
+
+<div id="unauthorizedView" style="display:none;">
+  <h2 id="uaTitle">🚫 لا تملك صلاحية الدخول</h2>
+  <p id="uaMsg">حسابك غير مخوَّل بالدخول على شاشة تحليل مخالفات عمر الذمة. راجع مدير الصلاحيات لمنحك صلاحية.</p>
+  <button class="btn-ghost" onclick="doLogout()">خروج</button>
 </div>
 
 <div id="appView" style="display:none;">
@@ -180,7 +191,112 @@
       </div>
       <details class="opt" open>
         <summary><span class="num" style="display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:6px;background:var(--navy);color:#fff;font-size:11.5px;font-family:var(--mono);margin-inline-end:4px;">1</span> كويري الفواتير + الأشهر (إلزامي)</summary>
-        <div class="hint" style="margin-top:8px;">الصق نتيجة الكويري الرئيسي (فاتورة، رصيد قبلها، سقف ائتماني، وأعمدة M0..M9plus).</div>
+        <div class="hint" style="margin-top:8px;">
+          شغّل هالكويري وألصق نتيجته تحت (يشمل كل فواتير الفترة — مش بس اللي راحت لموافقة):
+          <code class="block">/* SELECT I."DocDate" FROM OINV I WHERE I."DocDate" BETWEEN [%0] AND [%1] */
+SELECT
+    I."DocNum"                         AS "رقم الفاتورة",
+    I."DocDate"                        AS "تاريخ الفاتورة",
+    I."CardCode"                       AS "رمز العميل",
+    I."CardName"                       AS "اسم العميل",
+    I."DocTotal"                       AS "قيمة الفاتورة",
+    IFNULL(I."ExtraDays", IFNULL(TG."ExtraDays", 0)) AS "أيام السماح",
+    C."CreditLine"                     AS "السقف الائتماني",
+
+    IFNULL((
+        SELECT SUM(J1."Debit" - J1."Credit")
+        FROM JDT1 J1 INNER JOIN OJDT J0 ON J1."TransId" = J0."TransId"
+        WHERE J1."ShortName" = I."CardCode" AND J1."ShortName" &lt;&gt; J1."Account"
+          AND J0."RefDate" &lt;= I."DocDate" AND J1."TransId" &lt;&gt; I."TransId"
+    ), 0)                               AS "الرصيد قبل الفاتورة",
+
+    IFNULL((
+        SELECT SUM(K."CheckSum")
+        FROM RCT1 K INNER JOIN ORCT R ON K."DocNum" = R."DocEntry"
+        WHERE R."Canceled" = 'N' AND R."CardCode" = I."CardCode"
+          AND R."DocDate" &lt; I."DocDate" AND K."DueDate" &gt;= I."DocDate"
+    ), 0)                               AS "الشيكات المؤجلة",
+
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-0
+    ), 0)                                AS "M0 الشهر الحالي (حتى يوم قبل الفاتورة)",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-1
+    ), 0)                                AS "M1 شهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-2
+    ), 0)                                AS "M2 شهرين قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-3
+    ), 0)                                AS "M3 3 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-4
+    ), 0)                                AS "M4 4 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-5
+    ), 0)                                AS "M5 5 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-6
+    ), 0)                                AS "M6 6 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-7
+    ), 0)                                AS "M7 7 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(I."DocDate")*12+MONTH(I."DocDate")-8
+    ), 0)                                AS "M8 8 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=I."CardCode" AND X."DocDate" &lt; I."DocDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") &lt;= YEAR(I."DocDate")*12+MONTH(I."DocDate")-9
+    ), 0)                                AS "M9plus أقدم من 9 أشهر",
+
+    CASE
+        WHEN W."WddCode" IS NULL THEN 'لم تذهب للموافقة'
+        ELSE CASE W."Status"
+                WHEN 'Y' THEN 'Approved'
+                WHEN 'N' THEN 'Rejected'
+                WHEN 'W' THEN 'Waiting'
+                ELSE W."Status"
+             END
+    END                                 AS "حالة الموافقة"
+
+FROM "OINV" I
+LEFT JOIN "OCRD" C  ON I."CardCode" = C."CardCode"
+LEFT JOIN "OCTG" TG ON I."GroupNum" = TG."GroupNum"
+LEFT JOIN "OWDD" W  ON W."DocEntry" = I."DocEntry" AND W."ObjType" = '13'
+                    AND W."IsDraft" = 'N' AND W."WtmCode" = 14
+WHERE I."CANCELED" = 'N'
+  AND I."DocDate" BETWEEN '[%0]' AND '[%1]'
+ORDER BY I."CardCode", I."DocDate"</code>
+        </div>
         <textarea id="pasteArea" placeholder="الصق هنا نتيجة الكويري الرئيسي..."></textarea>
       </details>
 
@@ -222,17 +338,32 @@ ORDER BY R."CardCode", K."DueDate"</code>
         <button data-f="ok" onclick="setFilter('ok')">طبيعي ✓</button>
       </div>
       <input type="text" class="search" id="searchBox" placeholder="بحث برمز/اسم العميل..." oninput="renderList()">
+      <label style="display:flex; align-items:center; gap:5px; font-size:11.5px; color:var(--ink-soft);">من تاريخ الفاتورة
+        <input type="date" id="dateFromFilter" onchange="renderList()" style="border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12px;">
+      </label>
+      <label style="display:flex; align-items:center; gap:5px; font-size:11.5px; color:var(--ink-soft);">إلى
+        <input type="date" id="dateToFilter" onchange="renderList()" style="border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12px;">
+      </label>
+      <button class="btn-ghost btn-sm" onclick="document.getElementById('dateFromFilter').value=''; document.getElementById('dateToFilter').value=''; renderList();">تفريغ التاريخ</button>
       <div class="spacer"></div>
       <label style="display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--ink-soft); cursor:pointer;">
         <input type="checkbox" id="showHiddenChk" onchange="renderList()"> إظهار المخفي (<span id="hiddenCount">0</span>)
       </label>
-      <button class="print-btn" onclick="window.print()">🖨️ طباعة</button>
+      <div style="display:flex; gap:4px;">
+        <button class="print-btn" onclick="printFilteredList('all','كل الحالات')">🖨️ الكل</button>
+        <button class="print-btn" style="border-color:var(--crimson); color:var(--crimson);" onclick="printFilteredList('gap','ثغرات (مخالفة بدون موافقة)')">🖨️ الثغرات</button>
+        <button class="print-btn" style="border-color:var(--crimson); color:var(--crimson);" onclick="printFilteredList('warn','فيهم مخالفة')">🖨️ فيهم مخالفة</button>
+        <button class="print-btn" style="border-color:var(--gold); color:var(--gold);" onclick="printFilteredList('grace','ضمن السماحية')">🖨️ ضمن السماحية</button>
+        <button class="print-btn" style="border-color:#7A8599; color:#7A8599;" onclick="printFilteredList('immaterial','غير مؤثر مادياً')">🖨️ غير مؤثر مادياً</button>
+        <button class="print-btn" style="border-color:var(--teal); color:var(--teal);" onclick="printFilteredList('ok','طبيعي')">🖨️ طبيعي</button>
+      </div>
       <button class="btn-ghost btn-sm" style="border-color:var(--crimson); color:var(--crimson);" onclick="toggleViolationReport()">📄 تقرير مخالفات للإرسال</button>
       <button class="btn-ghost btn-sm" onclick="exportCsv()">تصدير CSV</button>
       <button class="btn-ghost btn-sm" onclick="expandAll()">فتح الكل</button>
       <button class="btn-ghost btn-sm" onclick="collapseAll()">طي الكل</button>
     </div>
 
+    <div id="approvalsPrintHeader" class="print-report-header" style="display:none;"></div>
     <div id="violationReportWrap" style="display:none; padding:0 24px 18px;"></div>
 
     <div class="list" id="listWrap">
@@ -244,7 +375,117 @@ ORDER BY R."CardCode", K."DueDate"</code>
     <div class="input-panel">
       <details class="opt" open>
         <summary><span class="num" style="display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:6px;background:var(--navy);color:#fff;font-size:11.5px;font-family:var(--mono);margin-inline-end:4px;">8</span> كويري عمر الذمة (رصيد JDT1 موثوق + آخر 12 شهر)</summary>
-        <div class="hint" style="margin-top:8px;">الرصيد ياخذ مباشرة من دفتر الأستاذ (نفس الطريقة المؤكدة رياضياً)، والشهر المستهدف يُحدَّد باستهلاك تنازلي بسيط على آخر ١٢ شهر — نفس منطق تبويب "مراجعة الموافقات" تماماً، بس على مستوى العميل الحالي كامل مو فاتورة لحالها.</div>
+        <div class="hint" style="margin-top:8px;">
+          الرصيد ياخذ مباشرة من دفتر الأستاذ (نفس الطريقة المؤكدة رياضياً)، والشهر المستهدف يُحدَّد باستهلاك تنازلي بسيط على آخر ١٢ شهر — نفس منطق تبويب "مراجعة الموافقات" تماماً، بس على مستوى العميل الحالي كامل مو فاتورة لحالها:
+          <code class="block">/* SELECT C."CardCode" FROM OCRD C WHERE C."CreateDate" &lt; [%0] */
+SELECT
+    C."CardCode"                       AS "رمز العميل",
+    C."CardName"                       AS "اسم العميل",
+    S."SlpName"                        AS "المندوب",
+    C."Phone1"                         AS "رقم الهاتف",
+    C."E_Mail"                         AS "البريد الإلكتروني",
+    C."CreditLine"                     AS "السقف الائتماني",
+    IFNULL(TG."ExtraDays", 0)          AS "أيام السماح",
+
+    IFNULL((
+        SELECT SUM(J1."Debit" - J1."Credit")
+        FROM JDT1 J1
+        WHERE J1."ShortName" = C."CardCode" AND J1."ShortName" &lt;&gt; J1."Account"
+          AND J1."RefDate" &lt;= '[%0]'
+    ), 0)                               AS "الرصيد حتى تاريخ اللقطة",
+
+    IFNULL((
+        SELECT SUM(K."CheckSum")
+        FROM RCT1 K INNER JOIN ORCT R ON K."DocNum" = R."DocEntry"
+        WHERE R."Canceled" = 'N' AND R."CardCode" = C."CardCode"
+          AND R."DocDate" &lt;= '[%0]' AND K."DueDate" &gt; '[%0]'
+    ), 0)                               AS "الشيكات المؤجلة",
+
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-0
+    ), 0)                                AS "M0 الشهر الحالي (حتى تاريخ اللقطة)",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-1
+    ), 0)                                AS "M1 شهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-2
+    ), 0)                                AS "M2 شهرين قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-3
+    ), 0)                                AS "M3 3 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-4
+    ), 0)                                AS "M4 4 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-5
+    ), 0)                                AS "M5 5 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-6
+    ), 0)                                AS "M6 6 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-7
+    ), 0)                                AS "M7 7 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-8
+    ), 0)                                AS "M8 8 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-9
+    ), 0)                                AS "M9 9 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-10
+    ), 0)                                AS "M10 10 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-11
+    ), 0)                                AS "M11 11 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" &lt;= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") &lt;= YEAR('[%0]')*12+MONTH('[%0]')-12
+    ), 0)                                AS "M12plus أقدم من 12 شهر"
+
+FROM "OCRD" C
+LEFT JOIN "OSLP" S  ON C."SlpCode" = S."SlpCode"
+LEFT JOIN "OCTG" TG ON C."GroupNum" = TG."GroupNum"
+WHERE C."CardType" = 'C'
+ORDER BY C."CardName"</code>
+        </div>
         <textarea id="agingPasteArea" placeholder="الصق هنا نتيجة كويري ٨..."></textarea>
       </details>
       <details class="opt">
@@ -285,6 +526,13 @@ ORDER BY R."CardCode", K."DueDate"</code>
         <option value="name">ترتيب حسب: اسم العميل</option>
       </select>
       <input type="text" class="search" id="agingSearchBox" placeholder="بحث برمز/اسم العميل أو المندوب..." oninput="renderAging()">
+      <label style="display:flex; align-items:center; gap:5px; font-size:11.5px; color:var(--ink-soft);">متأخر من (يوم)
+        <input type="number" id="agingDaysFrom" min="0" placeholder="مثلاً 30" onchange="renderAging()" style="width:70px; border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12px;">
+      </label>
+      <label style="display:flex; align-items:center; gap:5px; font-size:11.5px; color:var(--ink-soft);">إلى (يوم)
+        <input type="number" id="agingDaysTo" min="0" placeholder="مثلاً 90" onchange="renderAging()" style="width:70px; border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12px;">
+      </label>
+      <button class="btn-ghost btn-sm" onclick="document.getElementById('agingDaysFrom').value=''; document.getElementById('agingDaysTo').value=''; renderAging();">تفريغ المدة</button>
       <div class="spacer"></div>
       <button class="btn-primary btn-sm" onclick="generateReminders()">✉️ توليد رسائل تذكير للمحددين</button>
       <div style="display:flex; gap:4px;">
@@ -316,7 +564,83 @@ ORDER BY R."CardCode", K."DueDate"</code>
     <div class="input-panel">
       <details class="opt" open>
         <summary><span class="num" style="display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:6px;background:var(--navy);color:#fff;font-size:11.5px;font-family:var(--mono);margin-inline-end:4px;">9</span> كويري التحقق الدقيق لعميل واحد</summary>
-        <div class="hint" style="margin-top:8px;">شغّل كويري ٩ بعد ما تغيّر رمز العميل بالمكانين المعلّمين ⬅⬅⬅ داخل الكويري، والصق نتيجته هون. بيوريك كل حركة قبض/شيك/قيد يدوي وأي شهر مبيعات سدّدته بالضبط.</div>
+        <div class="hint" style="margin-top:8px;">
+          شغّل كويري ٩ بعد ما تغيّر رمز العميل بالمكانين المعلّمين ⬅⬅⬅ داخل الكويري، والصق نتيجته هون. بيوريك كل حركة قبض/شيك/قيد يدوي وأي شهر مبيعات سدّدته بالضبط:
+          <code class="block">/* SELECT T0."RefDate" FROM JDT1 T0 WHERE T0."RefDate" BETWEEN [%0] AND [%1] */
+-- كويري تحقق دقيق لعميل واحد فقط (بديل استخدام: غيّر رمز العميل بالسطر المعلّم أدناه)
+-- ياخذ القيود اليدوية والشيكات بعين الاعتبار فعلياً حسب ترتيبها الزمني الحقيقي
+SELECT
+    W."رقم القيد",
+    W."تاريخ الحركة",
+    W."نوع الحركة",
+    W."تصنيف الحركة",
+    W."الحساب المقابل",
+    W."مبلغ الحركة الكامل",
+    W."شهر الفواتير المخصص له",
+    W."المبلغ المخصص لهذا الشهر",
+    W."تاريخ نهاية شهر الفواتير",
+    W."تاريخ استحقاق الحركة (خام)",
+    DAYS_BETWEEN(W."تاريخ نهاية شهر الفواتير", W."تاريخ_للاحتساب") AS "عدد أيام التحصيل"
+FROM (
+    SELECT
+        PMT."TransId"        AS "رقم القيد",
+        PMT."RefDate"        AS "تاريخ الحركة",
+        PMT."TransType"      AS "نوع الحركة",
+        CASE
+            WHEN PMT."TransType" = '24' THEN 'قبض (نقد/شيك)'
+            WHEN PMT."ContraAct" LIKE 'V%' THEN 'مقاصة مع مورد'
+            ELSE 'تسوية / تعديل'
+        END AS "تصنيف الحركة",
+        PMT."ContraAct"      AS "الحساب المقابل",
+        PMT."Amount"         AS "مبلغ الحركة الكامل",
+        TO_VARCHAR(SM."SalesMonth", 'YYYY-MM') AS "شهر الفواتير المخصص له",
+        (CASE WHEN PMT."Amount" &gt;= 0 THEN 1 ELSE -1 END) *
+        GREATEST(
+            LEAST(GREATEST(PMT."PrevCumPayment", PMT."CumPayment"), SM."CumSales")
+            - GREATEST(LEAST(PMT."PrevCumPayment", PMT."CumPayment"), SM."PrevCumSales"),
+            0
+        ) AS "المبلغ المخصص لهذا الشهر",
+        LAST_DAY(SM."SalesMonth") AS "تاريخ نهاية شهر الفواتير",
+        PMT."DueDate" AS "تاريخ استحقاق الحركة (خام)",
+        CASE
+            WHEN PMT."TransType" = '24' AND PMT."DueDate" IS NOT NULL AND PMT."DueDate" &gt;= PMT."RefDate" THEN PMT."DueDate"
+            WHEN PMT."TransType" = '24' THEN PMT."RefDate"
+            ELSE NULL
+        END AS "تاريخ_للاحتساب"
+    FROM (
+        SELECT
+            X."TransId", X."Line_ID", X."RefDate", X."DueDate", X."TransType", X."ContraAct", X."Amount",
+            SUM(X."Amount") OVER (ORDER BY X."RefDate", X."TransId", X."Line_ID" ROWS UNBOUNDED PRECEDING) AS "CumPayment",
+            SUM(X."Amount") OVER (ORDER BY X."RefDate", X."TransId", X."Line_ID" ROWS UNBOUNDED PRECEDING) - X."Amount" AS "PrevCumPayment"
+        FROM (
+            SELECT T0."TransId", T0."Line_ID", T0."RefDate", T0."DueDate", T0."TransType", T0."ContraAct",
+                   (T0."Credit" - T0."Debit") AS "Amount"
+            FROM "KAYLANI_LIVE"."JDT1" T0
+            WHERE T0."ShortName" = 'C0001456'   -- ⬅⬅⬅ غيّر رمز العميل هون
+              AND T0."TransType" NOT IN ('13','14')
+        ) X
+    ) PMT
+    INNER JOIN (
+        SELECT
+            Y."SalesMonth", Y."NetSales",
+            SUM(Y."NetSales") OVER (ORDER BY Y."SalesMonth" ROWS UNBOUNDED PRECEDING) AS "CumSales",
+            SUM(Y."NetSales") OVER (ORDER BY Y."SalesMonth" ROWS UNBOUNDED PRECEDING) - Y."NetSales" AS "PrevCumSales"
+        FROM (
+            SELECT
+                TO_DATE(TO_VARCHAR(T0."RefDate", 'YYYY-MM') || '-01', 'YYYY-MM-DD') AS "SalesMonth",
+                SUM(T0."Debit" - T0."Credit") AS "NetSales"
+            FROM "KAYLANI_LIVE"."JDT1" T0
+            WHERE T0."ShortName" = 'C0001456'   -- ⬅⬅⬅ ونفس رمز العميل هون كمان
+              AND T0."TransType" IN ('13','14')
+            GROUP BY TO_DATE(TO_VARCHAR(T0."RefDate", 'YYYY-MM') || '-01', 'YYYY-MM-DD')
+        ) Y
+    ) SM
+    ON LEAST(PMT."PrevCumPayment", PMT."CumPayment") &lt; SM."CumSales"
+    AND GREATEST(PMT."PrevCumPayment", PMT."CumPayment") &gt; SM."PrevCumSales"
+) W
+WHERE W."المبلغ المخصص لهذا الشهر" &lt;&gt; 0
+ORDER BY W."تاريخ الحركة", W."شهر الفواتير المخصص له"</code>
+        </div>
         <textarea id="singlePasteArea" placeholder="الصق هنا نتيجة كويري ٩ لعميل واحد..."></textarea>
       </details>
       <div class="row-actions">
@@ -342,7 +666,113 @@ ORDER BY R."CardCode", K."DueDate"</code>
     <div class="input-panel">
       <details class="opt" open>
         <summary><span class="num" style="display:inline-flex;align-items:center;justify-content:center;width:21px;height:21px;border-radius:6px;background:var(--navy);color:#fff;font-size:11.5px;font-family:var(--mono);margin-inline-end:4px;">10</span> كويري التحصيل اليومي</summary>
-        <div class="hint" style="margin-top:8px;">لكل تحصيل (قبض نقدي/شيك) بفترة معينة، بيوريك رصيد العميل والأشهر قبل هالتحصيل، وبتحسب الشاشة هل انسدد <b>مبكر</b>، <b>حسب التعريف</b>، أو <b>متأخر</b> (وكم يوم).</div>
+        <div class="hint" style="margin-top:8px;">
+          لكل تحصيل (قبض نقدي/شيك) بفترة معينة، بيوريك رصيد العميل والأشهر قبل هالتحصيل، وبتحسب الشاشة هل انسدد <b>مبكر</b>، <b>حسب التعريف</b>، أو <b>متأخر</b> (وكم يوم):
+          <code class="block">/* SELECT T0."RefDate" FROM JDT1 T0 WHERE T0."RefDate" BETWEEN [%0] AND [%1] */
+SELECT
+    T0."TransId"                       AS "رقم القيد",
+    T0."RefDate"                       AS "تاريخ التحصيل",
+    T0."DueDate"                       AS "تاريخ استحقاق الشيك (إن وجد)",
+    T0."ShortName"                     AS "رمز العميل",
+    C."CardName"                       AS "اسم العميل",
+    S."SlpName"                        AS "المندوب",
+    (T0."Credit" - T0."Debit")         AS "قيمة التحصيل",
+    IFNULL(TG."ExtraDays", 0)          AS "أيام السماح",
+
+    IFNULL((
+        SELECT SUM(J1."Debit" - J1."Credit")
+        FROM JDT1 J1
+        WHERE J1."ShortName" = T0."ShortName" AND J1."ShortName" &lt;&gt; J1."Account"
+          AND J1."RefDate" &lt;= T0."RefDate" AND J1."TransId" &lt;&gt; T0."TransId"
+    ), 0)                               AS "الرصيد قبل هذا التحصيل",
+
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-0
+    ), 0)                                AS "M0 الشهر الحالي (حتى يوم قبل التحصيل)",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-1
+    ), 0)                                AS "M1 شهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-2
+    ), 0)                                AS "M2 شهرين قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-3
+    ), 0)                                AS "M3 3 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-4
+    ), 0)                                AS "M4 4 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-5
+    ), 0)                                AS "M5 5 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-6
+    ), 0)                                AS "M6 6 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-7
+    ), 0)                                AS "M7 7 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-8
+    ), 0)                                AS "M8 8 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-9
+    ), 0)                                AS "M9 9 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-10
+    ), 0)                                AS "M10 10 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-11
+    ), 0)                                AS "M11 11 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName" AND X."DocDate" &lt; T0."RefDate"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") &lt;= YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-12
+    ), 0)                                AS "M12plus أقدم من 12 شهر"
+
+FROM "JDT1" T0
+INNER JOIN "OCRD" C ON T0."ShortName" = C."CardCode" AND C."CardType"='C'
+LEFT JOIN "OSLP" S ON C."SlpCode" = S."SlpCode"
+LEFT JOIN "OCTG" TG ON C."GroupNum" = TG."GroupNum"
+WHERE T0."TransType" = '24'
+  AND T0."RefDate" BETWEEN '[%0]' AND '[%1]'
+ORDER BY T0."ShortName", T0."RefDate"</code>
+        </div>
         <textarea id="dailyPasteArea" placeholder="الصق هنا نتيجة كويري ١٠..."></textarea>
       </details>
       <div class="row-actions">
@@ -362,6 +792,13 @@ ORDER BY R."CardCode", K."DueDate"</code>
         <button data-f="early" onclick="setDailyFilter('early')">🔵 مبكر</button>
       </div>
       <input type="text" class="search" id="dailySearchBox" placeholder="بحث برمز/اسم العميل أو المندوب..." oninput="renderDaily()">
+      <label style="display:flex; align-items:center; gap:5px; font-size:11.5px; color:var(--ink-soft);">من تاريخ التحصيل
+        <input type="date" id="dailyDateFromFilter" onchange="renderDaily()" style="border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12px;">
+      </label>
+      <label style="display:flex; align-items:center; gap:5px; font-size:11.5px; color:var(--ink-soft);">إلى
+        <input type="date" id="dailyDateToFilter" onchange="renderDaily()" style="border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12px;">
+      </label>
+      <button class="btn-ghost btn-sm" onclick="document.getElementById('dailyDateFromFilter').value=''; document.getElementById('dailyDateToFilter').value=''; renderDaily();">تفريغ التاريخ</button>
       <div class="spacer"></div>
       <div style="display:flex; gap:4px;">
         <button class="print-btn" onclick="printFilteredDaily('all','كل التحصيلات')">🖨️ الكل</button>
@@ -696,15 +1133,30 @@ function pctCardsHtml(items){
 }
 
 function renderSummary(){
-  const total = INVOICES.length;
-  const warn = INVOICES.filter(r=>r.hasViolation).length;
-  const grace = INVOICES.filter(r=>!r.hasViolation && r.hasGrace).length;
-  const immaterial = INVOICES.filter(r=>!r.hasViolation && !r.hasGrace && r.hasImmaterial).length;
-  const creditWarn = INVOICES.filter(r=>r.creditFlag===true).length;
-  const gaps = INVOICES.filter(r=>{
+  const dateFromEl = document.getElementById('dateFromFilter');
+  const dateToEl = document.getElementById('dateToFilter');
+  const dateFrom = dateFromEl ? parseSapDate(dateFromEl.value) : null;
+  const dateTo = dateToEl ? parseSapDate(dateToEl.value) : null;
+  let invoices = INVOICES;
+  if(dateFrom || dateTo){
+    invoices = INVOICES.filter(r => {
+      if(!r.invoiceDate) return false;
+      if(dateFrom && r.invoiceDate < dateFrom) return false;
+      if(dateTo && r.invoiceDate > dateTo) return false;
+      return true;
+    });
+  }
+
+  const total = invoices.length;
+  const warn = invoices.filter(r=>r.hasViolation).length;
+  const grace = invoices.filter(r=>!r.hasViolation && r.hasGrace).length;
+  const immaterial = invoices.filter(r=>!r.hasViolation && !r.hasGrace && r.hasImmaterial).length;
+  const creditWarn = invoices.filter(r=>r.creditFlag===true).length;
+  const gaps = invoices.filter(r=>{
     const went = r.apprStatus && r.apprStatus.trim()!=='' && r.apprStatus.trim()!=='لم تذهب للموافقة';
     return r.hasViolation && !went;
   }).length;
+  const custCount = new Set(invoices.map(r=>r.cardCode)).size;
   const box = document.getElementById('summaryRow');
   box.style.display='grid';
   box.innerHTML = `
@@ -715,7 +1167,7 @@ function renderSummary(){
     <div class="card warn"><div class="lbl">فيها مخالفة عمر ذمة</div><div class="val">${warn}</div></div>
     <div class="card warn" style="border-color:var(--crimson);"><div class="lbl">🚨 مخالفة ولم تذهب للموافقة</div><div class="val">${gaps}</div></div>
     <div class="card warn"><div class="lbl">تجاوزت السقف الائتماني</div><div class="val">${creditWarn}</div></div>
-    <div class="card"><div class="lbl">عدد العملاء</div><div class="val">${CUSTOMERS.length}</div></div>
+    <div class="card"><div class="lbl">عدد العملاء</div><div class="val">${custCount}</div></div>
   `;
   const pctBox = document.getElementById('summaryPctRow');
   pctBox.style.display='grid';
@@ -730,6 +1182,39 @@ function renderSummary(){
 }
 
 function setFilter(f){ currentFilter=f; document.querySelectorAll('#filterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===f)); renderList(); }
+
+function printFilteredList(status, label){
+  const prevFilter = currentFilter;
+  currentFilter = status;
+  document.querySelectorAll('#filterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===status));
+  renderList();
+
+  // تقرير المخالفات الثابت (لو كان مفتوح) بيطبع مع أي فلتر لأنه مستقل تماماً — نخفيه مؤقتاً وقت الطباعة بس
+  const violationWrap = document.getElementById('violationReportWrap');
+  const violationWasVisible = violationWrap.style.display !== 'none';
+  violationWrap.style.display = 'none';
+
+  const custCount = document.querySelectorAll('#listWrap .cust').length;
+  const invCount = document.querySelectorAll('#listWrap .inv-block').length;
+  const header = document.getElementById('approvalsPrintHeader');
+  header.innerHTML = `
+    <div class="prh-title">مركز الكيلاني للأغذية — تقرير مراجعة موافقات الفواتير: ${label}</div>
+    <div class="prh-sub">تاريخ الطباعة: ${fmtDate(new Date())}</div>
+    <div class="prh-stats">
+      <div>عدد العملاء<b>${custCount}</b></div>
+      <div>عدد الفواتير<b>${invCount}</b></div>
+    </div>`;
+  header.style.display='block';
+
+  window.print();
+  setTimeout(()=>{
+    currentFilter = prevFilter;
+    document.querySelectorAll('#filterSeg button').forEach(b=>b.classList.toggle('active', b.dataset.f===prevFilter));
+    renderList();
+    header.style.display='none';
+    if(violationWasVisible) violationWrap.style.display='block';
+  }, 500);
+}
 
 function chunksTableHtml(r){
   if(r.chunkResults.length===0) return '<div style="font-size:11.5px;color:var(--ink-soft);padding:8px 0;">ما في تفاصيل استهلاك (تحقق من وجود بيانات الأشهر أو الرصيد=0).</div>';
@@ -767,15 +1252,37 @@ function chunksTableHtml(r){
 }
 
 function renderList(){
+  renderSummary();
   const wrap = document.getElementById('listWrap');
   const search = (document.getElementById('searchBox').value||'').trim().toLowerCase();
   const showHidden = document.getElementById('showHiddenChk').checked;
   document.getElementById('hiddenCount').textContent = HIDDEN.size;
 
+  const dateFrom = parseSapDate(document.getElementById('dateFromFilter').value);
+  const dateTo = parseSapDate(document.getElementById('dateToFilter').value);
+
   let list = CUSTOMERS.slice();
   if(!showHidden) list = list.filter(c => !HIDDEN.has('cust:'+c.cardCode));
+  if(dateFrom || dateTo){
+    list = list.map(c => {
+      const rows = c.rows.filter(r => {
+        if(!r.invoiceDate) return false;
+        if(dateFrom && r.invoiceDate < dateFrom) return false;
+        if(dateTo && r.invoiceDate > dateTo) return false;
+        return true;
+      });
+      let warnCount=0, graceCount=0, immaterialCount=0, gapCount=0;
+      rows.forEach(r => {
+        if(r.hasViolation) warnCount++;
+        else if(r.hasGrace) graceCount++;
+        else if(r.hasImmaterial) immaterialCount++;
+        if(r.hasGap) gapCount++;
+      });
+      return {...c, rows, warnCount, graceCount, immaterialCount, gapCount};
+    }).filter(c => c.rows.length>0);
+  }
   if(currentFilter==='gap') list = list.filter(c=>c.gapCount>0);
-  else if(currentFilter==='warn') list = list.filter(c=>c.warnCount>0);
+  else if(currentFilter==='warn') list = list.filter(c=>(c.warnCount-c.gapCount)>0);
   else if(currentFilter==='grace') list = list.filter(c=>c.warnCount===0 && c.graceCount>0);
   else if(currentFilter==='immaterial') list = list.filter(c=>c.warnCount===0 && c.graceCount===0 && c.immaterialCount>0);
   else if(currentFilter==='ok') list = list.filter(c=>c.warnCount===0 && c.graceCount===0 && c.immaterialCount===0);
@@ -787,8 +1294,10 @@ function renderList(){
   wrap.innerHTML = list.map((c,ci)=>{
     const cid = 'c_'+ci;
     const custHidden = HIDDEN.has('cust:'+c.cardCode);
+    const pureWarn = c.warnCount - c.gapCount;
     const gapBadge = c.gapCount>0 ? `<span class="pill" style="background:var(--crimson);color:#fff;">🚨 ${c.gapCount} ثغرة</span>` : '';
-    const badge = c.warnCount>0 ? `<span class="pill warn">⚠ ${c.warnCount} مخالفة</span>`
+    const badge = pureWarn>0 ? `<span class="pill warn">⚠ ${pureWarn} مخالفة</span>`
+                : c.warnCount>0 ? ''
                 : c.graceCount>0 ? `<span class="pill" style="background:var(--gold-bg);color:var(--gold);">◐ ${c.graceCount} ضمن السماحية</span>`
                 : c.immaterialCount>0 ? `<span class="pill" style="background:#E6E9EE;color:#5B667A;">◌ ${c.immaterialCount} غير مؤثر مادياً</span>`
                 : `<span class="pill ok">✓ طبيعي بالكامل</span>`;
@@ -1194,8 +1703,15 @@ function renderAging(){
   const wrap = document.getElementById('agingTableWrap');
   const search = (document.getElementById('agingSearchBox').value||'').trim().toLowerCase();
   const sortMode = document.getElementById('agingSortSel').value;
+  const daysFromVal = document.getElementById('agingDaysFrom').value;
+  const daysToVal = document.getElementById('agingDaysTo').value;
   let rows = AGING_ROWS.slice();
 
+  if(daysFromVal!=='' || daysToVal!==''){
+    const minD = daysFromVal!=='' ? parseFloat(daysFromVal) : -Infinity;
+    const maxD = daysToVal!=='' ? parseFloat(daysToVal) : Infinity;
+    rows = rows.filter(r => (r.status==='overdue' || r.status==='immaterial') && r.daysDiff>=minD && r.daysDiff<=maxD);
+  }
   if(agingFilter!=='all') rows = rows.filter(r=>r.status===agingFilter);
   if(search) rows = rows.filter(r =>
     (r.cardCode||'').toLowerCase().includes(search) ||
@@ -1708,7 +2224,11 @@ function sortDailyByColumn(key){
 function renderDaily(){
   const wrap = document.getElementById('dailyTableWrap');
   const search = (document.getElementById('dailySearchBox').value||'').trim().toLowerCase();
+  const dateFrom = parseSapDate(document.getElementById('dailyDateFromFilter').value);
+  const dateTo = parseSapDate(document.getElementById('dailyDateToFilter').value);
   let rows = DAILY_ROWS.slice();
+  if(dateFrom) rows = rows.filter(r=>r.collectDate && r.collectDate>=dateFrom);
+  if(dateTo) rows = rows.filter(r=>r.collectDate && r.collectDate<=dateTo);
   if(dailyFilter!=='all') rows = rows.filter(r=>r.status===dailyFilter);
   if(search) rows = rows.filter(r =>
     (r.cardCode||'').toLowerCase().includes(search) ||
@@ -1983,6 +2503,16 @@ async function doLogin(){
   await onSignedIn(data.user);
 }
 async function doLogout(){ await sb.auth.signOut(); location.reload(); }
+function showUnauthorized(kind, title, msg){
+  document.getElementById('loginView').style.display = 'none';
+  document.getElementById('appView').style.display = 'none';
+  document.getElementById('userbox').style.display = 'none';
+  const box = document.getElementById('unauthorizedView');
+  box.className = kind;
+  document.getElementById('uaTitle').textContent = title;
+  document.getElementById('uaMsg').textContent = msg;
+  box.style.display = 'block';
+}
 async function onSignedIn(user){
   curUser = user;
   const {data:prof} = await sb.from('profiles').select('*').eq('id', user.id).single();
@@ -1992,12 +2522,30 @@ async function onSignedIn(user){
     authMsg('هذا الحساب ما إله صلاحية الدخول على هاي الشاشة — تواصل مع المدير.', false);
     return;
   }
-  roleEdit = ['admin','editor'].includes(curProfile.role);
-  isAdmin = curProfile.role === 'admin';
-  const roleAr = {admin:'مدير', editor:'مدخل بيانات', viewer:'مطالع'}[curProfile.role] || curProfile.role;
+
+  // صلاحية هذه الشاشة تحديداً (user_screen_permissions) — طبقة إضافية فوق allowed_apps الموجودة
+  const {data:permRow, error:permErr} = await sb.from('user_screen_permissions')
+    .select('permission').eq('user_id', user.id).eq('screen_id', 'debt-aging').maybeSingle();
+
+  if(permErr){
+    showUnauthorized('warn', '⚠️ تعذّر التحقق من صلاحيتك',
+      'حصل خطأ تقني أثناء التحقق من صلاحيتك على هذه الشاشة (مشكلة اتصال بالسيرفر). حدّث الصفحة وحاول مجدداً، وإذا تكرر راجع مدير الصلاحيات.');
+    return;
+  }
+  const screenPerm = permRow ? permRow.permission : null; // null = NONE (لا صف)
+  if(!screenPerm){
+    showUnauthorized('err', '🚫 لا تملك صلاحية الدخول',
+      'حسابك غير مخوَّل بالدخول على شاشة تحليل مخالفات عمر الذمة. راجع مدير الصلاحيات لمنحك صلاحية (VIEW/INPUT/ADMIN) من شاشة إدارة المستخدمين والصلاحيات.');
+    return;
+  }
+
+  roleEdit = screenPerm === 'INPUT' || screenPerm === 'ADMIN';
+  isAdmin = screenPerm === 'ADMIN';
+  const roleAr = {ADMIN:'مدير', INPUT:'مدخل بيانات', VIEW:'مطالع'}[screenPerm] || screenPerm;
   document.getElementById('uName').textContent = curProfile.full_name || user.email;
-  document.getElementById('uRole').textContent = user.email + ' · ' + roleAr;
+  document.getElementById('uRole').textContent = user.email + ' · ' + roleAr + (roleEdit ? '' : ' · 👁 مطالعة فقط');
   document.getElementById('userbox').style.display = 'flex';
+  document.getElementById('unauthorizedView').style.display = 'none';
   document.getElementById('loginView').style.display = 'none';
   document.getElementById('appView').style.display = 'block';
   await pullStateFromCloud();
