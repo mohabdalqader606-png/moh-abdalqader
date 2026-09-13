@@ -1,0 +1,1405 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>المشتريات الخارجية الذكية — مركز قرار الشراء | الكيلاني للأغذية</title>
+<!--
+  هذه الشاشة تعمل بالكامل من طرف المتصفح: لا اتصال مباشر بقاعدة بيانات SAP.
+  البيانات تُرفع يدوياً من "مركز البيانات" (نتيجة كويريهات SAP B1 HANA الجاهزة بالشاشة،
+  تُنسخ من أداة الاستعلام أو تُصدَّر CSV/TSV ثم تُرفع كملف أو تُلصق مباشرة).
+  التخزين محلي بالمتصفح عبر IndexedDB (قاعدة procurement_intel):
+  كل مصدر بيانات بجدول (Object Store) مستقل، بدون أي بيانات فعلية مضمّنة داخل هذا الملف.
+  البيانات التاريخية (2022-2025) تُقفل كـ Historical Baseline بعد أول استيراد ناجح؛
+  أي استيراد لاحق لنفس الفترة أو لـ2026 يُعامَل كتحديث تزايدي (Incremental) بالاعتماد على
+  المفتاح الفريد لكل مستند (DocEntry/DocNum أو ما يعادله) لمنع التكرار — وليس إعادة بناء كامل.
+-->
+<style>
+  :root{
+    --navy:#152A4A; --navy-deep:#0E1E36; --paper:#F4F6F9; --card:#FFFFFF; --line:#E1E6EE;
+    --ink:#1B2536; --ink-soft:#5B667A; --ink-faint:#8894A8;
+    --gold:#8A6416; --gold-bg:#FCEFD6;
+    --teal:#1F7A6C; --teal-bg:#E7F5F1;
+    --crimson:#B23A34; --crimson-bg:#FCEBEA;
+    --violet:#5B4B9E; --violet-bg:#ECE8F7;
+    --slate:#5B667A; --slate-bg:#EEF1F5;
+    --mono:'IBM Plex Mono','Consolas',monospace; --disp:'Segoe UI',Tahoma,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--disp);}
+  body{padding-bottom:60px;}
+  a{color:inherit;}
+  ::-webkit-scrollbar{width:10px;height:10px;}
+  ::-webkit-scrollbar-thumb{background:#C7D0DE;border-radius:6px;}
+
+  /* ===== Topbar ===== */
+  header.topbar{background:linear-gradient(135deg,var(--navy-deep),var(--navy) 70%); color:#fff; padding:20px 28px 0; position:relative; overflow:hidden;}
+  header.topbar::after{content:"";position:absolute;inset:0;background:repeating-linear-gradient(90deg, rgba(255,255,255,.035) 0 1px, transparent 1px 46px); pointer-events:none;}
+  .topbar-inner{position:relative; display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:14px; padding-bottom:16px;}
+  .eyebrow{font-size:11.5px; letter-spacing:.08em; color:#9FB0CC; margin-bottom:5px; font-weight:600;}
+  h1{margin:0; font-size:21px; font-weight:700;}
+  .sub{color:#B8C4DA; font-size:12px; margin-top:5px; max-width:620px; line-height:1.7;}
+  .topbar-stats{display:flex; gap:22px; flex-wrap:wrap;}
+  .topbar-stats div{text-align:center;}
+  .topbar-stats b{display:block; font-family:var(--mono); font-size:19px;}
+  .topbar-stats span{font-size:10px; color:#B8C4DA;}
+
+  /* ===== Nav (هرمية العرض) ===== */
+  nav.mainnav{position:relative; display:flex; gap:2px; overflow-x:auto; padding-top:2px;}
+  nav.mainnav button{background:rgba(255,255,255,.06); color:#C7D3E8; border:none; border-bottom:3px solid transparent; padding:11px 16px; font-family:var(--disp); font-size:12.5px; font-weight:600; cursor:pointer; white-space:nowrap; display:flex; align-items:center; gap:7px; border-radius:8px 8px 0 0;}
+  nav.mainnav button:hover{background:rgba(255,255,255,.12); color:#fff;}
+  nav.mainnav button.active{background:var(--paper); color:var(--navy); border-bottom-color:var(--gold);}
+  nav.mainnav button .cnt{background:rgba(255,255,255,.15); border-radius:10px; padding:1px 7px; font-size:10px; font-family:var(--mono);}
+  nav.mainnav button.active .cnt{background:var(--crimson-bg); color:var(--crimson);}
+  nav.mainnav button.crit .cnt{background:var(--crimson); color:#fff;}
+
+  main{max-width:1520px; margin:0 auto; padding:0 22px 40px;}
+  .view{display:none;}
+  .view.active{display:block;}
+  section.panel{background:var(--card); border:1px solid var(--line); border-radius:14px; margin-top:18px; box-shadow:0 10px 30px -20px rgba(21,42,74,.2); position:relative;}
+  section.panel > .panel-head{padding:16px 22px; border-bottom:1px solid var(--line); display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px;}
+  section.panel > .panel-head h2{margin:0; font-size:14.5px; display:flex; align-items:center; gap:8px;}
+  section.panel > .panel-head .hint{font-size:11.5px; color:var(--ink-soft); margin-top:3px;}
+
+  /* ===== Global filter bar ===== */
+  .filterbar{display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:12px 22px; background:#FAFBFD; border-bottom:1px solid var(--line); border-radius:14px 14px 0 0;}
+  .filterbar .fld{display:flex; flex-direction:column; gap:2px;}
+  .filterbar label{font-size:9.5px; color:var(--ink-faint); font-weight:700;}
+  .filterbar select,.filterbar input{border:1.3px solid var(--line); border-radius:7px; padding:5px 8px; font-size:11.5px; font-family:var(--disp); background:#fff; min-width:108px;}
+  .filterbar input[type=date]{font-family:var(--mono);}
+  .filterbar .spacer{flex:1;}
+
+  button{font-family:var(--disp); font-size:12.5px; font-weight:600; cursor:pointer; border-radius:9px; padding:8px 15px; border:none; transition:.15s;}
+  .btn-primary{background:var(--navy); color:#fff;}
+  .btn-primary:hover{background:var(--navy-deep);}
+  .btn-gold{background:var(--gold); color:#fff;}
+  .btn-teal{background:var(--teal); color:#fff;}
+  .btn-danger{background:var(--crimson); color:#fff;}
+  .btn-ghost{background:#fff; color:var(--navy); border:1.5px solid var(--line);}
+  .btn-ghost:hover{border-color:var(--navy);}
+  .btn-sm{padding:5px 11px; font-size:11px; border-radius:7px;}
+  .btn-xs{padding:3px 8px; font-size:10px; border-radius:6px;}
+  button:disabled{opacity:.45; cursor:not-allowed;}
+  .status-msg{font-size:11.5px; color:var(--ink-soft);}
+  .status-msg.err{color:var(--crimson);} .status-msg.ok{color:var(--teal);}
+
+  /* ===== KPI strip ===== */
+  .kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(148px,1fr)); gap:12px; padding:18px 22px;}
+  .kpi{background:#FAFBFD; border:1px solid var(--line); border-radius:12px; padding:13px 15px; cursor:pointer;}
+  .kpi:hover{border-color:var(--navy);}
+  .kpi .lbl{font-size:10.5px; color:var(--ink-soft); margin-bottom:6px;}
+  .kpi .val{font-family:var(--mono); font-size:22px; font-weight:700; color:var(--navy);}
+  .kpi .sub2{font-size:10px; color:var(--ink-faint); margin-top:3px;}
+  .kpi.crit .val{color:var(--crimson);} .kpi.warn .val{color:var(--gold);} .kpi.ok .val{color:var(--teal);} .kpi.info .val{color:var(--violet);}
+
+  /* ===== Badges ===== */
+  .badge{display:inline-flex; align-items:center; gap:5px; padding:3px 10px; border-radius:20px; font-size:10.5px; font-weight:700; white-space:nowrap;}
+  .badge.ok{background:var(--teal-bg); color:var(--teal);}
+  .badge.crit{background:var(--crimson-bg); color:var(--crimson);}
+  .badge.warn{background:var(--gold-bg); color:var(--gold);}
+  .badge.gray{background:var(--slate-bg); color:var(--slate);}
+  .badge.info{background:var(--violet-bg); color:var(--violet);}
+
+  /* ===== Tables ===== */
+  .tbl-scroll{overflow:auto; max-height:72vh; border:1px solid var(--line); border-radius:10px; margin:0 22px 18px;}
+  table.datatbl{width:100%; border-collapse:collapse; font-size:11.5px;}
+  table.datatbl th{background:#EEF2F8; color:var(--navy); text-align:right; padding:7px 9px; font-weight:700; font-size:10.5px; white-space:nowrap; border-bottom:1.5px solid var(--line); position:sticky; top:0; z-index:2;}
+  table.datatbl td{padding:6px 9px; border-bottom:1px solid var(--line); white-space:nowrap;}
+  table.datatbl tbody tr:hover{background:#FAFBFD;}
+  table.datatbl .num{font-family:var(--mono); text-align:left; direction:ltr;}
+  table.datatbl .freeze{position:sticky; z-index:1; box-shadow:1px 0 0 var(--line); background:#fff;}
+  table.datatbl th.freeze{z-index:3; background:#EEF2F8;}
+  table.datatbl tbody tr:hover td.freeze{background:#FAFBFD;}
+  .sortable-th{cursor:pointer; user-select:none;}
+  .sortable-th .sort-ic{display:inline-block; width:10px; opacity:.5; font-size:9px;}
+  .sortable-th.sorted .sort-ic{opacity:1; color:var(--gold);}
+  .qty-click{color:var(--navy); font-weight:700; text-decoration:underline dotted; cursor:pointer;}
+  .qty-click:hover{color:var(--gold);}
+  .qty-click.zero{color:var(--ink-faint); text-decoration:none; cursor:default; font-weight:400;}
+
+  /* ===== Reason / explainability chain ===== */
+  .reason-list{list-style:none; margin:8px 0 0; padding:0; display:flex; flex-direction:column; gap:6px;}
+  .reason-list li{background:#fff; border:1px solid var(--line); border-radius:8px; padding:8px 12px; font-size:11.5px; display:flex; justify-content:space-between; gap:10px;}
+  .reason-list li b{color:var(--navy);}
+  .reason-list li span.v{font-family:var(--mono); direction:ltr;}
+  .why-chips{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
+  .why-chip{background:var(--slate-bg); border:1px solid var(--line); border-radius:20px; padding:4px 11px; font-size:10.5px; color:var(--ink);}
+
+  /* ===== Modal / Drawer ===== */
+  .overlay{position:fixed; inset:0; background:rgba(14,30,54,.55); display:none; align-items:stretch; justify-content:flex-end; z-index:50;}
+  .overlay.open{display:flex;}
+  .drawer{background:#fff; width:min(880px,96vw); height:100%; overflow:auto; box-shadow:-14px 0 40px -12px rgba(0,0,0,.35); animation:slidein .18s ease;}
+  @keyframes slidein{from{transform:translateX(-24px); opacity:0;} to{transform:translateX(0); opacity:1;}}
+  .drawer-head{position:sticky; top:0; background:var(--navy); color:#fff; padding:16px 22px; display:flex; justify-content:space-between; align-items:center; z-index:2;}
+  .drawer-head h3{margin:0; font-size:15px;}
+  .drawer-head button{background:rgba(255,255,255,.12); color:#fff; border-radius:8px;}
+  .drawer-body{padding:18px 22px 40px;}
+  .modal-sm{max-width:560px; margin:auto;}
+  .overlay.center{justify-content:center; align-items:center;}
+  .overlay.center .drawer{width:min(560px,92vw); height:auto; max-height:88vh; border-radius:14px;}
+
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  .grid3{display:grid; grid-template-columns:repeat(3,1fr); gap:14px;}
+  @media (max-width:720px){.grid2,.grid3{grid-template-columns:1fr;}}
+  .stat-box{background:#FAFBFD; border:1px solid var(--line); border-radius:10px; padding:12px 14px;}
+  .stat-box .lbl{font-size:10.5px; color:var(--ink-soft); margin-bottom:4px;}
+  .stat-box .val{font-family:var(--mono); font-weight:700; font-size:16px; color:var(--navy);}
+
+  /* ===== Data Center ===== */
+  .dc-source-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:14px; padding:18px 22px;}
+  .dc-card{border:1px solid var(--line); border-radius:12px; padding:14px 16px; background:#fff; display:flex; flex-direction:column; gap:8px;}
+  .dc-card-head{display:flex; align-items:center; justify-content:space-between; gap:8px;}
+  .dc-card-title{font-weight:700; font-size:13px; color:var(--navy);}
+  .dc-card-stats{display:flex; flex-wrap:wrap; gap:10px; font-size:10.5px; color:var(--ink-soft);}
+  .dc-card-stats b{color:var(--ink); font-family:var(--mono);}
+  .dc-card-actions{display:flex; gap:7px; flex-wrap:wrap; margin-top:2px;}
+  .dc-score-box{display:flex; align-items:center; gap:14px; background:linear-gradient(135deg,#F8FAFD,#EEF2F8); border:1px solid var(--line); border-radius:14px; padding:16px 20px; margin:18px 22px 0;}
+  .dc-score-num{width:70px; height:70px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-family:var(--mono); font-size:20px; font-weight:700; color:#fff; background:var(--navy); flex-shrink:0;}
+  .dc-score-box.ok .dc-score-num{background:var(--teal);}
+  .dc-score-box.warn .dc-score-num{background:var(--gold);}
+  .dc-score-box.crit .dc-score-num{background:var(--crimson);}
+  textarea.pastebox{width:100%; min-height:90px; resize:vertical; border:1.5px dashed #C4CEDD; border-radius:10px; background:#FAFBFD; padding:11px; font-family:var(--mono); font-size:11px; color:var(--ink); direction:ltr; text-align:left;}
+  textarea.pastebox:focus{outline:none; border-color:var(--navy); background:#fff;}
+  details.sqlbox summary{cursor:pointer; font-size:11.5px; color:var(--navy); font-weight:600; padding:3px 0;}
+  code.sql{direction:ltr; display:block; background:#0E1E36; color:#CFE0FF; padding:12px 14px; border-radius:8px; margin-top:6px; font-size:10.8px; white-space:pre-wrap; font-family:var(--mono); line-height:1.6; overflow:auto; max-height:320px;}
+
+  /* ===== Tabs (sub-views inside a panel, e.g. Recommendation Center) ===== */
+  .subtabs{display:flex; gap:6px; padding:12px 22px 0; flex-wrap:wrap;}
+  .subtabs button{background:#fff; color:var(--ink-soft); border:1.3px solid var(--line); border-radius:9px 9px 0 0; padding:8px 14px; font-size:11.5px; border-bottom:none;}
+  .subtabs button.active{background:var(--navy); color:#fff; border-color:var(--navy);}
+
+  /* ===== Toast ===== */
+  #toastHost{position:fixed; bottom:18px; left:18px; z-index:100; display:flex; flex-direction:column; gap:8px;}
+  .toast{background:var(--navy); color:#fff; padding:11px 18px; border-radius:9px; font-size:12.5px; box-shadow:0 8px 24px -8px rgba(0,0,0,.4); max-width:360px;}
+  .toast.err{background:var(--crimson);} .toast.ok{background:var(--teal);}
+
+  /* ===== Print ===== */
+  @media print{
+    header.topbar, nav.mainnav, .filterbar, .dc-card-actions, .subtabs, button, .no-print{display:none !important;}
+    body{background:#fff; padding:0;}
+    main{max-width:none; padding:0; margin:0;}
+    section.panel{border:none; box-shadow:none; margin:0;}
+    .tbl-scroll{max-height:none; overflow:visible; border:none;}
+    .printhead{display:block !important; padding:0 0 12px; border-bottom:2px solid #152A4A; margin-bottom:14px;}
+  }
+  .printhead{display:none;}
+  .printhead h2{margin:0 0 4px; font-size:16px; color:#152A4A;}
+  .printhead .meta{font-size:11px; color:#555; display:flex; gap:18px; flex-wrap:wrap;}
+
+  [hidden]{display:none !important;}
+  .empty-state{padding:40px 20px; text-align:center; color:var(--ink-faint); font-size:12.5px;}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div>
+      <div class="eyebrow">مركز الكيلاني للأغذية · نظام دعم القرار</div>
+      <h1>المشتريات الخارجية الذكية</h1>
+      <div class="sub">لا يخبرك ماذا حدث فقط — يخبرك ماذا تطلب الآن، بكم، من أي مورد، ولماذا.</div>
+    </div>
+    <div class="topbar-stats" id="topbarStats">
+      <div><b id="statOrderNow">—</b><span>اطلب الآن</span></div>
+      <div><b id="statOrderSoon">—</b><span>اطلب قريباً</span></div>
+      <div><b id="statStockoutRisk">—</b><span>خطر انقطاع</span></div>
+      <div><b id="statDataHealth">—</b><span>صحة البيانات</span></div>
+    </div>
+  </div>
+  <nav class="mainnav" id="mainNav">
+    <button data-view="decisions" class="active">🎯 القرارات</button>
+    <button data-view="risks">⚠️ المخاطر</button>
+    <button data-view="plan">📦 خطة الشراء</button>
+    <button data-view="demand">📈 تحليل الطلب</button>
+    <button data-view="suppliers">🏭 تحليل الموردين</button>
+    <button data-view="items">🔍 تفاصيل الأصناف</button>
+    <button data-view="datacenter">🗄️ مركز البيانات</button>
+  </nav>
+</header>
+
+<main>
+
+  <!-- ============ فلاتر عامة (تؤثر على كل الشاشات) ============ -->
+  <section class="panel" style="margin-top:16px;">
+    <div class="filterbar" id="globalFilterBar"></div>
+  </section>
+
+  <!-- ============ 1) القرارات ============ -->
+  <section class="view active" id="view-decisions" data-view="decisions"></section>
+
+  <!-- ============ 2) المخاطر ============ -->
+  <section class="view" id="view-risks" data-view="risks"></section>
+
+  <!-- ============ 3) خطة الشراء ============ -->
+  <section class="view" id="view-plan" data-view="plan"></section>
+
+  <!-- ============ 4) تحليل الطلب ============ -->
+  <section class="view" id="view-demand" data-view="demand"></section>
+
+  <!-- ============ 5) تحليل الموردين ============ -->
+  <section class="view" id="view-suppliers" data-view="suppliers"></section>
+
+  <!-- ============ 6) تفاصيل الأصناف ============ -->
+  <section class="view" id="view-items" data-view="items"></section>
+
+  <!-- ============ 7) مركز البيانات ============ -->
+  <section class="view" id="view-datacenter" data-view="datacenter"></section>
+
+</main>
+
+<!-- ============ Overlays: Drill-down / Item Detail / Supplier Detail / Explainability ============ -->
+<div class="overlay" id="drawerOverlay" onclick="if(event.target===this) closeDrawer()">
+  <div class="drawer" id="drawerBox"></div>
+</div>
+<div class="overlay center" id="modalOverlay" onclick="if(event.target===this) closeModal()">
+  <div class="drawer modal-sm" id="modalBox"></div>
+</div>
+
+<div id="toastHost"></div>
+
+<script>
+'use strict';
+/* ==========================================================================================
+   0) CONFIG — كل الثوابت وقواعد العمل بمكان واحد (Business Rules ثابتة، وليست موزّعة بالكود)
+   ========================================================================================== */
+const CONFIG = {
+  dbName: 'kfc_foreign_procurement_v1',
+  dbVersion: 1,
+
+  // قواعد المستودعات الخاصة (ثابتة حسب طلب المستخدم — قسم 9)
+  warehouseRules: {
+    '004': { label:'تالف/معطوب', excludeFromAvailable:true, includeInSalesDemand:false },
+    '100': { label:'تالف/معطوب', excludeFromAvailable:true, includeInSalesDemand:false },
+    '006': { label:'تالف/معطوب', excludeFromAvailable:true, includeInSalesDemand:false },
+    '011': { label:'مبيعات عسكرية (المؤسسة الاستهلاكية العسكرية)', excludeFromAvailable:true, includeInSalesDemand:true },
+    '003': { label:'عينات مُصدَرة للعملاء', excludeFromAvailable:true, includeInSalesDemand:false },
+    '005': { label:'فروقات جرد', excludeFromAvailable:true, includeInSalesDemand:false },
+    '008': { label:'فروقات استلام', excludeFromAvailable:true, includeInSalesDemand:false },
+  },
+
+  // إعدادات قابلة للتعديل من "مركز البيانات ▸ إعدادات المحرك"
+  tunable: {
+    expiryNearDays: 30,        // "قريب الانتهاء" خلال كم يوم
+    expiryMidDays: 90,         // "متوسط الخطورة" خلال كم يوم
+    quotationWeight: 0.30,     // وزن عروض الأسعار (Potential Demand) بحساب الطلب — 0 تجاهل، 1 معاملتها كمؤكدة
+    outlierLowRatio: 0.35,     // شهر أقل من (الوسيط × هذه النسبة) = مرشّح لانقطاع/شذوذ
+    outlierHighRatio: 2.60,    // شهر أعلى من (الوسيط × هذه النسبة) = مرشّح لطلب استثنائي/تخزين عميل
+    defaultLeadTimeDays: 30,   // Lead Time افتراضي إذا لم يتوفر بجدول الموردين
+    serviceBufferDays: 7,      // أيام أمان تُضاف فوق مدة التوريد بحساب نقطة إعادة الطلب
+    minCoverageDaysCritical: 7,
+    minCoverageDaysSoon: 21,
+  },
+
+  // فترات تاريخية = Baseline مقفلة بعد أول استيراد ناجح (قسم 2)
+  historicalYears: [2022, 2023, 2024, 2025],
+  currentYear: 2026,
+
+  version: '1.0.0',
+};
+
+/* ==========================================================================================
+   1) DATA SOURCES — مصدر واحد لكل نوع بيانات: الأعمدة + مفتاح التكرار + كويري SAP HANA المقترح
+   ========================================================================================== */
+const DATA_SOURCES = {
+
+  salesInvoices: {
+    label: 'فواتير المبيعات (Sales Invoices)',
+    store: 'salesInvoices',
+    keyFields: ['DocEntry','LineNum'],
+    dateField: 'DocDate',
+    columns: [
+      {key:'DocEntry', label:'DocEntry', aliases:['رقم المستند','DocEntry'], type:'text', required:true},
+      {key:'DocNum', label:'رقم الفاتورة', aliases:['DocNum','رقم الفاتورة'], type:'text', required:false},
+      {key:'LineNum', label:'رقم السطر', aliases:['LineNum','رقم السطر'], type:'text', required:true},
+      {key:'DocDate', label:'التاريخ', aliases:['التاريخ','DocDate'], type:'date', required:true},
+      {key:'ItemCode', label:'رمز الصنف', aliases:['رمز الصنف','ItemCode'], type:'text', required:true},
+      {key:'ItemName', label:'اسم الصنف', aliases:['اسم الصنف','ItemName','Dscription'], type:'text', required:false},
+      {key:'Quantity', label:'الكمية', aliases:['الكمية','Quantity'], type:'number', required:true},
+      {key:'WhsCode', label:'المستودع', aliases:['المستودع','WhsCode'], type:'text', required:false},
+      {key:'CardCode', label:'رمز العميل', aliases:['رمز العميل','CardCode'], type:'text', required:false},
+      {key:'CardName', label:'اسم العميل', aliases:['العميل','CardName'], type:'text', required:false},
+      {key:'SlpName', label:'مندوب المبيعات', aliases:['مندوب المبيعات','SlpName'], type:'text', required:false},
+      {key:'LineTotal', label:'المبلغ', aliases:['المبلغ','LineTotal'], type:'number', required:false},
+      {key:'Canceled', label:'ملغى؟', aliases:['ملغى','Canceled'], type:'text', required:false},
+    ],
+    sql: `-- فواتير المبيعات (بعد استبعاد المُلغى بمستوى المستند) — أساس صافي المبيعات مع طرح المرتجعات لاحقاً
+SELECT
+  T0."DocEntry"                       AS "DocEntry",
+  T0."DocNum"                         AS "DocNum",
+  T1."LineNum"                        AS "LineNum",
+  T0."DocDate"                        AS "التاريخ",
+  T1."ItemCode"                       AS "رمز الصنف",
+  T1."Dscription"                     AS "اسم الصنف",
+  T1."Quantity"                       AS "الكمية",
+  T1."WhsCode"                        AS "المستودع",
+  T0."CardCode"                       AS "رمز العميل",
+  T0."CardName"                       AS "العميل",
+  T0."SlpCode"                        AS "SlpCode",
+  T1."LineTotal"                      AS "المبلغ",
+  T0."Canceled"                       AS "ملغى"
+FROM OINV T0
+INNER JOIN INV1 T1 ON T0."DocEntry" = T1."DocEntry"
+WHERE T0."DocDate" BETWEEN '[%0]' AND '[%1]'
+  AND T0."Canceled" = 'N'
+ORDER BY T1."ItemCode", T0."DocDate"`,
+    sqlNote: 'استُبعد Canceled=\'Y\' لتجنّب احتساب الفاتورة الملغاة كمبيعات. تحقّق من قيمة العلم بنسختكم (Y/N) — بعض الإصدارات تستخدم قيمة مختلفة.',
+  },
+
+  salesReturns: {
+    label: 'مرتجعات المبيعات / إشعارات دائن (Credit Notes / Returns)',
+    store: 'salesReturns',
+    keyFields: ['DocEntry','LineNum'],
+    dateField: 'DocDate',
+    columns: [
+      {key:'DocEntry', label:'DocEntry', aliases:['رقم المستند','DocEntry'], type:'text', required:true},
+      {key:'LineNum', label:'رقم السطر', aliases:['LineNum','رقم السطر'], type:'text', required:true},
+      {key:'DocDate', label:'التاريخ', aliases:['التاريخ','DocDate'], type:'date', required:true},
+      {key:'ItemCode', label:'رمز الصنف', aliases:['رمز الصنف','ItemCode'], type:'text', required:true},
+      {key:'Quantity', label:'الكمية', aliases:['الكمية','Quantity'], type:'number', required:true},
+      {key:'WhsCode', label:'المستودع', aliases:['المستودع','WhsCode'], type:'text', required:false},
+      {key:'CardCode', label:'رمز العميل', aliases:['رمز العميل','CardCode'], type:'text', required:false},
+      {key:'CardName', label:'اسم العميل', aliases:['العميل','CardName'], type:'text', required:false},
+      {key:'LineTotal', label:'المبلغ', aliases:['المبلغ','LineTotal'], type:'number', required:false},
+      {key:'Canceled', label:'ملغى؟', aliases:['ملغى','Canceled'], type:'text', required:false},
+    ],
+    sql: `-- مرتجعات المبيعات / إشعارات دائن — تُطرح من الفواتير لحساب صافي المبيعات
+SELECT
+  T0."DocEntry" AS "DocEntry", T1."LineNum" AS "LineNum", T0."DocDate" AS "التاريخ",
+  T1."ItemCode" AS "رمز الصنف", T1."Quantity" AS "الكمية", T1."WhsCode" AS "المستودع",
+  T0."CardCode" AS "رمز العميل", T0."CardName" AS "العميل", T1."LineTotal" AS "المبلغ",
+  T0."Canceled" AS "ملغى"
+FROM ORIN T0
+INNER JOIN RIN1 T1 ON T0."DocEntry" = T1."DocEntry"
+WHERE T0."DocDate" BETWEEN '[%0]' AND '[%1]'
+  AND T0."Canceled" = 'N'
+ORDER BY T1."ItemCode", T0."DocDate"`,
+    sqlNote: 'مستند إشعار دائن ملغى (Canceled=Y) لا يُحتسب مرتجعاً. مرتجع تم إلغاؤه لاحقاً لا يُعامل كمبيعات إضافية — هو ببساطة يخرج من حساب المرتجعات.',
+  },
+
+  purchaseInvoices: {
+    label: 'فواتير المشتريات (AP Invoices — نمط الشراء التاريخي)',
+    store: 'purchaseInvoices',
+    keyFields: ['DocEntry','LineNum'],
+    dateField: 'DocDate',
+    columns: [
+      {key:'DocEntry', label:'DocEntry', aliases:['رقم المستند','DocEntry'], type:'text', required:true},
+      {key:'DocNum', label:'رقم الفاتورة', aliases:['DocNum'], type:'text', required:false},
+      {key:'LineNum', label:'رقم السطر', aliases:['LineNum','رقم السطر'], type:'text', required:true},
+      {key:'DocDate', label:'تاريخ الاستلام', aliases:['التاريخ','تاريخ الاستلام','DocDate'], type:'date', required:true},
+      {key:'ItemCode', label:'رمز الصنف', aliases:['رمز الصنف','ItemCode'], type:'text', required:true},
+      {key:'SupplierCode', label:'رمز المورد', aliases:['رمز المورد','CardCode'], type:'text', required:true},
+      {key:'SupplierName', label:'اسم المورد', aliases:['المورد','CardName'], type:'text', required:false},
+      {key:'Quantity', label:'الكمية', aliases:['الكمية','Quantity'], type:'number', required:true},
+      {key:'Price', label:'السعر', aliases:['السعر','Price'], type:'number', required:false},
+      {key:'WhsCode', label:'المستودع', aliases:['المستودع','WhsCode'], type:'text', required:false},
+      {key:'BaseEntry', label:'مستند الأصل (GRPO)', aliases:['BaseEntry'], type:'text', required:false},
+    ],
+    sql: `-- فواتير المشتريات — تُستخدم لبناء نمط الشراء التاريخي الفعلي لكل صنف+مورد (min/max/median)
+SELECT
+  T0."DocEntry" AS "DocEntry", T0."DocNum" AS "DocNum", T1."LineNum" AS "LineNum",
+  T0."DocDate" AS "تاريخ الاستلام", T1."ItemCode" AS "رمز الصنف",
+  T0."CardCode" AS "رمز المورد", T0."CardName" AS "المورد",
+  T1."Quantity" AS "الكمية", T1."Price" AS "السعر", T1."WhsCode" AS "المستودع",
+  T1."BaseEntry" AS "BaseEntry"
+FROM OPCH T0
+INNER JOIN PCH1 T1 ON T0."DocEntry" = T1."DocEntry"
+WHERE T0."DocDate" BETWEEN '[%0]' AND '[%1]'
+  AND T0."Canceled" = 'N'
+ORDER BY T1."ItemCode", T0."DocDate"`,
+    sqlNote: 'هذه فواتير مشتريات فعلية (وصلت واعتُمدت)، وهي أساس "نمط الشراء التاريخي" بقسم 12 — ليست نفس PO المفتوحة.',
+  },
+
+  purchaseOrders: {
+    label: 'أوامر الشراء المفتوحة (Purchase Orders)',
+    store: 'purchaseOrders',
+    keyFields: ['DocEntry','LineNum'],
+    dateField: 'DocDate',
+    columns: [
+      {key:'DocEntry', label:'DocEntry', aliases:['رقم المستند','DocEntry'], type:'text', required:true},
+      {key:'DocNum', label:'رقم الأمر', aliases:['DocNum'], type:'text', required:false},
+      {key:'LineNum', label:'رقم السطر', aliases:['LineNum'], type:'text', required:true},
+      {key:'DocDate', label:'تاريخ الأمر', aliases:['تاريخ الأمر','DocDate'], type:'date', required:true},
+      {key:'DueDate', label:'تاريخ التسليم المتوقع', aliases:['تاريخ التسليم','DueDate','ShipDate'], type:'date', required:false},
+      {key:'ItemCode', label:'رمز الصنف', aliases:['رمز الصنف','ItemCode'], type:'text', required:true},
+      {key:'SupplierCode', label:'رمز المورد', aliases:['رمز المورد','CardCode'], type:'text', required:true},
+      {key:'SupplierName', label:'اسم المورد', aliases:['المورد','CardName'], type:'text', required:false},
+      {key:'Quantity', label:'الكمية المطلوبة', aliases:['الكمية','Quantity'], type:'number', required:true},
+      {key:'OpenQty', label:'الكمية المتبقية', aliases:['المتبقي','OpenQty'], type:'number', required:false},
+      {key:'DocStatus', label:'حالة المستند', aliases:['الحالة','DocStatus'], type:'text', required:false},
+    ],
+    sql: `-- أوامر الشراء المفتوحة (Open) — أساس "البضاعة قيد الطلب / بالطريق"
+SELECT
+  T0."DocEntry" AS "DocEntry", T0."DocNum" AS "DocNum", T1."LineNum" AS "LineNum",
+  T0."DocDate" AS "تاريخ الأمر", T1."ShipDate" AS "تاريخ التسليم", T1."ItemCode" AS "رمز الصنف",
+  T0."CardCode" AS "رمز المورد", T0."CardName" AS "المورد",
+  T1."Quantity" AS "الكمية", T1."OpenQty" AS "المتبقي", T0."DocStatus" AS "الحالة"
+FROM OPOR T0
+INNER JOIN POR1 T1 ON T0."DocEntry" = T1."DocEntry"
+WHERE T0."DocStatus" = 'O' AND T1."OpenQty" > 0
+ORDER BY T1."ItemCode", T1."ShipDate"`,
+    sqlNote: 'تحقّق من اسم حقل تاريخ التسليم بسطر أمر الشراء (ShipDate) — قد يختلف حسب التخصيص. سطر بلا تسليم فعلي ماضٍ يُعرض "Past Due Delivery" وليس مفقوداً تلقائياً (قسم 16).',
+  },
+
+  goodsReceipts: {
+    label: 'محاضر الاستلام (Goods Receipt PO)',
+    store: 'goodsReceipts',
+    keyFields: ['DocEntry','LineNum'],
+    dateField: 'DocDate',
+    columns: [
+      {key:'DocEntry', label:'DocEntry', aliases:['رقم المستند','DocEntry'], type:'text', required:true},
+      {key:'LineNum', label:'رقم السطر', aliases:['LineNum'], type:'text', required:true},
+      {key:'DocDate', label:'تاريخ الاستلام', aliases:['تاريخ الاستلام','DocDate'], type:'date', required:true},
+      {key:'ItemCode', label:'رمز الصنف', aliases:['رمز الصنف','ItemCode'], type:'text', required:true},
+      {key:'SupplierCode', label:'رمز المورد', aliases:['رمز المورد','CardCode'], type:'text', required:false},
+      {key:'Quantity', label:'الكمية المستلمة', aliases:['الكمية','Quantity'], type:'number', required:true},
+      {key:'WhsCode', label:'المستودع', aliases:['المستودع','WhsCode'], type:'text', required:false},
+      {key:'BaseEntry', label:'مرجع أمر الشراء', aliases:['BaseEntry'], type:'text', required:false},
+      {key:'BaseLine', label:'مرجع سطر أمر الشراء', aliases:['BaseLine'], type:'text', required:false},
+    ],
+    sql: `-- محاضر الاستلام — تُطابق مع أوامر الشراء عبر BaseEntry/BaseLine لحساب Ordered/Received/Remaining
+SELECT
+  T0."DocEntry" AS "DocEntry", T1."LineNum" AS "LineNum", T0."DocDate" AS "تاريخ الاستلام",
+  T1."ItemCode" AS "رمز الصنف", T0."CardCode" AS "رمز المورد",
+  T1."Quantity" AS "الكمية", T1."WhsCode" AS "المستودع",
+  T1."BaseEntry" AS "مرجع أمر الشراء", T1."BaseLine" AS "مرجع سطر أمر الشراء"
+FROM OPDN T0
+INNER JOIN PDN1 T1 ON T0."DocEntry" = T1."DocEntry"
+WHERE T0."DocDate" BETWEEN '[%0]' AND '[%1]'
+  AND T0."Canceled" = 'N'
+ORDER BY T1."ItemCode", T0."DocDate"`,
+    sqlNote: 'يدعم استلامات متعددة لنفس أمر الشراء / نفس الشحنة (قسم 17) عبر تجميع كل الأسطر المرتبطة بنفس BaseEntry.',
+  },
+
+  salesOrders: {
+    label: 'أوامر البيع المفتوحة (Sales Orders — طلب مؤكد Committed Demand)',
+    store: 'salesOrders',
+    keyFields: ['DocEntry','LineNum'],
+    dateField: 'DocDate',
+    columns: [
+      {key:'DocEntry', label:'DocEntry', aliases:['رقم المستند','DocEntry'], type:'text', required:true},
+      {key:'LineNum', label:'رقم السطر', aliases:['LineNum'], type:'text', required:true},
+      {key:'DocDate', label:'التاريخ', aliases:['التاريخ','DocDate'], type:'date', required:true},
+      {key:'ItemCode', label:'رمز الصنف', aliases:['رمز الصنف','ItemCode'], type:'text', required:true},
+      {key:'CardCode', label:'رمز العميل', aliases:['رمز العميل','CardCode'], type:'text', required:false},
+      {key:'Quantity', label:'الكمية', aliases:['الكمية','Quantity'], type:'number', required:true},
+      {key:'OpenQty', label:'الكمية المفتوحة', aliases:['المفتوح','OpenQty'], type:'number', required:true},
+      {key:'DocStatus', label:'الحالة', aliases:['الحالة','DocStatus'], type:'text', required:false},
+    ],
+    sql: `-- أوامر البيع المفتوحة — طلب مؤكد يُضاف لحساب الاحتياج (Committed Demand، قسم 14)
+SELECT
+  T0."DocEntry" AS "DocEntry", T1."LineNum" AS "LineNum", T0."DocDate" AS "التاريخ",
+  T1."ItemCode" AS "رمز الصنف", T0."CardCode" AS "رمز العميل",
+  T1."Quantity" AS "الكمية", T1."OpenQty" AS "المفتوح", T0."DocStatus" AS "الحالة"
+FROM ORDR T0
+INNER JOIN RDR1 T1 ON T0."DocEntry" = T1."DocEntry"
+WHERE T0."DocStatus" = 'O' AND T1."OpenQty" > 0
+ORDER BY T1."ItemCode", T0."DocDate"`,
+    sqlNote: '',
+  },
+
+  salesQuotations: {
+    label: 'عروض أسعار المبيعات (Quotations — طلب محتمل Potential Demand)',
+    store: 'salesQuotations',
+    keyFields: ['DocEntry','LineNum'],
+    dateField: 'DocDate',
+    columns: [
+      {key:'DocEntry', label:'DocEntry', aliases:['رقم المستند','DocEntry'], type:'text', required:true},
+      {key:'LineNum', label:'رقم السطر', aliases:['LineNum'], type:'text', required:true},
+      {key:'DocDate', label:'التاريخ', aliases:['التاريخ','DocDate'], type:'date', required:true},
+      {key:'ItemCode', label:'رمز الصنف', aliases:['رمز الصنف','ItemCode'], type:'text', required:true},
+      {key:'CardCode', label:'رمز العميل', aliases:['رمز العميل','CardCode'], type:'text', required:false},
+      {key:'Quantity', label:'الكمية', aliases:['الكمية','Quantity'], type:'number', required:true},
+      {key:'OpenQty', label:'الكمية المفتوحة', aliases:['المفتوح','OpenQty'], type:'number', required:true},
+    ],
+    sql: `-- عروض أسعار مبيعات مفتوحة — طلب محتمل بوزن قابل للتعديل بالإعدادات (قسم 15)
+SELECT
+  T0."DocEntry" AS "DocEntry", T1."LineNum" AS "LineNum", T0."DocDate" AS "التاريخ",
+  T1."ItemCode" AS "رمز الصنف", T0."CardCode" AS "رمز العميل",
+  T1."Quantity" AS "الكمية", T1."OpenQty" AS "المفتوح"
+FROM OQUT T0
+INNER JOIN QUT1 T1 ON T0."DocEntry" = T1."DocEntry"
+WHERE T0."DocStatus" = 'O' AND T1."OpenQty" > 0
+ORDER BY T1."ItemCode", T0."DocDate"`,
+    sqlNote: '',
+  },
+
+  inventory: {
+    label: 'المخزون الحالي (OITW/OWHS)',
+    store: 'inventory',
+    keyFields: ['ItemCode','WhsCode'],
+    dateField: null,
+    columns: [
+      {key:'ItemCode', label:'رمز الصنف', aliases:['رمز الصنف','ItemCode'], type:'text', required:true},
+      {key:'WhsCode', label:'المستودع', aliases:['المستودع','WhsCode'], type:'text', required:true},
+      {key:'WhsName', label:'اسم المستودع', aliases:['اسم المستودع','WhsName'], type:'text', required:false},
+      {key:'OnHand', label:'الرصيد الحالي', aliases:['الرصيد الحالي','OnHand'], type:'number', required:true},
+      {key:'OnOrder', label:'تحت الطلب', aliases:['تحت الطلب','OnOrder'], type:'number', required:false},
+      {key:'Committed', label:'محجوز', aliases:['محجوز','IsCommited','Committed'], type:'number', required:false},
+    ],
+    sql: `-- المخزون الحالي حسب المستودع — أساس "Physical Stock"، ويُطبَّق عليه لاحقاً استبعاد المستودعات الخاصة
+SELECT
+  T0."ItemCode" AS "رمز الصنف", T0."WhsCode" AS "المستودع", T1."WhsName" AS "اسم المستودع",
+  T0."OnHand" AS "الرصيد الحالي", T0."OnOrder" AS "تحت الطلب", T0."IsCommited" AS "محجوز"
+FROM OITW T0
+LEFT JOIN OWHS T1 ON T0."WhsCode" = T1."WhsCode"`,
+    sqlNote: 'يمثّل لحظة الرفع (Snapshot) وليس تاريخاً — التحليل التاريخي للمخزون يُبنى من الحركات (مبيعات+مشتريات+استلام) وليس من هذا الجدول (قسم 8).',
+  },
+
+  batches: {
+    label: 'الباتشات وتواريخ الانتهاء (Batch / Expiry)',
+    store: 'batches',
+    keyFields: ['ItemCode','Batch','WhsCode'],
+    dateField: 'ExpDate',
+    columns: [
+      {key:'ItemCode', label:'رمز الصنف', aliases:['رمز الصنف','ItemCode'], type:'text', required:true},
+      {key:'Batch', label:'الباتش', aliases:['الباتش','Batch','DistNumber'], type:'text', required:true},
+      {key:'WhsCode', label:'المستودع', aliases:['المستودع','WhsCode'], type:'text', required:true},
+      {key:'InDate', label:'تاريخ الإدخال', aliases:['تاريخ الإدخال','InDate'], type:'date', required:false},
+      {key:'MnfDate', label:'تاريخ الإنتاج', aliases:['تاريخ الإنتاج','MnfDate'], type:'date', required:false},
+      {key:'ExpDate', label:'تاريخ الانتهاء', aliases:['تاريخ الانتهاء','ExpDate'], type:'date', required:true},
+      {key:'BatchQty', label:'كمية الباتش', aliases:['كمية الباتش','BatchQty'], type:'number', required:true},
+      {key:'UnitCost', label:'كلفة الوحدة', aliases:['كلفة الوحدة','UnitCost'], type:'number', required:false},
+      {key:'SupplierName', label:'المورد', aliases:['المورد','SupplierName'], type:'text', required:false},
+      {key:'Weight', label:'الوزن', aliases:['الوزن','Weight'], type:'number', required:false},
+    ],
+    sql: `-- أرصدة الباتشات حسب المستودع مع تاريخ الانتهاء — أساس تصنيف Expired/قريب الانتهاء/صالح
+SELECT
+  T4."ItemCode" AS "رمز الصنف", T2."DistNumber" AS "الباتش", T1."WhsCode" AS "المستودع",
+  T2."InDate" AS "تاريخ الإدخال", T2."MnfDate" AS "تاريخ الإنتاج", T2."ExpDate" AS "تاريخ الانتهاء",
+  T1."Quantity" AS "كمية الباتش", T3."SUAvgUP" AS "كلفة الوحدة",
+  T5."CardName" AS "المورد"
+FROM IBT1 T1
+INNER JOIN OBTN T2 ON T1."ItemCode" = T2."ItemCode" AND T1."SysNumber" = T2."SysNumber"
+LEFT JOIN OBVL T3 ON T2."ItemCode" = T3."ItemCode" AND T2."SysNumber" = T3."SysNumber"
+INNER JOIN OITM T4 ON T1."ItemCode" = T4."ItemCode"
+LEFT JOIN OCRD T5 ON T4."CardCode" = T5."CardCode"
+WHERE T1."Quantity" > 0`,
+    sqlNote: 'مبنية على الجداول التي أكّدها المستخدم (IBT1+OBVL+OBTN+OITM+OCRD) — الأعمدة الدقيقة (خصوصاً مصدر كلفة الوحدة SUAvgUP والمورد عبر OITM.CardCode) تحتاج تأكيد من الشاشة أو استشاري SAP قبل الاعتماد عليها بالإنتاج.',
+  },
+
+  suppliers: {
+    label: 'كشف الموردين (Supplier Master — Lead Time بالمورد وليس بالصنف)',
+    store: 'suppliers',
+    keyFields: ['SupplierCode'],
+    dateField: null,
+    columns: [
+      {key:'SupplierCode', label:'رمز المورد', aliases:['رمز المورد','CardCode'], type:'text', required:true},
+      {key:'SupplierName', label:'اسم المورد', aliases:['اسم المورد','CardName'], type:'text', required:true},
+      {key:'Country', label:'بلد المنشأ', aliases:['البلد','Country'], type:'text', required:false},
+      {key:'LeadTimeDays', label:'مدة التوريد (يوم)', aliases:['مدة التوريد','LeadTimeDays'], type:'number', required:false},
+    ],
+    sql: `-- كشف الموردين مع بلد المنشأ ومدة التوريد الافتراضية (إن وُجدت بجدول المورد)
+SELECT
+  T0."CardCode" AS "رمز المورد", T0."CardName" AS "اسم المورد",
+  T0."Country" AS "البلد", T0."U_LeadTimeDays" AS "مدة التوريد"
+FROM OCRD T0
+WHERE T0."CardType" = 'S'`,
+    sqlNote: 'مدة التوريد غالباً حقل مخصص (UDF) يختلف اسمه حسب الشركة — عدّل الاستعلام حسب الحقل الفعلي، أو ارفع الكشف يدوياً/بتعديل مباشر بجدول الموردين داخل الشاشة.',
+  },
+
+  landedCost: {
+    label: 'الكلفة النهائية بعد التخليص (Landed Cost — اختياري)',
+    store: 'landedCost',
+    keyFields: ['DocEntry','ItemCode','Batch'],
+    dateField: 'CostDate',
+    columns: [
+      {key:'DocEntry', label:'DocEntry', aliases:['DocEntry'], type:'text', required:true},
+      {key:'DocNum', label:'رقم المستند', aliases:['DocNum'], type:'text', required:false},
+      {key:'CostDate', label:'التاريخ', aliases:['التاريخ','CostDate'], type:'date', required:true},
+      {key:'ItemCode', label:'رمز الصنف', aliases:['رمز الصنف','ItemCode'], type:'text', required:true},
+      {key:'SupplierName', label:'المورد', aliases:['المورد','Vendor'], type:'text', required:false},
+      {key:'Batch', label:'الباتش', aliases:['الباتش','Batch'], type:'text', required:false},
+      {key:'Qty', label:'الكمية', aliases:['الكمية','Qty'], type:'number', required:false},
+      {key:'BasePrice', label:'سعر المنشأ', aliases:['سعر المنشأ','BasePrice'], type:'number', required:false},
+      {key:'LandedCostAmount', label:'إجمالي التكاليف المضافة', aliases:['إجمالي التكاليف','LandedCostAmount'], type:'number', required:false},
+      {key:'FinalUnitCost', label:'الكلفة النهائية للوحدة', aliases:['الكلفة النهائية','FinalUnitCost'], type:'number', required:false},
+    ],
+    sql: `-- مستندات اللاندد كوست — اختياري، يُستخدم بتحليل الكلفة/ربحية المشتريات وليس بمحرك التوصية مباشرة (قسم 35)
+SELECT
+  T0."DocEntry" AS "DocEntry", T0."DocNum" AS "DocNum", T0."PostDate" AS "التاريخ",
+  T1."ItemCode" AS "رمز الصنف", T0."CardName" AS "المورد",
+  T1."BaseSum" AS "سعر المنشأ", T1."AddSum" AS "إجمالي التكاليف"
+FROM OIPF T0
+INNER JOIN IPF1 T1 ON T0."DocEntry" = T1."DocEntry"
+WHERE T0."PostDate" BETWEEN '[%0]' AND '[%1]'`,
+    sqlNote: 'اختياري تماماً — لا يدخل بمحرك التوصية إلا إذا فُعِّل صراحة (قسم 35: "لا تجعل Landed Cost يثقل Recommendation Engine إذا لم يكن ضرورياً").',
+  },
+
+  items: {
+    label: 'كشف الأصناف (Item Master — لدعم فلتر مجموعة الصنف)',
+    store: 'items',
+    keyFields: ['ItemCode'],
+    dateField: null,
+    columns: [
+      {key:'ItemCode', label:'رمز الصنف', aliases:['رمز الصنف','ItemCode'], type:'text', required:true},
+      {key:'ItemName', label:'اسم الصنف', aliases:['اسم الصنف','ItemName'], type:'text', required:true},
+      {key:'ItemGroup', label:'مجموعة الصنف', aliases:['مجموعة الصنف','ItemGroup','ItmsGrpNam'], type:'text', required:false},
+      {key:'UoM', label:'وحدة القياس', aliases:['وحدة القياس','UoM'], type:'text', required:false},
+    ],
+    sql: `-- كشف الأصناف مع مجموعة الصنف — اختياري، يُستخدم لتغذية فلتر "مجموعة الصنف" وأسماء أدق بالتقارير
+SELECT T0."ItemCode" AS "رمز الصنف", T0."ItemName" AS "اسم الصنف", T1."ItmsGrpNam" AS "مجموعة الصنف"
+FROM OITM T0
+LEFT JOIN OITB T1 ON T0."ItmsGrpCod" = T1."ItmsGrpCod"`,
+    sqlNote: 'اختياري — بدون رفعه، يُشتق اسم الصنف تلقائياً من أول ظهور له بفواتير المبيعات/المشتريات، ولا يظهر فلتر "مجموعة الصنف".',
+  },
+
+  itemSupplierMap: {
+    label: 'ربط الصنف بالمورد (Item-Supplier Mapping — اختياري)',
+    store: 'itemSupplierMap',
+    keyFields: ['ItemCode','SupplierCode'],
+    dateField: null,
+    columns: [
+      {key:'ItemCode', label:'رمز الصنف', aliases:['رمز الصنف','ItemCode'], type:'text', required:true},
+      {key:'SupplierCode', label:'رمز المورد', aliases:['رمز المورد','CardCode'], type:'text', required:true},
+      {key:'IsPreferred', label:'مورد مفضّل؟', aliases:['مفضّل','IsPreferred'], type:'text', required:false},
+      {key:'MOQ', label:'الحد الأدنى للطلب', aliases:['الحد الأدنى','MOQ'], type:'number', required:false},
+      {key:'OrderMultiple', label:'مضاعف الطلب', aliases:['مضاعف الطلب','OrderMultiple'], type:'number', required:false},
+    ],
+    sql: `-- تفضيل يدوي لربط صنف↔مورد (يُستخدم فقط لو غاب نمط شراء تاريخي واضح — القاعدة الأساس تبقى Purchase History الفعلي)
+SELECT DISTINCT T1."ItemCode" AS "رمز الصنف", T0."CardCode" AS "رمز المورد"
+FROM OPCH T0 INNER JOIN PCH1 T1 ON T0."DocEntry"=T1."DocEntry"`,
+    sqlNote: 'اختياري بالكامل — النظام يشتق ربط الصنف بالمورد أساساً من فواتير المشتريات الفعلية (قسم 12)، وهذا المصدر يُستخدم فقط كتفضيل يدوي إضافي أو MOQ/مضاعف طلب معروفين مسبقاً.',
+  },
+};
+
+/* ==========================================================================================
+   2) UTILITIES
+   ========================================================================================== */
+const U = {
+  toast(msg, type){
+    const host = document.getElementById('toastHost');
+    const el = document.createElement('div');
+    el.className = 'toast' + (type ? ' '+type : '');
+    el.textContent = msg;
+    host.appendChild(el);
+    setTimeout(()=>{ el.style.opacity='0'; el.style.transition='opacity .3s'; setTimeout(()=>el.remove(), 320); }, 3600);
+  },
+  esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); },
+  num(n, dp){ n = Number(n)||0; return n.toLocaleString('en-US', {minimumFractionDigits:dp||0, maximumFractionDigits:dp==null?2:dp}); },
+  parseDate(v){
+    if(v==null || v==='') return null;
+    if(v instanceof Date) return isNaN(v)?null:v;
+    const s = String(v).trim();
+    let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if(m) return new Date(+m[1], +m[2]-1, +m[3]);
+    m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+    if(m) return new Date(+m[3], +m[2]-1, +m[1]);
+    const d = new Date(s);
+    return isNaN(d) ? null : d;
+  },
+  fmtDateTime(ts){
+    if(!ts) return '—';
+    const d = new Date(ts);
+    const p = n=>String(n).padStart(2,'0');
+    return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes());
+  },
+  fmtDate(d){
+    if(!d) return '—';
+    if(!(d instanceof Date)) d = U.parseDate(d);
+    if(!d) return '—';
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  },
+  monthKey(d){ if(!(d instanceof Date)) d = U.parseDate(d); if(!d) return null; return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); },
+  daysBetween(a,b){ return Math.round((b-a)/86400000); },
+  addDays(d, n){ const r = new Date(d); r.setDate(r.getDate()+n); return r; },
+  median(arr){
+    if(!arr.length) return 0;
+    const s = arr.slice().sort((a,b)=>a-b);
+    const mid = Math.floor(s.length/2);
+    return s.length%2 ? s[mid] : (s[mid-1]+s[mid])/2;
+  },
+  mode(arr){
+    if(!arr.length) return null;
+    const cnt = new Map();
+    arr.forEach(v=>cnt.set(v,(cnt.get(v)||0)+1));
+    let best=arr[0], bestN=0;
+    cnt.forEach((n,v)=>{ if(n>bestN){ bestN=n; best=v; } });
+    return best;
+  },
+  uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); },
+  debounce(fn, ms){ let t; return function(...a){ clearTimeout(t); t=setTimeout(()=>fn.apply(this,a), ms||300); }; },
+  normHeader(s){ return String(s||'').trim().replace(/\s+/g,' ').toLowerCase(); },
+};
+
+/* ==========================================================================================
+   3) INDEXEDDB DATA LAYER
+   ========================================================================================== */
+const DB = {
+  _db: null,
+  async open(){
+    if(this._db) return this._db;
+    this._db = await new Promise((resolve, reject)=>{
+      const req = indexedDB.open(CONFIG.dbName, CONFIG.dbVersion);
+      req.onupgradeneeded = (ev)=>{
+        const db = ev.target.result;
+        Object.keys(DATA_SOURCES).forEach(srcKey=>{
+          const src = DATA_SOURCES[srcKey];
+          if(!db.objectStoreNames.contains(src.store)){
+            const os = db.createObjectStore(src.store, {keyPath:'_key'});
+            os.createIndex('ItemCode', 'ItemCode', {unique:false});
+            if(src.dateField) os.createIndex('_date', '_dateIdx', {unique:false});
+            os.createIndex('_batchId', '_batchId', {unique:false});
+          }
+        });
+        if(!db.objectStoreNames.contains('importLog')) db.createObjectStore('importLog', {keyPath:'id'});
+        if(!db.objectStoreNames.contains('planOverrides')) db.createObjectStore('planOverrides', {keyPath:'ItemCode'});
+        if(!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', {keyPath:'k'});
+      };
+      req.onsuccess = ()=>resolve(req.result);
+      req.onerror = ()=>reject(req.error);
+    });
+    return this._db;
+  },
+  async tx(storeNames, mode){
+    const db = await this.open();
+    return db.transaction(storeNames, mode||'readonly');
+  },
+  async getAll(store){
+    const t = await this.tx(store, 'readonly');
+    return new Promise((res,rej)=>{
+      const r = t.objectStore(store).getAll();
+      r.onsuccess = ()=>res(r.result);
+      r.onerror = ()=>rej(r.error);
+    });
+  },
+  async bulkPut(store, rows){
+    const t = await this.tx(store, 'readwrite');
+    return new Promise((res,rej)=>{
+      const os = t.objectStore(store);
+      rows.forEach(r=>os.put(r));
+      t.oncomplete = ()=>res(true);
+      t.onerror = ()=>rej(t.error);
+    });
+  },
+  async bulkDelete(store, keys){
+    const t = await this.tx(store, 'readwrite');
+    return new Promise((res,rej)=>{
+      const os = t.objectStore(store);
+      keys.forEach(k=>os.delete(k));
+      t.oncomplete = ()=>res(true);
+      t.onerror = ()=>rej(t.error);
+    });
+  },
+  async clearStore(store){
+    const t = await this.tx(store, 'readwrite');
+    return new Promise((res,rej)=>{ const r=t.objectStore(store).clear(); r.onsuccess=()=>res(true); r.onerror=()=>rej(r.error); });
+  },
+  async getMeta(key, dflt){
+    const t = await this.tx('meta','readonly');
+    return new Promise((res)=>{
+      const r = t.objectStore('meta').get(key);
+      r.onsuccess = ()=>res(r.result ? r.result.v : dflt);
+      r.onerror = ()=>res(dflt);
+    });
+  },
+  async setMeta(key, val){
+    const t = await this.tx('meta','readwrite');
+    return new Promise((res,rej)=>{ t.objectStore('meta').put({k:key, v:val}); t.oncomplete=()=>res(true); t.onerror=()=>rej(t.error); });
+  },
+};
+
+/* ذاكرة تخزين مؤقتة بالمتصفح لكل المصادر بعد التحميل — لتفادي قراءة IndexedDB بكل تفاعل صغير */
+const STATE = {
+  data: {},        // STATE.data[storeKey] = [rows...]
+  loaded: false,
+  filters: {},
+  planOverrides: {},
+  async loadAll(){
+    for(const key of Object.keys(DATA_SOURCES)){
+      STATE.data[key] = await DB.getAll(DATA_SOURCES[key].store);
+    }
+    const po = await DB.getAll('planOverrides');
+    STATE.planOverrides = {};
+    po.forEach(r=>{ STATE.planOverrides[r.ItemCode] = r; });
+    STATE.loaded = true;
+  },
+};
+
+/* ==========================================================================================
+   4) IMPORT PIPELINE — Parse / Validate / Preview / Duplicate Detection / Commit / Rollback
+   ========================================================================================== */
+const IMPORT = {
+
+  parseDelimited(text){
+    text = String(text||'').replace(/\r\n?/g,'\n').trim();
+    if(!text) return {headers:[], rows:[]};
+    const lines = text.split('\n').filter(l=>l.length);
+    const first = lines[0];
+    const delim = (first.split('\t').length >= first.split(',').length) ? '\t' : ',';
+    const splitLine = (l)=>{
+      if(delim === '\t') return l.split('\t');
+      // فاصلة مع احترام الاقتباس "..."
+      const out=[]; let cur=''; let inQ=false;
+      for(let i=0;i<l.length;i++){
+        const c=l[i];
+        if(c === '"'){ inQ = !inQ; continue; }
+        if(c === ',' && !inQ){ out.push(cur); cur=''; continue; }
+        cur += c;
+      }
+      out.push(cur);
+      return out;
+    };
+    const headers = splitLine(lines[0]).map(h=>h.trim());
+    const rows = lines.slice(1).filter(l=>l.trim()).map(l=>splitLine(l));
+    return {headers, rows};
+  },
+
+  buildHeaderMap(sourceKey, headers){
+    const src = DATA_SOURCES[sourceKey];
+    const map = {}; // columnIndex -> col.key
+    const normed = headers.map(U.normHeader);
+    src.columns.forEach(col=>{
+      const names = [col.key, col.label, ...(col.aliases||[])].map(U.normHeader);
+      let idx = normed.findIndex(h=>names.includes(h));
+      if(idx === -1){
+        // مطابقة جزئية كحل أخير
+        idx = normed.findIndex(h=>names.some(n=>h.includes(n)||n.includes(h)));
+      }
+      if(idx !== -1) map[idx] = col.key;
+    });
+    return map;
+  },
+
+  buildKey(sourceKey, row){
+    const src = DATA_SOURCES[sourceKey];
+    return src.keyFields.map(f=>String(row[f]==null?'':row[f]).trim()).join('|');
+  },
+
+  mapRows(sourceKey, text){
+    const src = DATA_SOURCES[sourceKey];
+    const {headers, rows} = this.parseDelimited(text);
+    if(!headers.length) return {mapped:[], errors:[{row:0, msg:'لا يوجد بيانات'}], headerMap:{}, unmatched:[]};
+    const headerMap = this.buildHeaderMap(sourceKey, headers);
+    const matchedCols = new Set(Object.values(headerMap));
+    const unmatched = src.columns.filter(c=>c.required && !matchedCols.has(c.key));
+    const errors = [];
+    const seenKeys = new Set();
+    const mapped = [];
+    rows.forEach((cells, rIdx)=>{
+      const row = {};
+      Object.keys(headerMap).forEach(idx=>{ row[headerMap[idx]] = cells[idx]!==undefined ? cells[idx].trim() : ''; });
+      const rowErrors = [];
+      src.columns.forEach(col=>{
+        let v = row[col.key];
+        if(col.required && (v===undefined || v==='')){ rowErrors.push(col.label+' مفقود'); return; }
+        if(v===undefined || v==='') return;
+        if(col.type === 'number'){
+          const n = Number(String(v).replace(/,/g,''));
+          if(isNaN(n)){ rowErrors.push(col.label+' غير رقمي: "'+v+'"'); }
+          else {
+            row[col.key] = n;
+            if(n < 0 && /qty|quantity|كمية/i.test(col.key+col.label)) rowErrors.push(col.label+' سالبة ('+n+')');
+          }
+        } else if(col.type === 'date'){
+          const d = U.parseDate(v);
+          if(!d){ rowErrors.push(col.label+' تاريخ غير صالح: "'+v+'"'); }
+          else row[col.key] = d;
+        }
+      });
+      if(!rowErrors.length){
+        const key = this.buildKey(sourceKey, row);
+        if(seenKeys.has(key)) rowErrors.push('سطر مكرر داخل نفس الملف (مفتاح: '+key+')');
+        seenKeys.add(key);
+        row._key = key;
+        if(src.dateField && row[src.dateField] instanceof Date) row._dateIdx = row[src.dateField].getTime();
+      }
+      if(rowErrors.length) errors.push({row:rIdx+2, msg:rowErrors.join('، ')});
+      else mapped.push(row);
+    });
+    return {mapped, errors, headerMap, unmatched, totalRows:rows.length};
+  },
+
+  async preview(sourceKey, mapped){
+    const src = DATA_SOURCES[sourceKey];
+    const existing = await DB.getAll(src.store);
+    const existingMap = new Map(existing.map(r=>[r._key, r]));
+    let toAdd=0, toUpdate=0, unchanged=0;
+    const historicalLocked = await DB.getMeta('historicalLocked', false);
+    const lockedRowsTouched = [];
+    mapped.forEach(row=>{
+      const prev = existingMap.get(row._key);
+      if(!prev) toAdd++;
+      else{
+        const changed = src.columns.some(c=>String(prev[c.key]??'') !== String(row[c.key]??''));
+        if(changed) toUpdate++; else unchanged++;
+      }
+      if(historicalLocked && src.dateField && row[src.dateField] instanceof Date){
+        const y = row[src.dateField].getFullYear();
+        if(CONFIG.historicalYears.includes(y)) lockedRowsTouched.push(row);
+      }
+    });
+    return {toAdd, toUpdate, unchanged, total:mapped.length, historicalLocked, lockedRowsTouched: lockedRowsTouched.length};
+  },
+
+  async commit(sourceKey, mapped, opts){
+    opts = opts || {};
+    const src = DATA_SOURCES[sourceKey];
+    const existing = await DB.getAll(src.store);
+    const existingMap = new Map(existing.map(r=>[r._key, r]));
+    const batchId = U.uid();
+    const added = [];
+    const updatedBefore = []; // للتراجع: القيمة قبل التحديث
+    const toWrite = [];
+    mapped.forEach(row=>{
+      const prev = existingMap.get(row._key);
+      const rec = Object.assign({}, row, {_batchId: prev ? (prev._batchId) : batchId, _importBatch: batchId});
+      if(!prev){ added.push(row._key); }
+      else { updatedBefore.push(prev); }
+      toWrite.push(rec);
+    });
+    await DB.bulkPut(src.store, toWrite);
+    STATE.data[sourceKey] = await DB.getAll(src.store);
+    const logEntry = {
+      id: batchId, source: sourceKey, ts: Date.now(),
+      addedKeys: added, updatedBefore, recordCount: mapped.length,
+      mode: opts.mode || 'incremental',
+    };
+    const t = await DB.tx('importLog','readwrite');
+    await new Promise((res,rej)=>{ t.objectStore('importLog').put(logEntry); t.oncomplete=()=>res(); t.onerror=()=>rej(t.error); });
+    await DB.setMeta('lastImport_'+sourceKey, {ts: Date.now(), count: mapped.length, batchId});
+    return {batchId, added: added.length, updated: updatedBefore.length};
+  },
+
+  async lastImportLogFor(sourceKey){
+    const all = await DB.getAll('importLog');
+    const mine = all.filter(l=>l.source===sourceKey).sort((a,b)=>b.ts-a.ts);
+    return mine[0] || null;
+  },
+
+  async rollback(sourceKey){
+    const log = await this.lastImportLogFor(sourceKey);
+    if(!log) return {ok:false, msg:'لا يوجد استيراد سابق للتراجع عنه'};
+    const src = DATA_SOURCES[sourceKey];
+    await DB.bulkDelete(src.store, log.addedKeys);
+    if(log.updatedBefore && log.updatedBefore.length) await DB.bulkPut(src.store, log.updatedBefore);
+    const t = await DB.tx('importLog','readwrite');
+    await new Promise((res,rej)=>{ t.objectStore('importLog').delete(log.id); t.oncomplete=()=>res(); t.onerror=()=>rej(t.error); });
+    STATE.data[sourceKey] = await DB.getAll(src.store);
+    return {ok:true, removed: log.addedKeys.length, restored: log.updatedBefore.length};
+  },
+};
+
+/* ==========================================================================================
+   5) DATA HEALTH
+   ========================================================================================== */
+const HEALTH = {
+  async scoreSource(sourceKey){
+    const src = DATA_SOURCES[sourceKey];
+    const rows = STATE.data[sourceKey] || [];
+    if(!rows.length) return {score:0, count:0, lastUpdate:null, coverage:null, issues:['لا توجد بيانات مرفوعة']};
+    const requiredCols = src.columns.filter(c=>c.required);
+    let filled = 0, total = 0;
+    rows.forEach(r=>{ requiredCols.forEach(c=>{ total++; if(r[c.key]!==undefined && r[c.key]!==null && r[c.key]!=='') filled++; }); });
+    const completeness = total ? filled/total : 1;
+    let coverage = null;
+    if(src.dateField){
+      const dates = rows.map(r=>r[src.dateField]).filter(d=>d instanceof Date);
+      if(dates.length){
+        const min = new Date(Math.min(...dates)), max = new Date(Math.max(...dates));
+        coverage = {min, max};
+      }
+    }
+    const lastImp = await DB.getMeta('lastImport_'+sourceKey, null);
+    const issues = [];
+    if(completeness < 1) issues.push('حقول إلزامية ناقصة ببعض السطور ('+Math.round((1-completeness)*100)+'%)');
+    const score = Math.round(completeness*100);
+    return {score, count:rows.length, lastUpdate: lastImp?lastImp.ts:null, coverage, issues};
+  },
+  async overallScore(){
+    const keys = Object.keys(DATA_SOURCES);
+    const coreKeys = ['salesInvoices','purchaseInvoices','inventory','suppliers'];
+    const scores = await Promise.all(keys.map(k=>this.scoreSource(k)));
+    const byKey = {}; keys.forEach((k,i)=>byKey[k]=scores[i]);
+    const coreScores = coreKeys.map(k=>byKey[k].count? byKey[k].score : 0);
+    const overall = Math.round(coreScores.reduce((a,b)=>a+b,0)/coreScores.length);
+    return {overall, byKey};
+  },
+};
+
+/* ==========================================================================================
+   6) DATA CENTER — واجهة الرفع/التحقق/المعاينة/الاستيراد/التراجع
+   ========================================================================================== */
+let _dcPendingImport = null; // {sourceKey, mapped, errors, preview}
+
+async function renderDataCenter(){
+  const el = document.getElementById('view-datacenter');
+  el.innerHTML = `
+    <section class="panel">
+      <div class="panel-head"><div><h2>🗄️ مركز البيانات</h2><div class="hint">كل البيانات تُرفع من هنا — لا بيانات فعلية مضمّنة داخل هذا الملف</div></div></div>
+      <div id="dcHealthHero"></div>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><div><h2>مصادر البيانات</h2><div class="hint">لكل مصدر: كويري SAP HANA جاهز (قابل للتعديل) + رفع/لصق + تحقق ومعاينة قبل الاستيراد + تراجع عن آخر استيراد</div></div></div>
+      <div class="dc-source-grid" id="dcSourceGrid"></div>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><div><h2>⚙️ إعدادات المحرك</h2><div class="hint">قابلة للتعديل — تُحفظ محلياً وتؤثر فوراً على كل الحسابات</div></div></div>
+      <div id="dcSettings" style="padding:16px 22px;"></div>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><div><h2>🧱 قواعد المستودعات الخاصة (ثابتة)</h2><div class="hint">مصدر واحد لهذه القواعد بكل الشاشة — غير مبعثرة بالكود</div></div></div>
+      <div id="dcWarehouseRules" style="padding:6px 22px 18px;"></div>
+    </section>
+    <section class="panel">
+      <div class="panel-head"><div><h2>🕓 سجل الاستيراد</h2></div></div>
+      <div id="dcImportLog"></div>
+    </section>
+  `;
+  await renderDcHealthHero();
+  renderDcSourceGrid();
+  renderDcSettings();
+  renderDcWarehouseRules();
+  await renderDcImportLog();
+}
+
+async function renderDcHealthHero(){
+  const {overall} = await HEALTH.overallScore();
+  const cls = overall>=80?'ok':overall>=50?'warn':'crit';
+  document.getElementById('dcHealthHero').innerHTML = `
+    <div class="dc-score-box ${cls}">
+      <div class="dc-score-num">${overall}</div>
+      <div>
+        <div style="font-weight:700;color:var(--navy);font-size:13px;">درجة صحة البيانات (Data Health Score)</div>
+        <div style="font-size:11px;color:var(--ink-soft);margin-top:3px;">مبنية على اكتمال الحقول الإلزامية بمصادر البيانات الأساسية: فواتير المبيعات، فواتير المشتريات، المخزون، الموردين</div>
+      </div>
+      <div style="margin-inline-start:auto; display:flex; gap:10px;">
+        <button class="btn-ghost btn-sm" onclick="lockHistoricalToggle()">${await DB.getMeta('historicalLocked',false) ? '🔓 فتح الأساس التاريخي' : '🔒 قفل الأساس التاريخي 2022-2025'}</button>
+      </div>
+    </div>`;
+  document.getElementById('statDataHealth').textContent = overall + '%';
+}
+
+function renderDcSourceGrid(){
+  const grid = document.getElementById('dcSourceGrid');
+  grid.innerHTML = Object.keys(DATA_SOURCES).map(key=>{
+    const src = DATA_SOURCES[key];
+    return `<div class="dc-card" id="dcCard_${key}"><div class="dc-card-head">
+        <div class="dc-card-title">${U.esc(src.label)}</div>
+      </div>
+      <div class="dc-card-stats" id="dcStats_${key}">جارِ التحميل…</div>
+      <details class="sqlbox"><summary>📋 كويري SAP HANA المقترح</summary>
+        <code class="sql">${U.esc(src.sql)}</code>
+        ${src.sqlNote ? `<div class="hint" style="margin-top:6px;">${U.esc(src.sqlNote)}</div>` : ''}
+        <button class="btn-ghost btn-xs" style="margin-top:8px;" onclick="copySql(this,'${key}')">📄 نسخ الكويري</button>
+      </details>
+      <div class="dc-card-actions">
+        <button class="btn-primary btn-sm" onclick="openImportModal('${key}')">⬆️ رفع/لصق بيانات</button>
+        <button class="btn-ghost btn-sm" onclick="rollbackImport('${key}')">↩️ تراجع عن آخر استيراد</button>
+      </div>
+    </div>`;
+  }).join('');
+  Object.keys(DATA_SOURCES).forEach(refreshSourceStats);
+}
+
+async function refreshSourceStats(key){
+  const h = await HEALTH.scoreSource(key);
+  const box = document.getElementById('dcStats_'+key);
+  if(!box) return;
+  const covTxt = h.coverage ? (U.fmtDate(h.coverage.min)+' → '+U.fmtDate(h.coverage.max)) : '—';
+  const lastTxt = h.lastUpdate ? U.fmtDateTime(h.lastUpdate) : 'لم يُستورد بعد';
+  box.innerHTML = `
+    <span>السجلات: <b>${U.num(h.count)}</b></span>
+    <span>آخر تحديث: <b>${U.esc(lastTxt)}</b></span>
+    <span>الفترة: <b>${U.esc(covTxt)}</b></span>
+    <span>الصحة: <b style="color:${h.score>=80?'var(--teal)':h.score>=50?'var(--gold)':'var(--crimson)'}">${h.score}%</b></span>
+    ${h.issues.length? `<span style="color:var(--crimson)">⚠ ${U.esc(h.issues.join('، '))}</span>` : ''}
+  `;
+}
+
+function copySql(btn, key){
+  navigator.clipboard.writeText(DATA_SOURCES[key].sql).then(()=>{
+    const old = btn.textContent; btn.textContent='✅ تم النسخ'; setTimeout(()=>btn.textContent=old, 1500);
+  }).catch(()=>U.toast('تعذّر النسخ — انسخ يدوياً', 'err'));
+}
+
+function openImportModal(sourceKey){
+  const src = DATA_SOURCES[sourceKey];
+  _dcPendingImport = null;
+  document.getElementById('modalBox').innerHTML = `
+    <div class="drawer-head"><h3>⬆️ ${U.esc(src.label)}</h3><button class="btn-sm" onclick="closeModal()">✕</button></div>
+    <div class="drawer-body">
+      <div class="hint" style="margin-bottom:8px;">الصق نتيجة الكويري (من أداة الاستعلام أو Excel) أو ارفع ملف txt/csv/tsv. الصف الأول يجب أن يحوي أسماء الأعمدة.</div>
+      <textarea class="pastebox" id="importPasteArea" placeholder="الصق البيانات هنا (مع سطر العناوين)…"></textarea>
+      <div class="row-actions" style="display:flex;gap:8px;margin-top:8px;align-items:center;flex-wrap:wrap;">
+        <input type="file" id="importFileInput" accept=".txt,.csv,.tsv" style="display:none" onchange="handleImportFile(event)">
+        <button class="btn-ghost btn-sm" type="button" onclick="document.getElementById('importFileInput').click()">📁 رفع ملف بدل اللصق</button>
+        <button class="btn-primary btn-sm" type="button" onclick="runImportPreview('${sourceKey}')">🔍 تحقق ومعاينة</button>
+        <span class="status-msg" id="importStatusMsg"></span>
+      </div>
+      <div id="importPreviewBox" style="margin-top:14px;"></div>
+    </div>`;
+  document.getElementById('modalOverlay').classList.add('open');
+}
+
+function handleImportFile(ev){
+  const f = ev.target.files[0];
+  if(!f) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{ document.getElementById('importPasteArea').value = reader.result; U.toast('تم تحميل الملف — اضغط "تحقق ومعاينة"'); };
+  reader.readAsText(f, 'utf-8');
+}
+
+async function runImportPreview(sourceKey){
+  const text = document.getElementById('importPasteArea').value;
+  const statusEl = document.getElementById('importStatusMsg');
+  if(!text.trim()){ statusEl.textContent='لا يوجد بيانات'; statusEl.className='status-msg err'; return; }
+  statusEl.textContent = 'جارِ التحليل…'; statusEl.className='status-msg';
+  const {mapped, errors, unmatched, totalRows} = IMPORT.mapRows(sourceKey, text);
+  if(unmatched.length){
+    document.getElementById('importPreviewBox').innerHTML = `<div class="status-msg err">أعمدة إلزامية غير موجودة بالعناوين: ${unmatched.map(c=>U.esc(c.label)).join('، ')}</div>`;
+    statusEl.textContent=''; return;
+  }
+  const prev = await IMPORT.preview(sourceKey, mapped);
+  _dcPendingImport = {sourceKey, mapped, errors};
+  statusEl.textContent = 'تم التحليل'; statusEl.className='status-msg ok';
+  const lockWarn = prev.historicalLocked && prev.lockedRowsTouched>0
+    ? `<div class="status-msg err" style="margin-bottom:8px;">⚠ الأساس التاريخي مقفل، و${prev.lockedRowsTouched} سطر من هذا الملف يقع ضمن سنوات 2022-2025. لن تُستورد هذه الأسطر إلا إذا فتحت القفل من زر "فتح الأساس التاريخي".</div>` : '';
+  document.getElementById('importPreviewBox').innerHTML = `
+    ${lockWarn}
+    <div class="grid3">
+      <div class="stat-box"><div class="lbl">سطور صالحة</div><div class="val">${U.num(mapped.length)} / ${U.num(totalRows)}</div></div>
+      <div class="stat-box"><div class="lbl">جديد سيُضاف</div><div class="val" style="color:var(--teal)">${U.num(prev.toAdd)}</div></div>
+      <div class="stat-box"><div class="lbl">موجود سيُحدَّث</div><div class="val" style="color:var(--gold)">${U.num(prev.toUpdate)}</div></div>
+    </div>
+    ${errors.length? `<details class="sqlbox" style="margin-top:10px;"><summary style="color:var(--crimson)">⚠ ${errors.length} سطر برفض بسبب أخطاء (لن تُستورد)</summary>
+      <div class="tbl-scroll" style="max-height:200px;margin:8px 0 0;"><table class="datatbl"><thead><tr><th>السطر</th><th>الخطأ</th></tr></thead>
+      <tbody>${errors.slice(0,200).map(e=>`<tr><td>${e.row}</td><td>${U.esc(e.msg)}</td></tr>`).join('')}</tbody></table></div>
+    </details>` : '<div class="status-msg ok" style="margin-top:8px;">لا أخطاء بالسطور ✓</div>'}
+    <div class="row-actions" style="margin-top:12px;">
+      <button class="btn-teal btn-sm" onclick="confirmImport()" ${!mapped.length?'disabled':''}>✅ تأكيد الاستيراد</button>
+    </div>`;
+}
+
+async function confirmImport(){
+  if(!_dcPendingImport) return;
+  const {sourceKey, mapped} = _dcPendingImport;
+  const prev = await IMPORT.preview(sourceKey, mapped);
+  let rows = mapped;
+  if(prev.historicalLocked){
+    const src = DATA_SOURCES[sourceKey];
+    if(src.dateField) rows = mapped.filter(r=>{
+      const d = r[src.dateField];
+      return !(d instanceof Date) || !CONFIG.historicalYears.includes(d.getFullYear());
+    });
+  }
+  const mode = CONFIG.historicalYears.includes(new Date().getFullYear()) ? 'incremental' : 'incremental';
+  const res = await IMPORT.commit(sourceKey, rows, {mode});
+  U.toast(`تم الاستيراد: ${res.added} سطر جديد، ${res.updated} سطر محدَّث`, 'ok');
+  closeModal();
+  await refreshSourceStats(sourceKey);
+  await renderDcHealthHero();
+  await renderDcImportLog();
+  if(window.onDataChanged) window.onDataChanged();
+}
+
+async function rollbackImport(sourceKey){
+  const log = await IMPORT.lastImportLogFor(sourceKey);
+  if(!log){ U.toast('لا يوجد استيراد سابق لهذا المصدر', 'err'); return; }
+  if(!confirm(`التراجع عن آخر استيراد لـ"${DATA_SOURCES[sourceKey].label}" (${U.fmtDateTime(log.ts)}, ${log.recordCount} سطر). متابعة؟`)) return;
+  const res = await IMPORT.rollback(sourceKey);
+  if(res.ok){ U.toast(`تم التراجع: حُذف ${res.removed}، استُعيد ${res.restored}`, 'ok'); await refreshSourceStats(sourceKey); await renderDcHealthHero(); await renderDcImportLog(); if(window.onDataChanged) window.onDataChanged(); }
+  else U.toast(res.msg, 'err');
+}
+
+async function lockHistoricalToggle(){
+  const cur = await DB.getMeta('historicalLocked', false);
+  await DB.setMeta('historicalLocked', !cur);
+  U.toast(!cur ? 'تم قفل الأساس التاريخي 2022-2025' : 'تم فتح الأساس التاريخي', 'ok');
+  await renderDcHealthHero();
+}
+
+function renderDcSettings(){
+  const t = CONFIG.tunable;
+  const fields = [
+    ['expiryNearDays','قريب الانتهاء خلال (يوم)'], ['expiryMidDays','متوسط الخطورة خلال (يوم)'],
+    ['quotationWeight','وزن عروض الأسعار بالطلب المحتمل (0-1)'], ['outlierLowRatio','حد الشذوذ المنخفض (نسبة من الوسيط)'],
+    ['outlierHighRatio','حد الشذوذ المرتفع (نسبة من الوسيط)'], ['defaultLeadTimeDays','مدة توريد افتراضية (يوم)'],
+    ['serviceBufferDays','أيام أمان إضافية'], ['minCoverageDaysCritical','حد التغطية الحرج (يوم)'], ['minCoverageDaysSoon','حد التغطية "قريباً" (يوم)'],
+  ];
+  document.getElementById('dcSettings').innerHTML = `<div class="grid3">${fields.map(([k,lbl])=>`
+    <div class="fld"><label style="font-size:11px;color:var(--ink-soft);">${lbl}</label>
+    <input type="number" step="0.01" value="${t[k]}" style="border:1.3px solid var(--line);border-radius:7px;padding:6px 9px;font-family:var(--mono);width:100%;" onchange="updateTunable('${k}', this.value)"></div>
+  `).join('')}</div>`;
+}
+
+async function updateTunable(key, val){
+  CONFIG.tunable[key] = Number(val);
+  await DB.setMeta('tunable', CONFIG.tunable);
+  U.toast('تم تحديث الإعداد', 'ok');
+  if(window.onDataChanged) window.onDataChanged();
+}
+
+function renderDcWarehouseRules(){
+  const rows = Object.entries(CONFIG.warehouseRules).map(([code, r])=>`
+    <tr><td class="num">${code}</td><td>${U.esc(r.label)}</td>
+      <td>${r.excludeFromAvailable? '<span class="badge crit">مستبعد من المتاح</span>':'<span class="badge ok">ضمن المتاح</span>'}</td>
+      <td>${r.includeInSalesDemand? '<span class="badge info">يُحتسب ضمن الطلب الفعلي</span>':'<span class="badge gray">لا يُحتسب طلباً</span>'}</td>
+    </tr>`).join('');
+  document.getElementById('dcWarehouseRules').innerHTML = `
+    <div class="tbl-scroll" style="margin:10px 0 0;max-height:none;"><table class="datatbl">
+      <thead><tr><th>المستودع</th><th>الوصف</th><th>المخزون المتاح</th><th>الطلب الفعلي (Demand)</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>`;
+}
+
+async function renderDcImportLog(){
+  const all = (await DB.getAll('importLog')).sort((a,b)=>b.ts-a.ts).slice(0,40);
+  const box = document.getElementById('dcImportLog');
+  if(!all.length){ box.innerHTML = '<div class="empty-state">لا يوجد استيراد بعد</div>'; return; }
+  box.innerHTML = `<div class="tbl-scroll" style="max-height:320px;"><table class="datatbl">
+    <thead><tr><th>الوقت</th><th>المصدر</th><th>عدد السطور</th><th>جديد</th><th>محدَّث</th></tr></thead>
+    <tbody>${all.map(l=>`<tr><td>${U.fmtDateTime(l.ts)}</td><td>${U.esc(DATA_SOURCES[l.source]?.label||l.source)}</td>
+      <td class="num">${U.num(l.recordCount)}</td><td class="num">${U.num(l.addedKeys.length)}</td><td class="num">${U.num(l.updatedBefore.length)}</td></tr>`).join('')}</tbody>
+  </table></div>`;
+}
+</script>
+<script>
+'use strict';
+
+const VIEW_RENDERERS = {
+  decisions: ()=>{ if(window.renderDecisions) renderDecisions(); },
+  risks: ()=>{ if(window.renderRisks) renderRisks(); },
+  plan: ()=>{ if(window.renderPlan) renderPlan(); },
+  demand: ()=>{ if(window.renderDemand) renderDemand(); },
+  suppliers: ()=>{ if(window.renderSuppliersView) renderSuppliersView(); },
+  items: ()=>{ if(window.renderItemsView) renderItemsView(); },
+  datacenter: ()=>{ renderDataCenter(); },
+};
+
+function switchView(v){
+  document.querySelectorAll('nav.mainnav button').forEach(function(b){ b.classList.toggle('active', b.getAttribute('data-view')===v); });
+  document.querySelectorAll('.view').forEach(function(sec){ sec.classList.toggle('active', sec.getAttribute('data-view')===v); });
+  if(VIEW_RENDERERS[v]) VIEW_RENDERERS[v]();
+}
+
+/* ==========================================================================================
+   7) FILTERS — تؤثر على كل التقارير والمحرك
+   ========================================================================================== */
+STATE.filters = {
+  dateFrom:'', dateTo:'', supplier:'', item:'', itemGroup:'', warehouse:'', customer:'',
+  salesEmployee:'', recStatus:'', stockStatus:'', supplierCountry:'', expiryStatus:'',
+};
+
+function distinctValues(sourceKeys, field, nameField){
+  const seen = new Map();
+  sourceKeys.forEach(sk=>{
+    (STATE.data[sk]||[]).forEach(r=>{
+      const v = r[field];
+      if(v===undefined || v===null || v==='') return;
+      if(!seen.has(v)) seen.set(v, nameField? (r[nameField]||v) : v);
+    });
+  });
+  return Array.from(seen.entries()).map(([code,name])=>({code,name})).sort((a,b)=>String(a.name).localeCompare(String(b.name),'ar'));
+}
+
+function renderGlobalFilterBar(){
+  const f = STATE.filters;
+  const suppliers = distinctValues(['suppliers'], 'SupplierCode', 'SupplierName');
+  if(!suppliers.length) distinctValues(['purchaseInvoices'], 'SupplierCode', 'SupplierName').forEach(s=>suppliers.push(s));
+  const warehouses = Object.keys(CONFIG.warehouseRules).map(c=>({code:c,name:c+' — '+CONFIG.warehouseRules[c].label}));
+  distinctValues(['inventory','salesInvoices'], 'WhsCode').forEach(w=>{ if(!warehouses.find(x=>x.code===w.code)) warehouses.push(w); });
+  const employees = distinctValues(['salesInvoices'], 'SlpName');
+  const countries = distinctValues(['suppliers'], 'Country');
+  const itemGroups = distinctValues(['items'], 'ItemGroup');
+
+  const el = document.getElementById('globalFilterBar');
+  el.innerHTML = `
+    <div class="fld"><label>من تاريخ</label><input type="date" id="f_dateFrom" value="${f.dateFrom}"></div>
+    <div class="fld"><label>إلى تاريخ</label><input type="date" id="f_dateTo" value="${f.dateTo}"></div>
+    <div class="fld"><label>الصنف</label><input type="text" id="f_item" list="dl_items" placeholder="رمز/اسم الصنف" value="${U.esc(f.item)}"></div>
+    <datalist id="dl_items">${itemOptionsList().map(o=>`<option value="${U.esc(o.code)}">${U.esc(o.name)}</option>`).join('')}</datalist>
+    <div class="fld"><label>مجموعة الصنف</label><select id="f_itemGroup"><option value="">الكل</option>${itemGroups.map(o=>`<option value="${U.esc(o.code)}" ${f.itemGroup===o.code?'selected':''}>${U.esc(o.code)}</option>`).join('')}</select></div>
+    <div class="fld"><label>المورد</label><select id="f_supplier"><option value="">الكل</option>${suppliers.map(o=>`<option value="${U.esc(o.code)}" ${f.supplier===o.code?'selected':''}>${U.esc(o.name)}</option>`).join('')}</select></div>
+    <div class="fld"><label>بلد المورد</label><select id="f_supplierCountry"><option value="">الكل</option>${countries.map(o=>`<option value="${U.esc(o.code)}" ${f.supplierCountry===o.code?'selected':''}>${U.esc(o.code)}</option>`).join('')}</select></div>
+    <div class="fld"><label>المستودع</label><select id="f_warehouse"><option value="">الكل</option>${warehouses.map(o=>`<option value="${U.esc(o.code)}" ${f.warehouse===o.code?'selected':''}>${U.esc(o.name)}</option>`).join('')}</select></div>
+    <div class="fld"><label>العميل</label><input type="text" id="f_customer" list="dl_customers" placeholder="اسم العميل" value="${U.esc(f.customer)}"></div>
+    <datalist id="dl_customers">${distinctValues(['salesInvoices'],'CardCode','CardName').map(o=>`<option value="${U.esc(o.name)}">`).join('')}</datalist>
+    <div class="fld"><label>مندوب المبيعات</label><select id="f_salesEmployee"><option value="">الكل</option>${employees.map(o=>`<option value="${U.esc(o.code)}" ${f.salesEmployee===o.code?'selected':''}>${U.esc(o.code)}</option>`).join('')}</select></div>
+    <div class="fld"><label>حالة التوصية</label><select id="f_recStatus"><option value="">الكل</option>
+      ${['CRITICAL','ORDER_SOON','MONITOR','IN_TRANSIT','STOCKOUT_RISK','OVERSTOCK','SLOW_MOVING'].map(s=>`<option value="${s}" ${f.recStatus===s?'selected':''}>${RECO_LABELS[s]||s}</option>`).join('')}</select></div>
+    <div class="fld"><label>حالة المخزون</label><select id="f_stockStatus"><option value="">الكل</option>
+      ${['STOCKOUT','OVERSTOCK','SLOW','DEAD','NORMAL'].map(s=>`<option value="${s}" ${f.stockStatus===s?'selected':''}>${STOCK_STATUS_LABELS[s]||s}</option>`).join('')}</select></div>
+    <div class="fld"><label>حالة الصلاحية</label><select id="f_expiryStatus"><option value="">الكل</option>
+      ${['EXPIRED','NEAR30','NEAR90','VALID'].map(s=>`<option value="${s}" ${f.expiryStatus===s?'selected':''}>${EXPIRY_LABELS[s]||s}</option>`).join('')}</select></div>
+    <div class="spacer"></div>
+    <button class="btn-primary btn-sm" onclick="applyGlobalFilters()">تطبيق الفلاتر</button>
+    <button class="btn-ghost btn-sm" onclick="clearGlobalFilters()">✕ مسح الفلاتر</button>
+  `;
+}
+
+function itemOptionsList(){
+  const map = new Map();
+  (STATE.data.items||[]).forEach(r=>{ if(r.ItemCode) map.set(r.ItemCode, r.ItemName||r.ItemCode); });
+  (STATE.data.salesInvoices||[]).forEach(r=>{ if(r.ItemCode && !map.has(r.ItemCode)) map.set(r.ItemCode, r.ItemName||r.ItemCode); });
+  return Array.from(map.entries()).map(([code,name])=>({code,name})).slice(0,3000);
+}
+
+const RECO_LABELS = {CRITICAL:'حرِج — اطلب الآن', ORDER_SOON:'اطلب قريباً', MONITOR:'راقب', NO_ORDER:'لا حاجة لطلب', OVERSTOCK:'فائض مخزون', SLOW_MOVING:'راكد', STOCKOUT_RISK:'خطر انقطاع', IN_TRANSIT:'بالطريق'};
+const STOCK_STATUS_LABELS = {STOCKOUT:'انقطاع', OVERSTOCK:'فائض', SLOW:'بطيء الحركة', DEAD:'راكد تماماً', NORMAL:'طبيعي'};
+const EXPIRY_LABELS = {EXPIRED:'منتهي', NEAR30:'قريب الانتهاء (30 يوم)', NEAR90:'متوسط الخطورة (90 يوم)', VALID:'صالح'};
+
+function applyGlobalFilters(){
+  const g = id=>document.getElementById(id).value;
+  Object.assign(STATE.filters, {
+    dateFrom:g('f_dateFrom'), dateTo:g('f_dateTo'), item:g('f_item'), itemGroup:g('f_itemGroup'),
+    supplier:g('f_supplier'), supplierCountry:g('f_supplierCountry'), warehouse:g('f_warehouse'),
+    customer:g('f_customer'), salesEmployee:g('f_salesEmployee'), recStatus:g('f_recStatus'),
+    stockStatus:g('f_stockStatus'), expiryStatus:g('f_expiryStatus'),
+  });
+  if(window.onDataChanged) window.onDataChanged();
+}
+function clearGlobalFilters(){
+  Object.keys(STATE.filters).forEach(k=>STATE.filters[k]='');
+  renderGlobalFilterBar();
+  if(window.onDataChanged) window.onDataChanged();
+}
+
+/** يطبّق فلاتر المستوى-المعاملاتي (تاريخ/صنف/مستودع/عميل/مندوب/مورد) على سطر خام من أي مصدر */
+function matchesTxFilters(row, opts){
+  opts = opts || {};
+  const f = STATE.filters;
+  if(f.dateFrom || f.dateTo){
+    const d = opts.dateField ? row[opts.dateField] : null;
+    if(d instanceof Date){
+      if(f.dateFrom && d < new Date(f.dateFrom)) return false;
+      if(f.dateTo && d > new Date(f.dateTo+'T23:59:59')) return false;
+    }
+  }
+  if(f.item){
+    const q = f.item.trim().toLowerCase();
+    const code = String(row.ItemCode||'').toLowerCase(), name = String(row.ItemName||'').toLowerCase();
+    if(!code.includes(q) && !name.includes(q)) return false;
+  }
+  if(f.warehouse && row.WhsCode!==undefined && row.WhsCode!==f.warehouse) return false;
+  if(f.customer){
+    const q = f.customer.trim().toLowerCase();
+    if(row.CardName!==undefined && !String(row.CardName||'').toLowerCase().includes(q)) return false;
+  }
+  if(f.salesEmployee && row.SlpName!==undefined && row.SlpName!==f.salesEmployee) return false;
+  if(f.supplier && row.SupplierCode!==undefined && row.SupplierCode!==f.supplier) return false;
+  return true;
+}
+
+async function initApp(){
+  try{
+    await STATE.loadAll();
+    const savedTunable = await DB.getMeta('tunable', null);
+    if(savedTunable) Object.assign(CONFIG.tunable, savedTunable);
+    document.querySelectorAll('nav.mainnav button').forEach(function(btn){
+      btn.addEventListener('click', function(){ switchView(btn.getAttribute('data-view')); });
+    });
+    renderGlobalFilterBar();
+    if(window.recomputeAll) recomputeAll();
+    switchView('decisions');
+  }catch(err){
+    console.error(err);
+    U.toast('خطأ بتحميل النظام: '+err.message, 'err');
+  }
+}
+window.onDataChanged = function(){ if(window.recomputeAll) recomputeAll(); switchView(document.querySelector('nav.mainnav button.active').getAttribute('data-view')); };
+
+document.addEventListener('DOMContentLoaded', initApp);
+function closeDrawer(){ document.getElementById('drawerOverlay').classList.remove('open'); }
+function closeModal(){ document.getElementById('modalOverlay').classList.remove('open'); }
+</script>
+</body>
+</html>
