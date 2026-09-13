@@ -867,6 +867,25 @@ T1."ItemCode";</code>
       </details>
 
       <details class="opt">
+        <summary><span class="num-badge opt">9</span> مرتجعات المبيعات (Credit Memo) — اختياري بس مهم لدقة الطلب</summary>
+        <div class="hint">
+          بدون هالكويري، أي كمية يرجّعها الزبون بتُحتسَب ضمن الطلب اليومي كأنها بيع حقيقي كامل (مثلاً زبون اشترى 10 ورجّع 8، الطلب المحسوب حالياً 10 كامل بدل 2 صافي). هالكويري بيجيب مستندات إشعار الدائن (Credit Memo)، والشاشة بتخصم كمياتها تلقائياً من صافي الطلب اليومي/الشهري لنفس الصنف قبل حساب مخزون الأمان والكمية المقترحة. عمود الكمية بـRIN1 موجب (يمثّل الكمية المرتجعة)، مش سالب — الشاشة يلي بتقلبها سالبة داخلياً.
+          <code class="block" id="q-returns">SELECT T1."ItemCode" AS "رمز الصنف", T0."DocDate" AS "التاريخ",
+       T1."Quantity" AS "الكمية", T1."LineTotal" AS "المبلغ"
+FROM ORIN T0 INNER JOIN RIN1 T1 ON T0."DocEntry"=T1."DocEntry"
+WHERE T0."DocDate" BETWEEN [%0] AND [%1]
+ORDER BY T1."ItemCode", T0."DocDate"</code>
+        </div>
+        <textarea id="pasteReturns" placeholder="الصق هنا: رمز الصنف / التاريخ / الكمية / المبلغ(اختياري) ..."></textarea>
+        <div class="row-actions" style="margin-top:6px;">
+          <input type="file" id="pasteReturnsFile" accept=".txt,.csv,.tsv" style="display:none;" onchange="loadPasteFromFile(event,'pasteReturns')">
+          <button class="btn-ghost btn-sm" type="button" onclick="document.getElementById('pasteReturnsFile').click()">📁 ارفع ملف بدل اللصق (أسرع كتير للبيانات الضخمة)</button>
+          <button class="btn-ghost btn-sm" type="button" onclick="clearUploadedFile('pasteReturns')">✕ إزالة الملف</button>
+          <span class="status-msg" id="pasteReturnsFileMsg"></span>
+        </div>
+      </details>
+
+      <details class="opt">
         <summary>🗂 استيراد بيانات العملاء (رمز/اسم، لربط تفصيل المبيعات حسب العميل)</summary>
         <div class="hint">
           لصق تصدير "Customers" الكامل من SAP B1 مباشرة (نفس أعمدة "BP Code" / "BP Name") أو كويري
@@ -1013,7 +1032,7 @@ FROM OCRD WHERE "CardType"='S'</code>
 /* ================= الحالة العامة ================= */
 const STORAGE_KEY = 'procint_state_v1';
 let state = {
-  itemsRaw:{}, salesRaw:[], invRaw:[], leadTimeRaw:[], poOrdersRaw:[], apInvoiceRaw:[], poRaw:[], actualCostRaw:[],
+  itemsRaw:{}, salesRaw:[], invRaw:[], leadTimeRaw:[], poOrdersRaw:[], apInvoiceRaw:[], poRaw:[], actualCostRaw:[], returnsRaw:[],
   params:{}, // itemCode -> {supplier, leadTimeDays, moq, orderMultiple, shelfLifeDays, minRemainShelfLife, unitCost, serviceLevel, criticality}
   supplierSettings:{}, // supplierKey(normalized) -> {relationshipType:'normal'|'contract'|'target', note}
   // poResolutions: مفتاح صف PO (رمز الصنف+المورد+الكمية+تاريخ الوصول الأصلي كما وصل من
@@ -1071,7 +1090,10 @@ const DATA_SOURCES = [
     fields:['رمز الصنف','الكمية','تاريخ الوصول المتوقع','المورد (اختياري)'] },
   { key:'actualCost', queryNo:8, label:'اللاندد كوست (Landed Cost)', required:false, fieldId:'pasteActualCost', codeId:'q-actualCost',
     why:'الكلفة الفعلية النهائية شاملة الشحن والجمارك — لمقارنة كلفة حقيقية بدل سعر المنشأ فقط.',
-    fields:['Item Code','Landed Cost Date','Base Doc. Price','Final Unit Cost'] }
+    fields:['Item Code','Landed Cost Date','Base Doc. Price','Final Unit Cost'] },
+  { key:'returns', queryNo:9, label:'مرتجعات المبيعات (Credit Memo)', required:false, fieldId:'pasteReturns', codeId:'q-returns',
+    why:'تُخصم من صافي الطلب اليومي قبل حساب مخزون الأمان والكمية المقترحة — بدونها، أي كمية يرجّعها الزبون تُحتسَب طلباً حقيقياً كاملاً.',
+    fields:['رمز الصنف','التاريخ','الكمية','المبلغ (اختياري)'] }
 ];
 
 // القدرات التحليلية وما تعتمد عليه من مصادر — تُستخدم لشاشة "البيانات الناقصة"
@@ -1630,6 +1652,39 @@ function processAllDataHeavy(){
     }
   }
 
+  // 9) مرتجعات المبيعات (اختياري) — Credit Memo، تُخصم من صافي الطلب اليومي/الشهري
+  // قبل حساب مخزون الأمان والكمية المقترحة (runEngine)
+  const retTxt = getPasteText('pasteReturns');
+  if(retTxt.trim()){
+    const {headers, rows, raggedCount} = splitPasted(retTxt);
+    if(raggedCount) raggedNotes.push('المرتجعات ('+raggedCount+' سطر)');
+    const iCode = colIndex(headers, ['رمز الصنف','ItemCode','Item No.']);
+    const iDate = colIndex(headers, ['التاريخ','DocDate']);
+    const iQty = colIndex(headers, ['الكمية','Quantity']);
+    const iAmount = colIndex(headers, ['المبلغ','LineTotal']);
+    if(iCode>=0 && iDate>=0 && iQty>=0){
+      let retBlankCount=0, retInvalidQtyCount=0, retInvalidDateCount=0, retUnknownItemCount=0;
+      const retUnknownSamples = newSampleSet(8);
+      state.returnsRaw = rows.map(r=>{
+        const code=r[iCode], qty=toNum(r[iQty]);
+        if(!code){ retBlankCount++; return null; }
+        if(isNaN(qty)) retInvalidQtyCount++;
+        if(r[iDate] && !parseDateFlexible(r[iDate])) retInvalidDateCount++;
+        if(!state.itemsRaw[code]){ retUnknownItemCount++; retUnknownSamples.tryAdd(code); }
+        return { code, date:r[iDate], qty, amount: iAmount>=0 ? toNum(r[iAmount]) : NaN };
+      }).filter(r=>r && r.code && !isNaN(r.qty));
+      noteImport('returns','مرتجعات المبيعات (Credit Memo)', { count: state.returnsRaw.length, issues: buildIssues([
+        ['blank_key', retBlankCount, 'سطر بدون رمز صنف (تجوهل)'],
+        ['invalid_qty', retInvalidQtyCount, 'كمية غير رقمية (تجوهل السطر)'],
+        ['invalid_date', retInvalidDateCount, 'تاريخ غير مفهوم (استُبعد السطر من الخصم الزمني)'],
+        ['unknown_item', retUnknownItemCount, 'رمز صنف غير موجود بجدول الأصناف الحالي', Array.from(retUnknownSamples)]
+      ])});
+    } else {
+      msg.textContent = 'تعذر إيجاد أعمدة كويري المرتجعات (رمز الصنف/التاريخ/الكمية)';
+      msg.className='status-msg err';
+    }
+  }
+
   renderParamsTable();
   runEngine();
   renderDataHub();
@@ -1648,10 +1703,11 @@ function processAllDataHeavy(){
   if(apTxt.trim()) changedDatasets.push('apinvoice');
   if(poTxt.trim()) changedDatasets.push('po');
   if(acTxt.trim()) changedDatasets.push('actualcost');
+  // المرتجعات نفس حساسية بيانات العميل بكويري المبيعات — تُبقى محلية بالمتصفح فقط، بدون رفع للسحابة
   scheduleCloudSave(changedDatasets);
 }
 function clearAllPasted(){
-  ['pasteItems','pasteSales','pasteInventory','pasteLeadTime','pasteParams','pasteApInvoices','pastePO','pasteActualCost'].forEach(id=>clearUploadedFile(id));
+  ['pasteItems','pasteSales','pasteInventory','pasteLeadTime','pasteParams','pasteApInvoices','pastePO','pasteActualCost','pasteReturns'].forEach(id=>clearUploadedFile(id));
 }
 
 /* ================= جدول بارامترات الأصناف ================= */
@@ -2151,6 +2207,25 @@ function runEngine(){
     (salesByItem[r.code] = salesByItem[r.code] || []).push({date:d, qty:r.qty});
   });
 
+  // مرتجعات المبيعات (Credit Memo) — تُضاف كسطور كمية سالبة بنفس بنية سطور المبيعات
+  // تماماً (شهرية وضمن نافذة التحليل)، بهيك كل حساب لاحق (متوسط الطلب اليومي، تصنيف
+  // ABC، التقرير الشهري) بيصير صافياً تلقائياً بدون أي منطق خصم خاص إضافي. بنبنيها
+  // بخريطة منفصلة (netSalesByItem) لا فوق salesByItem نفسها، حتى daysWithSalesData
+  // (بوابة "تاريخ مبيعات كافٍ") تضل تعكس سطور بيع حقيقية بس — صنف مرتجعاته كتير
+  // ومبيعاته الحقيقية شبه معدومة ما لازم يظهر وكأنه عنده "تاريخ مبيعات كافٍ"
+  const netSalesByItem = {};
+  Object.keys(salesByItem).forEach(code=>{ netSalesByItem[code] = salesByItem[code].slice(); });
+  const returnsByItemWindow = {};
+  (state.returnsRaw||[]).forEach(r=>{
+    const d = parseDateFlexible(r.date); if(!d || isNaN(r.qty)) return;
+    const mk = dateKey(d).slice(0,7);
+    (allSalesByItem[r.code] = allSalesByItem[r.code] || []).push({monthKey:mk, qty:-r.qty, amount: isNaN(r.amount)?NaN:-r.amount});
+    if(d >= windowStart){
+      (netSalesByItem[r.code] = netSalesByItem[r.code] || []).push({date:d, qty:-r.qty});
+      returnsByItemWindow[r.code] = (returnsByItemWindow[r.code]||0) + r.qty;
+    }
+  });
+
   // تجميع المخزون لكل صنف (قد يكون بأكثر من مستودع) + خريطة أسماء المستودعات
   const invByItem = {};
   state.warehouseNames = state.warehouseNames || {};
@@ -2256,9 +2331,9 @@ function runEngine(){
     actualCostHistoryByItem[code] = actualCostHistoryByItem[code].slice(0,5);
   });
 
-  const salesValueByItem = {}; // لتصنيف ABC
+  const salesValueByItem = {}; // لتصنيف ABC — صافي بعد خصم المرتجعات
   Object.keys(state.itemsRaw).forEach(code=>{
-    const s = salesByItem[code] || [];
+    const s = netSalesByItem[code] || [];
     const totalQty = s.reduce((a,b)=>a+b.qty,0);
     const p = state.params[code] || {};
     salesValueByItem[code] = totalQty * (toNum(p.unitCost) || 0);
@@ -2284,12 +2359,15 @@ function runEngine(){
     // فحص "MOQ مفقود" انتقل لتحت (بعد حساب moqAvg) — نفس سبب انتقال فحص Lead Time أعلاه
     if(daysWithSalesData < 5) missing.push('تاريخ مبيعات كافٍ');
 
-    // متوسط وتذبذب الطلب اليومي (تجميع يومي بسيط من نقاط البيع الملصوقة)
+    // متوسط وتذبذب الطلب اليومي (تجميع يومي من نقاط البيع الملصوقة، صافي بعد خصم
+    // مرتجعات Credit Memo — netSalesByItem)
     const dailyMap = {};
-    (salesByItem[code]||[]).forEach(x=>{ const k=dateKey(x.date); dailyMap[k]=(dailyMap[k]||0)+x.qty; });
+    (netSalesByItem[code]||[]).forEach(x=>{ const k=dateKey(x.date); dailyMap[k]=(dailyMap[k]||0)+x.qty; });
     const observedDays = Math.max(1, Math.min(windowDays, daysBetween(windowStart, now)));
     const dailyVals = Object.values(dailyMap);
-    const dAvg = dailyVals.length ? (dailyVals.reduce((a,b)=>a+b,0) / observedDays) : 0;
+    // لا معنى لـ"متوسط طلب يومي" سالب (مرتجعات فاقت المبيعات بنفس النافذة) — نتركه صفر
+    // بدل ما نمرّر رقماً سالباً يكسر منطق محاكاة المخزون (طرح رقم سالب = زيادة وهمية)
+    const dAvg = dailyVals.length ? Math.max(0, dailyVals.reduce((a,b)=>a+b,0) / observedDays) : 0;
     const dStd = stdev(dailyVals.length ? dailyVals.concat(Array(Math.max(0,observedDays-dailyVals.length)).fill(0)) : [0]);
 
     // مدة التوريد — بالأولوية: (1) فعلي من تاريخ شراء حقيقي، (2) تعاقدي يدوي مؤكَّد،
@@ -2467,8 +2545,8 @@ function runEngine(){
     {
       const d30 = new Date(now.getTime() - 30*86400000);
       const d60 = new Date(now.getTime() - 60*86400000);
-      const recent = (salesByItem[code]||[]).filter(x=>x.date>=d30).reduce((a,x)=>a+x.qty,0);
-      const prev = (salesByItem[code]||[]).filter(x=>x.date>=d60 && x.date<d30).reduce((a,x)=>a+x.qty,0);
+      const recent = (netSalesByItem[code]||[]).filter(x=>x.date>=d30).reduce((a,x)=>a+x.qty,0);
+      const prev = (netSalesByItem[code]||[]).filter(x=>x.date>=d60 && x.date<d30).reduce((a,x)=>a+x.qty,0);
       if(daysWithSalesData>=45 && windowDays>=60 && (recent>0 || prev>0)){
         const chg = prev>0 ? (recent-prev)/prev : 1;
         demandTrend = { recent, prev, changePct: prev>0 ? Math.round(chg*1000)/10 : null, label: chg>0.15?'متزايد':(chg<-0.15?'متناقص':'مستقر') };
@@ -2597,6 +2675,7 @@ function runEngine(){
       onHand: inv.onHand, onOrder: effectiveOnOrder, poLots, datedPoLots, warehouses: inv.warehouses,
       dAvg: Math.round(dAvg*100)/100, dStd: Math.round(dStd*100)/100,
       daysWithSalesData, demandTrend, demandMethod, seasonalityNote,
+      returnsQty: returnsByItemWindow[code]||0,
       ltAvg, ltStd, ltSource, safetyStockReliable, leadTimeIsSupplierInferred,
       safetyStock: safetyStock!=null ? Math.round(safetyStock) : null,
       safetyStockZ: z, serviceLevel: p.serviceLevel||95,
@@ -2909,7 +2988,8 @@ function pccDetailHtml(r){
     + '<div class="pcc-detail-grid">'
       + '<div class="pcc-detail-section"><h4>📈 الطلب</h4>'
         + kv('فترة بيانات المبيعات', (r.daysWithSalesData||0)+' يوم')
-        + kv('متوسط الطلب اليومي', r.dAvg+' وحدة/يوم')
+        + kv('متوسط الطلب اليومي', r.dAvg+' وحدة/يوم (صافي بعد خصم المرتجعات)')
+        + (r.returnsQty>0 ? kv('مرتجعات مخصومة (ضمن نافذة التحليل)', fmtNum(r.returnsQty)) : '')
         + kv('طريقة الاحتساب', esc(r.demandMethod)+' (وليس تنبؤاً/AI)')
         + kv('الاتجاه (آخر 30 يوم)', esc(trendTxt))
         + kv('الموسمية', esc(r.seasonalityNote))
