@@ -1131,6 +1131,25 @@ WHERE T0."DocStatus"='O' AND T1."LineStatus"='O'</code>
       </details>
 
       <details class="opt">
+        <summary><span class="num-badge opt">12</span> أوامر البيع المفتوحة (Sales Orders) — بضاعة محجوزة فعلياً للعملاء (اختياري بس مهم)</summary>
+        <div class="hint">
+          مؤكَّد من المستخدم: عندهم كوتيشن (رقم 11) وأمر بيع (Sales Order) مستندين منفصلين بالـSAP، وكل واحد فيهم بضاعة مؤكَّدة لعميل لازم تُخصم من الرصيد القابل للبيع — نفس المعاملة بالضبط، بس من جدول مختلف. هالكويري بيجيب الكمية المفتوحة (غير المسلَّمة بعد) من كل سطر أمر بيع.
+          <code class="block" id="q-salesOrders">SELECT T1."ItemCode" AS "رمز الصنف", T1."OpenQty" AS "الكمية المحجوزة",
+       T0."CardName" AS "العميل"
+FROM ORDR T0 INNER JOIN RDR1 T1 ON T0."DocEntry"=T1."DocEntry"
+WHERE T0."DocStatus"='O' AND T1."LineStatus"='O'</code>
+          <div style="margin-top:6px;color:var(--crimson);">⚠ تحقق من اسم عمود "الكمية المفتوحة غير المسلَّمة" عندكم قبل ما تشغّل الكويري (ممكن يختلف الاسم حسب إعداد النظام).</div>
+        </div>
+        <textarea id="pasteSalesOrders" placeholder="الصق هنا: رمز الصنف / الكمية المحجوزة / العميل(اختياري) ..."></textarea>
+        <div class="row-actions" style="margin-top:6px;">
+          <input type="file" id="pasteSalesOrdersFile" accept=".txt,.csv,.tsv" style="display:none;" onchange="loadPasteFromFile(event,'pasteSalesOrders')">
+          <button class="btn-ghost btn-sm" type="button" onclick="document.getElementById('pasteSalesOrdersFile').click()">📁 ارفع ملف بدل اللصق (أسرع كتير للبيانات الضخمة)</button>
+          <button class="btn-ghost btn-sm" type="button" onclick="clearUploadedFile('pasteSalesOrders')">✕ إزالة الملف</button>
+          <span class="status-msg" id="pasteSalesOrdersFileMsg"></span>
+        </div>
+      </details>
+
+      <details class="opt">
         <summary>🗂 استيراد بيانات العملاء (رمز/اسم، لربط تفصيل المبيعات حسب العميل)</summary>
         <div class="hint">
           لصق تصدير "Customers" الكامل من SAP B1 مباشرة (نفس أعمدة "BP Code" / "BP Name") أو كويري
@@ -1197,6 +1216,7 @@ WHERE T0."DocStatus"='O' AND T1."LineStatus"='O'</code>
         <button data-f="EXCESS" onclick="setFilter('EXCESS')">📦 فائض</button>
         <button data-f="REVIEW" onclick="setFilter('REVIEW')">⚪ بيانات ناقصة</button>
       </div>
+      <button class="btn-ghost btn-sm" id="demandAlertToggleBtn" onclick="toggleDemandAlertFilter()" title="يعرض بس الأصناف يلي صار عندها ارتفاع أو انخفاض حاد (٥٠٪+) بمتوسط البيع خلال آخر 30 يوم مقارنة بالـ30 يوم يلي قبلها">⚠️ تغيّر حاد بالطلب بس</button>
       <input type="text" class="search" id="searchBox" placeholder="بحث برمز/اسم الصنف..." oninput="towerPageNum=0; withFocusPreserved(renderTower);">
       <select id="towerSortSelect" onchange="setTowerSort(this.value)" title="ترتيب حسب">
         <option value="">ترتيب: الأولوية (افتراضي)</option>
@@ -1298,6 +1318,7 @@ let state = {
   excludedWarehouses: ['004','006','099','100'],
   batchesRaw:[], // أرصدة الباتشات مع تاريخ الانتهاء (اختياري) — لاستبعاد المنتهي فعلياً والتنبيه على القريب من الانتهاء
   quotationsRaw:[], // الكوتيشنات المفتوحة (اختياري) — كمية محجوزة فعلياً للعملاء عند هالمستخدم (كوتيشن=مؤكَّد متل أمر البيع)، تُستبعد من الرصيد القابل للبيع
+  salesOrdersRaw:[], // أوامر البيع المفتوحة (اختياري) — مستند منفصل عن الكوتيشن عند هالمستخدم، نفس معاملة الخصم من الرصيد القابل للبيع
   // ================= Data Hub (مركز البيانات) =================
   // sourceMeta: مفتاح المصدر -> {lastImportAt, recordCount, issues:[{type,count,label}], qualityScore}
   // مبنية فعلياً من نتيجة كل استيراد حقيقي — مش أرقام تجميلية (تُحسب من processAllDataHeavy)
@@ -1306,6 +1327,13 @@ let state = {
   importHistory:[]
 };
 let curFilter='all';
+let curDemandAlertOnly=false;
+function toggleDemandAlertFilter(){
+  curDemandAlertOnly = !curDemandAlertOnly;
+  document.getElementById('demandAlertToggleBtn').classList.toggle('active', curDemandAlertOnly);
+  towerPageNum = 0;
+  renderTower();
+}
 
 function loadStateLocal(){
   try{ const raw = localStorage.getItem(STORAGE_KEY); if(raw){ const s = JSON.parse(raw); Object.assign(state, s); } }catch(e){ console.warn('تعذر تحميل الحالة المحلية', e); }
@@ -1351,6 +1379,9 @@ const DATA_SOURCES = [
     fields:['رمز الصنف','رقم الباتش (اختياري)','الكمية','تاريخ الانتهاء'] },
   { key:'quotations', queryNo:11, label:'الكوتيشنات المفتوحة (محجوزة للعملاء)', required:false, fieldId:'pasteQuotations', codeId:'q-quotations',
     why:'الكوتيشن عند هالمستخدم مؤكَّد متل أمر البيع — كميته محجوزة فعلياً لزبون ومش متاحة لطلب مستقبلي تاني. بدونه، الرصيد القابل للبيع بيُحتسَب أكبر من الحقيقة.',
+    fields:['رمز الصنف','الكمية المحجوزة','العميل (اختياري)'] },
+  { key:'salesOrders', queryNo:12, label:'أوامر البيع المفتوحة (محجوزة للعملاء)', required:false, fieldId:'pasteSalesOrders', codeId:'q-salesOrders',
+    why:'مستند منفصل عن الكوتيشن عند هالمستخدم، بس نفس المعنى — بضاعة مؤكَّدة لعميل. بدونه، الرصيد القابل للبيع بيُحتسَب أكبر من الحقيقة.',
     fields:['رمز الصنف','الكمية المحجوزة','العميل (اختياري)'] }
 ];
 
@@ -2031,6 +2062,36 @@ function processAllDataHeavy(){
     }
   }
 
+  // 12) أوامر البيع المفتوحة (اختياري) — مستند منفصل عن الكوتيشن عند هالمستخدم، نفس
+  // معاملة الخصم من الرصيد القابل للبيع (runEngine)
+  const soTxt = getPasteText('pasteSalesOrders');
+  if(soTxt.trim()){
+    const {headers, rows, raggedCount} = splitPasted(soTxt);
+    if(raggedCount) raggedNotes.push('أوامر البيع ('+raggedCount+' سطر)');
+    const iCode = colIndex(headers, ['رمز الصنف','ItemCode','Item No.']);
+    const iQty = colIndex(headers, ['الكمية المحجوزة','OpenQty','الكمية']);
+    const iCust = colIndex(headers, ['العميل','CardName','CardCode']);
+    if(iCode>=0 && iQty>=0){
+      let soBlankCount=0, soInvalidQtyCount=0, soUnknownItemCount=0;
+      const soUnknownSamples = newSampleSet(8);
+      state.salesOrdersRaw = rows.map(r=>{
+        const code=r[iCode], qty=toNum(r[iQty]);
+        if(!code){ soBlankCount++; return null; }
+        if(isNaN(qty)) soInvalidQtyCount++;
+        if(!state.itemsRaw[code]){ soUnknownItemCount++; soUnknownSamples.tryAdd(code); }
+        return { code, qty, customer: iCust>=0 ? r[iCust] : '' };
+      }).filter(r=>r && r.code && !isNaN(r.qty));
+      noteImport('salesOrders','أوامر البيع المفتوحة (محجوزة للعملاء)', { count: state.salesOrdersRaw.length, issues: buildIssues([
+        ['blank_key', soBlankCount, 'سطر بدون رمز صنف (تجوهل)'],
+        ['invalid_qty', soInvalidQtyCount, 'كمية غير رقمية (تجوهل السطر)'],
+        ['unknown_item', soUnknownItemCount, 'رمز صنف غير موجود بجدول الأصناف الحالي', Array.from(soUnknownSamples)]
+      ])});
+    } else {
+      msg.textContent = 'تعذر إيجاد أعمدة كويري أوامر البيع (رمز الصنف/الكمية المحجوزة)';
+      msg.className='status-msg err';
+    }
+  }
+
   renderParamsTable();
   runEngine();
   renderDataHub();
@@ -2051,11 +2112,11 @@ function processAllDataHeavy(){
   if(acTxt.trim()) changedDatasets.push('actualcost');
   // المرتجعات نفس حساسية بيانات العميل بكويري المبيعات — تُبقى محلية بالمتصفح فقط، بدون رفع للسحابة
   // الباتشات كمان محلية فقط حالياً — رفعها للسحابة يحتاج جدول Supabase جديد لعدم إضافته بدون طلب صريح
-  // الكوتيشنات فيها بيانات عميل — نفس معاملة المبيعات/المرتجعات، محلية فقط
+  // الكوتيشنات وأوامر البيع فيهم بيانات عميل — نفس معاملة المبيعات/المرتجعات، محلية فقط
   scheduleCloudSave(changedDatasets);
 }
 function clearAllPasted(){
-  ['pasteItems','pasteSales','pasteInventory','pasteLeadTime','pasteParams','pasteApInvoices','pastePO','pasteActualCost','pasteReturns','pasteBatches','pasteQuotations'].forEach(id=>clearUploadedFile(id));
+  ['pasteItems','pasteSales','pasteInventory','pasteLeadTime','pasteParams','pasteApInvoices','pastePO','pasteActualCost','pasteReturns','pasteBatches','pasteQuotations','pasteSalesOrders'].forEach(id=>clearUploadedFile(id));
 }
 
 /* ================= جدول بارامترات الأصناف ================= */
@@ -2610,11 +2671,11 @@ function runEngine(){
     }
   });
 
-  // الكوتيشنات المفتوحة (اختياري) — كمية محجوزة فعلياً للعملاء (كوتيشن=مؤكَّد متل أمر
-  // البيع عند هالمستخدم)، تُستبعد بالكامل من الرصيد القابل للبيع (نفس معاملة مستودعات
-  // التوالف والباتش المنتهي)
+  // الكوتيشنات وأوامر البيع المفتوحة (اختياري) — كمية محجوزة فعلياً للعملاء (كوتيشن
+  // وأمر بيع مستندين منفصلين عند هالمستخدم، بس نفس المعنى: مؤكَّد ومحجوز)، تُستبعد
+  // بالكامل من الرصيد القابل للبيع (نفس معاملة مستودعات التوالف والباتش المنتهي)
   const committedQtyByItem = {};
-  (state.quotationsRaw||[]).forEach(r=>{
+  (state.quotationsRaw||[]).concat(state.salesOrdersRaw||[]).forEach(r=>{
     if(isNaN(r.qty) || r.qty<=0) return;
     committedQtyByItem[r.code] = (committedQtyByItem[r.code]||0) + r.qty;
   });
@@ -2895,7 +2956,7 @@ function runEngine(){
     const projectedAtEndOfWindowNoPO = (endOfHorizonDay!=null) ? minOverWindow(simNoPoArr, newPoArrivalDay, endOfHorizonDay) : null;
 
     let actualRequirement = null, actualRequirementNoPO = null;
-    let recommendedQty = null, qtyNotes = [], moqExcess = null, moqExcessValue = null, orderMultipleAdjustment = null;
+    let recommendedQty = null, qtyNotes = [], moqExcess = null, moqExcessValue = null, orderMultipleAdjustment = null, shipmentFloorExcess = null;
     const targetStockLevel = (ltAvg!=null) ? Math.round(dAvg*(ltAvg+horizonDays) + (safetyStock||0)) : null; // مستوى مرجعي إعلامي (يُعرض بالتفصيل)، غير مستخدَم لحساب القرار
     // بوابة صريحة: ما فيش كمية شراء محسوبة إطلاقاً إذا البيانات ناقصة أو مخزون الأمان
     // غير موثوق — حتى لو Lead Time وMOQ متوفرين شكلياً (تيست #7 و#9)
@@ -2916,6 +2977,15 @@ function runEngine(){
           qty = moq;
           qtyNotes.push('رُفعت للحد الأدنى للمورد (MOQ='+moq+(!moqConfirmedReal?' — '+moqSource:'')+') — فائض عن الاحتياج الفعلي: '+fmtNum(moqExcess)+(moqExcessValue?(' (~'+Math.round(moqExcessValue).toLocaleString('en-US')+' د.أ)'):''));
         } else if(!moqConfirmedReal && moq!=null){ qtyNotes.push('⚠ MOQ غير مؤكَّد رسمياً من المورد: '+moqSource); }
+        // حد أدنى فعلي من واقع الشحنات التاريخية — قيد فعلي إضافي فوق MOQ (مش تنبيه بس)،
+        // بطلب صريح من المستخدم: المورد عملياً ممكن ما يشحن كمية أصغر من أصغر شحنة سابقة
+        // وصلت فعلاً، حتى لو حقل MOQ الرسمي بالنظام أصغر من هيك أو غير موثوق
+        const shipMinInfo = itemMinShipmentQty[code];
+        if(shipMinInfo && qty<shipMinInfo.minQty){
+          shipmentFloorExcess = shipMinInfo.minQty - qty;
+          qty = shipMinInfo.minQty;
+          qtyNotes.push('رُفعت لأصغر شحنة استُلمت فعلياً تاريخياً لهالصنف ('+fmtNum(shipMinInfo.minQty)+' — من أصل '+shipMinInfo.shipmentCount+' شحنة سابقة) — المورد عملياً ما بيشحن كمية أصغر من هيك، بغض النظر عن MOQ الرسمي');
+        }
         // سقف الصلاحية: لا تشترِ أكثر مما يمكن استهلاكه قبل الانتهاء
         if(!isNaN(toNum(p.shelfLifeDays)) && dAvg>0){
           const maxByShelfLife = dAvg * toNum(p.shelfLifeDays);
@@ -2939,6 +3009,16 @@ function runEngine(){
       if(daysWithSalesData>=45 && windowDays>=60 && (recent>0 || prev>0)){
         const chg = prev>0 ? (recent-prev)/prev : 1;
         demandTrend = { recent, prev, changePct: prev>0 ? Math.round(chg*1000)/10 : null, label: chg>0.15?'متزايد':(chg<-0.15?'متناقص':'مستقر') };
+      }
+    }
+    // تنبيه تغيّر حاد بالطلب — أقوى من تصنيف "متزايد/متناقص" العادي (±15٪)، بعتبة أعلى
+    // (±50٪ افتراضياً) مخصَّصة لتنبيه فعلي يستدعي انتباه فوري، مش مجرد وصف اتجاه عام.
+    // يحتاج نفس شرط بيانات demandTrend الكافية (وإلا يضل null بدون تخمين على بيانات ناقصة)
+    const DEMAND_ALERT_THRESHOLD_PCT = 50;
+    let demandAlert = null;
+    {
+      if(demandTrend && demandTrend.changePct!=null && Math.abs(demandTrend.changePct)>=DEMAND_ALERT_THRESHOLD_PCT){
+        demandAlert = { direction: demandTrend.changePct>0?'up':'down', changePct: demandTrend.changePct };
       }
     }
     const demandMethod = 'متوسط تاريخي (Historical Average)'; // ما فيه احتساب اتجاه/موسمية بيتغذّى بالكمية — الاتجاه إعلامي بحت (أدناه)
@@ -3068,7 +3148,7 @@ function runEngine(){
       nearExpiryQty: (nearExpiryByItem[code]||{}).qty||0, nearExpiryDate: (nearExpiryByItem[code]||{}).nearestDate||null,
       onOrder: effectiveOnOrder, poLots, datedPoLots, warehouses: inv.warehouses,
       dAvg: Math.round(dAvg*100)/100, dStd: Math.round(dStd*100)/100,
-      daysWithSalesData, demandTrend, demandMethod, seasonalityNote,
+      daysWithSalesData, demandTrend, demandAlert, demandMethod, seasonalityNote,
       returnsQty: returnsByItemWindow[code]||0,
       ltAvg, ltStd, ltSource, safetyStockReliable, leadTimeIsSupplierInferred,
       safetyStock: safetyStock!=null ? Math.round(safetyStock) : null,
@@ -3083,7 +3163,7 @@ function runEngine(){
       requiredArrivalDate, arrivalGapDays, daysUntilStockout, daysUntilSafetyBreach,
       actionDeadlineDate, daysUntilRequiredAction, actionVerb,
       recommendedQty, qtyNotes,
-      actualRequirement, moqExcess, moqExcessValue, orderMultipleAdjustment,
+      actualRequirement, moqExcess, moqExcessValue, orderMultipleAdjustment, shipmentFloorExcess,
       riskGapUnavoidable, poArrivesTooLate, openPoEtaMissing, undatedPoQty,
       confidenceFactors,
       abc, xyz, missing,
@@ -3393,7 +3473,7 @@ function pccDetailHtml(r){
         + kv('المخزون الحالي (قابل للبيع)', fmtNum(r.onHand)+((r.damagedQty>0||r.expiredQty>0||r.committedQty>0)?(' — من إجمالي خام '+fmtNum(r.onHandGross)):''))
         + (r.damagedQty>0 ? kv('مستبعد كتالف (مستودعات غير قابلة للبيع)', fmtNum(r.damagedQty)) : '')
         + (r.expiredQty>0 ? kv('مستبعد كمنتهي الصلاحية فعلياً', fmtNum(r.expiredQty)) : '')
-        + (r.committedQty>0 ? kv('مستبعد كمحجوز لعملاء (كوتيشن مفتوح)', fmtNum(r.committedQty)) : '')
+        + (r.committedQty>0 ? kv('مستبعد كمحجوز لعملاء (كوتيشن/أمر بيع مفتوح)', fmtNum(r.committedQty)) : '')
         + (r.nearExpiryQty>0 ? kv('⚠ قريب من الانتهاء (لسا قابل للبيع)', fmtNum(r.nearExpiryQty)+' — أقرب تاريخ '+fmtDate(r.nearExpiryDate)) : '')
         + kv('التغطية الحالية (بدون أي PO)', r.daysCover!=null?(isFinite(r.daysCover)?r.daysCover+' يوم':'∞'):'—')
         + kv('مخزون الأمان', r.safetyStockReliable?fmtNum(r.safetyStock):'غير موثوق')
@@ -3418,6 +3498,7 @@ function pccDetailHtml(r){
         + kv('الاحتياج الفعلي (قبل MOQ والمضاعف)', r.actualRequirement>0?fmtNum(r.actualRequirement):(r.actualRequirement===0?'لا يوجد':'—'))
         + kv('تعديل مضاعف الطلب', r.orderMultipleAdjustment?('+'+fmtNum(r.orderMultipleAdjustment)):'0')
         + kv('فائض MOQ', r.moqExcess?('+'+fmtNum(r.moqExcess)+(r.moqExcessValue?(' (~'+Math.round(r.moqExcessValue).toLocaleString('en-US')+' د.أ)'):'')):'0')
+        + (r.shipmentFloorExcess ? kv('فائض حد أدنى الشحنة الفعلي', '+'+fmtNum(r.shipmentFloorExcess)) : '')
         + kv('الكمية المقترحة النهائية', '<b>'+qtyDisplay(r)+' '+esc(r.uom||'وحدة')+'</b>')
       + '</div>'
       + '<div class="pcc-detail-section"><h4>🎯 القرار</h4>'
@@ -3519,6 +3600,11 @@ const ROW_ACTION_BTN = {
 };
 // مصدر واحد لمنطق "فرصة تجميع مع أصناف تانية من نفس المورد" — مُستخدَم بمركز التحكم
 // (Tower) وبمركز التحكم الجديد (Command Center) معاً، بدل تكرار نفس الحساب بمكانين
+function demandAlertBadgeHtml(r){
+  if(!r.demandAlert) return '';
+  const up = r.demandAlert.direction==='up';
+  return ' <span class="badge '+(up?'crit':'warn')+'" title="متوسط البيع خلال آخر 30 يوم '+(up?'ارتفع':'انخفض')+' '+Math.abs(r.demandAlert.changePct)+'٪ مقارنة بالـ30 يوم يلي قبلها">'+(up?'🔺':'🔻')+' تغيّر حاد '+(up?'+':'')+r.demandAlert.changePct+'٪</span>';
+}
 function consolidationBadgeHtml(r){
   if(!r.consolidation) return '';
   if(r.consolidation.dueSiblings.length) return ' <span class="badge info" title="فرصة تجميع مع أصناف تانية من نفس المورد">🔗 تجميع</span>';
@@ -4142,6 +4228,7 @@ function renderKpis(){
   const waitForPo = list.filter(r=>r.decision==='WAIT_FOR_OPEN_PO').length;
   const excess = list.filter(r=>r.decision==='EXCESS');
   const review = list.filter(r=>r.decision==='REVIEW').length;
+  const demandAlertCount = list.filter(r=>r.demandAlert).length;
   const buyValue = list.filter(r=>(r.decision==='BUY_NOW'||r.decision==='BUY_SOON') && r.recommendedQty)
     .reduce((a,r)=>a+r.recommendedQty*r.unitCost,0);
   const excessValue = excess.reduce((a,r)=>a+(r.onHand*r.unitCost),0);
@@ -4154,6 +4241,7 @@ function renderKpis(){
     {cls:'ok', lbl:'🟢 لا تطلب (لا احتياج)', val: doNotBuy},
     {cls:'', lbl:'📦 أصناف فائضة', val: excess.length},
     {cls:'', lbl:'⚪ بيانات ناقصة', val: review},
+    {cls: demandAlertCount>0?'warn':'', lbl:'⚠️ تغيّر حاد بالطلب', val: demandAlertCount},
     {cls:'', lbl:'💰 قيمة الشراء المقترحة', val: Math.round(buyValue).toLocaleString('en-US')},
     {cls:'', lbl:'📦 قيمة المخزون الفائض', val: Math.round(excessValue).toLocaleString('en-US')},
   ];
@@ -4173,6 +4261,7 @@ function renderTower(){
   const q = (document.getElementById('searchBox').value||'').trim().toLowerCase();
   let fullList = state.computed;
   if(curFilter!=='all') fullList = fullList.filter(r=>r.decision===curFilter);
+  if(curDemandAlertOnly) fullList = fullList.filter(r=>r.demandAlert);
   if(q) fullList = fullList.filter(r=> r.code.toLowerCase().includes(q) || r.name.toLowerCase().includes(q));
   // ترتيب اختياري حسب أي عمود عبر القائمة المنسدلة (مركز التحكم كروت مش جدول حقيقي،
   // فما فيه رؤوس أعمدة تُضغَط — القائمة هي البديل المكافئ هون)
@@ -4225,7 +4314,7 @@ function renderTower(){
         + '<div class="num">'+(r.recommendedQty??'—')+'<br><span style="color:var(--ink-soft);font-size:9.5px;">كمية مقترحة</span></div>'
         + '<div>'+(r.priorityScore?('أولوية '+r.priorityScore):'')+'</div>'
         + '<div><span class="badge '+(badgeClass[r.decision]||'gray')+'">'+r.decisionLabel+'</span>'
-          + consolidationBadgeHtml(r) + shipmentFeasibilityBadgeHtml(r)
+          + consolidationBadgeHtml(r) + shipmentFeasibilityBadgeHtml(r) + demandAlertBadgeHtml(r)
         + '</div>'
         + '<span></span>'
       + '</div>'
