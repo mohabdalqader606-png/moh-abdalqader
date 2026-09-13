@@ -894,14 +894,190 @@ ORDER BY T1."ItemCode", T0."DocDate"</code>
       <details class="opt">
         <summary><span class="num-badge opt">10</span> أرصدة الباتشات مع تاريخ الانتهاء — اختياري بس مهم للأصناف ذات الصلاحية</summary>
         <div class="hint">
-          بدون هالكويري، الرصيد الحالي (كويري رقم 3) بيُحتسَب صالحاً للبيع بالكامل بغض النظر عن تاريخ أي باتش. هالكويري بيجيب رصيد كل باتش لحاله مع تاريخ انتهائه من جداول الباتشات القياسية بـSAP B1 (OBTN/OBTQ). الشاشة بتستبعد تلقائياً أي كمية باتش تاريخ انتهائها فات فعلياً من الرصيد القابل للبيع (نفس معاملة مستودعات التوالف)، وبتنبّه (بدون استبعاد — لسا صالحة قانونياً) على أي كمية باتش تاريخ انتهائها قريب (ضمن أفق الشراء الحالي).
-          <div style="margin-top:6px;color:var(--crimson);">⚠ أسماء الجداول/الأعمدة القياسية بـSAP B1 — تحقق منها عندكم قبل التشغيل (ممكن تختلف حسب إصدار SAP أو إعداد تتبع الباتشات).</div>
-          <code class="block" id="q-batches">SELECT T1."ItemCode" AS "رمز الصنف", T1."DistNumber" AS "رقم الباتش",
-       T1."Quantity" AS "الكمية", T0."ExpDate" AS "تاريخ الانتهاء", T1."WhsCode" AS "المستودع"
-FROM OBTN T0 INNER JOIN OBTQ T1 ON T0."ItemCode"=T1."ItemCode" AND T0."DistNumber"=T1."DistNumber"
-WHERE T1."Quantity" > 0</code>
+          بدون هالكويري، الرصيد الحالي (كويري رقم 3) بيُحتسَب صالحاً للبيع بالكامل بغض النظر عن تاريخ أي باتش. هالكويري (كويري المستخدم الفعلي — بيحسب رصيد كل باتش من حركاته بجدول IBT1 وكلفته من آخر تقييم مخزون OBVL) بيجيب رصيد كل باتش لحاله مع تاريخ انتهائه. الشاشة بتستبعد تلقائياً أي كمية باتش تاريخ انتهائها فات فعلياً من الرصيد القابل للبيع (نفس معاملة مستودعات التوالف)، وبتنبّه (بدون استبعاد — لسا صالحة قانونياً) على أي كمية باتش تاريخ انتهائها قريب (ضمن أفق الشراء الحالي). الأعمدة الإضافية (الكلفة، الوزن، المورد، حالة الباتش...) بتُعرض بالكويري لأغراضك بس الشاشة حالياً بتستخدم بس رمز الصنف/رقم الباتش/كمية الباتش/تاريخ الانتهاء منها.
+          عند التشغيل بـSAP رح يطلب منك تاريخ واحد بس (تاريخ "كما في" لحساب رصيد الباتشات لغاية هالتاريخ).
+          <code class="block" id="q-batches">/* SELECT FROM IBT1 T1 */
+/* WHERE T1."DocDate" &lt;= [%0] */
+
+WITH BATCH_BALANCE AS
+(
+    SELECT
+        T1."ItemCode",
+        T1."WhsCode",
+        T1."BatchNum",
+
+        SUM(
+            CASE
+                WHEN T1."Direction" = 0 THEN T1."Quantity"
+                WHEN T1."Direction" = 1 THEN -T1."Quantity"
+                ELSE 0
+            END
+        ) AS "BatchQty"
+
+    FROM IBT1 T1
+
+    WHERE
+        T1."DocDate" &lt;= [%0]
+        AND T1."BatchNum" IS NOT NULL
+        AND T1."BatchNum" &lt;&gt; ''
+
+    GROUP BY
+        T1."ItemCode",
+        T1."WhsCode",
+        T1."BatchNum"
+
+    HAVING
+        SUM(
+            CASE
+                WHEN T1."Direction" = 0 THEN T1."Quantity"
+                WHEN T1."Direction" = 1 THEN -T1."Quantity"
+                ELSE 0
+            END
+        ) &gt; 0
+),
+
+LAST_BATCH_COST AS
+(
+    SELECT
+        X."ItemCode",
+        X."BatchNum",
+        X."UnitCost"
+
+    FROM
+    (
+        SELECT
+            V."ItemCode",
+            V."DistNumber" AS "BatchNum",
+
+            CASE
+                WHEN (V."AccQty" - V."AccNegQ") &lt;&gt; 0
+                    THEN V."Balance" / (V."AccQty" - V."AccNegQ")
+                ELSE NULL
+            END AS "UnitCost",
+
+            ROW_NUMBER() OVER
+            (
+                PARTITION BY
+                    V."ItemCode",
+                    V."DistNumber"
+                ORDER BY
+                    V."CreateDate" DESC,
+                    V."CreateTime" DESC,
+                    V."AbsEntry" DESC
+            ) AS "RN"
+
+        FROM OBVL V
+
+        WHERE
+            V."TrValApply" = 'Y'
+            AND V."CreateDate" &lt;= [%0]
+            AND V."DistNumber" IS NOT NULL
+            AND V."DistNumber" &lt;&gt; ''
+    ) X
+
+    WHERE X."RN" = 1
+)
+
+SELECT
+
+    /* =========================
+       الصنف
+       ========================= */
+
+    I."ItemCode"                         AS "رمز الصنف",
+    I."ItemName"                         AS "اسم الصنف",
+    I."CodeBars"                         AS "الباركود",
+
+    G."ItmsGrpNam"                       AS "مجموعة الأصناف",
+
+    /* =========================
+       Batch
+       ========================= */
+
+    B."BatchNum"                         AS "رقم الباتش",
+
+    BT."InDate"                          AS "تاريخ دخول الباتش",
+    BT."MnfDate"                         AS "تاريخ الإنتاج",
+    BT."ExpDate"                         AS "تاريخ الانتهاء",
+
+    CASE
+        WHEN BT."ExpDate" IS NULL
+            THEN 'بدون تاريخ انتهاء'
+        WHEN BT."ExpDate" &lt; CURRENT_DATE
+            THEN 'منتهي'
+        WHEN DAYS_BETWEEN(CURRENT_DATE, BT."ExpDate") &lt;= 30
+            THEN 'ينتهي خلال 30 يوم'
+        WHEN DAYS_BETWEEN(CURRENT_DATE, BT."ExpDate") &lt;= 90
+            THEN 'ينتهي خلال 90 يوم'
+        ELSE 'صالح'
+    END                                   AS "حالة الباتش",
+
+    /* =========================
+       Warehouse
+       ========================= */
+
+    B."WhsCode"                          AS "رمز المستودع",
+    W."WhsName"                          AS "اسم المستودع",
+
+    /* =========================
+       الكمية والكلفة
+       ========================= */
+
+    B."BatchQty"                         AS "كمية الباتش",
+
+    COALESCE(C."UnitCost", I."AvgPrice", 0)                AS "كلفة الوحدة",
+
+    B."BatchQty" * COALESCE(C."UnitCost", I."AvgPrice", 0) AS "قيمة المخزون",
+
+    /* =========================
+       المورد
+       ========================= */
+
+    I."CardCode"                         AS "رمز المورد",
+    S."CardName"                         AS "اسم المورد",
+
+    /* =========================
+       الوحدة والوزن
+       ========================= */
+
+    I."InvntryUom"                       AS "الوحدة الرئيسية",
+
+    I."SWeight1"                         AS "وزن الوحدة",
+    I."SWght1Unit"                       AS "وحدة الوزن",
+
+    B."BatchQty" * I."SWeight1"          AS "إجمالي الوزن"
+
+FROM BATCH_BALANCE B
+
+INNER JOIN OITM I
+    ON I."ItemCode" = B."ItemCode"
+
+LEFT JOIN OITB G
+    ON G."ItmsGrpCod" = I."ItmsGrpCod"
+
+LEFT JOIN OBTN BT
+    ON BT."ItemCode" = B."ItemCode"
+    AND BT."DistNumber" = B."BatchNum"
+
+LEFT JOIN OWHS W
+    ON W."WhsCode" = B."WhsCode"
+
+LEFT JOIN OCRD S
+    ON S."CardCode" = I."CardCode"
+
+LEFT JOIN LAST_BATCH_COST C
+    ON C."ItemCode" = B."ItemCode"
+    AND C."BatchNum" = B."BatchNum"
+
+WHERE
+    I."ManBtchNum" = 'Y'
+
+ORDER BY
+    B."ItemCode",
+    B."WhsCode",
+    B."BatchNum";</code>
         </div>
-        <textarea id="pasteBatches" placeholder="الصق هنا: رمز الصنف / رقم الباتش(اختياري) / الكمية / تاريخ الانتهاء / المستودع(اختياري) ..."></textarea>
+        <textarea id="pasteBatches" placeholder="الصق هنا نتيجة الكويري كاملة (بكل أعمدتها) — الشاشة بتاخذ منها رمز الصنف/رقم الباتش/كمية الباتش/تاريخ الانتهاء بس ..."></textarea>
         <div class="row-actions" style="margin-top:6px;">
           <input type="file" id="pasteBatchesFile" accept=".txt,.csv,.tsv" style="display:none;" onchange="loadPasteFromFile(event,'pasteBatches')">
           <button class="btn-ghost btn-sm" type="button" onclick="document.getElementById('pasteBatchesFile').click()">📁 ارفع ملف بدل اللصق (أسرع كتير للبيانات الضخمة)</button>
@@ -1750,9 +1926,9 @@ function processAllDataHeavy(){
     if(raggedCount) raggedNotes.push('الباتشات ('+raggedCount+' سطر)');
     const iCode = colIndex(headers, ['رمز الصنف','ItemCode','Item No.']);
     const iBatch = colIndex(headers, ['رقم الباتش','DistNumber','Batch Number']);
-    const iQty = colIndex(headers, ['الكمية','Quantity']);
+    const iQty = colIndex(headers, ['كمية الباتش','الكمية','Quantity']);
     const iExp = colIndex(headers, ['تاريخ الانتهاء','ExpDate']);
-    const iWhs = colIndex(headers, ['المستودع','WhsCode']);
+    const iWhs = colIndex(headers, ['رمز المستودع','المستودع','WhsCode']);
     if(iCode>=0 && iQty>=0 && iExp>=0){
       let batchBlankCount=0, batchInvalidQtyCount=0, batchInvalidDateCount=0, batchUnknownItemCount=0;
       const batchUnknownSamples = newSampleSet(8);
