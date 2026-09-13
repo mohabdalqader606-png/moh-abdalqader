@@ -911,6 +911,25 @@ WHERE T1."Quantity" > 0</code>
       </details>
 
       <details class="opt">
+        <summary><span class="num-badge opt">11</span> الكوتيشنات المفتوحة (Sales Quotations) — بضاعة محجوزة فعلياً للعملاء (اختياري بس مهم)</summary>
+        <div class="hint">
+          مؤكَّد من المستخدم: الكوتيشن عندهم مثل أمر البيع تماماً — مؤكَّد بالكامل، مش عرض سعر مبدئي. بدون هالكويري، كمية أي كوتيشن مفتوح بتُحتسَب ضمن الرصيد "القابل للبيع" وكأنها متاحة لأي طلب مستقبلي، بينما هي فعلياً محجوزة وطالعة لزبون محدَّد. هالكويري بيجيب الكمية المفتوحة (غير المسلَّمة بعد) من كل سطر كوتيشن، والشاشة بتخصمها من الرصيد القابل للبيع (نفس معاملة مستودعات التوالف).
+          <code class="block" id="q-quotations">SELECT T1."ItemCode" AS "رمز الصنف", T1."OpenQty" AS "الكمية المحجوزة",
+       T0."CardName" AS "العميل"
+FROM OQUT T0 INNER JOIN QUT1 T1 ON T0."DocEntry"=T1."DocEntry"
+WHERE T0."DocStatus"='O' AND T1."LineStatus"='O'</code>
+          <div style="margin-top:6px;color:var(--crimson);">⚠ تحقق من اسم عمود "الكمية المفتوحة غير المسلَّمة" عندكم قبل ما تشغّل الكويري (ممكن يختلف الاسم حسب إعداد النظام).</div>
+        </div>
+        <textarea id="pasteQuotations" placeholder="الصق هنا: رمز الصنف / الكمية المحجوزة / العميل(اختياري) ..."></textarea>
+        <div class="row-actions" style="margin-top:6px;">
+          <input type="file" id="pasteQuotationsFile" accept=".txt,.csv,.tsv" style="display:none;" onchange="loadPasteFromFile(event,'pasteQuotations')">
+          <button class="btn-ghost btn-sm" type="button" onclick="document.getElementById('pasteQuotationsFile').click()">📁 ارفع ملف بدل اللصق (أسرع كتير للبيانات الضخمة)</button>
+          <button class="btn-ghost btn-sm" type="button" onclick="clearUploadedFile('pasteQuotations')">✕ إزالة الملف</button>
+          <span class="status-msg" id="pasteQuotationsFileMsg"></span>
+        </div>
+      </details>
+
+      <details class="opt">
         <summary>🗂 استيراد بيانات العملاء (رمز/اسم، لربط تفصيل المبيعات حسب العميل)</summary>
         <div class="hint">
           لصق تصدير "Customers" الكامل من SAP B1 مباشرة (نفس أعمدة "BP Code" / "BP Name") أو كويري
@@ -1076,6 +1095,7 @@ let state = {
   // (004/006/099/100)، وقابلة للتعديل من واجهة استيراد البيانات لو تغيّرت عندهم
   excludedWarehouses: ['004','006','099','100'],
   batchesRaw:[], // أرصدة الباتشات مع تاريخ الانتهاء (اختياري) — لاستبعاد المنتهي فعلياً والتنبيه على القريب من الانتهاء
+  quotationsRaw:[], // الكوتيشنات المفتوحة (اختياري) — كمية محجوزة فعلياً للعملاء عند هالمستخدم (كوتيشن=مؤكَّد متل أمر البيع)، تُستبعد من الرصيد القابل للبيع
   // ================= Data Hub (مركز البيانات) =================
   // sourceMeta: مفتاح المصدر -> {lastImportAt, recordCount, issues:[{type,count,label}], qualityScore}
   // مبنية فعلياً من نتيجة كل استيراد حقيقي — مش أرقام تجميلية (تُحسب من processAllDataHeavy)
@@ -1126,7 +1146,10 @@ const DATA_SOURCES = [
     fields:['رمز الصنف','التاريخ','الكمية','المبلغ (اختياري)'] },
   { key:'batches', queryNo:10, label:'أرصدة الباتشات مع تاريخ الانتهاء', required:false, fieldId:'pasteBatches', codeId:'q-batches',
     why:'يستبعد الكمية المنتهية الصلاحية فعلياً من الرصيد القابل للبيع، وينبّه على القريب من الانتهاء — بدونه كل الرصيد يُحتسَب صالحاً للبيع بغض النظر عن تاريخ الباتش.',
-    fields:['رمز الصنف','رقم الباتش (اختياري)','الكمية','تاريخ الانتهاء'] }
+    fields:['رمز الصنف','رقم الباتش (اختياري)','الكمية','تاريخ الانتهاء'] },
+  { key:'quotations', queryNo:11, label:'الكوتيشنات المفتوحة (محجوزة للعملاء)', required:false, fieldId:'pasteQuotations', codeId:'q-quotations',
+    why:'الكوتيشن عند هالمستخدم مؤكَّد متل أمر البيع — كميته محجوزة فعلياً لزبون ومش متاحة لطلب مستقبلي تاني. بدونه، الرصيد القابل للبيع بيُحتسَب أكبر من الحقيقة.',
+    fields:['رمز الصنف','الكمية المحجوزة','العميل (اختياري)'] }
 ];
 
 // القدرات التحليلية وما تعتمد عليه من مصادر — تُستخدم لشاشة "البيانات الناقصة"
@@ -1753,6 +1776,36 @@ function processAllDataHeavy(){
     }
   }
 
+  // 11) الكوتيشنات المفتوحة (اختياري) — كمية محجوزة فعلياً للعملاء (كوتيشن=مؤكَّد متل
+  // أمر البيع عند هالمستخدم)، تُستبعد من الرصيد القابل للبيع (runEngine)
+  const quotTxt = getPasteText('pasteQuotations');
+  if(quotTxt.trim()){
+    const {headers, rows, raggedCount} = splitPasted(quotTxt);
+    if(raggedCount) raggedNotes.push('الكوتيشنات ('+raggedCount+' سطر)');
+    const iCode = colIndex(headers, ['رمز الصنف','ItemCode','Item No.']);
+    const iQty = colIndex(headers, ['الكمية المحجوزة','OpenQty','الكمية']);
+    const iCust = colIndex(headers, ['العميل','CardName','CardCode']);
+    if(iCode>=0 && iQty>=0){
+      let quotBlankCount=0, quotInvalidQtyCount=0, quotUnknownItemCount=0;
+      const quotUnknownSamples = newSampleSet(8);
+      state.quotationsRaw = rows.map(r=>{
+        const code=r[iCode], qty=toNum(r[iQty]);
+        if(!code){ quotBlankCount++; return null; }
+        if(isNaN(qty)) quotInvalidQtyCount++;
+        if(!state.itemsRaw[code]){ quotUnknownItemCount++; quotUnknownSamples.tryAdd(code); }
+        return { code, qty, customer: iCust>=0 ? r[iCust] : '' };
+      }).filter(r=>r && r.code && !isNaN(r.qty));
+      noteImport('quotations','الكوتيشنات المفتوحة (محجوزة للعملاء)', { count: state.quotationsRaw.length, issues: buildIssues([
+        ['blank_key', quotBlankCount, 'سطر بدون رمز صنف (تجوهل)'],
+        ['invalid_qty', quotInvalidQtyCount, 'كمية غير رقمية (تجوهل السطر)'],
+        ['unknown_item', quotUnknownItemCount, 'رمز صنف غير موجود بجدول الأصناف الحالي', Array.from(quotUnknownSamples)]
+      ])});
+    } else {
+      msg.textContent = 'تعذر إيجاد أعمدة كويري الكوتيشنات (رمز الصنف/الكمية المحجوزة)';
+      msg.className='status-msg err';
+    }
+  }
+
   renderParamsTable();
   runEngine();
   renderDataHub();
@@ -1773,10 +1826,11 @@ function processAllDataHeavy(){
   if(acTxt.trim()) changedDatasets.push('actualcost');
   // المرتجعات نفس حساسية بيانات العميل بكويري المبيعات — تُبقى محلية بالمتصفح فقط، بدون رفع للسحابة
   // الباتشات كمان محلية فقط حالياً — رفعها للسحابة يحتاج جدول Supabase جديد لعدم إضافته بدون طلب صريح
+  // الكوتيشنات فيها بيانات عميل — نفس معاملة المبيعات/المرتجعات، محلية فقط
   scheduleCloudSave(changedDatasets);
 }
 function clearAllPasted(){
-  ['pasteItems','pasteSales','pasteInventory','pasteLeadTime','pasteParams','pasteApInvoices','pastePO','pasteActualCost','pasteReturns','pasteBatches'].forEach(id=>clearUploadedFile(id));
+  ['pasteItems','pasteSales','pasteInventory','pasteLeadTime','pasteParams','pasteApInvoices','pastePO','pasteActualCost','pasteReturns','pasteBatches','pasteQuotations'].forEach(id=>clearUploadedFile(id));
 }
 
 /* ================= جدول بارامترات الأصناف ================= */
@@ -2329,6 +2383,15 @@ function runEngine(){
     }
   });
 
+  // الكوتيشنات المفتوحة (اختياري) — كمية محجوزة فعلياً للعملاء (كوتيشن=مؤكَّد متل أمر
+  // البيع عند هالمستخدم)، تُستبعد بالكامل من الرصيد القابل للبيع (نفس معاملة مستودعات
+  // التوالف والباتش المنتهي)
+  const committedQtyByItem = {};
+  (state.quotationsRaw||[]).forEach(r=>{
+    if(isNaN(r.qty) || r.qty<=0) return;
+    committedQtyByItem[r.code] = (committedQtyByItem[r.code]||0) + r.qty;
+  });
+
   // Lead Time الفعلي لكل صنف (إن وُجد)
   const ltByItem = {};
   state.leadTimeRaw.forEach(r=>{
@@ -2438,10 +2501,12 @@ function runEngine(){
     const s = (salesByItem[code]||[]).map(x=>x.qty);
     const inv = invByItem[code] || {onHand:0, onOrder:0, damagedQty:0, warehouses:[]};
     // الرصيد "القابل للبيع" الفعلي = الرصيد الخام (بعد استبعاد مستودعات التوالف أصلاً
-    // بمرحلة invByItem) ناقص أي كمية باتش تاريخ انتهائها فات فعلياً — هاد الرقم يلي
-    // يُستخدم بكل حساب قرار لاحق، مش inv.onHand الخام
+    // بمرحلة invByItem) ناقص أي كمية باتش تاريخ انتهائها فات فعلياً، ناقص أي كمية محجوزة
+    // فعلياً لعميل عبر كوتيشن مفتوح — هاد الرقم يلي يُستخدم بكل حساب قرار لاحق، مش
+    // inv.onHand الخام
     const expiredQty = expiredQtyByItem[code] || 0;
-    const usableOnHand = Math.max(0, (inv.onHand||0) - expiredQty);
+    const committedQty = committedQtyByItem[code] || 0;
+    const usableOnHand = Math.max(0, (inv.onHand||0) - expiredQty - committedQty);
     const daysWithSalesData = (salesByItem[code]||[]).length;
 
     const missing = [];
@@ -2772,7 +2837,7 @@ function runEngine(){
       // onHand هون هو الرصيد "القابل للبيع" الصافي (بعد استبعاد مستودعات التوالف
       // والكمية المنتهية فعلياً) — نفس القيمة المستخدمة بكل حساب قرار أعلاه، مش الرصيد
       // الخام. onHandGross/damagedQty/expiredQty للشفافية فقط.
-      onHand: usableOnHand, onHandGross: inv.onHand||0, damagedQty: inv.damagedQty||0, expiredQty,
+      onHand: usableOnHand, onHandGross: inv.onHand||0, damagedQty: inv.damagedQty||0, expiredQty, committedQty,
       nearExpiryQty: (nearExpiryByItem[code]||{}).qty||0, nearExpiryDate: (nearExpiryByItem[code]||{}).nearestDate||null,
       onOrder: effectiveOnOrder, poLots, datedPoLots, warehouses: inv.warehouses,
       dAvg: Math.round(dAvg*100)/100, dStd: Math.round(dStd*100)/100,
@@ -3097,9 +3162,10 @@ function pccDetailHtml(r){
         + kv('الموسمية', esc(r.seasonalityNote))
       + '</div>'
       + '<div class="pcc-detail-section"><h4>📦 المخزون</h4>'
-        + kv('المخزون الحالي (قابل للبيع)', fmtNum(r.onHand)+((r.damagedQty>0||r.expiredQty>0)?(' — من إجمالي خام '+fmtNum(r.onHandGross)):''))
+        + kv('المخزون الحالي (قابل للبيع)', fmtNum(r.onHand)+((r.damagedQty>0||r.expiredQty>0||r.committedQty>0)?(' — من إجمالي خام '+fmtNum(r.onHandGross)):''))
         + (r.damagedQty>0 ? kv('مستبعد كتالف (مستودعات غير قابلة للبيع)', fmtNum(r.damagedQty)) : '')
         + (r.expiredQty>0 ? kv('مستبعد كمنتهي الصلاحية فعلياً', fmtNum(r.expiredQty)) : '')
+        + (r.committedQty>0 ? kv('مستبعد كمحجوز لعملاء (كوتيشن مفتوح)', fmtNum(r.committedQty)) : '')
         + (r.nearExpiryQty>0 ? kv('⚠ قريب من الانتهاء (لسا قابل للبيع)', fmtNum(r.nearExpiryQty)+' — أقرب تاريخ '+fmtDate(r.nearExpiryDate)) : '')
         + kv('التغطية الحالية (بدون أي PO)', r.daysCover!=null?(isFinite(r.daysCover)?r.daysCover+' يوم':'∞'):'—')
         + kv('مخزون الأمان', r.safetyStockReliable?fmtNum(r.safetyStock):'غير موثوق')
