@@ -494,6 +494,20 @@
   @media print{ .tabbar, .toolbar, header.topbar, .input-panel{display:none !important;} }
   @media (max-width:900px){ .rowc-head{grid-template-columns:20px 1fr 70px 70px; }
     .rowc-head > span:nth-child(5), .rowc-head > span:nth-child(6), .rowc-head > span:nth-child(7){display:none;} }
+
+  /* تعطيل بصري لعناصر التحكم المقيَّدة بالصلاحية — تحسين تجربة استخدام بس؛ الحماية
+     الفعلية دايماً بمستوى الدالة (requirePermission بالجافاسكربت) بغض النظر عن هالتنسيق */
+  body.perm-not-admin #paramsTable input, body.perm-not-admin #paramsTable select,
+  body.perm-not-admin [onclick="applyDefaults()"], body.perm-not-admin #defLT, body.perm-not-admin #defMOQ, body.perm-not-admin #defMult,
+  body.perm-not-admin [onclick*="resolvePoUpdateDate"], body.perm-not-admin [onclick*="resolvePoCancelled"], body.perm-not-admin [onclick*="undoPoResolution"],
+  body.perm-not-admin [onclick*="updateSupplierSetting"], body.perm-not-admin select[onchange*="updateSupplierSetting"],
+  body.perm-not-admin [onchange^="restoreBackup"]{
+    pointer-events:none !important; opacity:.5 !important; cursor:not-allowed !important;
+  }
+  body.perm-view-only #tabBtn-data, body.perm-view-only [onclick="manualCloudSave()"],
+  body.perm-view-only [onclick^="processAllData"], body.perm-view-only [onclick^="clearAllPasted"]{
+    pointer-events:none !important; opacity:.5 !important; cursor:not-allowed !important;
+  }
 </style>
 </head>
 <body>
@@ -1487,6 +1501,7 @@ function updatePendingSaveBadge(){
   else { badge.style.display='none'; }
 }
 async function manualCloudSave(){
+  if(!requirePermission('input','الحفظ على السيرفر')) return;
   if(!sb || !curUser) return;
   if(!pendingDatasets.size){
     const el = document.getElementById('cloudSyncMsg');
@@ -1561,6 +1576,7 @@ function dateKey(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(
 
 /* ================= تحليل الكويريات الملصوقة ================= */
 function processAllData(){
+  if(!requirePermission('input','تحليل البيانات')) return;
   const msg = document.getElementById('dataStatusMsg');
   msg.textContent = 'جارٍ التحليل... (قد تاخذ لحظات مع كميات بيانات كبيرة)';
   msg.className = 'status-msg ok';
@@ -2082,6 +2098,7 @@ function renderParamsTable(){
   }).join('');
 }
 function updateParam(code, field, value){
+  if(!requirePermission('admin','تعديل بارامترات صنف')) return;
   if(!state.params[code]) state.params[code] = {};
   state.params[code][field] = (field==='supplier'||field==='criticality') ? value : (value===''? '' : parseFloat(value));
   if(field==='leadTimeDays') state.params[code].leadTimeIsDefault = false;
@@ -2094,6 +2111,7 @@ function updateParam(code, field, value){
   scheduleCloudSave();
 }
 function applyDefaults(){
+  if(!requirePermission('admin','تطبيق قيم افتراضية')) return;
   const defLT = toNum(document.getElementById('defLT').value);
   const defMOQ = toNum(document.getElementById('defMOQ').value);
   const defMult = toNum(document.getElementById('defMult').value);
@@ -3172,6 +3190,7 @@ function refreshRecommendations(){
   }, 30);
 }
 function setBuyingHorizon(v){
+  if(!requirePermission('input','تعديل أفق الشراء')) return;
   const n = toNum(v);
   state.buyingHorizonDays = (!isNaN(n) && n>=0) ? n : 30;
   // مؤجَّل تيك واحد: onchange عم يجي من input نفسه يلي رح ينمسح لما نعيد رسم اللوحة —
@@ -4681,6 +4700,7 @@ function renderSupplierItemsDrilldownBody(forceOpen){
     + '</tbody></table>', 'suppliersTbody', 'suppliersThead', forceOpen);
 }
 function updateSupplierSetting(key, field, value){
+  if(!requirePermission('admin','تعديل إعدادات مورد')) return;
   if(!state.supplierSettings[key]) state.supplierSettings[key] = {relationshipType:'normal', note:'', displayName:''};
   state.supplierSettings[key][field] = value;
   runEngine();
@@ -4693,6 +4713,7 @@ function updateSupplierSetting(key, field, value){
 // حتى ما يُعاد سؤال المستخدم عن نفس الصف بكل مرة يعيد فيها لصق نفس الكويري. لا مزامنة
 // سحابية لهالقرار حالياً (بدون جدول Supabase جديد إلا بطلب صريح) — محفوظ بمتصفح المستخدم فقط.
 function resolvePoUpdateDate(key, newDateValue){
+  if(!requirePermission('admin','حسم أمر شراء متأخر')) return;
   if(!newDateValue) return;
   state.poResolutions[key] = {action:'updated', newDate:newDateValue, resolvedAt:new Date().toISOString()};
   runEngine();
@@ -4702,6 +4723,7 @@ function resolvePoUpdateDate(key, newDateValue){
   saveStateLocal();
 }
 function resolvePoCancelled(key){
+  if(!requirePermission('admin','حسم أمر شراء متأخر')) return;
   state.poResolutions[key] = {action:'cancelled', resolvedAt:new Date().toISOString()};
   runEngine();
   renderDataHub();
@@ -4710,6 +4732,7 @@ function resolvePoCancelled(key){
   saveStateLocal();
 }
 function undoPoResolution(key){
+  if(!requirePermission('admin','التراجع عن حسم أمر شراء')) return;
   delete state.poResolutions[key];
   runEngine();
   renderDataHub();
@@ -4834,6 +4857,7 @@ function downloadBackup(){
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download='procurement_backup_'+new Date().toISOString().slice(0,10)+'.json'; a.click();
 }
 function restoreBackup(evt){
+  if(!requirePermission('admin','استرجاع نسخة احتياطية')){ evt.target.value=''; return; }
   const file = evt.target.files[0]; if(!file) return;
   const reader = new FileReader();
   reader.onload = function(){
@@ -4860,6 +4884,31 @@ const SUPABASE_URL = 'https://fxjdmqqmcgccocfbgopm.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_NGtGX9SN8hXSoq-JRidGcQ_NfAyYCP5'; // مفتاح عام — الحماية عبر RLS
 const APP_ID = 'procurement-intelligence';
 let sb = null, curUser = null, curProfile = null;
+// صلاحية المستخدم على هاي الشاشة تحديداً — من جدول الصلاحيات المركزي الجديد
+// (user_screen_permissions)، وهو المصدر الوحيد للتحكم بالوصول هلأ (يحل محل allowed_apps
+// القديم يلي كان كل-شي-أو-لا-شي بدون تفريق مستويات). ثلاث قيم: admin (كل شي) / input
+// (لصق كويريات + تشغيل تحليل البيانات بس) / view (عرض بس، بدون أي تعديل).
+let myPermission = null;
+const PERM_RANK = {view:0, input:1, admin:2};
+const PERMISSION_LABELS = {admin:'مدير (كل الصلاحيات)', input:'إدخال بيانات', view:'عرض فقط'};
+function isAdmin(){ return myPermission==='admin'; }
+// hasPermission('input') يعني "input أو admin" (ترتيب تصاعدي)
+function hasPermission(minLevel){ return PERM_RANK[myPermission]!==undefined && PERM_RANK[myPermission] >= PERM_RANK[minLevel]; }
+// دفاع فعلي على مستوى الدالة نفسها (مش بس إخفاء الزر بالواجهة) — حتى لو استُدعيت الدالة
+// يدوياً من الـconsole أو من زر ظل ظاهر بالغلط، الإجراء الفعلي ما بينفّذ بدون الصلاحية
+function requirePermission(minLevel, actionLabel){
+  if(hasPermission(minLevel)) return true;
+  alert('ما عندك صلاحية تعمل هالإجراء'+(actionLabel?(' ('+actionLabel+')'):'')+' — صلاحيتك الحالية: '+(PERMISSION_LABELS[myPermission]||'غير معروفة'));
+  return false;
+}
+// إخفاء/تعطيل عناصر الواجهة حسب الصلاحية — تحسين تجربة استخدام بس، الحماية الفعلية
+// دايماً بمستوى الدالة (requirePermission) بغض النظر شو ظاهر بالواجهة
+function applyPermissionUI(){
+  const dataTabBtn = document.getElementById('tabBtn-data');
+  if(dataTabBtn) dataTabBtn.style.display = hasPermission('input') ? '' : 'none';
+  document.body.classList.toggle('perm-view-only', myPermission==='view');
+  document.body.classList.toggle('perm-not-admin', !isAdmin());
+}
 
 function authMsg(txt, ok){ const el=document.getElementById('loginMsg'); el.textContent=txt; el.className='status-msg '+(ok?'ok':'err'); }
 async function doLogin(){
@@ -4889,18 +4938,21 @@ async function doSetNewPassword(){
 async function onSignedIn(user){
   curUser = user;
   const {data:prof} = await sb.from('profiles').select('*').eq('id', user.id).single();
-  curProfile = prof || {full_name:user.email, role:'viewer', allowed_apps:[]};
-  if(!(curProfile.allowed_apps||[]).includes(APP_ID)){
+  curProfile = prof || {full_name:user.email};
+  const {data:permRow} = await sb.from('user_screen_permissions').select('permission')
+    .eq('user_id', user.id).eq('screen_id', APP_ID).maybeSingle();
+  myPermission = (permRow && permRow.permission) ? String(permRow.permission).trim().toLowerCase() : null;
+  if(!PERM_RANK.hasOwnProperty(myPermission)){
     await sb.auth.signOut();
-    authMsg('هذا الحساب ما إله صلاحية الدخول على هاي الشاشة — تواصل مع المدير.', false);
+    authMsg('هذا الحساب ما إله صلاحية على هاي الشاشة — تواصل مع المدير.', false);
     return;
   }
-  const roleAr = {admin:'مدير', editor:'مدخل بيانات', viewer:'مطالع'}[curProfile.role] || curProfile.role;
   document.getElementById('uName').textContent = curProfile.full_name || user.email;
-  document.getElementById('uRole').textContent = user.email + ' · ' + roleAr;
+  document.getElementById('uRole').textContent = user.email + ' · ' + (PERMISSION_LABELS[myPermission]||myPermission);
   document.getElementById('userbox').style.display = 'flex';
   document.getElementById('loginView').style.display = 'none';
   document.getElementById('appView').style.display = 'block';
+  applyPermissionUI();
   await pullStateFromCloud();
 }
 /* ================= مزامنة سحابية على جداول حقيقية (بدل نسخة JSON واحدة ضخمة) ================= */
