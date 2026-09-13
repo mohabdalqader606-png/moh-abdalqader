@@ -202,6 +202,12 @@
      (position:sticky بالمحور الرأسي محتاج حاوية عندها تمرير فعلي، مش الصفحة كلها) */
   .tbl-scroll{overflow:auto; max-height:70vh; border:1px solid var(--line); border-radius:10px;}
   .tbl-scroll table{margin:0;}
+  /* "ملاءمة الشاشة" بتقرير الأصناف — يضغط الجدول ليضهر كامل بعرض الشاشة بدون تمرير أفقي:
+     تخفي أعمدة السعر/الكلفة التفصيلية (optcol) وتصغّر الخط وتلف نص الرؤوس بدل ما توسّع
+     العمود. الأعمدة المثبَّتة (freeze) وأعمدة الأشهر والمتوسط تضل ظاهرة دايماً. */
+  #reportTable.report-fit{table-layout:fixed; width:100%;}
+  #reportTable.report-fit .optcol{display:none;}
+  #reportTable.report-fit th, #reportTable.report-fit td{font-size:9.5px; padding:3px 4px; white-space:normal; word-break:break-word; overflow-wrap:anywhere; line-height:1.3;}
   .sortable-th{cursor:pointer; user-select:none;}
   .sortable-th .sort-ic{display:inline-block; width:11px; opacity:.55; font-size:9px;}
   #reportTable{width:100%; border-collapse:collapse; font-size:11px;}
@@ -1222,6 +1228,7 @@ WHERE T0."DocStatus"='O' AND T1."LineStatus"='O'</code>
       <label style="font-size:11.5px; color:var(--ink-soft); display:flex; align-items:center; gap:5px;">إلى
         <select id="reportToMonth" onchange="reportPageNum=0; renderReport()"></select>
       </label>
+      <button class="btn-ghost btn-sm" id="reportFitBtn" onclick="toggleReportFit()" title="يضغط الجدول ليضهر كامل بدون تمرير أفقي — يخفي أعمدة السعر/الكلفة التفصيلية ويصغّر الخط">🗜️ ملاءمة الشاشة</button>
       <div class="spacer"></div>
       <span style="font-size:11px;color:var(--ink-soft);">الترتيب: الأكبر للأصغر حسب إجمالي المدى المختار</span>
     </div>
@@ -4210,6 +4217,12 @@ function toggleRow(idx){ document.getElementById('row-'+idx).classList.toggle('o
 /* ================= تقرير الأصناف: رصيد + مبيعات شهرية + تفصيل عند الضغط ================= */
 let reportMode = 'qty';
 let reportPageNum = 0;
+let reportFitMode = false;
+function toggleReportFit(){
+  reportFitMode = !reportFitMode;
+  document.getElementById('reportTable').classList.toggle('report-fit', reportFitMode);
+  document.getElementById('reportFitBtn').classList.toggle('active', reportFitMode);
+}
 let reportSortKey = null, reportSortDir = -1;
 function setReportSort(key){
   if(reportSortKey===key) reportSortDir=-reportSortDir;
@@ -4324,11 +4337,11 @@ function renderReport(){
     + rth('supplier','اسم المورد','freeze freeze-3')
     + rth('lastReceiptDate','تاريخ آخر استلام','freeze freeze-4')
     + rth('lastReceiptQty','كمية آخر استلام','freeze freeze-5')
-    + rth('lastPrice','آخر سعر منشأ (الفاتورة — استلام بضاعة)')
-    + rth('lastLandedCostBasePrice','سعر المنشأ (مستند اللاندد كوست)')
-    + rth('lastActualCost','آخر كلفة نهائية (Landed Cost)')
-    + rth('lastActualCostJod','الكلفة بالدينار (JOD)')
-    + rth('lastLandedCostDocNum','رقم اللاندد كوست')
+    + rth('lastPrice','آخر سعر منشأ (الفاتورة — استلام بضاعة)','optcol')
+    + rth('lastLandedCostBasePrice','سعر المنشأ (مستند اللاندد كوست)','optcol')
+    + rth('lastActualCost','آخر كلفة نهائية (Landed Cost)','optcol')
+    + rth('lastActualCostJod','الكلفة بالدينار (JOD)','optcol')
+    + rth('lastLandedCostDocNum','رقم اللاندد كوست','optcol')
     + rth('balance','الرصيد الحالي')
     + months.map(k=>rth('month:'+k, esc(state.allMonthLabel[k]))).join('')
     + rth('avg','متوسط المدى المختار')
@@ -4344,7 +4357,7 @@ function renderReport(){
     const lastRecvQty = r.lastReceiptQty!=null ? fmtNum(r.lastReceiptQty) : '—';
     let priceCell;
     if(r.lastPrice==null){
-      priceCell = '<td class="num">—</td>';
+      priceCell = '<td class="num optcol">—</td>';
     } else {
       let changeHtml = '';
       if(r.prevPrice!=null && r.prevPrice!==0){
@@ -4353,12 +4366,12 @@ function renderReport(){
         const color = pct>0 ? '#B91C1C' : (pct<0 ? '#15803D' : 'var(--ink-soft)');
         changeHtml = '<br><span style="font-size:11px;color:'+color+';">'+dir+' '+Math.abs(Math.round(pct*10)/10)+'%</span>';
       }
-      priceCell = '<td class="num" style="cursor:pointer;color:var(--navy);text-decoration:underline;" onclick="showPriceDrilldown(this,\''+r.code+'\')">'+fmtPrice(r.lastPrice)+changeHtml+'</td>';
+      priceCell = '<td class="num optcol" style="cursor:pointer;color:var(--navy);text-decoration:underline;" onclick="showPriceDrilldown(this,\''+r.code+'\')">'+fmtPrice(r.lastPrice)+changeHtml+'</td>';
     }
-    const landedBasePriceCell = '<td class="num">'+(r.lastLandedCostBasePrice!=null?fmtPrice(r.lastLandedCostBasePrice):'—')+'</td>';
+    const landedBasePriceCell = '<td class="num optcol">'+(r.lastLandedCostBasePrice!=null?fmtPrice(r.lastLandedCostBasePrice):'—')+'</td>';
     let costCell;
     if(r.lastActualCost==null){
-      costCell = '<td class="num">—</td>';
+      costCell = '<td class="num optcol">—</td>';
     } else {
       let changeHtml = '';
       if(r.lastCostIncreasePct!=null){
@@ -4367,7 +4380,7 @@ function renderReport(){
         const color = pct>0 ? '#B91C1C' : (pct<0 ? '#15803D' : 'var(--ink-soft)');
         changeHtml = '<br><span style="font-size:11px;color:'+color+';" title="نسبة الزيادة عن سعر المنشأ بآخر لاندد كوست">'+dir+' '+Math.abs(Math.round(pct*10)/10)+'% عن المنشأ</span>';
       }
-      costCell = '<td class="num" style="cursor:pointer;color:var(--navy);text-decoration:underline;" onclick="showCostDrilldown(this,\''+r.code+'\')">'+fmtPrice(r.lastActualCost)+changeHtml+'</td>';
+      costCell = '<td class="num optcol" style="cursor:pointer;color:var(--navy);text-decoration:underline;" onclick="showCostDrilldown(this,\''+r.code+'\')">'+fmtPrice(r.lastActualCost)+changeHtml+'</td>';
     }
     return '<tr>'
       + '<td class="freeze freeze-1"><b>'+esc(r.name)+'</b><br><span class="item-code">'+esc(r.code)+'</span></td>'
@@ -4378,8 +4391,8 @@ function renderReport(){
       + priceCell
       + landedBasePriceCell
       + costCell
-      + '<td class="num">'+(r.lastActualCostJod!=null?fmtPrice(r.lastActualCostJod)+' د.أ':'—')+'</td>'
-      + '<td class="item-code">'+(r.lastLandedCostDocNum?esc(r.lastLandedCostDocNum):'—')+'</td>'
+      + '<td class="num optcol">'+(r.lastActualCostJod!=null?fmtPrice(r.lastActualCostJod)+' د.أ':'—')+'</td>'
+      + '<td class="item-code optcol">'+(r.lastLandedCostDocNum?esc(r.lastLandedCostDocNum):'—')+'</td>'
       + '<td class="num" style="cursor:pointer;color:var(--navy);text-decoration:underline;" onclick="showBalanceDrilldown(this,\''+r.code+'\')">'+cellHtml(r.onHand, balVal)+'</td>'
       + months.map(k=>'<td class="num" style="cursor:pointer;color:var(--navy);text-decoration:underline;" onclick="showMonthDrilldown(this,\''+r.code+'\',\''+k+'\')">'+cellHtml(r.monthly[k].qty, r.monthly[k].value)+'</td>').join('')
       + '<td class="num">'+cellHtml(t.avgQty, t.avgValue)+'</td>'
