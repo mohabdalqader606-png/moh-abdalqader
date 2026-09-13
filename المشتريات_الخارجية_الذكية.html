@@ -1251,6 +1251,276 @@ async function renderDcImportLog(){
       <td class="num">${U.num(l.recordCount)}</td><td class="num">${U.num(l.addedKeys.length)}</td><td class="num">${U.num(l.updatedBefore.length)}</td></tr>`).join('')}</tbody>
   </table></div>`;
 }
+
+/* ==========================================================================================
+   8) SALES ENGINE — صافي المبيعات (فواتير - مرتجعات) بدون ازدواجية، بدون احتساب المُلغى
+   ========================================================================================== */
+const SALES = {
+  _norm(r, sign){
+    return {
+      ItemCode:r.ItemCode, ItemName:r.ItemName||'', date:(r.DocDate instanceof Date?r.DocDate:null),
+      WhsCode:r.WhsCode||'', CardCode:r.CardCode||'', CardName:r.CardName||r.CardCode||'', SlpName:r.SlpName||'',
+      qty:(Number(r.Quantity)||0)*sign, amount:(Number(r.LineTotal)||0)*sign,
+    };
+  },
+  buildNetLines(){
+    const inv = (STATE.data.salesInvoices||[]).filter(r=>String(r.Canceled||'N').toUpperCase()!=='Y');
+    const ret = (STATE.data.salesReturns||[]).filter(r=>String(r.Canceled||'N').toUpperCase()!=='Y');
+    const lines = inv.map(r=>this._norm(r,+1)).concat(ret.map(r=>this._norm(r,-1)));
+    return lines;
+  },
+  filteredLines(opts){
+    opts = opts || {};
+    return this.buildNetLines().filter(l=>{
+      if(!matchesTxFilters(l, {dateField:'date'})) return false;
+      if(opts.demandOnly){
+        const rule = CONFIG.warehouseRules[l.WhsCode];
+        if(rule && !rule.includeInSalesDemand) return false;
+      }
+      return true;
+    });
+  },
+};
+
+/** يحدد المورد "الغالب" لصنف اعتماداً على نمط الشراء الفعلي التاريخي (وليس حقلاً ثابتاً) */
+function resolveSupplierForItem(itemCode){
+  const rows = (STATE.data.purchaseInvoices||[]).filter(r=>r.ItemCode===itemCode && r.SupplierCode);
+  if(rows.length){
+    const counts = new Map();
+    rows.forEach(r=>counts.set(r.SupplierCode, (counts.get(r.SupplierCode)||0) + (Number(r.Quantity)||0)));
+    let best=null, bestQty=-1;
+    counts.forEach((q,code)=>{ if(q>bestQty){ bestQty=q; best=code; } });
+    const nameRow = rows.find(r=>r.SupplierCode===best);
+    return {code:best, name: (nameRow&&nameRow.SupplierName) || supplierName(best) || best};
+  }
+  const map = (STATE.data.itemSupplierMap||[]).find(r=>r.ItemCode===itemCode && String(r.IsPreferred||'').toUpperCase()==='Y');
+  if(map) return {code:map.SupplierCode, name: supplierName(map.SupplierCode) || map.SupplierCode};
+  return {code:null, name:'—'};
+}
+function supplierName(code){
+  if(!code) return null;
+  const s = (STATE.data.suppliers||[]).find(r=>r.SupplierCode===code);
+  return s ? s.SupplierName : null;
+}
+function itemGroupOf(itemCode){
+  const it = (STATE.data.items||[]).find(r=>r.ItemCode===itemCode);
+  return it ? it.ItemGroup : null;
+}
+
+/* ===== نطاق التاريخ الفعّال + المدة الحقيقية بالأيام (قسم 4) ===== */
+function getActiveDateRange(){
+  const f = STATE.filters;
+  let to = f.dateTo ? new Date(f.dateTo) : null;
+  let from = f.dateFrom ? new Date(f.dateFrom) : null;
+  if(!to || !from){
+    const dates = SALES.buildNetLines().map(l=>l.date).filter(d=>d instanceof Date);
+    const maxD = dates.length ? new Date(Math.max(...dates)) : new Date();
+    if(!to) to = maxD;
+    if(!from) from = new Date(to.getFullYear(), to.getMonth()-11, 1);
+  }
+  return {from, to};
+}
+function monthsInRange(from, to){
+  const months = [];
+  let cur = new Date(from.getFullYear(), from.getMonth(), 1);
+  const end = new Date(to.getFullYear(), to.getMonth(), 1);
+  let guard=0;
+  while(cur <= end && guard++ < 240){
+    months.push(U.monthKey(cur));
+    cur = new Date(cur.getFullYear(), cur.getMonth()+1, 1);
+  }
+  return months;
+}
+function periodEquivalentMonths(from, to){
+  const days = U.daysBetween(from, to) + 1;
+  return {days, months: days>0 ? days/30.4368 : 1};
+}
+function monthLabel(mk){
+  const [y,m] = mk.split('-');
+  const names=['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+  return names[+m-1]+' '+y;
+}
+
+/** يبني تقرير المبيعات الشهري: Item -> {monthly:Map(monthKey->{qty,amount}), rawAvgQty (بالأيام الفعلية)} */
+function buildSalesReport(){
+  const {from, to} = getActiveDateRange();
+  const months = monthsInRange(from, to);
+  const toEnd = new Date(to.getFullYear(), to.getMonth(), to.getDate(), 23,59,59);
+  const lines = SALES.filteredLines().filter(l=> l.date instanceof Date && l.date>=from && l.date<=toEnd);
+  const byItem = new Map();
+  lines.forEach(l=>{
+    if(!byItem.has(l.ItemCode)) byItem.set(l.ItemCode, {ItemCode:l.ItemCode, ItemName:l.ItemName||l.ItemCode, monthly:new Map(), totalQty:0, totalAmount:0});
+    const it = byItem.get(l.ItemCode);
+    if(l.ItemName && (!it.ItemName || it.ItemName===it.ItemCode)) it.ItemName = l.ItemName;
+    const mk = U.monthKey(l.date);
+    if(!it.monthly.has(mk)) it.monthly.set(mk, {qty:0, amount:0});
+    const cell = it.monthly.get(mk);
+    cell.qty += l.qty; cell.amount += l.amount;
+    it.totalQty += l.qty; it.totalAmount += l.amount;
+  });
+  const {days, months:equivMonths} = periodEquivalentMonths(from, to);
+  let rows = Array.from(byItem.values()).map(it=>{
+    it.supplier = resolveSupplierForItem(it.ItemCode);
+    it.rawAvgQty = equivMonths>0 ? it.totalQty/equivMonths : 0;
+    it.rawAvgAmount = equivMonths>0 ? it.totalAmount/equivMonths : 0;
+    return it;
+  });
+  const f = STATE.filters;
+  if(f.itemGroup) rows = rows.filter(r=>itemGroupOf(r.ItemCode)===f.itemGroup);
+  if(f.supplier) rows = rows.filter(r=>r.supplier.code===f.supplier);
+  return {from, to, months, days, equivMonths, rows};
+}
+
+/* ==========================================================================================
+   9) SORTABLE TABLE HELPER (عام لكل جداول الشاشة)
+   ========================================================================================== */
+const SORT_STATE = {};
+function toggleSort(tableKey, col, defaultDir){
+  const s = SORT_STATE[tableKey] || {col:null, dir:'desc'};
+  if(s.col===col) s.dir = (s.dir==='asc'?'desc':'asc'); else { s.col=col; s.dir=defaultDir||'desc'; }
+  SORT_STATE[tableKey] = s;
+}
+function sortIcon(tableKey, col){
+  const s = SORT_STATE[tableKey];
+  if(!s || s.col!==col) return '<span class="sort-ic">↕</span>';
+  return `<span class="sort-ic">${s.dir==='asc'?'↑':'↓'}</span>`;
+}
+function applySort(tableKey, rows, getter){
+  const s = SORT_STATE[tableKey];
+  if(!s || !s.col) return rows;
+  const dir = s.dir==='asc' ? 1 : -1;
+  return rows.slice().sort((a,b)=>{
+    const va = getter(a, s.col), vb = getter(b, s.col);
+    if(typeof va === 'string' || typeof vb === 'string') return dir * String(va??'').localeCompare(String(vb??''), 'ar');
+    return dir * ((va||0) - (vb||0));
+  });
+}
+
+/* ==========================================================================================
+   10) DEMAND VIEW — تقرير المبيعات الشهري + Drill-down العملاء
+   ========================================================================================== */
+STATE.reportMode = 'qty'; // qty | amount | both
+
+function renderDemand(){
+  const el = document.getElementById('view-demand');
+  el.innerHTML = `
+    <section class="panel">
+      <div class="panel-head">
+        <div><h2>📈 تقرير المبيعات الشهري (صافي: فواتير − مرتجعات)</h2>
+          <div class="hint" id="demandPeriodHint"></div></div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <div class="seg" id="reportModeSeg">
+            <button data-m="qty" class="${STATE.reportMode==='qty'?'active':''}">كمية</button>
+            <button data-m="amount" class="${STATE.reportMode==='amount'?'active':''}">مبلغ</button>
+            <button data-m="both" class="${STATE.reportMode==='both'?'active':''}">كمية+مبلغ</button>
+          </div>
+          <button class="btn-ghost btn-sm" onclick="printReport('تقرير المبيعات الشهري')">🖨️ طباعة</button>
+        </div>
+      </div>
+      <div id="demandTableHost"></div>
+    </section>`;
+  document.querySelectorAll('#reportModeSeg button').forEach(b=>b.addEventListener('click', ()=>{
+    STATE.reportMode = b.getAttribute('data-m'); renderDemand();
+  }));
+  renderDemandTable();
+}
+
+function renderDemandTable(){
+  const rep = buildSalesReport();
+  document.getElementById('demandPeriodHint').textContent =
+    `الفترة: ${U.fmtDate(rep.from)} → ${U.fmtDate(rep.to)}  (${rep.days} يوم ≈ ${rep.equivMonths.toFixed(2)} شهر فعلي) — عدد الأصناف: ${rep.rows.length}`;
+  const rows = applySort('demand', rep.rows, (r,col)=>{
+    if(col==='ItemCode') return r.ItemCode;
+    if(col==='ItemName') return r.ItemName;
+    if(col==='Supplier') return r.supplier.name;
+    if(col==='avg') return r.rawAvgQty;
+    if(col.startsWith('m:')) return (r.monthly.get(col.slice(2))||{qty:0}).qty;
+    return 0;
+  });
+  const mode = STATE.reportMode;
+  const showQty = mode==='qty'||mode==='both', showAmt = mode==='amount'||mode==='both';
+  const monthHeaders = rep.months.map(mk=>`<th class="sortable-th" onclick="toggleSort('demand','m:${mk}');renderDemandTable();">${monthLabel(mk)} ${sortIcon('demand','m:'+mk)}</th>`).join('');
+  const head = `
+    <tr>
+      <th class="freeze freeze-1 sortable-th" onclick="toggleSort('demand','ItemCode');renderDemandTable();">رمز الصنف ${sortIcon('demand','ItemCode')}</th>
+      <th class="sortable-th" onclick="toggleSort('demand','ItemName');renderDemandTable();">اسم الصنف ${sortIcon('demand','ItemName')}</th>
+      <th class="sortable-th" onclick="toggleSort('demand','Supplier');renderDemandTable();">المورد ${sortIcon('demand','Supplier')}</th>
+      ${monthHeaders}
+      <th class="sortable-th" onclick="toggleSort('demand','avg');renderDemandTable();">المتوسط/شهر ${sortIcon('demand','avg')}</th>
+    </tr>`;
+  const body = rows.map(r=>{
+    const cells = rep.months.map(mk=>{
+      const c = r.monthly.get(mk) || {qty:0, amount:0};
+      const qtyTxt = c.qty ? `<span class="qty-click" onclick="openCustomerDrilldown('${r.ItemCode}','${mk}')">${U.num(c.qty)}</span>` : `<span class="qty-click zero">0</span>`;
+      if(mode==='qty') return `<td class="num">${qtyTxt}</td>`;
+      if(mode==='amount') return `<td class="num">${U.num(c.amount)}</td>`;
+      return `<td class="num">${qtyTxt}<div style="font-size:9.5px;color:var(--ink-faint)">${U.num(c.amount)}</div></td>`;
+    }).join('');
+    const avgTxt = showQty ? U.num(r.rawAvgQty,1) : '';
+    const avgAmtTxt = showAmt ? U.num(r.rawAvgAmount,1) : '';
+    return `<tr>
+      <td class="num freeze freeze-1">${U.esc(r.ItemCode)}</td>
+      <td>${U.esc(r.ItemName)}</td>
+      <td>${U.esc(r.supplier.name)}</td>
+      ${cells}
+      <td class="num" style="font-weight:700;">${avgTxt}${mode==='both'?`<div style="font-size:9.5px;color:var(--ink-faint)">${avgAmtTxt}</div>`:''}${mode==='amount'?avgAmtTxt:''}</td>
+    </tr>`;
+  }).join('');
+  document.getElementById('demandTableHost').innerHTML = rows.length
+    ? `<div class="tbl-scroll"><table class="datatbl"><thead>${head}</thead><tbody>${body}</tbody></table></div>`
+    : `<div class="empty-state">لا توجد بيانات مبيعات بالفترة/الفلاتر الحالية — ارفع فواتير المبيعات من "مركز البيانات"</div>`;
+}
+
+function openCustomerDrilldown(itemCode, monthKey){
+  const lines = SALES.filteredLines().filter(l=>l.ItemCode===itemCode && U.monthKey(l.date)===monthKey);
+  const byCust = new Map();
+  let totalQty=0, totalAmt=0;
+  lines.forEach(l=>{
+    const key = l.CardCode || l.CardName || '—';
+    if(!byCust.has(key)) byCust.set(key, {code:l.CardCode, name:l.CardName||key, qty:0, amount:0});
+    const c = byCust.get(key); c.qty += l.qty; c.amount += l.amount; totalQty += l.qty; totalAmt += l.amount;
+  });
+  const rows = Array.from(byCust.values()).filter(c=>c.qty!==0).sort((a,b)=>b.qty-a.qty);
+  const itemName = (lines[0]&&lines[0].ItemName) || itemCode;
+  document.getElementById('drawerBox').innerHTML = `
+    <div class="drawer-head"><h3>👥 تفصيل العملاء — ${U.esc(itemName)} (${U.esc(itemCode)}) — ${monthLabel(monthKey)}</h3><button class="btn-sm" onclick="closeDrawer()">✕</button></div>
+    <div class="drawer-body">
+      <div class="grid3" style="margin-bottom:14px;">
+        <div class="stat-box"><div class="lbl">إجمالي الكمية (صافي)</div><div class="val">${U.num(totalQty)}</div></div>
+        <div class="stat-box"><div class="lbl">إجمالي المبلغ</div><div class="val">${U.num(totalAmt)}</div></div>
+        <div class="stat-box"><div class="lbl">عدد العملاء</div><div class="val">${rows.length}</div></div>
+      </div>
+      <div class="printhead"><h2>تفصيل العملاء — ${U.esc(itemName)}</h2><div class="meta"><span>الشهر: ${monthLabel(monthKey)}</span><span>تاريخ الطباعة: ${U.fmtDate(new Date())}</span></div></div>
+      <div class="tbl-scroll" style="margin:0;"><table class="datatbl">
+        <thead><tr><th>رمز العميل</th><th>اسم العميل</th><th>الكمية</th><th>النسبة %</th><th>المبلغ</th></tr></thead>
+        <tbody>${rows.map(c=>`<tr><td>${U.esc(c.code||'—')}</td><td>${U.esc(c.name)}</td><td class="num">${U.num(c.qty)}</td>
+          <td class="num">${totalQty?U.num(c.qty/totalQty*100,1):'0'}%</td><td class="num">${U.num(c.amount)}</td></tr>`).join('') || '<tr><td colspan="5" class="empty-state">لا بيانات</td></tr>'}</tbody>
+      </table></div>
+      <div class="row-actions" style="margin-top:12px;"><button class="btn-ghost btn-sm no-print" onclick="printReport('تفصيل العملاء')">🖨️ طباعة</button></div>
+    </div>`;
+  document.getElementById('drawerOverlay').classList.add('open');
+}
+
+/* ==========================================================================================
+   11) PRINTING — طباعة احترافية موحّدة لكل التقارير
+   ========================================================================================== */
+function printReport(title){
+  const heads = document.querySelectorAll('.printhead');
+  const f = STATE.filters;
+  const activeFilters = Object.entries(f).filter(([k,v])=>v).map(([k,v])=>k+'='+v).join(' | ') || 'بدون فلاتر';
+  if(!heads.length || !document.getElementById('drawerOverlay').classList.contains('open')){
+    // طباعة الشاشة الحالية: أدرج رأس طباعة مؤقت أعلى القسم الظاهر
+    const activeView = document.querySelector('.view.active');
+    let ph = activeView.querySelector('.printhead.js-temp');
+    if(!ph){
+      ph = document.createElement('div');
+      ph.className = 'printhead js-temp';
+      activeView.prepend(ph);
+    }
+    ph.innerHTML = `<h2>${U.esc(title)}</h2><div class="meta"><span>الفلاتر: ${U.esc(activeFilters)}</span><span>تاريخ الطباعة: ${U.fmtDateTime(Date.now())}</span></div>`;
+  }
+  window.print();
+}
 </script>
 <script>
 'use strict';
