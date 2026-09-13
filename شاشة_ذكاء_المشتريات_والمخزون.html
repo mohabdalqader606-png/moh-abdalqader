@@ -2187,6 +2187,36 @@ function runEngine(){
     if(lts.length>=1) supplierLtFallback[nk] = { avg: mean(lts), sampleSize: lts.length };
   });
 
+  // الحد الأدنى للطلب (MOQ) المستنتَج من أصغر شحنة استُلمت فعلياً لهالصنف — من نفس
+  // مصادر الاستلام (buildReceiptSources)، مجمَّعة حسب رقم المستند (docEntry) حتى نحصل
+  // على كمية الشحنة الكاملة مش سطر واحد منها. نطلب شحنتين سابقتين ع الأقل حتى يكون
+  // للحد الأدنى معنى إحصائي بسيط (نفس شرط computeShipmentFeasibility تماماً)
+  const itemShipmentQtyForMoq = {};
+  receiptSources.forEach(r=>{
+    if(!r.docEntry || !r.code || !(r.qty>0)) return;
+    const m = itemShipmentQtyForMoq[r.code] = itemShipmentQtyForMoq[r.code] || {};
+    m[r.docEntry] = (m[r.docEntry]||0) + r.qty;
+  });
+  const itemMinShipmentQty = {};
+  Object.keys(itemShipmentQtyForMoq).forEach(code=>{
+    const qtys = Object.values(itemShipmentQtyForMoq[code]);
+    if(qtys.length>=2) itemMinShipmentQty[code] = { minQty: Math.min(...qtys), shipmentCount: qtys.length };
+  });
+  // احتياطي مستنتَج من نفس المورد لصنف ما عنده هو نفسه شحنتين كافيتين — من أصناف تانية
+  // لنفس المورد إما عندها استنتاج تاريخي فعلي أو MOQ تعاقدي حقيقي مؤكَّد. نفس منطق
+  // supplierLtFallback أعلاه تماماً.
+  const supplierMoqFallback = {};
+  Object.keys(supplierItems).forEach(nk=>{
+    const vals = supplierItems[nk].map(c=>{
+      const hist = itemMinShipmentQty[c];
+      if(hist) return hist.minQty;
+      const pp = state.params[c]||{};
+      if(!pp.moqIsDefault && !isNaN(toNum(pp.moq)) && toNum(pp.moq)>0) return toNum(pp.moq);
+      return null;
+    }).filter(v=>v!=null);
+    if(vals.length>=1) supplierMoqFallback[nk] = { avg: mean(vals), sampleSize: vals.length };
+  });
+
   // آخر استلام فعلي لكل صنف — من بيانات استلام البضاعة GRPO (رقم 6) أو كويري
   // مدة التوريد (رقم 4) لو فيه تاريخ استلام لهالصنف، أيهما أحدث
   const lastReceiptByItem = {};
@@ -2251,7 +2281,7 @@ function runEngine(){
     // فقط الحقل التعاقدي اليدوي (p.leadTimeDays)، فكان يفرض REVIEW حتى لو الصنف عنده
     // فعلياً مدة توريد حقيقية مشتقّة من تاريخ الشراء (أوثق مصدر أصلاً) — خلل حقيقي
     // مكتشَف على بيانات SAP فعلية
-    if(p.moq==='' || p.moq==null || isNaN(p.moq)) missing.push('MOQ');
+    // فحص "MOQ مفقود" انتقل لتحت (بعد حساب moqAvg) — نفس سبب انتقال فحص Lead Time أعلاه
     if(daysWithSalesData < 5) missing.push('تاريخ مبيعات كافٍ');
 
     // متوسط وتذبذب الطلب اليومي (تجميع يومي بسيط من نقاط البيع الملصوقة)
@@ -2286,6 +2316,41 @@ function runEngine(){
       }
     }
     if(ltAvg==null) missing.push('Lead Time');
+
+    // الحد الأدنى للطلب (MOQ) — بالأولوية: (1) قيمة تعاقدية حقيقية >0 مؤكَّدة (مستوردة من
+    // SAP أو مُدخَلة يدوياً بدون علم "افتراضي")، (2) مستنتَج من أصغر شحنة استُلمت فعلياً
+    // لهالصنف تحديداً، (3) مستنتَج من متوسط أصغر شحنة لأصناف تانية مؤكَّدة لنفس المورد،
+    // (4) افتراضي عام مُدخَل يدوياً بشاشة الإعدادات، (5) غير متوفر إطلاقاً.
+    // ملاحظة مهمة: MOQ=0 بالتصدير الخام ما منقدر نميّزه عن "الحقل ما انعبى إطلاقاً بـSAP"
+    // (نفس مشكلة اكتُشفت على بيانات حقيقية)، فبنعامله نفس معاملة الفاضي هون — بدل ما
+    // نفترض أعمى "بدون حد أدنى" — ونحاول نستنتج بديل أدق من الاستلامات الفعلية
+    const moqRaw = toNum(p.moq);
+    const moqConfirmedReal = !p.moqIsDefault && !isNaN(moqRaw) && moqRaw>0;
+    let moqAvg, moqSource, moqIsHistoryInferred=false, moqIsSupplierInferred=false;
+    if(moqConfirmedReal){
+      moqAvg = moqRaw; moqSource = 'تعاقدي/مستورد من SAP';
+    } else {
+      const hist = itemMinShipmentQty[code];
+      if(hist){
+        moqAvg = hist.minQty;
+        moqSource = 'مستنتج من أصغر شحنة استُلمت فعلياً لهالصنف (من أصل '+hist.shipmentCount+' شحنة سابقة)';
+        moqIsHistoryInferred = true;
+      } else {
+        const nk = state.itemSupplierKey[code];
+        const fb = nk ? supplierMoqFallback[nk] : null;
+        if(fb){
+          moqAvg = Math.round(fb.avg);
+          moqSource = 'مستنتج من متوسط أصغر شحنة لـ'+fb.sampleSize+' صنف آخر مؤكَّد لنفس المورد — غير مؤكَّد لهالصنف تحديداً';
+          moqIsSupplierInferred = true;
+        } else if(!isNaN(moqRaw) && moqRaw>0){
+          // p.moqIsDefault=true بدون أي بديل أفضل (لا استلامات ولا مورد بأصناف مؤكَّدة)
+          moqAvg = moqRaw; moqSource = '⚠ افتراضي عام — غير مرتبط باستلامات فعلية، يحتاج تأكيد';
+        } else {
+          moqAvg = null; moqSource = 'غير متوفر';
+        }
+      }
+    }
+    if(moqAvg==null) missing.push('MOQ');
 
     // ============ محاكاة زمنية-مرحلية للمخزون (Time-Phased Inventory Simulation) ============
     // بدل معاملة كل البضاعة "بالطريق" كأنها متوفرة اليوم (الخلل الجوهري بالنسخة السابقة:
@@ -2372,18 +2437,18 @@ function runEngine(){
       actualRequirementNoPO = Math.max(0, Math.round((safetyStock||0) - projectedAtEndOfWindowNoPO));
       if(actualRequirement>0){
         const mult = toNum(p.orderMultiple) || 1;
-        const moq = toNum(p.moq);
+        const moq = moqAvg;
         let qty = mult>0 ? Math.ceil(actualRequirement/mult)*mult : actualRequirement;
         if(qty>actualRequirement){
           orderMultipleAdjustment = qty - actualRequirement;
           qtyNotes.push('رُفعت لمضاعف الطلب (×'+mult+'): +'+fmtNum(orderMultipleAdjustment));
         }
-        if(!isNaN(moq) && qty<moq){
+        if(!isNaN(moq) && moq!=null && qty<moq){
           moqExcess = moq - qty;
           moqExcessValue = moqExcess * (toNum(p.unitCost)||0);
           qty = moq;
-          qtyNotes.push('رُفعت للحد الأدنى للمورد (MOQ='+moq+(p.moqIsDefault?' — افتراضي غير مؤكَّد':'')+') — فائض عن الاحتياج الفعلي: '+fmtNum(moqExcess)+(moqExcessValue?(' (~'+Math.round(moqExcessValue).toLocaleString('en-US')+' د.أ)'):''));
-        } else if(p.moqIsDefault){ qtyNotes.push('⚠ MOQ افتراضي عام — لم يُؤكَّد من المورد الفعلي'); }
+          qtyNotes.push('رُفعت للحد الأدنى للمورد (MOQ='+moq+(!moqConfirmedReal?' — '+moqSource:'')+') — فائض عن الاحتياج الفعلي: '+fmtNum(moqExcess)+(moqExcessValue?(' (~'+Math.round(moqExcessValue).toLocaleString('en-US')+' د.أ)'):''));
+        } else if(!moqConfirmedReal && moq!=null){ qtyNotes.push('⚠ MOQ غير مؤكَّد رسمياً من المورد: '+moqSource); }
         // سقف الصلاحية: لا تشترِ أكثر مما يمكن استهلاكه قبل الانتهاء
         if(!isNaN(toNum(p.shelfLifeDays)) && dAvg>0){
           const maxByShelfLife = dAvg * toNum(p.shelfLifeDays);
@@ -2556,7 +2621,8 @@ function runEngine(){
       // مش بس "المستخدم ضغط تطبيق افتراضي" — كمان "القيمة أصلاً غير مؤكَّدة من أي مصدر"
       // (بدون ما نفرض REVIEW على الصنف كامل بسببها متل Lead Time/MOQ، لأن أثرها على
       // الكمية النهائية أخف بكتير — تقريب فوق بس، مش قرار الشراء نفسه)
-      moq: toNum(p.moq), orderMultiple: toNum(p.orderMultiple)||1,
+      moq: moqAvg, moqSource, moqIsHistoryInferred, moqIsSupplierInferred, moqConfirmedReal,
+      orderMultiple: toNum(p.orderMultiple)||1,
       orderMultipleIsDefault: !!p.orderMultipleIsDefault || p.orderMultiple===''||p.orderMultiple==null||isNaN(toNum(p.orderMultiple)),
       shelfLifeDays: toNum(p.shelfLifeDays),
       lastReceiptDate: lastReceipt ? lastReceipt.date : null,
@@ -2865,7 +2931,7 @@ function pccDetailHtml(r){
         + kv('المورد', esc(supDisplay))
         + kv('مدة التوريد', r.ltAvg!=null?(Math.round(r.ltAvg)+' يوم'):'—')
         + kv('مصدر مدة التوريد', esc(r.ltSource||'—'))
-        + kv('MOQ (الحد الأدنى)', r.moq||'—')
+        + kv('MOQ (الحد الأدنى)', r.moq!=null?(fmtNum(r.moq)+(!r.moqConfirmedReal?' — '+esc(r.moqSource):'')):'—')
         + kv('مضاعف الطلب', (r.orderMultiple||1)+(r.orderMultipleIsDefault?' (غير متوفر من المورد — افتراضي 1)':''))
         + kv('كلفة الوحدة', r.unitCost?(fmtPrice(r.unitCost)+' د.أ'):'N/A — السعر غير متوفر')
       + '</div>'
