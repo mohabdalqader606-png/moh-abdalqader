@@ -2407,6 +2407,20 @@ function buildReceiptSources(){
 // الربط بفرق بسيط بالكتابة بين المصدرين.
 function resolveSupplierMapping(){
   const receiptSources = buildReceiptSources();
+  // تعبئة تنازلية للمورد الناقص: تصدير SAP كتير مرات بيرجّع اسم/رمز المورد بسطر أول
+  // مستند الشراء (docEntry) بس، ويسيب باقي أسطر نفس المستند فاضية (تصميم "ماستر-تفصيل"
+  // شائع بالتقارير — نفس المورد بالضرورة، مستند شراء واحد = مورد واحد). قبل أي احتساب
+  // تكرار، نعبّي أي سطر مورده فاضي من أي سطر تاني بنفس رقم المستند إله مورد صريح —
+  // بدون ما نلمس السعر أو أي حقل تاني، كل صنف يضل ياخذ سعره من سطوره هو بس.
+  const supplierByDocEntry = {};
+  receiptSources.forEach(r=>{
+    if(r.docEntry && r.supplier && String(r.supplier).trim()) supplierByDocEntry[r.docEntry] = r.supplier;
+  });
+  receiptSources.forEach(r=>{
+    if(r.docEntry && (!r.supplier || !String(r.supplier).trim()) && supplierByDocEntry[r.docEntry]){
+      r.supplier = supplierByDocEntry[r.docEntry];
+    }
+  });
   const itemSupplierFreq = {};
   const knownSupplierKeysFromReceipts = {};
   receiptSources.forEach(r=>{
