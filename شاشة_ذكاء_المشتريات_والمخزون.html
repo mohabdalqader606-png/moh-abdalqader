@@ -630,6 +630,12 @@ ORDER BY T1."ItemCode", T0."DocDate"</code>
           <code class="block" id="q-inventory">SELECT T0."ItemCode" AS "رمز الصنف", T0."WhsCode" AS "المستودع", T1."WhsName" AS "اسم المستودع",
        T0."OnHand" AS "الرصيد الحالي", T0."OnOrder" AS "تحت الطلب"
 FROM OITW T0 LEFT JOIN OWHS T1 ON T0."WhsCode"=T1."WhsCode"</code>
+          <div style="margin-top:8px;">
+            <label style="font-size:11.5px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+              رموز مستودعات "تالف" (غير قابلة للبيع — تُستبعد كمياتها بالكامل من الرصيد القابل للبيع)، مفصولة بفاصلة:
+              <input type="text" id="excludedWarehouses" value="004,006,099,100" style="width:160px; font-family:var(--mono); border:1px solid var(--line); border-radius:6px; padding:3px 6px;">
+            </label>
+          </div>
         </div>
         <textarea id="pasteInventory" placeholder="الصق هنا: رمز الصنف / المستودع(اختياري) / اسم المستودع(اختياري) / الرصيد الحالي / تحت الطلب(اختياري) ..."></textarea>
         <div class="row-actions" style="margin-top:6px;">
@@ -886,6 +892,25 @@ ORDER BY T1."ItemCode", T0."DocDate"</code>
       </details>
 
       <details class="opt">
+        <summary><span class="num-badge opt">10</span> أرصدة الباتشات مع تاريخ الانتهاء — اختياري بس مهم للأصناف ذات الصلاحية</summary>
+        <div class="hint">
+          بدون هالكويري، الرصيد الحالي (كويري رقم 3) بيُحتسَب صالحاً للبيع بالكامل بغض النظر عن تاريخ أي باتش. هالكويري بيجيب رصيد كل باتش لحاله مع تاريخ انتهائه من جداول الباتشات القياسية بـSAP B1 (OBTN/OBTQ). الشاشة بتستبعد تلقائياً أي كمية باتش تاريخ انتهائها فات فعلياً من الرصيد القابل للبيع (نفس معاملة مستودعات التوالف)، وبتنبّه (بدون استبعاد — لسا صالحة قانونياً) على أي كمية باتش تاريخ انتهائها قريب (ضمن أفق الشراء الحالي).
+          <div style="margin-top:6px;color:var(--crimson);">⚠ أسماء الجداول/الأعمدة القياسية بـSAP B1 — تحقق منها عندكم قبل التشغيل (ممكن تختلف حسب إصدار SAP أو إعداد تتبع الباتشات).</div>
+          <code class="block" id="q-batches">SELECT T1."ItemCode" AS "رمز الصنف", T1."DistNumber" AS "رقم الباتش",
+       T1."Quantity" AS "الكمية", T0."ExpDate" AS "تاريخ الانتهاء", T1."WhsCode" AS "المستودع"
+FROM OBTN T0 INNER JOIN OBTQ T1 ON T0."ItemCode"=T1."ItemCode" AND T0."DistNumber"=T1."DistNumber"
+WHERE T1."Quantity" > 0</code>
+        </div>
+        <textarea id="pasteBatches" placeholder="الصق هنا: رمز الصنف / رقم الباتش(اختياري) / الكمية / تاريخ الانتهاء / المستودع(اختياري) ..."></textarea>
+        <div class="row-actions" style="margin-top:6px;">
+          <input type="file" id="pasteBatchesFile" accept=".txt,.csv,.tsv" style="display:none;" onchange="loadPasteFromFile(event,'pasteBatches')">
+          <button class="btn-ghost btn-sm" type="button" onclick="document.getElementById('pasteBatchesFile').click()">📁 ارفع ملف بدل اللصق (أسرع كتير للبيانات الضخمة)</button>
+          <button class="btn-ghost btn-sm" type="button" onclick="clearUploadedFile('pasteBatches')">✕ إزالة الملف</button>
+          <span class="status-msg" id="pasteBatchesFileMsg"></span>
+        </div>
+      </details>
+
+      <details class="opt">
         <summary>🗂 استيراد بيانات العملاء (رمز/اسم، لربط تفصيل المبيعات حسب العميل)</summary>
         <div class="hint">
           لصق تصدير "Customers" الكامل من SAP B1 مباشرة (نفس أعمدة "BP Code" / "BP Name") أو كويري
@@ -1046,6 +1071,11 @@ let state = {
   // أفق التخطيط (Buying Horizon) بالأيام — قابل للتعديل من المستخدم بشاشة "ماذا نطلب
   // الآن؟"، يُستخدم بحساب الكمية المقترحة (المستوى المستهدف = طلب مدة التوريد + هالأفق)
   buyingHorizonDays:30,
+  // رموز مستودعات "تالف" (غير قابلة للبيع) — كميتها تُستبعد بالكامل من الرصيد القابل
+  // للبيع (مش بس تُعرض بشكل مختلف). القيمة الافتراضية مؤكَّدة من المستخدم فعلياً
+  // (004/006/099/100)، وقابلة للتعديل من واجهة استيراد البيانات لو تغيّرت عندهم
+  excludedWarehouses: ['004','006','099','100'],
+  batchesRaw:[], // أرصدة الباتشات مع تاريخ الانتهاء (اختياري) — لاستبعاد المنتهي فعلياً والتنبيه على القريب من الانتهاء
   // ================= Data Hub (مركز البيانات) =================
   // sourceMeta: مفتاح المصدر -> {lastImportAt, recordCount, issues:[{type,count,label}], qualityScore}
   // مبنية فعلياً من نتيجة كل استيراد حقيقي — مش أرقام تجميلية (تُحسب من processAllDataHeavy)
@@ -1093,7 +1123,10 @@ const DATA_SOURCES = [
     fields:['Item Code','Landed Cost Date','Base Doc. Price','Final Unit Cost'] },
   { key:'returns', queryNo:9, label:'مرتجعات المبيعات (Credit Memo)', required:false, fieldId:'pasteReturns', codeId:'q-returns',
     why:'تُخصم من صافي الطلب اليومي قبل حساب مخزون الأمان والكمية المقترحة — بدونها، أي كمية يرجّعها الزبون تُحتسَب طلباً حقيقياً كاملاً.',
-    fields:['رمز الصنف','التاريخ','الكمية','المبلغ (اختياري)'] }
+    fields:['رمز الصنف','التاريخ','الكمية','المبلغ (اختياري)'] },
+  { key:'batches', queryNo:10, label:'أرصدة الباتشات مع تاريخ الانتهاء', required:false, fieldId:'pasteBatches', codeId:'q-batches',
+    why:'يستبعد الكمية المنتهية الصلاحية فعلياً من الرصيد القابل للبيع، وينبّه على القريب من الانتهاء — بدونه كل الرصيد يُحتسَب صالحاً للبيع بغض النظر عن تاريخ الباتش.',
+    fields:['رمز الصنف','رقم الباتش (اختياري)','الكمية','تاريخ الانتهاء'] }
 ];
 
 // القدرات التحليلية وما تعتمد عليه من مصادر — تُستخدم لشاشة "البيانات الناقصة"
@@ -1339,6 +1372,7 @@ function processAllData(){
 function processAllDataHeavy(){
   const msg = document.getElementById('dataStatusMsg');
   state.demandWindowDays = toNum(document.getElementById('demandWindowDays').value) || 90;
+  state.excludedWarehouses = (document.getElementById('excludedWarehouses').value||'').split(',').map(s=>s.trim()).filter(Boolean);
   const raggedNotes = [];
   // تشخيص مطابقة الأعمدة لكويري 6 و8 تحديداً (السعر/الكلفة) — عشان لو انطابق عمود غلط
   // (مثلاً الكمية بدل السعر) يبين فوراً برسالة الحالة بدل ما يظهر كرقم غريب بالتقرير بس
@@ -1685,6 +1719,40 @@ function processAllDataHeavy(){
     }
   }
 
+  // 10) أرصدة الباتشات مع تاريخ الانتهاء (اختياري) — تستبعد المنتهي فعلياً من الرصيد
+  // القابل للبيع، وتنبّه على القريب من الانتهاء (runEngine)
+  const batchTxt = getPasteText('pasteBatches');
+  if(batchTxt.trim()){
+    const {headers, rows, raggedCount} = splitPasted(batchTxt);
+    if(raggedCount) raggedNotes.push('الباتشات ('+raggedCount+' سطر)');
+    const iCode = colIndex(headers, ['رمز الصنف','ItemCode','Item No.']);
+    const iBatch = colIndex(headers, ['رقم الباتش','DistNumber','Batch Number']);
+    const iQty = colIndex(headers, ['الكمية','Quantity']);
+    const iExp = colIndex(headers, ['تاريخ الانتهاء','ExpDate']);
+    const iWhs = colIndex(headers, ['المستودع','WhsCode']);
+    if(iCode>=0 && iQty>=0 && iExp>=0){
+      let batchBlankCount=0, batchInvalidQtyCount=0, batchInvalidDateCount=0, batchUnknownItemCount=0;
+      const batchUnknownSamples = newSampleSet(8);
+      state.batchesRaw = rows.map(r=>{
+        const code=r[iCode], qty=toNum(r[iQty]);
+        if(!code){ batchBlankCount++; return null; }
+        if(isNaN(qty)) batchInvalidQtyCount++;
+        if(r[iExp] && !parseDateFlexible(r[iExp])) batchInvalidDateCount++;
+        if(!state.itemsRaw[code]){ batchUnknownItemCount++; batchUnknownSamples.tryAdd(code); }
+        return { code, batch: iBatch>=0 ? r[iBatch] : '', qty, expDate:r[iExp], whs: iWhs>=0 ? r[iWhs] : '' };
+      }).filter(r=>r && r.code && !isNaN(r.qty) && r.expDate);
+      noteImport('batches','أرصدة الباتشات مع تاريخ الانتهاء', { count: state.batchesRaw.length, issues: buildIssues([
+        ['blank_key', batchBlankCount, 'سطر بدون رمز صنف (تجوهل)'],
+        ['invalid_qty', batchInvalidQtyCount, 'كمية غير رقمية (تجوهل السطر)'],
+        ['invalid_date', batchInvalidDateCount, 'تاريخ انتهاء غير مفهوم (تجوهل السطر)'],
+        ['unknown_item', batchUnknownItemCount, 'رمز صنف غير موجود بجدول الأصناف الحالي', Array.from(batchUnknownSamples)]
+      ])});
+    } else {
+      msg.textContent = 'تعذر إيجاد أعمدة كويري الباتشات (رمز الصنف/الكمية/تاريخ الانتهاء)';
+      msg.className='status-msg err';
+    }
+  }
+
   renderParamsTable();
   runEngine();
   renderDataHub();
@@ -1704,10 +1772,11 @@ function processAllDataHeavy(){
   if(poTxt.trim()) changedDatasets.push('po');
   if(acTxt.trim()) changedDatasets.push('actualcost');
   // المرتجعات نفس حساسية بيانات العميل بكويري المبيعات — تُبقى محلية بالمتصفح فقط، بدون رفع للسحابة
+  // الباتشات كمان محلية فقط حالياً — رفعها للسحابة يحتاج جدول Supabase جديد لعدم إضافته بدون طلب صريح
   scheduleCloudSave(changedDatasets);
 }
 function clearAllPasted(){
-  ['pasteItems','pasteSales','pasteInventory','pasteLeadTime','pasteParams','pasteApInvoices','pastePO','pasteActualCost','pasteReturns'].forEach(id=>clearUploadedFile(id));
+  ['pasteItems','pasteSales','pasteInventory','pasteLeadTime','pasteParams','pasteApInvoices','pastePO','pasteActualCost','pasteReturns','pasteBatches'].forEach(id=>clearUploadedFile(id));
 }
 
 /* ================= جدول بارامترات الأصناف ================= */
@@ -2226,15 +2295,38 @@ function runEngine(){
     }
   });
 
-  // تجميع المخزون لكل صنف (قد يكون بأكثر من مستودع) + خريطة أسماء المستودعات
+  // تجميع المخزون لكل صنف (قد يكون بأكثر من مستودع) + خريطة أسماء المستودعات — كمية
+  // مستودعات "التوالف" (state.excludedWarehouses) تُستبعد بالكامل من الرصيد القابل
+  // للبيع (onHand/onOrder)، لكن تضل معروضة بتفصيل المستودعات (warehouses) موسومة
+  // isDamaged حتى تضل شفافة للمستخدم بدل ما تختفي بصمت
   const invByItem = {};
   state.warehouseNames = state.warehouseNames || {};
+  const excludedWhs = (state.excludedWarehouses && state.excludedWarehouses.length) ? state.excludedWarehouses : ['004','006','099','100'];
   state.invRaw.forEach(r=>{
-    const cur = invByItem[r.code] || {onHand:0, onOrder:0, warehouses:[]};
-    cur.onHand += r.onHand||0; cur.onOrder += r.onOrder||0;
-    cur.warehouses.push({whs:r.whs||'-', onHand:r.onHand||0});
+    const cur = invByItem[r.code] || {onHand:0, onOrder:0, damagedQty:0, warehouses:[]};
+    const isDamaged = excludedWhs.includes(String(r.whs||'').trim());
+    if(isDamaged) cur.damagedQty += r.onHand||0;
+    else { cur.onHand += r.onHand||0; cur.onOrder += r.onOrder||0; }
+    cur.warehouses.push({whs:r.whs||'-', onHand:r.onHand||0, isDamaged});
     invByItem[r.code] = cur;
     if(r.whs && r.whsName) state.warehouseNames[r.whs] = r.whsName;
+  });
+
+  // أرصدة الباتشات مع تاريخ الانتهاء (اختياري) — الكمية المنتهية فعلياً (تاريخ انتهاء
+  // فات) تُستبعد بالكامل من الرصيد القابل للبيع (نفس معاملة مستودعات التوالف)، والكمية
+  // القريبة من الانتهاء (خلال أفق الشراء الحالي) تُعرض كتنبيه إعلامي بس بدون استبعادها
+  // (لسا صالحة قانونياً للبيع لحد ما تنتهي فعلياً)
+  const expiredQtyByItem = {}, nearExpiryByItem = {};
+  const expiryWatchDays = Math.max(0, toNum(state.buyingHorizonDays) || 30);
+  (state.batchesRaw||[]).forEach(r=>{
+    const exp = parseDateFlexible(r.expDate); if(!exp || isNaN(r.qty) || r.qty<=0) return;
+    if(exp < now){ expiredQtyByItem[r.code] = (expiredQtyByItem[r.code]||0) + r.qty; return; }
+    if(daysBetween(now, exp) <= expiryWatchDays){
+      const cur = nearExpiryByItem[r.code] || { qty:0, nearestDate: exp };
+      cur.qty += r.qty;
+      if(exp < cur.nearestDate) cur.nearestDate = exp;
+      nearExpiryByItem[r.code] = cur;
+    }
   });
 
   // Lead Time الفعلي لكل صنف (إن وُجد)
@@ -2344,7 +2436,12 @@ function runEngine(){
     const it = state.itemsRaw[code];
     const p = state.params[code] || {};
     const s = (salesByItem[code]||[]).map(x=>x.qty);
-    const inv = invByItem[code] || {onHand:0, onOrder:0, warehouses:[]};
+    const inv = invByItem[code] || {onHand:0, onOrder:0, damagedQty:0, warehouses:[]};
+    // الرصيد "القابل للبيع" الفعلي = الرصيد الخام (بعد استبعاد مستودعات التوالف أصلاً
+    // بمرحلة invByItem) ناقص أي كمية باتش تاريخ انتهائها فات فعلياً — هاد الرقم يلي
+    // يُستخدم بكل حساب قرار لاحق، مش inv.onHand الخام
+    const expiredQty = expiredQtyByItem[code] || 0;
+    const usableOnHand = Math.max(0, (inv.onHand||0) - expiredQty);
     const daysWithSalesData = (salesByItem[code]||[]).length;
 
     const missing = [];
@@ -2454,7 +2551,7 @@ function runEngine(){
     let simAsIsArr = null, simNoPoArr = null;
     const SIM_DAYS = 730;
     function simulateInventory(lots){
-      let projected = inv.onHand, li = 0;
+      let projected = usableOnHand, li = 0;
       const arr = [projected];
       let sd = (projected<=0) ? now : null, bd = (safetyStock!=null && projected<safetyStock) ? now : null;
       for(let day=1; day<=SIM_DAYS; day++){
@@ -2470,14 +2567,14 @@ function runEngine(){
     if(ltAvg!=null){
       safetyStock = z * Math.sqrt(Math.max(0,ltAvg)*dStd*dStd + dAvg*dAvg*ltStd*ltStd) * criticalityBoost;
       rop = dAvg*ltAvg + safetyStock;
-      daysCover = dAvg>0 ? (inv.onHand / dAvg) : (inv.onHand>0 ? Infinity : 0);
+      daysCover = dAvg>0 ? (usableOnHand / dAvg) : (usableOnHand>0 ? Infinity : 0);
       const simAsIs = simulateInventory(datedPoLots);
       const simNoPo = simulateInventory([]);
       simAsIsArr = simAsIs.arr; simNoPoArr = simNoPo.arr;
       stockoutDate = simAsIs.stockoutDate; safetyBreachDate = simAsIs.safetyBreachDate;
       stockoutDateNoPO = simNoPo.stockoutDate;
       const denom = Math.sqrt(Math.max(0,ltAvg)*dStd*dStd + dAvg*dAvg*ltStd*ltStd) || 1;
-      const zProb = (inv.onHand + effectiveOnOrder - dAvg*ltAvg) / denom;
+      const zProb = (usableOnHand + effectiveOnOrder - dAvg*ltAvg) / denom;
       stockoutProb = Math.round((1-normCdf(zProb))*1000)/10;
     }
     const daysToStockout = stockoutDate ? daysBetween(now, stockoutDate) : Infinity;
@@ -2562,7 +2659,7 @@ function runEngine(){
     const xyz = cv<=0.5 ? 'X' : (cv<=1.0 ? 'Y' : 'Z');
 
     // Excess: احتياج فعلي = صفر، والتغطية الحالية تتجاوز مدة التوريد+أفق التخطيط بكثير
-    const isExcess = (missing.length===0 && actualRequirement===0 && daysCover!=null && isFinite(daysCover) && ltAvg!=null && daysCover > (ltAvg+horizonDays)*2 && inv.onHand>0);
+    const isExcess = (missing.length===0 && actualRequirement===0 && daysCover!=null && isFinite(daysCover) && ltAvg!=null && daysCover > (ltAvg+horizonDays)*2 && usableOnHand>0);
     // هل كان في احتياج حقيقي لو تجاهلنا كل البضاعة بالطريق؟ (يميّز "PO يغطي احتياج
     // حقيقي" WAIT_FOR_OPEN_PO عن "أصلاً ما في احتياج" DO_NOT_BUY)
     const wouldNeedWithoutPO = actualRequirementNoPO!=null && actualRequirementNoPO>0;
@@ -2672,7 +2769,12 @@ function runEngine(){
       // صنف غلط بدل اسم مورد؛ هيك أي مكان بالتطبيق بيعرض r.supplier (مركز التحكم Tower،
       // تقرير الأصناف، تصدير CSV) بيصير محمياً تلقائياً من نفس النقطة
       code, name: it.name, supplier: state.itemSupplierDisplay[code] || 'مورد غير محدَّد',
-      onHand: inv.onHand, onOrder: effectiveOnOrder, poLots, datedPoLots, warehouses: inv.warehouses,
+      // onHand هون هو الرصيد "القابل للبيع" الصافي (بعد استبعاد مستودعات التوالف
+      // والكمية المنتهية فعلياً) — نفس القيمة المستخدمة بكل حساب قرار أعلاه، مش الرصيد
+      // الخام. onHandGross/damagedQty/expiredQty للشفافية فقط.
+      onHand: usableOnHand, onHandGross: inv.onHand||0, damagedQty: inv.damagedQty||0, expiredQty,
+      nearExpiryQty: (nearExpiryByItem[code]||{}).qty||0, nearExpiryDate: (nearExpiryByItem[code]||{}).nearestDate||null,
+      onOrder: effectiveOnOrder, poLots, datedPoLots, warehouses: inv.warehouses,
       dAvg: Math.round(dAvg*100)/100, dStd: Math.round(dStd*100)/100,
       daysWithSalesData, demandTrend, demandMethod, seasonalityNote,
       returnsQty: returnsByItemWindow[code]||0,
@@ -2995,7 +3097,10 @@ function pccDetailHtml(r){
         + kv('الموسمية', esc(r.seasonalityNote))
       + '</div>'
       + '<div class="pcc-detail-section"><h4>📦 المخزون</h4>'
-        + kv('المخزون الحالي', fmtNum(r.onHand))
+        + kv('المخزون الحالي (قابل للبيع)', fmtNum(r.onHand)+((r.damagedQty>0||r.expiredQty>0)?(' — من إجمالي خام '+fmtNum(r.onHandGross)):''))
+        + (r.damagedQty>0 ? kv('مستبعد كتالف (مستودعات غير قابلة للبيع)', fmtNum(r.damagedQty)) : '')
+        + (r.expiredQty>0 ? kv('مستبعد كمنتهي الصلاحية فعلياً', fmtNum(r.expiredQty)) : '')
+        + (r.nearExpiryQty>0 ? kv('⚠ قريب من الانتهاء (لسا قابل للبيع)', fmtNum(r.nearExpiryQty)+' — أقرب تاريخ '+fmtDate(r.nearExpiryDate)) : '')
         + kv('التغطية الحالية (بدون أي PO)', r.daysCover!=null?(isFinite(r.daysCover)?r.daysCover+' يوم':'∞'):'—')
         + kv('مخزون الأمان', r.safetyStockReliable?fmtNum(r.safetyStock):'غير موثوق')
         + kv('نقطة إعادة الطلب', r.rop??'—')
@@ -4066,7 +4171,7 @@ function showBalanceDrilldown(sourceEl, code){
   const r = findReportItem(code); if(!r) return;
   const list = (r.warehouses||[]).slice().sort((a,b)=>b.onHand-a.onHand);
   const colCount = reportMode==='both' ? 3 : 2;
-  const rows = list.map(w=>'<tr><td>'+esc((state.warehouseNames&&state.warehouseNames[w.whs]) || w.whs || '-')+'</td>'+qtyValueTd(w.onHand, w.onHand*r.unitCost)+'</tr>').join('');
+  const rows = list.map(w=>'<tr><td>'+esc((state.warehouseNames&&state.warehouseNames[w.whs]) || w.whs || '-')+(w.isDamaged?' <span style="color:var(--gold);font-weight:700;">⚠ تالف — مستبعد</span>':'')+'</td>'+qtyValueTd(w.onHand, w.onHand*r.unitCost)+'</tr>').join('');
   renderDrilldown(sourceEl, code+'|balance', 'الرصيد الحالي — '+r.name+' ('+r.code+')',
     '<table class="minitbl"><thead><tr><th>المستودع</th>'+qtyValueTh('الكمية','القيمة')+'</tr></thead><tbody>'
     + (rows || '<tr><td colspan="'+colCount+'" style="text-align:center;color:var(--ink-soft);padding:14px;">لا يوجد تفصيل مستودعات لهالصنف</td></tr>')
