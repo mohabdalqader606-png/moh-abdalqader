@@ -746,6 +746,7 @@ const DB = {
         });
         if(!db.objectStoreNames.contains('importLog')) db.createObjectStore('importLog', {keyPath:'id'});
         if(!db.objectStoreNames.contains('planOverrides')) db.createObjectStore('planOverrides', {keyPath:'ItemCode'});
+        if(!db.objectStoreNames.contains('docOverrides')) db.createObjectStore('docOverrides', {keyPath:'_key'});
         if(!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', {keyPath:'k'});
       };
       req.onsuccess = ()=>resolve(req.result);
@@ -807,6 +808,7 @@ const STATE = {
   loaded: false,
   filters: {},
   planOverrides: {},
+  docOverrides: {},
   async loadAll(){
     for(const key of Object.keys(DATA_SOURCES)){
       STATE.data[key] = await DB.getAll(DATA_SOURCES[key].store);
@@ -814,9 +816,25 @@ const STATE = {
     const po = await DB.getAll('planOverrides');
     STATE.planOverrides = {};
     po.forEach(r=>{ STATE.planOverrides[r.ItemCode] = r; });
+    const doc = await DB.getAll('docOverrides');
+    STATE.docOverrides = {};
+    doc.forEach(r=>{ STATE.docOverrides[r._key] = r; });
     STATE.loaded = true;
   },
 };
+
+async function setDocOverride(key, patch){
+  const rec = Object.assign({_key:key}, STATE.docOverrides[key]||{}, patch);
+  STATE.docOverrides[key] = rec;
+  const t = await DB.tx('docOverrides','readwrite');
+  await new Promise((res,rej)=>{ t.objectStore('docOverrides').put(rec); t.oncomplete=()=>res(); t.onerror=()=>rej(t.error); });
+}
+async function setPlanOverride(itemCode, patch){
+  const rec = Object.assign({ItemCode:itemCode}, STATE.planOverrides[itemCode]||{}, patch);
+  STATE.planOverrides[itemCode] = rec;
+  const t = await DB.tx('planOverrides','readwrite');
+  await new Promise((res,rej)=>{ t.objectStore('planOverrides').put(rec); t.oncomplete=()=>res(); t.onerror=()=>rej(t.error); });
+}
 
 /* ==========================================================================================
    4) IMPORT PIPELINE — Parse / Validate / Preview / Duplicate Detection / Commit / Rollback
@@ -1681,6 +1699,275 @@ const DEMAND = {
   },
 
   clearCache(){ this._cache.clear(); },
+};
+
+/* ==========================================================================================
+   14) PURCHASE HISTORY INTELLIGENCE — نمط الشراء الفعلي لكل صنف+مورد (قسم 12)
+   ========================================================================================== */
+const PURCHASE = {
+  historyFor(itemCode, supplierCode){
+    return (STATE.data.purchaseInvoices||[]).filter(r=>r.ItemCode===itemCode && (!supplierCode || r.SupplierCode===supplierCode));
+  },
+  /** المورد صاحب أكبر كمية شراء فعلية تاريخياً لهذا الصنف (وليس مورداً ثابتاً بحقل واحد) */
+  suppliersFor(itemCode){
+    const rows = this.historyFor(itemCode);
+    const bySupplier = new Map();
+    rows.forEach(r=>{
+      if(!r.SupplierCode) return;
+      if(!bySupplier.has(r.SupplierCode)) bySupplier.set(r.SupplierCode, {code:r.SupplierCode, name:r.SupplierName||supplierName(r.SupplierCode)||r.SupplierCode, qty:0, count:0});
+      const s = bySupplier.get(r.SupplierCode); s.qty += Number(r.Quantity)||0; s.count++;
+    });
+    return Array.from(bySupplier.values()).sort((a,b)=>b.qty-a.qty);
+  },
+  patternFor(itemCode, supplierCode){
+    const rows = this.historyFor(itemCode, supplierCode);
+    const qtys = rows.map(r=>Number(r.Quantity)||0).filter(q=>q>0);
+    if(!qtys.length) return null;
+    const dates = rows.map(r=>r.DocDate).filter(d=>d instanceof Date).sort((a,b)=>a-b);
+    let freq = null;
+    if(dates.length>=2){
+      let total=0; for(let i=1;i<dates.length;i++) total += U.daysBetween(dates[i-1], dates[i]);
+      freq = total/(dates.length-1);
+    }
+    return {
+      count: qtys.length, min: Math.min(...qtys), max: Math.max(...qtys),
+      median: U.median(qtys), mostCommon: U.mode(qtys),
+      avg: qtys.reduce((a,b)=>a+b,0)/qtys.length,
+      lastDate: dates.length ? dates[dates.length-1] : null,
+      frequencyDays: freq,
+    };
+  },
+  /** يقرّب الكمية الموصى بها لأقرب مضاعف شائع بنمط الاستيراد الفعلي — النمط التاريخي ليس سقفاً،
+      فقط يُقرّب الكمية (لا يُنقصها لو الاحتياج الحقيقي أكبر بكثير من أعلى كمية سابقة — قسم 12) */
+  roundToHistoricalMultiple(itemCode, supplierCode, neededQty){
+    if(neededQty<=0) return 0;
+    const p = this.patternFor(itemCode, supplierCode);
+    const map = (STATE.data.itemSupplierMap||[]).find(r=>r.ItemCode===itemCode && (!supplierCode || r.SupplierCode===supplierCode));
+    const mult = (map && Number(map.OrderMultiple)>0) ? Number(map.OrderMultiple) : (p && p.mostCommon>0 ? p.mostCommon : 0);
+    const moq = (map && Number(map.MOQ)>0) ? Number(map.MOQ) : 0;
+    let qty = neededQty;
+    if(mult>0) qty = Math.ceil(qty/mult)*mult;
+    if(moq>0 && qty<moq) qty = mult>0 ? Math.ceil(moq/mult)*mult : moq;
+    return qty;
+  },
+};
+
+/* ==========================================================================================
+   15) SUPPLIER MASTER + LEAD TIME — من المورد وليس من الصنف (قسم 18)
+   ========================================================================================== */
+const SUPPLIER = {
+  get(code){ return (STATE.data.suppliers||[]).find(r=>r.SupplierCode===code); },
+  name(code){ const s=this.get(code); return s ? s.SupplierName : (code||'—'); },
+  country(code){ const s=this.get(code); return s ? s.Country : null; },
+  leadTimeDays(code){
+    const s = this.get(code);
+    if(s && Number(s.LeadTimeDays)>0) return {days:Number(s.LeadTimeDays), source:'supplier_master', label:'من كشف الموردين'};
+    const derived = this.deriveLeadTimeFromHistory(code);
+    if(derived) return {days:derived, source:'derived', label:'مُشتقة من فارق أمر الشراء↔الاستلام الفعلي'};
+    return {days:CONFIG.tunable.defaultLeadTimeDays, source:'default', label:'افتراضية (لا بيانات كافية)'};
+  },
+  deriveLeadTimeFromHistory(code){
+    const pos = (STATE.data.purchaseOrders||[]).filter(r=>r.SupplierCode===code && r.DocDate instanceof Date);
+    const grs = (STATE.data.goodsReceipts||[]).filter(r=>r.SupplierCode===code && r.DocDate instanceof Date);
+    if(!pos.length || !grs.length) return null;
+    const diffs = [];
+    pos.forEach(po=>{
+      const matched = grs.filter(g=> (g.BaseEntry && po.DocEntry && String(g.BaseEntry)===String(po.DocEntry)) || (g.ItemCode===po.ItemCode && g.DocDate>=po.DocDate));
+      if(matched.length){
+        const earliest = matched.reduce((a,b)=>a.DocDate<b.DocDate?a:b);
+        const d = U.daysBetween(po.DocDate, earliest.DocDate);
+        if(d>=0 && d<400) diffs.push(d);
+      }
+    });
+    if(!diffs.length) return null;
+    return Math.round(U.median(diffs));
+  },
+  allSuppliers(){
+    const map = new Map();
+    (STATE.data.suppliers||[]).forEach(s=>map.set(s.SupplierCode, {code:s.SupplierCode, name:s.SupplierName, country:s.Country}));
+    (STATE.data.purchaseInvoices||[]).forEach(r=>{ if(r.SupplierCode && !map.has(r.SupplierCode)) map.set(r.SupplierCode, {code:r.SupplierCode, name:r.SupplierName||r.SupplierCode, country:null}); });
+    return Array.from(map.values());
+  },
+};
+
+/* ==========================================================================================
+   16) PO / IN-TRANSIT / GOODS RECEIPT TRACKING + SALES ORDERS/QUOTATIONS (أقسام 14-17)
+   ========================================================================================== */
+const POTRACK = {
+  openLinesFor(itemCode){ return (STATE.data.purchaseOrders||[]).filter(r=>r.ItemCode===itemCode && Number(r.OpenQty)>0); },
+  receiptsForPO(docEntry, itemCode){
+    return (STATE.data.goodsReceipts||[]).filter(r=>r.ItemCode===itemCode && r.BaseEntry!=null && String(r.BaseEntry)===String(docEntry));
+  },
+  statusFor(itemCode){
+    const today = new Date();
+    return this.openLinesFor(itemCode).map(l=>{
+      const received = this.receiptsForPO(l.DocEntry, itemCode).reduce((s,r)=>s+(Number(r.Quantity)||0), 0);
+      const remaining = Math.max(0, Number(l.OpenQty)||0);
+      const pastDue = l.DueDate instanceof Date && l.DueDate < today;
+      const ov = STATE.docOverrides['PO_'+l.DocEntry+'_'+l.LineNum] || {};
+      const inTransit = !!ov.treatAsInTransit || !pastDue;
+      const expectedArrival = ov.expectedArrival ? new Date(ov.expectedArrival) : (pastDue ? null : l.DueDate);
+      return {
+        key:'PO_'+l.DocEntry+'_'+l.LineNum, DocEntry:l.DocEntry, DocNum:l.DocNum, ItemCode:itemCode,
+        SupplierCode:l.SupplierCode, ordered:Number(l.Quantity)||0, received, remaining, dueDate:l.DueDate,
+        pastDue, inTransit, expectedArrival, needsUserDate: pastDue && !ov.expectedArrival,
+      };
+    });
+  },
+  incomingQty(itemCode){ return this.statusFor(itemCode).reduce((s,l)=>s+l.remaining, 0); },
+  openSalesOrderQty(itemCode){ return (STATE.data.salesOrders||[]).filter(r=>r.ItemCode===itemCode).reduce((s,r)=>s+(Number(r.OpenQty)||0), 0); },
+  openQuotationQty(itemCode){ return (STATE.data.salesQuotations||[]).filter(r=>r.ItemCode===itemCode).reduce((s,r)=>s+(Number(r.OpenQty)||0), 0); },
+};
+
+/* ==========================================================================================
+   17) RECOMMENDATION ENGINE — القرار المفسَّر مع الثقة (أقسام 19-21)
+   ========================================================================================== */
+function allKnownItemCodes(){
+  const set = new Set();
+  ['salesInvoices','purchaseInvoices','inventory','items','purchaseOrders'].forEach(sk=>{
+    (STATE.data[sk]||[]).forEach(r=>{ if(r.ItemCode) set.add(r.ItemCode); });
+  });
+  return Array.from(set);
+}
+function itemDisplayName(itemCode){
+  const it = (STATE.data.items||[]).find(r=>r.ItemCode===itemCode);
+  if(it && it.ItemName) return it.ItemName;
+  const s = (STATE.data.salesInvoices||[]).find(r=>r.ItemCode===itemCode && r.ItemName);
+  if(s) return s.ItemName;
+  const p = (STATE.data.purchaseInvoices||[]).find(r=>r.ItemCode===itemCode);
+  return itemCode;
+}
+
+const RECO = {
+  _cache: new Map(),
+  clearCache(){ this._cache.clear(); },
+
+  computeConfidence(itemCode, demand, leadTime, pattern){
+    let score = 0, total = 0;
+    total++; if(demand.series.length>=6) score++; else if(demand.series.length>=3) score+=0.5;
+    total++; if(demand.confidence==='HIGH') score++; else if(demand.confidence==='MEDIUM') score+=0.5;
+    total++; if(leadTime.source==='supplier_master') score++; else if(leadTime.source==='derived') score+=0.6;
+    total++; if(pattern && pattern.count>=3) score++; else if(pattern && pattern.count>=1) score+=0.4;
+    total++; if(INV.rowsFor(itemCode).length>0) score++;
+    const pct = score/total;
+    return pct>=0.72 ? 'HIGH' : pct>=0.4 ? 'MEDIUM' : 'LOW';
+  },
+
+  computeForItem(itemCode){
+    if(this._cache.has(itemCode)) return this._cache.get(itemCode);
+
+    const demand = DEMAND.adjustedMonthlyDemand(itemCode);
+    const supplierInfo = resolveSupplierForItem(itemCode);
+    const leadTime = supplierInfo.code ? SUPPLIER.leadTimeDays(supplierInfo.code) : {days:CONFIG.tunable.defaultLeadTimeDays, source:'default', label:'لا يوجد مورد محدد لهذا الصنف بعد'};
+    const pattern = PURCHASE.patternFor(itemCode, supplierInfo.code);
+
+    const available = INV.availableStock(itemCode);
+    const physical = INV.physicalStock(itemCode);
+    const incoming = POTRACK.incomingQty(itemCode);
+    const openSO = POTRACK.openSalesOrderQty(itemCode);
+    const openQuotationRaw = POTRACK.openQuotationQty(itemCode);
+    const openQuotation = openQuotationRaw * CONFIG.tunable.quotationWeight;
+    const expired = INV.expiredQty(itemCode);
+    const near30 = INV.nearExpiryQty(itemCode,'NEAR30');
+    const near90 = INV.nearExpiryQty(itemCode,'NEAR90');
+
+    const monthlyDemand = Math.max(demand.adjusted, 0);
+    const dailyDemand = monthlyDemand / 30.4368;
+    const coverageDays = dailyDemand>0 ? (available/dailyDemand) : (available>0 ? Infinity : 0);
+    const hasDemand = monthlyDemand>0 || openSO>0;
+
+    const reorderPointDays = leadTime.days + CONFIG.tunable.serviceBufferDays;
+    const horizonDemand = dailyDemand*reorderPointDays + openSO + openQuotation;
+    let neededQty = Math.max(0, horizonDemand - available - incoming);
+    let recommendedQty = neededQty>0 ? PURCHASE.roundToHistoricalMultiple(itemCode, supplierInfo.code, neededQty) : 0;
+
+    const stockStat = INV.stockStatus(itemCode);
+    const hadConfirmedStockout = demand.excludedMonths.some(e=>!e.notExcluded && e.direction==='LOW');
+
+    let status;
+    if(stockStat==='DEAD') status='SLOW_MOVING';
+    else if(stockStat==='OVERSTOCK') status='OVERSTOCK';
+    else if(available<=0 && hasDemand) status = incoming>0 ? 'IN_TRANSIT' : 'CRITICAL';
+    else if(hasDemand && coverageDays<=CONFIG.tunable.minCoverageDaysCritical) status='CRITICAL';
+    else if(hasDemand && coverageDays<=CONFIG.tunable.minCoverageDaysSoon) status='ORDER_SOON';
+    else if(stockStat==='SLOW') status='SLOW_MOVING';
+    else if(recommendedQty>0) status='ORDER_SOON';
+    else if(!hasDemand) status='NO_ORDER';
+    else status='MONITOR';
+    if((status==='MONITOR' || status==='NO_ORDER') && hadConfirmedStockout) status='STOCKOUT_RISK';
+
+    const priority = {CRITICAL:1, STOCKOUT_RISK:2, ORDER_SOON:3, IN_TRANSIT:4, MONITOR:5, OVERSTOCK:6, SLOW_MOVING:7, NO_ORDER:8}[status] || 9;
+
+    const reasons = [];
+    reasons.push({k:'المخزون المتاح الحالي', v:U.num(available)});
+    reasons.push({k:'إجمالي المخزون الفعلي (قبل استبعاد المستودعات الخاصة)', v:U.num(physical)});
+    reasons.push({k:'الطلب الشهري المعدَّل', v:U.num(monthlyDemand,1)});
+    if(openSO) reasons.push({k:'أوامر بيع مفتوحة (طلب مؤكد)', v:U.num(openSO)});
+    if(openQuotationRaw) reasons.push({k:`عروض أسعار مفتوحة (وزن ${CONFIG.tunable.quotationWeight})`, v:U.num(openQuotationRaw)+' → '+U.num(openQuotation,1)});
+    reasons.push({k:'بالطريق (Incoming)', v:U.num(incoming)});
+    reasons.push({k:'مدة توريد المورد', v:leadTime.days+' يوم — '+leadTime.label});
+    reasons.push({k:'تغطية المخزون الحالية', v: coverageDays===Infinity?'—':U.num(coverageDays,1)+' يوم'});
+    if(pattern) reasons.push({k:'نمط الشراء التاريخي', v:`${U.num(pattern.min)} — ${U.num(pattern.max)} (الأكثر تكراراً ${U.num(pattern.mostCommon)}، ${pattern.count} عملية شراء)`});
+    if(expired) reasons.push({k:'مخزون منتهي الصلاحية (غير محتسب بالمتاح)', v:U.num(expired)});
+    if(near30) reasons.push({k:'قريب الانتهاء (30 يوم)', v:U.num(near30)});
+
+    const narrative = [];
+    if(status==='CRITICAL' || status==='ORDER_SOON'){
+      if(coverageDays<CONFIG.tunable.minCoverageDaysSoon) narrative.push('تغطية مخزون منخفضة مقابل معدل الطلب الحالي');
+      if(incoming<=0) narrative.push('لا يوجد توريد قادم مؤكد بالطريق');
+      if(openSO) narrative.push('يوجد طلب عملاء مفتوح (أوامر بيع) يستهلك من هذا المخزون');
+      narrative.push(`مدة توريد المورد ${leadTime.days} يوم — يجب الطلب الآن لتغطية فترة الانتظار`);
+      if(pattern && pattern.mostCommon) narrative.push('نمط الشراء التاريخي يدعم الطلب بمضاعفات '+U.num(pattern.mostCommon));
+    }
+    if(status==='STOCKOUT_RISK') narrative.push('سجل انقطاع سابق مؤكد بالأشهر الماضية (انظر الأشهر المستبعدة بتحليل الطلب) — راقب رغم كفاية التغطية حالياً');
+    if(status==='OVERSTOCK') narrative.push(`تغطية المخزون الحالية تتجاوز ${CONFIG.tunable.overstockCoverageMonths} أشهر من الطلب المعتاد`);
+    if(status==='SLOW_MOVING') narrative.push('حركة بيع نادرة جداً أو منعدمة بالأشهر الأخيرة رغم وجود مخزون');
+    if(status==='IN_TRANSIT') narrative.push('المخزون المتاح منخفض لكن يوجد توريد بالطريق يغطي الاحتياج القادم');
+    if(!narrative.length) narrative.push('الوضع ضمن المعتاد — لا إجراء مطلوب الآن');
+
+    const confidence = this.computeConfidence(itemCode, demand, leadTime, pattern);
+
+    const result = {
+      ItemCode:itemCode, ItemName:itemDisplayName(itemCode), ItemGroup:itemGroupOf(itemCode),
+      supplier:supplierInfo, leadTime, pattern, demand,
+      available, physical, incoming, openSO, openQuotation:openQuotationRaw, expired, near30, near90,
+      coverageDays, monthlyDemand, status, priority, recommendedQty, neededQtyRaw:neededQty,
+      reasons, narrative, confidence, stockStatus:stockStat,
+      expiryStatus: expired>0?'EXPIRED': near30>0?'NEAR30': near90>0?'NEAR90':'VALID',
+    };
+    this._cache.set(itemCode, result);
+    return result;
+  },
+
+  allRecommendations(){
+    let items = allKnownItemCodes().map(code=>this.computeForItem(code));
+    const f = STATE.filters;
+    if(f.item){ const q=f.item.toLowerCase(); items = items.filter(r=>r.ItemCode.toLowerCase().includes(q) || (r.ItemName||'').toLowerCase().includes(q)); }
+    if(f.itemGroup) items = items.filter(r=>r.ItemGroup===f.itemGroup);
+    if(f.supplier) items = items.filter(r=>r.supplier.code===f.supplier);
+    if(f.supplierCountry) items = items.filter(r=>SUPPLIER.country(r.supplier.code)===f.supplierCountry);
+    if(f.recStatus) items = items.filter(r=>r.status===f.recStatus);
+    if(f.stockStatus) items = items.filter(r=>r.stockStatus===f.stockStatus);
+    if(f.expiryStatus) items = items.filter(r=>r.expiryStatus===f.expiryStatus);
+    return items.sort((a,b)=>a.priority-b.priority || b.recommendedQty-a.recommendedQty);
+  },
+
+  /** تجميع التوصيات حسب المورد → أمر شراء واحد متكامل بإجمالي واحد (قسم 13) */
+  supplierPurchasePlan(statusFilter){
+    const items = this.allRecommendations().filter(r=>r.recommendedQty>0 && (!statusFilter || statusFilter.includes(r.status)));
+    const bySupplier = new Map();
+    items.forEach(r=>{
+      const key = r.supplier.code || '__NO_SUPPLIER__';
+      if(!bySupplier.has(key)) bySupplier.set(key, {supplierCode:r.supplier.code, supplierName:r.supplier.name, country:SUPPLIER.country(r.supplier.code), leadTime:r.leadTime, items:[], totalQty:0});
+      const g = bySupplier.get(key);
+      g.items.push(r); g.totalQty += r.recommendedQty;
+    });
+    return Array.from(bySupplier.values()).sort((a,b)=>b.totalQty-a.totalQty);
+  },
+};
+window.recomputeAll = function(){
+  DEMAND.clearCache();
+  RECO.clearCache();
 };
 </script>
 <script>
