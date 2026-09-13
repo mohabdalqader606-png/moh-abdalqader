@@ -1150,6 +1150,35 @@ WHERE T0."DocStatus"='O' AND T1."LineStatus"='O'</code>
       </details>
 
       <details class="opt">
+        <summary><span class="num-badge opt">13</span> أرصدة المخزون بتاريخ سابق — لتصحيح متوسط الطلب من فترات انقطاع محتملة (اختياري بس مهم)</summary>
+        <div class="hint">
+          بدون هالكويري، أي شهر مبيعاته طلعت قليلة جداً بيُحتسَب "طلب حقيقي منخفض" ويقلّل متوسط الطلب اليومي للأبد — حتى لو السبب الحقيقي كان انقطاع مخزون (ما كان في بضاعة نبيعها، مش إنه محدا كان يشتري). هالكويري بيرجّع رصيد الصنف الكامل بتاريخ معيّن (نفس فكرة كويري الباتشات — رصيد متحرك من حركات المخزون IBT1، بس هون على مستوى الصنف كامل بدون تفصيل باتش). لازم تشغّله **أكتر من مرة، مرة لكل تاريخ** (مثلاً آخر يوم بكل شهر من بداية تاريخ مبيعاتك المستوردة)، وتضيف كل نتيجة لحالها بالتاريخ المطابق تحت — الشاشة بتجمّعهم كلهم سوا وبتحدد الأشهر يلي رصيدها كان صفر، وبتستبعدها تلقائياً من حساب متوسط الطلب اليومي.
+          <code class="block" id="q-stockHistory">SELECT T1."ItemCode" AS "رمز الصنف",
+    SUM(
+        CASE
+            WHEN T1."Direction" = 0 THEN T1."Quantity"
+            WHEN T1."Direction" = 1 THEN -T1."Quantity"
+            ELSE 0
+        END
+    ) AS "الرصيد"
+FROM IBT1 T1
+WHERE T1."DocDate" <= [%0]
+GROUP BY T1."ItemCode"</code>
+        </div>
+        <label style="font-size:11.5px; display:flex; align-items:center; gap:6px; margin-bottom:6px;">تاريخ هالرصيد (نفس [%0] يلي أدخلته بالكويري):
+          <input type="date" id="stockHistoryDate" style="font-family:var(--mono); border:1px solid var(--line); border-radius:6px; padding:3px 6px;">
+        </label>
+        <textarea id="pasteStockHistory" placeholder="الصق هنا: رمز الصنف / الرصيد ..."></textarea>
+        <div class="row-actions" style="margin-top:6px;">
+          <input type="file" id="pasteStockHistoryFile" accept=".txt,.csv,.tsv" style="display:none;" onchange="loadPasteFromFile(event,'pasteStockHistory')">
+          <button class="btn-ghost btn-sm" type="button" onclick="document.getElementById('pasteStockHistoryFile').click()">📁 ارفع ملف بدل اللصق</button>
+          <button class="btn-primary btn-sm" type="button" onclick="addStockHistorySnapshot()">➕ إضافة هالتاريخ</button>
+          <span class="status-msg" id="stockHistoryMsg"></span>
+        </div>
+        <div id="stockHistoryDatesList" style="margin-top:8px; font-size:11.5px; color:var(--ink-soft);"></div>
+      </details>
+
+      <details class="opt">
         <summary>🗂 استيراد بيانات العملاء (رمز/اسم، لربط تفصيل المبيعات حسب العميل)</summary>
         <div class="hint">
           لصق تصدير "Customers" الكامل من SAP B1 مباشرة (نفس أعمدة "BP Code" / "BP Name") أو كويري
@@ -1319,6 +1348,10 @@ let state = {
   batchesRaw:[], // أرصدة الباتشات مع تاريخ الانتهاء (اختياري) — لاستبعاد المنتهي فعلياً والتنبيه على القريب من الانتهاء
   quotationsRaw:[], // الكوتيشنات المفتوحة (اختياري) — كمية محجوزة فعلياً للعملاء عند هالمستخدم (كوتيشن=مؤكَّد متل أمر البيع)، تُستبعد من الرصيد القابل للبيع
   salesOrdersRaw:[], // أوامر البيع المفتوحة (اختياري) — مستند منفصل عن الكوتيشن عند هالمستخدم، نفس معاملة الخصم من الرصيد القابل للبيع
+  // أرصدة المخزون بتواريخ سابقة (اختياري) — {code, asOfDate, qty}[]، تُضاف تراكمياً
+  // (تاريخ بتاريخ) عبر addStockHistorySnapshot()، مش استبدال كامل كباقي المصادر —
+  // تُستخدَم لاكتشاف أشهر انقطاع مخزون محتملة واستبعادها من حساب متوسط الطلب اليومي
+  stockHistoryRaw:[],
   // ================= Data Hub (مركز البيانات) =================
   // sourceMeta: مفتاح المصدر -> {lastImportAt, recordCount, issues:[{type,count,label}], qualityScore}
   // مبنية فعلياً من نتيجة كل استيراد حقيقي — مش أرقام تجميلية (تُحسب من processAllDataHeavy)
@@ -2119,6 +2152,59 @@ function clearAllPasted(){
   ['pasteItems','pasteSales','pasteInventory','pasteLeadTime','pasteParams','pasteApInvoices','pastePO','pasteActualCost','pasteReturns','pasteBatches','pasteQuotations','pasteSalesOrders'].forEach(id=>clearUploadedFile(id));
 }
 
+// أرصدة المخزون بتاريخ سابق — تراكمية (تاريخ بتاريخ)، عكس باقي المصادر يلي بتُستبدَل
+// بالكامل كل مرة. كل إضافة بتشيل أي بيانات سابقة لنفس التاريخ بالضبط (تصحيح/إعادة لصق)
+// وتضيف البيانات الجديدة، بدون ما تلمس تواريخ تانية مضافة قبل.
+function addStockHistorySnapshot(){
+  if(!requirePermission('input','إضافة رصيد مخزون بتاريخ سابق')) return;
+  const msg = document.getElementById('stockHistoryMsg');
+  const dateVal = document.getElementById('stockHistoryDate').value;
+  if(!dateVal){ msg.textContent = 'حدّد تاريخ هالرصيد أولاً'; msg.className='status-msg err'; return; }
+  const txt = getPasteText('pasteStockHistory');
+  if(!txt.trim()){ msg.textContent = 'الصق نتيجة الكويري أولاً'; msg.className='status-msg err'; return; }
+  const {headers, rows} = splitPasted(txt);
+  const iCode = colIndex(headers, ['رمز الصنف','ItemCode','Item No.']);
+  const iQty = colIndex(headers, ['الرصيد','Quantity','OnHand']);
+  if(iCode<0 || iQty<0){ msg.textContent = 'تعذر إيجاد أعمدة (رمز الصنف/الرصيد)'; msg.className='status-msg err'; return; }
+  const newRows = rows.map(r=>{
+    const code=r[iCode], qty=toNum(r[iQty]);
+    if(!code || isNaN(qty)) return null;
+    return { code, asOfDate: dateVal, qty };
+  }).filter(Boolean);
+  if(!newRows.length){ msg.textContent = 'ما لقيت أي سطر صالح بالبيانات الملصوقة'; msg.className='status-msg err'; return; }
+  state.stockHistoryRaw = (state.stockHistoryRaw||[]).filter(r=>r.asOfDate!==dateVal).concat(newRows);
+  msg.textContent = '✔ أُضيف رصيد '+newRows.length+' صنف بتاريخ '+dateVal;
+  msg.className = 'status-msg ok';
+  document.getElementById('pasteStockHistory').value = '';
+  renderStockHistoryDatesList();
+  runEngine();
+  renderDataHub();
+  renderTower();
+  renderRecommendations();
+  saveStateLocal();
+}
+function removeStockHistorySnapshot(dateVal){
+  if(!requirePermission('input','حذف رصيد مخزون بتاريخ سابق')) return;
+  state.stockHistoryRaw = (state.stockHistoryRaw||[]).filter(r=>r.asOfDate!==dateVal);
+  renderStockHistoryDatesList();
+  runEngine();
+  renderDataHub();
+  renderTower();
+  renderRecommendations();
+  saveStateLocal();
+}
+function renderStockHistoryDatesList(){
+  const el = document.getElementById('stockHistoryDatesList');
+  if(!el) return;
+  const byDate = {};
+  (state.stockHistoryRaw||[]).forEach(r=>{ byDate[r.asOfDate] = (byDate[r.asOfDate]||0)+1; });
+  const dates = Object.keys(byDate).sort();
+  if(!dates.length){ el.innerHTML = 'لسا ما انضاف أي تاريخ.'; return; }
+  el.innerHTML = 'التواريخ المضافة: ' + dates.map(d=>
+    esc(d)+' ('+byDate[d]+' صنف) <button class="btn-ghost btn-sm" style="padding:1px 6px;font-size:10px;" onclick="removeStockHistorySnapshot(\''+d+'\')">✕</button>'
+  ).join('، ');
+}
+
 /* ================= جدول بارامترات الأصناف ================= */
 const PAGE_SIZE = 150;
 let paramsPageNum = 0;
@@ -2680,6 +2766,18 @@ function runEngine(){
     committedQtyByItem[r.code] = (committedQtyByItem[r.code]||0) + r.qty;
   });
 
+  // أشهر انقطاع مخزون محتملة (اختياري — من state.stockHistoryRaw التراكمي) — أي شهر
+  // رصيد الصنف بتاريخ لقطة ضمنه كان صفر أو أقل بيُعتبر "بيانات مبيعات غير موثوقة" لهالشهر
+  // (احتمال ما كان في بضاعة نبيعها، مش إنه الطلب الحقيقي انخفض)، ويُستبعد كامل الشهر
+  // (بسط ومقام سوا) من حساب متوسط الطلب اليومي بدل ما يُحتسَب "طلب صفر حقيقي"
+  const stockoutMonthsByItem = {};
+  (state.stockHistoryRaw||[]).forEach(r=>{
+    if(isNaN(r.qty) || r.qty>0) return;
+    const d = parseDateFlexible(r.asOfDate); if(!d) return;
+    const mk = dateKey(d).slice(0,7);
+    (stockoutMonthsByItem[r.code] = stockoutMonthsByItem[r.code] || new Set()).add(mk);
+  });
+
   // Lead Time الفعلي لكل صنف (إن وُجد)
   const ltByItem = {};
   state.leadTimeRaw.forEach(r=>{
@@ -2810,10 +2908,22 @@ function runEngine(){
     if(daysWithSalesData < 5) missing.push('تاريخ مبيعات كافٍ');
 
     // متوسط وتذبذب الطلب اليومي (تجميع يومي من نقاط البيع الملصوقة، صافي بعد خصم
-    // مرتجعات Credit Memo — netSalesByItem)
+    // مرتجعات Credit Memo — netSalesByItem). أشهر انقطاع المخزون المحتملة (لو متوفرة)
+    // تُستبعد بالكامل — بسط (المبيعات بهالشهر) ومقام (عدد الأيام) سوا — بدل ما تُحتسَب
+    // "طلب حقيقي منخفض" وتقلّل المتوسط للأبد بسبب فترة ما كان فيها بضاعة أصلاً
+    const stockoutMonths = stockoutMonthsByItem[code];
     const dailyMap = {};
-    (netSalesByItem[code]||[]).forEach(x=>{ const k=dateKey(x.date); dailyMap[k]=(dailyMap[k]||0)+x.qty; });
-    const observedDays = Math.max(1, Math.min(windowDays, daysBetween(windowStart, now)));
+    (netSalesByItem[code]||[]).forEach(x=>{
+      if(stockoutMonths && stockoutMonths.has(dateKey(x.date).slice(0,7))) return;
+      const k=dateKey(x.date); dailyMap[k]=(dailyMap[k]||0)+x.qty;
+    });
+    const observedDaysRaw = Math.max(1, Math.min(windowDays, daysBetween(windowStart, now)));
+    let stockoutDaysInWindow = 0;
+    if(stockoutMonths){
+      const cur = new Date(windowStart.getTime());
+      while(cur<=now){ if(stockoutMonths.has(dateKey(cur).slice(0,7))) stockoutDaysInWindow++; cur.setDate(cur.getDate()+1); }
+    }
+    const observedDays = Math.max(1, observedDaysRaw - stockoutDaysInWindow);
     const dailyVals = Object.values(dailyMap);
     // لا معنى لـ"متوسط طلب يومي" سالب (مرتجعات فاقت المبيعات بنفس النافذة) — نتركه صفر
     // بدل ما نمرّر رقماً سالباً يكسر منطق محاكاة المخزون (طرح رقم سالب = زيادة وهمية)
@@ -3149,6 +3259,7 @@ function runEngine(){
       onOrder: effectiveOnOrder, poLots, datedPoLots, warehouses: inv.warehouses,
       dAvg: Math.round(dAvg*100)/100, dStd: Math.round(dStd*100)/100,
       daysWithSalesData, demandTrend, demandAlert, demandMethod, seasonalityNote,
+      stockoutMonthsExcluded: stockoutMonths ? Array.from(stockoutMonths).sort() : [],
       returnsQty: returnsByItemWindow[code]||0,
       ltAvg, ltStd, ltSource, safetyStockReliable, leadTimeIsSupplierInferred,
       safetyStock: safetyStock!=null ? Math.round(safetyStock) : null,
@@ -3465,6 +3576,7 @@ function pccDetailHtml(r){
         + kv('فترة بيانات المبيعات', (r.daysWithSalesData||0)+' يوم')
         + kv('متوسط الطلب اليومي', r.dAvg+' وحدة/يوم (صافي بعد خصم المرتجعات)')
         + (r.returnsQty>0 ? kv('مرتجعات مخصومة (ضمن نافذة التحليل)', fmtNum(r.returnsQty)) : '')
+        + (r.stockoutMonthsExcluded && r.stockoutMonthsExcluded.length ? kv('⚠ أشهر مستبعدة من المتوسط (احتمال انقطاع مخزون)', r.stockoutMonthsExcluded.join('، ')) : '')
         + kv('طريقة الاحتساب', esc(r.demandMethod)+' (وليس تنبؤاً/AI)')
         + kv('الاتجاه (آخر 30 يوم)', esc(trendTxt))
         + kv('الموسمية', esc(r.seasonalityNote))
@@ -4145,6 +4257,7 @@ function poResolvedHtml(){
     + '<div class="tbl-scroll"><table class="minitbl" style="width:100%;"><thead><tr><th class="freeze-name">الصنف</th><th>التاريخ الأصلي</th><th>القرار</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div></details>';
 }
 function renderDataHub(){
+  renderStockHistoryDatesList();
   const el = document.getElementById('dataHubPanel'); if(!el) return;
   const r = computeReadiness();
   if(!r.itemCount){
