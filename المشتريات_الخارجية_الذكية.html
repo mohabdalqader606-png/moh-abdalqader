@@ -288,6 +288,9 @@ const CONFIG = {
     serviceBufferDays: 7,      // أيام أمان تُضاف فوق مدة التوريد بحساب نقطة إعادة الطلب
     minCoverageDaysCritical: 7,
     minCoverageDaysSoon: 21,
+    overstockCoverageMonths: 6,     // تغطية أكثر من كذا شهر = فائض مخزون
+    deadStockMonthsNoSale: 6,       // بدون أي بيع خلال كذا شهر ومعه مخزون = راكد تماماً
+    slowStockCoverageMonths: 3,     // تغطية أكثر من كذا شهر (وأقل من overstock) مع بيع نادر = بطيء الحركة
   },
 
   // فترات تاريخية = Baseline مقفلة بعد أول استيراد ناجح (قسم 2)
@@ -1215,6 +1218,7 @@ function renderDcSettings(){
     ['quotationWeight','وزن عروض الأسعار بالطلب المحتمل (0-1)'], ['outlierLowRatio','حد الشذوذ المنخفض (نسبة من الوسيط)'],
     ['outlierHighRatio','حد الشذوذ المرتفع (نسبة من الوسيط)'], ['defaultLeadTimeDays','مدة توريد افتراضية (يوم)'],
     ['serviceBufferDays','أيام أمان إضافية'], ['minCoverageDaysCritical','حد التغطية الحرج (يوم)'], ['minCoverageDaysSoon','حد التغطية "قريباً" (يوم)'],
+    ['overstockCoverageMonths','حد فائض المخزون (شهر تغطية)'], ['deadStockMonthsNoSale','بدون بيع = راكد تماماً (شهر)'], ['slowStockCoverageMonths','حد بطيء الحركة (شهر تغطية)'],
   ];
   document.getElementById('dcSettings').innerHTML = `<div class="grid3">${fields.map(([k,lbl])=>`
     <div class="fld"><label style="font-size:11px;color:var(--ink-soft);">${lbl}</label>
@@ -1272,7 +1276,7 @@ const SALES = {
   filteredLines(opts){
     opts = opts || {};
     return this.buildNetLines().filter(l=>{
-      if(!matchesTxFilters(l, {dateField:'date'})) return false;
+      if(!matchesTxFilters(l, {dateField: opts.ignoreDateFilter ? undefined : 'date'})) return false;
       if(opts.demandOnly){
         const rule = CONFIG.warehouseRules[l.WhsCode];
         if(rule && !rule.includeInSalesDemand) return false;
@@ -1521,6 +1525,163 @@ function printReport(title){
   }
   window.print();
 }
+
+/* ==========================================================================================
+   12) INVENTORY ENGINE — المخزون الحالي بقواعد المستودعات + الباتش/الصلاحية + إعادة بناء تاريخي
+   ========================================================================================== */
+function classifyExpiry(expDate){
+  if(!(expDate instanceof Date)) return null;
+  const days = U.daysBetween(new Date(), expDate);
+  if(days < 0) return 'EXPIRED';
+  if(days <= CONFIG.tunable.expiryNearDays) return 'NEAR30';
+  if(days <= CONFIG.tunable.expiryMidDays) return 'NEAR90';
+  return 'VALID';
+}
+
+const INV = {
+  rowsFor(itemCode){ return (STATE.data.inventory||[]).filter(r=>r.ItemCode===itemCode); },
+  batchesFor(itemCode){ return (STATE.data.batches||[]).filter(r=>r.ItemCode===itemCode); },
+  isAvailableWhs(whs){ const rule = CONFIG.warehouseRules[whs]; return !(rule && rule.excludeFromAvailable); },
+
+  physicalStock(itemCode){ return this.rowsFor(itemCode).reduce((s,r)=>s+(Number(r.OnHand)||0), 0); },
+  availableStockRaw(itemCode){ return this.rowsFor(itemCode).filter(r=>this.isAvailableWhs(r.WhsCode)).reduce((s,r)=>s+(Number(r.OnHand)||0), 0); },
+  expiredQty(itemCode){ return this.batchesFor(itemCode).filter(b=>classifyExpiry(b.ExpDate)==='EXPIRED').reduce((s,b)=>s+(Number(b.BatchQty)||0), 0); },
+  nearExpiryQty(itemCode, bucket){ return this.batchesFor(itemCode).filter(b=>classifyExpiry(b.ExpDate)===bucket).reduce((s,b)=>s+(Number(b.BatchQty)||0), 0); },
+  /** المخزون المتاح الفعلي للشراء: يستبعد المستودعات الخاصة والمنتهي (لا يمنع التوصية، فقط لا يُحتسب متاحاً) */
+  availableStock(itemCode){
+    const raw = this.availableStockRaw(itemCode);
+    const expired = this.batchesFor(itemCode).length ? this.expiredQty(itemCode) : 0;
+    return Math.max(0, raw - expired);
+  },
+  committedQty(itemCode){
+    const fromField = this.rowsFor(itemCode).reduce((s,r)=>s+(Number(r.Committed)||0), 0);
+    if(fromField) return fromField;
+    return (STATE.data.salesOrders||[]).filter(r=>r.ItemCode===itemCode).reduce((s,r)=>s+(Number(r.OpenQty)||0), 0);
+  },
+  onOrderQty(itemCode){
+    const fromField = this.rowsFor(itemCode).reduce((s,r)=>s+(Number(r.OnOrder)||0), 0);
+    if(fromField) return fromField;
+    return (STATE.data.purchaseOrders||[]).filter(r=>r.ItemCode===itemCode).reduce((s,r)=>s+(Number(r.OpenQty)||0), 0);
+  },
+
+  /** إعادة بناء تاريخ "المخزون المتاح" شهرياً بالرجوع للخلف من لقطة اليوم (Snapshot) باستخدام الحركات الفعلية */
+  monthlyAvailableTimeline(itemCode){
+    const salesLines = SALES.buildNetLines().filter(l=>l.ItemCode===itemCode && this.isAvailableWhs(l.WhsCode) && l.date instanceof Date);
+    const recvLines = (STATE.data.goodsReceipts||[]).filter(r=>r.ItemCode===itemCode && this.isAvailableWhs(r.WhsCode) && r.DocDate instanceof Date);
+    if(!salesLines.length && !recvLines.length) return [];
+    const allDates = salesLines.map(l=>l.date).concat(recvLines.map(r=>r.DocDate));
+    const minD = new Date(Math.min(...allDates)), maxD = new Date();
+    const months = monthsInRange(minD, maxD);
+    const soldByMonth = new Map(), recvByMonth = new Map();
+    salesLines.forEach(l=>{ const mk=U.monthKey(l.date); soldByMonth.set(mk, (soldByMonth.get(mk)||0)+l.qty); });
+    recvLines.forEach(r=>{ const mk=U.monthKey(r.DocDate); recvByMonth.set(mk, (recvByMonth.get(mk)||0)+(Number(r.Quantity)||0)); });
+    const currentClosing = this.availableStockRaw(itemCode);
+    const timeline = [];
+    let closing = currentClosing;
+    for(let i=months.length-1; i>=0; i--){
+      const mk = months[i];
+      const sold = soldByMonth.get(mk) || 0;
+      const recv = recvByMonth.get(mk) || 0;
+      const opening = closing - recv + sold; // Opening = Closing - Purchases(Received) + Sales
+      timeline.unshift({month:mk, opening, received:recv, sold, closing});
+      closing = opening;
+    }
+    return timeline;
+  },
+
+  /** تصنيف حالة المخزون: انقطاع/فائض/بطيء/راكد تماماً/طبيعي — بالاشتراك مع الطلب المعدَّل */
+  stockStatus(itemCode){
+    const avail = this.availableStock(itemCode);
+    const demand = DEMAND.adjustedMonthlyDemand(itemCode); // من محرك الطلب المعدَّل (قسم 7)
+    const recentSaleMonths = this.monthsWithSaleInLast(itemCode, CONFIG.tunable.deadStockMonthsNoSale);
+    if(recentSaleMonths===0 && avail>0) return 'DEAD';
+    if(demand.adjusted <= 0){
+      return avail>0 ? 'SLOW' : 'NORMAL';
+    }
+    const coverageMonths = avail / demand.adjusted;
+    if(avail<=0 && demand.adjusted>0) return 'STOCKOUT';
+    if(coverageMonths > CONFIG.tunable.overstockCoverageMonths) return 'OVERSTOCK';
+    if(coverageMonths > CONFIG.tunable.slowStockCoverageMonths) return 'SLOW';
+    return 'NORMAL';
+  },
+  monthsWithSaleInLast(itemCode, nMonths){
+    const cutoff = new Date(); cutoff.setMonth(cutoff.getMonth()-nMonths);
+    const months = new Set();
+    SALES.buildNetLines().filter(l=>l.ItemCode===itemCode && l.date instanceof Date && l.date>=cutoff && l.qty>0)
+      .forEach(l=>months.add(U.monthKey(l.date)));
+    return months.size;
+  },
+};
+
+/* ==========================================================================================
+   13) DEMAND ADJUSTMENT ENGINE — كشف الأشهر الشاذة بالاشتراك مع المخزون/التوريد (قسم 7)
+   ========================================================================================== */
+const DEMAND = {
+  _cache: new Map(),
+
+  /** سلسلة شهرية للطلب الفعلي (يحترم قاعدة المستودعات — يشمل 011 العسكري ويستبعد التالف/العينات) */
+  monthlySeries(itemCode, nMonths){
+    nMonths = nMonths || 12;
+    const lines = SALES.filteredLines({demandOnly:true, ignoreDateFilter:true}).filter(l=>l.ItemCode===itemCode);
+    if(!lines.length) return [];
+    const dates = lines.map(l=>l.date).filter(d=>d instanceof Date);
+    const maxDate = new Date(Math.max(...dates));
+    const firstSaleDate = new Date(Math.min(...dates));
+    const windowStart = new Date(maxDate.getFullYear(), maxDate.getMonth()-(nMonths-1), 1);
+    // لا نملأ بأشهر صفرية قبل أول ظهور فعلي للصنف بالمبيعات (عدم توفر بيانات ≠ طلب صفري)
+    const minMonth = firstSaleDate > windowStart ? new Date(firstSaleDate.getFullYear(), firstSaleDate.getMonth(), 1) : windowStart;
+    const months = monthsInRange(minMonth, maxDate);
+    const byMonth = new Map(months.map(mk=>[mk, 0]));
+    lines.forEach(l=>{
+      if(!(l.date instanceof Date) || l.date < minMonth) return;
+      const mk = U.monthKey(l.date);
+      if(byMonth.has(mk)) byMonth.set(mk, byMonth.get(mk) + l.qty);
+    });
+    return months.map(mk=>({month:mk, qty: byMonth.get(mk)||0}));
+  },
+
+  /** الطلب الشهري المعدَّل: يستبعد الأشهر الشاذة المؤكدة (بدليل مخزون/توريد) من حساب المتوسط،
+      ولا يُخفي أي شهر مستبعد — يعيدها كلها صراحة مع السبب والثقة */
+  adjustedMonthlyDemand(itemCode){
+    if(this._cache.has(itemCode)) return this._cache.get(itemCode);
+    const series = this.monthlySeries(itemCode, 12);
+    const result = {raw:0, adjusted:0, series, excludedMonths:[], confidence:'LOW'};
+    if(!series.length){ this._cache.set(itemCode, result); return result; }
+    const qtys = series.map(s=>s.qty);
+    const rawAvg = qtys.reduce((a,b)=>a+b,0) / qtys.length;
+    result.raw = rawAvg;
+    const nonZero = qtys.filter(q=>q>0);
+    const med = U.median(nonZero.length ? nonZero : qtys);
+    let timeline = null;
+    const excluded = new Set();
+    series.forEach(s=>{
+      if(med<=0) return;
+      const ratio = s.qty / med;
+      if(ratio < CONFIG.tunable.outlierLowRatio){
+        if(!timeline) timeline = INV.monthlyAvailableTimeline(itemCode);
+        const tp = timeline.find(t=>t.month===s.month);
+        let reason=null, confidence=null;
+        if(tp && tp.opening<=0 && tp.received<=0){ reason='مخزون شبه صفري طوال الشهر + لا توريد وارد — انقطاع مؤكد تقريباً'; confidence='HIGH'; }
+        else if(tp && tp.opening<=0){ reason='مخزون افتتاحي شبه صفري — احتمال انقطاع'; confidence='MEDIUM'; }
+        else if(tp && tp.received<=0 && tp.opening < med){ reason='لا توريد وارد ومخزون منخفض — احتمال انقطاع جزئي'; confidence='MEDIUM'; }
+        if(reason){ excluded.add(s.month); result.excludedMonths.push({month:s.month, qty:s.qty, reason, confidence, direction:'LOW'}); }
+        else { result.excludedMonths.push({month:s.month, qty:s.qty, reason:'منخفض عن الوسيط بدون دليل انقطاع واضح بالمخزون — لم يُستبعد', confidence:'LOW', direction:'LOW_UNCONFIRMED', notExcluded:true}); }
+      } else if(ratio > CONFIG.tunable.outlierHighRatio){
+        excluded.add(s.month);
+        result.excludedMonths.push({month:s.month, qty:s.qty, reason:'ارتفاع غير معتاد عن الوسيط (قد يكون طلب دفعة كبيرة/عميل استثنائي) — استُبعد من متوسط الطلب المعتاد', confidence:'MEDIUM', direction:'HIGH'});
+      }
+    });
+    const kept = series.filter(s=>!excluded.has(s.month));
+    result.adjusted = kept.length ? kept.reduce((a,b)=>a+b.qty,0)/kept.length : rawAvg;
+    const confirmedExclusions = result.excludedMonths.filter(e=>!e.notExcluded);
+    const dataMonths = series.length;
+    result.confidence = dataMonths>=9 ? (confirmedExclusions.length<=2?'HIGH':'MEDIUM') : dataMonths>=4 ? 'MEDIUM' : 'LOW';
+    this._cache.set(itemCode, result);
+    return result;
+  },
+
+  clearCache(){ this._cache.clear(); },
+};
 </script>
 <script>
 'use strict';
