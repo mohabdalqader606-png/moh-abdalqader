@@ -588,6 +588,11 @@
   <section class="panel" id="dataPage" style="display:none;">
     <div id="dataHubPanel"></div>
     <div class="input-panel">
+      <div class="row-actions" style="background:var(--gold-bg); border:1px dashed var(--gold); border-radius:10px; padding:10px 14px; margin-bottom:14px; flex-wrap:wrap;">
+        <span style="font-size:11.5px; color:var(--gold); font-weight:700;">⚡ دمج تزايدي (اختياري — لبيانات ضخمة بدل إعادة لصق كل التاريخ من الأول):</span>
+        <label style="font-size:11.5px; display:flex; align-items:center; gap:5px;">تاريخ القطع <input id="importMergeCutoff" type="date" style="font-family:var(--mono); border:1px solid var(--line); border-radius:6px; padding:3px 6px;"></label>
+        <span style="font-size:11px; color:var(--ink-soft); max-width:520px;">لو محدَّد: أي بيانات قديمة (مبيعات/مرتجعات/استلامات/تاريخ أوامر شراء) قبل هالتاريخ تضل محفوظة من آخر استيراد سابق بدون ما تُلمَس، والكويري الملصوق حالياً بيُستخدَم بس للفترة من هالتاريخ فما فوق (بيستبدل أي بيانات سابقة بنفس الفترة بالكامل). اتركه فاضي لسلوك الاستبدال الكامل المعتاد.</span>
+      </div>
       <details class="opt" open>
         <summary><span class="num-badge">1</span> كويري الأصناف (إلزامي)</summary>
         <div class="hint">
@@ -1591,6 +1596,19 @@ function processAllData(){
   // نأجّل العمل الثقيل تيك واحد حتى يرسم المتصفح رسالة "جارٍ التحليل" قبل ما يشتغل
   setTimeout(processAllDataHeavy, 20);
 }
+// دمج تزايدي (اختياري) — لو المستخدم حدّد "تاريخ قطع" بحقل importMergeCutoff، البيانات
+// القديمة (من آخر استيراد سابق محفوظ بالمتصفح/السحابة) قبل هالتاريخ تضل زي ما هي، وبس
+// الفترة من هالتاريخ فما فوق تُستبدَل بالكويري الملصوق حالياً بالكامل — حتى ما يضطر
+// المستخدم يعيد لصق سنين كاملة من التاريخ كل مرة بس عشان يحدّث آخر فترة قصيرة (حالة
+// بيانات ضخمة صريحة). بدون تاريخ قطع محدَّد، السلوك القديم (استبدال كامل) ما تغيّر.
+function mergeIncremental(oldRows, newRows, dateField){
+  const cutoffEl = document.getElementById('importMergeCutoff');
+  const cutoff = cutoffEl && cutoffEl.value ? parseDateFlexible(cutoffEl.value) : null;
+  if(!cutoff) return newRows;
+  const oldKept = (oldRows||[]).filter(r=>{ const d=parseDateFlexible(r[dateField]); return d && d < cutoff; });
+  const newKept = (newRows||[]).filter(r=>{ const d=parseDateFlexible(r[dateField]); return !d || d >= cutoff; });
+  return oldKept.concat(newKept);
+}
 function processAllDataHeavy(){
   const msg = document.getElementById('dataStatusMsg');
   state.demandWindowDays = toNum(document.getElementById('demandWindowDays').value) || 90;
@@ -1645,7 +1663,8 @@ function processAllDataHeavy(){
     // بتتحسب "مكرر" غلطاً؛ بإضافة العميل تنخفض النتائج الكاذبة كتير (رغم إنها تبقى تقريبية
     // بدون رقم فاتورة حقيقي)
     const hasCustKey = iCustCode>=0 || iCustName>=0;
-    state.salesRaw = rows.map(r=>{
+    const oldSalesRaw = state.salesRaw;
+    const newSalesRows = rows.map(r=>{
       const code=r[iCode], qty=toNum(r[iQty]), dateRaw=r[iDate];
       if(!code) salesBlankCount++;
       else if(isNaN(qty)) salesInvalidQtyCount++;
@@ -1663,6 +1682,7 @@ function processAllDataHeavy(){
         amount: iAmt>=0 ? toNum(r[iAmt]) : NaN
       };
     }).filter(r=>r.code && !isNaN(r.qty));
+    state.salesRaw = mergeIncremental(oldSalesRaw, newSalesRows, 'date');
     noteImport('sales','المبيعات التاريخية', { count: state.salesRaw.length, issues: buildIssues([
       ['blank_key', salesBlankCount, 'سطر بدون رمز صنف (تجوهل)'],
       ['invalid_qty', salesInvalidQtyCount, 'كمية غير رقمية (تجوهل السطر)'],
@@ -1719,12 +1739,14 @@ function processAllDataHeavy(){
     if(iCode>=0 && iOrder>=0){
       let poOrdBlankCount=0, poOrdInvalidDateCount=0, poOrdUnknownItemCount=0;
       const poOrdUnknownSamples = newSampleSet(8);
-      state.poOrdersRaw = rows.map(r=>{
+      const oldPoOrdersRaw = state.poOrdersRaw;
+      const newPoOrdersRows = rows.map(r=>{
         const code=r[iCode]; if(!code){ poOrdBlankCount++; return null; }
         if(r[iOrder] && !parseDateFlexible(r[iOrder])) poOrdInvalidDateCount++;
         if(!state.itemsRaw[code]){ poOrdUnknownItemCount++; poOrdUnknownSamples.tryAdd(code); }
         return { code, orderDate:r[iOrder], qty: iQty>=0 ? toNum(r[iQty]) : NaN, supplier: iSupplier>=0 ? r[iSupplier] : '' };
       }).filter(r=>r && r.code);
+      state.poOrdersRaw = mergeIncremental(oldPoOrdersRaw, newPoOrdersRows, 'orderDate');
       noteImport('poOrders','تاريخ أوامر الشراء', { count: state.poOrdersRaw.length, issues: buildIssues([
         ['blank_key', poOrdBlankCount, 'سطر بدون رمز صنف (تجوهل)'],
         ['invalid_date', poOrdInvalidDateCount, 'تاريخ طلب غير مفهوم'],
@@ -1798,13 +1820,15 @@ function processAllDataHeavy(){
     if(iCode>=0 && iSupplier>=0 && iDoc>=0 && iQty>=0){
       let apBlankCount=0, apInvalidDateCount=0, apUnknownItemCount=0;
       const apUnknownSamples = newSampleSet(8);
-      state.apInvoiceRaw = rows.map(r=>{
+      const oldApInvoiceRaw = state.apInvoiceRaw;
+      const newApInvoiceRows = rows.map(r=>{
         const code=r[iCode], supplier=r[iSupplier], docEntry=r[iDoc];
         if(!code || !supplier || !docEntry){ apBlankCount++; return null; }
         if(iDate>=0 && r[iDate] && !parseDateFlexible(r[iDate])) apInvalidDateCount++;
         if(!state.itemsRaw[code]){ apUnknownItemCount++; apUnknownSamples.tryAdd(code); }
         return {code, supplier, docEntry, qty:toNum(r[iQty]), date: iDate>=0?r[iDate]:'', price: iPrice>=0 ? toNum(r[iPrice]) : NaN};
       }).filter(r=>r && r.code && r.supplier && r.docEntry);
+      state.apInvoiceRaw = mergeIncremental(oldApInvoiceRaw, newApInvoiceRows, 'date');
       columnDiagnostics.push('كويري 6 — الكمية: "'+headers[iQty]+'"'+(iPrice>=0 ? '، السعر: "'+headers[iPrice]+'"' : '، السعر: غير موجود'));
       noteImport('apInvoices','استلام البضاعة (GRPO)', { count: state.apInvoiceRaw.length, issues: buildIssues([
         ['blank_key', apBlankCount, 'سطر بدون رمز صنف/مورد/رقم مستند (تجوهل)'],
@@ -1921,7 +1945,8 @@ function processAllDataHeavy(){
     if(iCode>=0 && iDate>=0 && iQty>=0){
       let retBlankCount=0, retInvalidQtyCount=0, retInvalidDateCount=0, retUnknownItemCount=0;
       const retUnknownSamples = newSampleSet(8);
-      state.returnsRaw = rows.map(r=>{
+      const oldReturnsRaw = state.returnsRaw;
+      const newReturnsRows = rows.map(r=>{
         const code=r[iCode], qty=toNum(r[iQty]);
         if(!code){ retBlankCount++; return null; }
         if(isNaN(qty)) retInvalidQtyCount++;
@@ -1929,6 +1954,7 @@ function processAllDataHeavy(){
         if(!state.itemsRaw[code]){ retUnknownItemCount++; retUnknownSamples.tryAdd(code); }
         return { code, date:r[iDate], qty, amount: iAmount>=0 ? toNum(r[iAmount]) : NaN };
       }).filter(r=>r && r.code && !isNaN(r.qty));
+      state.returnsRaw = mergeIncremental(oldReturnsRaw, newReturnsRows, 'date');
       noteImport('returns','مرتجعات المبيعات (Credit Memo)', { count: state.returnsRaw.length, issues: buildIssues([
         ['blank_key', retBlankCount, 'سطر بدون رمز صنف (تجوهل)'],
         ['invalid_qty', retInvalidQtyCount, 'كمية غير رقمية (تجوهل السطر)'],
