@@ -9493,8 +9493,14 @@ function loadDB(){
 }
 function saveDB(){
   dashCache = null;
-  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(DB)); }
-  catch(e){ alert("تعذر حفظ البيانات محلياً. تأكد من فتح الملف مباشرة في المتصفح."); }
+  try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(DB)); return true; }
+  catch(e){
+    const msg = (e && e.name==="QuotaExceededError")
+      ? "امتلأت مساحة التخزين المحلي بهذا المتصفح. من الإعدادات: صدّر نسخة احتياطية كاملة، ثم قلّل البيانات القديمة غير الضرورية لتفريغ مساحة."
+      : "تعذر حفظ البيانات محلياً بهذا المتصفح/الجهاز. الأسباب الشائعة: إعدادات خصوصية بالمتصفح أو بسياسة الشركة تمنع تخزين بيانات هذا الموقع (Cookies / Local Storage)، أو وضع تصفح خاص بإعدادات صارمة. جرّب متصفحاً آخر أو نافذة عادية غير خاصة، أو راجع مسؤول تقنية المعلومات للسماح بتخزين بيانات هذا الموقع.";
+    alert(msg);
+    return false;
+  }
 }
 
 function uid(){ return "t" + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
@@ -16488,7 +16494,16 @@ renderDashboard();
       attachments: ccAttached.map(f=>({name:f.name, size:f.size, type:f.type})),
     };
     DB.cashCounts.push(rec);
-    saveDB();
+    const persisted = saveDB();
+    if(!persisted){
+      const blob = new Blob([JSON.stringify(rec, null, 2)], {type:"application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = `جرد_صندوق_${rec.refCode}.json`;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      alert("تم إعداد الجرد، لكن تعذر حفظه بذاكرة هذا المتصفح (راجع الرسالة السابقة). نزّلنا نسخة احتياطية من بيانات هذا الجرد بملف JSON إلى مجلد التنزيلات — احتفظ فيه. سيبقى ظاهراً بالقائمة أدناه طالما هذه الصفحة مفتوحة فقط، ولن يُحفظ بعد إغلاقها أو تحديثها.");
+    }
     if(ccAttached.length) ccSessionUrls[rec.id] = ccAttached.map(f=>({name:f.name, size:f.size, url:f.url}));
     ccAttached = [];
     ccRenderAttachList();
