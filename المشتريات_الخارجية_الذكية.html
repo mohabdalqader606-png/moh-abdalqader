@@ -353,7 +353,7 @@ const CONFIG = {
   historicalYears: [2022, 2023, 2024, 2025],
   currentYear: 2026,
 
-  version: '1.0.0-GOLDEN',
+  version: '1.1.0-SAP-ALIGNED',
   buildDate: '2026-09-14',
 };
 
@@ -380,9 +380,9 @@ const DATA_SOURCES = {
       {key:'CardName', label:'اسم العميل', aliases:['العميل','CardName'], type:'text', required:false},
       {key:'SlpName', label:'مندوب المبيعات', aliases:['مندوب المبيعات','SlpName'], type:'text', required:false},
       {key:'LineTotal', label:'المبلغ', aliases:['المبلغ','LineTotal'], type:'number', required:false},
-      {key:'Canceled', label:'ملغى؟', aliases:['ملغى','Canceled'], type:'text', required:false},
+      {key:'Canceled', label:'ملغى؟ (اختياري — لا يوجد حقل مقابل بهالبيئة، انظر ملاحظة)', aliases:['ملغى','Canceled'], type:'text', required:false},
     ],
-    sql: `-- فواتير المبيعات (بعد استبعاد المُلغى بمستوى المستند) — أساس صافي المبيعات مع طرح المرتجعات لاحقاً
+    sql: `-- فواتير المبيعات — أساس صافي المبيعات مع طرح المرتجعات لاحقاً (بلا شرط إلغاء: OINV بهالبيئة لا يملك حقل Canceled، انظر ملاحظة أدناه)
 SELECT
   T0."DocEntry"                       AS "DocEntry",
   T0."DocNum"                         AS "DocNum",
@@ -395,14 +395,12 @@ SELECT
   T0."CardCode"                       AS "رمز العميل",
   T0."CardName"                       AS "العميل",
   T0."SlpCode"                        AS "SlpCode",
-  T1."LineTotal"                      AS "المبلغ",
-  T0."Canceled"                       AS "ملغى"
+  T1."LineTotal"                      AS "المبلغ"
 FROM OINV T0
 INNER JOIN INV1 T1 ON T0."DocEntry" = T1."DocEntry"
 WHERE T0."DocDate" BETWEEN '[%0]' AND '[%1]'
-  AND T0."Canceled" = 'N'
 ORDER BY T1."ItemCode", T0."DocDate"`,
-    sqlNote: 'استُبعد Canceled=\'Y\' لتجنّب احتساب الفاتورة الملغاة كمبيعات. تحقّق من قيمة العلم بنسختكم (Y/N) — بعض الإصدارات تستخدم قيمة مختلفة.',
+    sqlNote: 'مؤكَّد بتحقق SAP حي (Phase 2 — SAP Reality Alignment): OINV بهالبيئة لا يملك عمود "Canceled" إطلاقاً (فحصنا 859,199 فاتورة حقيقية — CancelDate لم يُعبَّأ ولا مرة، EDocCancel=\'N\' بنسبة 100%). تشغيل الاستعلام القديم بـWHERE Canceled=\'N\' كان سيفشل بخطأ "invalid column name" على هذا SAP تحديداً. الإلغاء غير مستخدَم عملياً بهالشركة — أي تصحيح/رجوع فاتورة يمر فعلياً عبر إشعار دائن (انظر مصدر المرتجعات)، وصافي المبيعات (فواتير − مرتجعات) يعكس هذا الواقع بشكل صحيح بالفعل بدون حاجة لعلم إلغاء. عمود "ملغى؟" هون بقي اختيارياً فقط لدعم بيئات SAP أخرى قد يوجد فيها الحقل فعلاً.',
   },
 
   salesReturns: {
@@ -433,7 +431,35 @@ INNER JOIN RIN1 T1 ON T0."DocEntry" = T1."DocEntry"
 WHERE T0."DocDate" BETWEEN '[%0]' AND '[%1]'
   AND T0."Canceled" = 'N'
 ORDER BY T1."ItemCode", T0."DocDate"`,
-    sqlNote: 'مستند إشعار دائن ملغى (Canceled=Y) لا يُحتسب مرتجعاً. مرتجع تم إلغاؤه لاحقاً لا يُعامل كمبيعات إضافية — هو ببساطة يخرج من حساب المرتجعات.',
+    sqlNote: 'مستند إشعار دائن ملغى (Canceled=Y) لا يُحتسب مرتجعاً. مرتجع تم إلغاؤه لاحقاً لا يُعامل كمبيعات إضافية — هو ببساطة يخرج من حساب المرتجعات. ملاحظة: شرط Canceled=N هون لم يُتحقق حياً لـORIN تحديداً (التحقق الحي شمل OINV فقط) — أُبقي كما كان. تحقق SAP حي منفصل (Phase 2) أثبت وجود مستند إرجاع فعلي مستقل (ORDN/RDN1) مستخدَم فعلياً بهالبيئة (132 مستند حقيقي 2018–2025) — انظر مصدر "مرتجعات فعلية منفصلة (ORDN)" أدناه؛ لا يُدمج تلقائياً هون تفادياً لازدواجية غير مؤكدة.',
+  },
+
+  physicalReturns: {
+    label: 'مرتجعات فعلية منفصلة (ORDN/RDN1 — معلوماتية، غير مدموجة بصافي المبيعات)',
+    store: 'physicalReturns',
+    keyFields: ['DocEntry','LineNum'],
+    dateField: 'DocDate',
+    columns: [
+      {key:'DocEntry', label:'DocEntry', aliases:['رقم المستند','DocEntry'], type:'text', required:true},
+      {key:'LineNum', label:'رقم السطر', aliases:['LineNum','رقم السطر'], type:'text', required:true},
+      {key:'DocDate', label:'التاريخ', aliases:['التاريخ','DocDate'], type:'date', required:true},
+      {key:'ItemCode', label:'رمز الصنف', aliases:['رمز الصنف','ItemCode'], type:'text', required:true},
+      {key:'Quantity', label:'الكمية', aliases:['الكمية','Quantity'], type:'number', required:true},
+      {key:'CardCode', label:'رمز العميل', aliases:['رمز العميل','CardCode'], type:'text', required:false},
+      {key:'CardName', label:'اسم العميل', aliases:['العميل','CardName'], type:'text', required:false},
+      {key:'RelatedInvoice', label:'الفاتورة المرتبطة (إن وُجدت)', aliases:['RelatedInvoice','CorrInv'], type:'text', required:false},
+    ],
+    sql: `-- مستند إرجاع فعلي منفصل عن إشعار الدائن — تحقق SAP حي (Phase 2) أثبت استخدامه فعلياً وباستمرار (132 مستند، 2018–2025)
+-- مُستقل عن ORIN/RIN1 وليس بديلاً عنه؛ لا يوجد حقل SAP مؤكَّد حياً يربطه بإشعار دائن مطابق بلا لبس — لذلك يُرفع هنا بشكل منفصل ولا يُدمج تلقائياً بصافي المبيعات
+SELECT
+  T0."DocEntry" AS "DocEntry", T1."LineNum" AS "LineNum", T0."DocDate" AS "التاريخ",
+  T1."ItemCode" AS "رمز الصنف", T1."Quantity" AS "الكمية",
+  T0."CardCode" AS "رمز العميل", T0."CardName" AS "العميل", T0."CorrInv" AS "الفاتورة المرتبطة"
+FROM ORDN T0
+INNER JOIN RDN1 T1 ON T0."DocEntry" = T1."DocEntry"
+WHERE T0."DocDate" BETWEEN '[%0]' AND '[%1]'
+ORDER BY T1."ItemCode", T0."DocDate"`,
+    sqlNote: 'اختياري تماماً ومعلوماتي فقط (Phase 2 — SAP Reality Alignment، البند 4): تحقق SAP حي أثبت أن ORDN/RDN1 (مستند إرجاع فعلي منفصل عن إشعار الدائن) مستخدَم فعلياً بهالبيئة — لكن بدون دليل حي على وجود ربط مضمون بلا ازدواجية مع ORIN/RIN1 (بعض عمليات الإرجاع قد يكون لها الاثنان لنفس الحدث). لذلك متعمَّد عدم دمج هذه الكمية بحساب صافي المبيعات أو الطلب المعدَّل تلقائياً — تُعرض فقط كرقم معلوماتي إضافي بتفاصيل الصنف (قسم "الباتشات والصلاحية" بالتفصيل). إذا تأكد لاحقاً من مستشار SAP أنها غير متداخلة مع ORIN، يمكن دمجها بأمان.',
   },
 
   purchaseInvoices: {
@@ -452,21 +478,24 @@ ORDER BY T1."ItemCode", T0."DocDate"`,
       {key:'Quantity', label:'الكمية', aliases:['الكمية','Quantity'], type:'number', required:true},
       {key:'Price', label:'السعر', aliases:['السعر','Price'], type:'number', required:false},
       {key:'WhsCode', label:'المستودع', aliases:['المستودع','WhsCode'], type:'text', required:false},
-      {key:'BaseEntry', label:'مستند الأصل (GRPO)', aliases:['BaseEntry'], type:'text', required:false},
+      {key:'BaseEntry', label:'مستند أمر الشراء الأصل', aliases:['BaseEntry'], type:'text', required:false},
+      {key:'BaseLine', label:'سطر أمر الشراء الأصل', aliases:['BaseLine'], type:'text', required:false},
+      {key:'BaseType', label:'نوع المستند الأصل', aliases:['BaseType'], type:'text', required:false},
     ],
     sql: `-- فواتير المشتريات — تُستخدم لبناء نمط الشراء التاريخي الفعلي لكل صنف+مورد (min/max/median)
+-- ولإشارة "الاستلام الفعلي" عند BaseType=22 (فاتورة مباشرة من أمر شراء بلا GRPO — مؤكَّد بتحقق SAP حي أنه المسار الغالب 83.8% بهالبيئة، Phase 2)
 SELECT
   T0."DocEntry" AS "DocEntry", T0."DocNum" AS "DocNum", T1."LineNum" AS "LineNum",
   T0."DocDate" AS "تاريخ الاستلام", T1."ItemCode" AS "رمز الصنف",
   T0."CardCode" AS "رمز المورد", T0."CardName" AS "المورد",
   T1."Quantity" AS "الكمية", T1."Price" AS "السعر", T1."WhsCode" AS "المستودع",
-  T1."BaseEntry" AS "BaseEntry"
+  T1."BaseEntry" AS "BaseEntry", T1."BaseLine" AS "BaseLine", T1."BaseType" AS "BaseType"
 FROM OPCH T0
 INNER JOIN PCH1 T1 ON T0."DocEntry" = T1."DocEntry"
 WHERE T0."DocDate" BETWEEN '[%0]' AND '[%1]'
   AND T0."Canceled" = 'N'
 ORDER BY T1."ItemCode", T0."DocDate"`,
-    sqlNote: 'هذه فواتير مشتريات فعلية (وصلت واعتُمدت)، وهي أساس "نمط الشراء التاريخي" بقسم 12 — ليست نفس PO المفتوحة.',
+    sqlNote: 'هذه فواتير مشتريات فعلية (وصلت واعتُمدت)، وهي أساس "نمط الشراء التاريخي" بقسم 12. تحقق SAP حي (Phase 2): على كل سطور أوامر الشراء المقفولة في هذه البيئة (22,094 سطر)، 0% ربطوا بـGRPO مقابل 83.8% ربطوا مباشرة بفاتورة شراء (BaseType=22) — لذلك BaseEntry/BaseLine/BaseType هون أساسيون الآن لحساب "شو استُلم فعلياً"، ليسوا اختياريين فقط لتتبع GRPO كالسابق. ملاحظة: شرط Canceled=N هون لم يُتحقق حياً لـOPCH تحديداً بهالجولة (التحقق الحي شمل فقط OINV) — أُبقي كما كان بدون تغيير، لا تُلغَ بدون تأكيد مباشر من SAP.',
   },
 
   purchaseOrders: {
@@ -527,7 +556,7 @@ INNER JOIN PDN1 T1 ON T0."DocEntry" = T1."DocEntry"
 WHERE T0."DocDate" BETWEEN '[%0]' AND '[%1]'
   AND T0."Canceled" = 'N'
 ORDER BY T1."ItemCode", T0."DocDate"`,
-    sqlNote: 'يدعم استلامات متعددة لنفس أمر الشراء / نفس الشحنة (قسم 17) عبر تجميع كل الأسطر المرتبطة بنفس BaseEntry.',
+    sqlNote: 'يدعم استلامات متعددة لنفس أمر الشراء / نفس الشحنة (قسم 17) عبر تجميع كل الأسطر المرتبطة بنفس BaseEntry. تحقق SAP حي (Phase 2 — SAP Reality Alignment، البند 3): على كل سطور أوامر الشراء المقفولة بهالبيئة (22,094 سطر)، 0% ربطوا بـGRPO مقابل 83.8% ربطوا مباشرة بفاتورة شراء (BaseType=22 — انظر مصدر "فواتير المشتريات"). يعني GRPO هون مصدر ثانوي/احتياطي فقط، وليس الإشارة الأساسية لـ"شو استُلم فعلياً" — المصدر الأساسي أصبح فاتورة الشراء المباشرة. إذا رُفع GRPO لنفس السطر الذي له فاتورة مباشرة (BaseType=22)، لا يُتوقع تداخل عملياً (فاتورة مبنية على GRPO تحمل BaseType مختلف يشير للـGRPO لا لأمر الشراء نفسه) — لكن هذا لم يُثبت بشكل قاطع 100% لكل الحالات، فانتبه عند رفع الاثنين معاً لنفس السطر.',
   },
 
   salesOrders: {
@@ -580,7 +609,7 @@ FROM OQUT T0
 INNER JOIN QUT1 T1 ON T0."DocEntry" = T1."DocEntry"
 WHERE T0."DocStatus" = 'O' AND T1."OpenQty" > 0
 ORDER BY T1."ItemCode", T0."DocDate"`,
-    sqlNote: '',
+    sqlNote: 'تحقق SAP حي (Phase 2 — SAP Reality Alignment، البند 6): من أصل 303,230 عرض سعر حقيقي، 288,330 (95.1%) تحوّلوا مباشرة لفاتورة مبيعات (INV1.BaseType=23) — صفر تحوّلوا لأمر بيع (RDR1.BaseType=23)، وصفر لتسليم. يعني مسار "Quotation → Sales Order" غير موجود عملياً بهالبيئة؛ التحويل الفعلي دائماً Quotation → Invoice مباشرة. هذا يدعم بقوة معاملة عرض السعر المفتوح كطلب شبه مؤكَّد — لكن لا داعي لكويري/منطق إضافي هنا: بمجرد تحويل عرض السعر لفاتورة بالكامل، "OpenQty" نفسه يصبح صفر تلقائياً بـSAP فيخرج من هذا الاستعلام، والكمية المفوترة فعلاً تُحتسب أصلاً ضمن صافي المبيعات الحقيقي (لا ازدواجية، لا حاجة لتتبّع BaseType=23 بشكل منفصل). القيمة المتبقية هون (Open) هي فقط الجزء غير المفوتر بعد. وزن الاحتساب الحالي (quotationWeight) بقي كما هو بدون تغيير — تحديد ما إذا يجب أن "يشيخ" عرض السعر المفتوح ويفقد وزنه مع الوقت قرار عمل معلّق بانتظار تأكيد الإدارة (غير محسوم هون).',
   },
 
   inventory: {
@@ -606,14 +635,13 @@ LEFT JOIN OWHS T1 ON T0."WhsCode" = T1."WhsCode"`,
   },
 
   batches: {
-    label: 'الباتشات وتواريخ الانتهاء (Batch / Expiry)',
+    label: 'الباتشات وتواريخ الانتهاء (Batch / Expiry — على مستوى الصنف فقط)',
     store: 'batches',
-    keyFields: ['ItemCode','Batch','WhsCode'],
+    keyFields: ['ItemCode','Batch'],
     dateField: 'ExpDate',
     columns: [
       {key:'ItemCode', label:'رمز الصنف', aliases:['رمز الصنف','ItemCode'], type:'text', required:true},
       {key:'Batch', label:'الباتش', aliases:['الباتش','Batch','DistNumber'], type:'text', required:true},
-      {key:'WhsCode', label:'المستودع', aliases:['المستودع','WhsCode'], type:'text', required:true},
       {key:'InDate', label:'تاريخ الإدخال', aliases:['تاريخ الإدخال','InDate'], type:'date', required:false},
       {key:'MnfDate', label:'تاريخ الإنتاج', aliases:['تاريخ الإنتاج','MnfDate'], type:'date', required:false},
       {key:'ExpDate', label:'تاريخ الانتهاء', aliases:['تاريخ الانتهاء','ExpDate'], type:'date', required:true},
@@ -622,19 +650,24 @@ LEFT JOIN OWHS T1 ON T0."WhsCode" = T1."WhsCode"`,
       {key:'SupplierName', label:'المورد', aliases:['المورد','SupplierName'], type:'text', required:false},
       {key:'Weight', label:'الوزن', aliases:['الوزن','Weight'], type:'number', required:false},
     ],
-    sql: `-- أرصدة الباتشات حسب المستودع مع تاريخ الانتهاء — أساس تصنيف Expired/قريب الانتهاء/صالح
+    sql: `-- أرصدة الباتشات على مستوى الصنف — بلا ربط مستودع (تحقّق حي أكّد: لا IBT1 ولا OBTN ولا OBVL فيهم عمود مستودع بهالبيئة)
+-- آخر صف OBVL لكل صنف+باتش (SysNumber) يعطي الرصيد الصحيح: AccQty-AccNegQ = الكمية المتبقية، Balance = قيمة نقدية (لا كمية)
+WITH LATEST_OBVL AS (
+  SELECT V.*, ROW_NUMBER() OVER (PARTITION BY V."ItemCode", V."SysNumber" ORDER BY V."CreateDate" DESC, V."CreateTime" DESC, V."AbsEntry" DESC) AS "RN"
+  FROM OBVL V
+)
 SELECT
-  T4."ItemCode" AS "رمز الصنف", T2."DistNumber" AS "الباتش", T1."WhsCode" AS "المستودع",
+  T4."ItemCode" AS "رمز الصنف", T2."DistNumber" AS "الباتش",
   T2."InDate" AS "تاريخ الإدخال", T2."MnfDate" AS "تاريخ الإنتاج", T2."ExpDate" AS "تاريخ الانتهاء",
-  T1."Quantity" AS "كمية الباتش", T3."SUAvgUP" AS "كلفة الوحدة",
+  (L."AccQty" - L."AccNegQ") AS "كمية الباتش",
+  L."Balance" / NULLIF((L."AccQty" - L."AccNegQ"), 0) AS "كلفة الوحدة",
   T5."CardName" AS "المورد"
-FROM IBT1 T1
-INNER JOIN OBTN T2 ON T1."ItemCode" = T2."ItemCode" AND T1."SysNumber" = T2."SysNumber"
-LEFT JOIN OBVL T3 ON T2."ItemCode" = T3."ItemCode" AND T2."SysNumber" = T3."SysNumber"
-INNER JOIN OITM T4 ON T1."ItemCode" = T4."ItemCode"
+FROM OBTN T2
+INNER JOIN OITM T4 ON T2."ItemCode" = T4."ItemCode"
+LEFT JOIN LATEST_OBVL L ON L."ItemCode" = T2."ItemCode" AND L."SysNumber" = T2."SysNumber" AND L."RN" = 1
 LEFT JOIN OCRD T5 ON T4."CardCode" = T5."CardCode"
-WHERE T1."Quantity" > 0`,
-    sqlNote: 'مبنية على الجداول التي أكّدها المستخدم (IBT1+OBVL+OBTN+OITM+OCRD) — الأعمدة الدقيقة (خصوصاً مصدر كلفة الوحدة SUAvgUP والمورد عبر OITM.CardCode) تحتاج تأكيد من الشاشة أو استشاري SAP قبل الاعتماد عليها بالإنتاج.',
+WHERE (L."AccQty" - L."AccNegQ") > 0`,
+    sqlNote: 'مؤكَّد بتحقق SAP حي (Phase 2 — SAP Reality Alignment): IBT1 غير موجود بهالبيئة، OBVL."SUAvgUP" غير موجود، ولا يوجد أي جدول (لا OBTN ولا OBVL) فيه عمود مستودع مرتبط بالباتش. الكمية = AccQty-AccNegQ لآخر صف OBVL (CreateDate/CreateTime/AbsEntry تنازلياً)، والكلفة = Balance÷(AccQty-AccNegQ). النتيجة: بيانات الباتش هون على مستوى الصنف فقط — لا يوجد تفصيل حي لكل مستودع بهالبيئة، ولا يجوز افتراض أو اختراع توزيع بين المستودعات.',
   },
 
   suppliers: {
@@ -648,13 +681,13 @@ WHERE T1."Quantity" > 0`,
       {key:'Country', label:'بلد المنشأ', aliases:['البلد','Country'], type:'text', required:false},
       {key:'LeadTimeDays', label:'مدة التوريد (يوم)', aliases:['مدة التوريد','LeadTimeDays'], type:'number', required:false},
     ],
-    sql: `-- كشف الموردين مع بلد المنشأ ومدة التوريد الافتراضية (إن وُجدت بجدول المورد)
+    sql: `-- كشف الموردين مع بلد المنشأ (بلا مدة توريد من SAP — لا يوجد حقل مدة توريد على مستوى المورد بهالبيئة، انظر ملاحظة أدناه)
 SELECT
   T0."CardCode" AS "رمز المورد", T0."CardName" AS "اسم المورد",
-  T0."Country" AS "البلد", T0."U_LeadTimeDays" AS "مدة التوريد"
+  T0."Country" AS "البلد"
 FROM OCRD T0
 WHERE T0."CardType" = 'S'`,
-    sqlNote: 'مدة التوريد غالباً حقل مخصص (UDF) يختلف اسمه حسب الشركة — عدّل الاستعلام حسب الحقل الفعلي، أو ارفع الكشف يدوياً/بتعديل مباشر بجدول الموردين داخل الشاشة.',
+    sqlNote: 'مؤكَّد بتحقق SAP حي (Phase 2 — SAP Reality Alignment): لا يوجد حقل "مدة توريد" على مستوى المورد بهالبيئة (فحصنا كل الحقول الحرة على OCRD — ولا واحد منها Lead Time). المصدر القياسي الوحيد هو مدة التوريد على مستوى الصنف (OITM.LeadTime — انظر مصدر "كشف الأصناف"). عمود "مدة التوريد" هون بقي متاحاً فقط لو حابب ترفعه يدوياً من مصدر خارج SAP (Excel مثلاً)؛ إذا رُفع، يبقى له الأولوية على مدة توريد الصنف.',
   },
 
   landedCost: {
@@ -696,13 +729,14 @@ WHERE T0."PostDate" BETWEEN '[%0]' AND '[%1]'`,
       {key:'ItemGroup', label:'مجموعة الصنف', aliases:['مجموعة الصنف','ItemGroup','ItmsGrpNam'], type:'text', required:false},
       {key:'UoM', label:'وحدة القياس', aliases:['وحدة القياس','UoM'], type:'text', required:false},
       {key:'UnitWeight', label:'وزن الوحدة (كغ)', aliases:['وزن الوحدة','UnitWeight','SWeight1'], type:'number', required:false},
+      {key:'LeadTimeDays', label:'مدة توريد الصنف (يوم)', aliases:['مدة توريد الصنف','ItemLeadTimeDays','LeadTime'], type:'number', required:false},
     ],
-    sql: `-- كشف الأصناف مع مجموعة الصنف — اختياري، يُستخدم لتغذية فلتر "مجموعة الصنف" وأسماء أدق بالتقارير
+    sql: `-- كشف الأصناف مع مجموعة الصنف ومدة التوريد القياسية على مستوى الصنف (المصدر الحي الوحيد المؤكَّد لمدة التوريد بهالبيئة)
 SELECT T0."ItemCode" AS "رمز الصنف", T0."ItemName" AS "اسم الصنف", T1."ItmsGrpNam" AS "مجموعة الصنف",
-       T0."SalUnitMsr" AS "وحدة القياس", T0."SWeight1" AS "وزن الوحدة"
+       T0."SalUnitMsr" AS "وحدة القياس", T0."SWeight1" AS "وزن الوحدة", T0."LeadTime" AS "مدة توريد الصنف"
 FROM OITM T0
 LEFT JOIN OITB T1 ON T0."ItmsGrpCod" = T1."ItmsGrpCod"`,
-    sqlNote: 'اختياري — بدون رفعه، يُشتق اسم الصنف تلقائياً من أول ظهور له بفواتير المبيعات/المشتريات، ولا يظهر فلتر "مجموعة الصنف".',
+    sqlNote: 'مجموعة الصنف/الوزن اختياريان — بدون رفعهما، يُشتق اسم الصنف تلقائياً من أول ظهور له بفواتير المبيعات/المشتريات، ولا يظهر فلتر "مجموعة الصنف". "مدة توريد الصنف" (OITM.LeadTime) مؤكَّدة بتحقق SAP حي (Phase 2) — حقل قياسي، وهي المصدر الوحيد لمدة التوريد بهالبيئة إذا لم تُرفع مدة توريد يدوية بجدول الموردين. الوزن (OITM.SWeight1) مؤكَّد أيضاً بتحقق حي على بيانات شراء حقيقية (Phase 2، البند 7): طابق وزن الوحدة بالضبط، وأثبت التحقق أن PCH1.Weight1 (وزن سطر فاتورة الشراء نفسه) يتصفّر تلقائياً لأي وحدة شراء غير وزنية (Carton مثلاً) — لذلك الوزن هون على مستوى الصنف يبقى المصدر الصحيح الوحيد، ولا يجوز أبداً القراءة من PCH1.Weight1 مباشرة.',
   },
 
   itemSupplierMap: {
@@ -1309,10 +1343,15 @@ const INV = {
     return IDX.rows('purchaseOrders','ItemCode',itemCode).reduce((s,r)=>s+(Number(r.OpenQty)||0), 0);
   },
 
-  /** إعادة بناء تاريخ "المخزون المتاح" شهرياً بالرجوع للخلف من لقطة اليوم (Snapshot) باستخدام الحركات الفعلية */
+  /** إعادة بناء تاريخ "المخزون المتاح" شهرياً بالرجوع للخلف من لقطة اليوم (Snapshot) باستخدام الحركات الفعلية.
+      "الاستلام" = GRPO (PDN1) + فاتورة شراء مباشرة من أمر شراء (PCH1 BaseType=22) — بلا ازدواجية:
+      تحقق SAP حي (Phase 2) أثبت أن سطر أمر شراء واحد يُستلم إما عبر GRPO أو عبر فاتورة مباشرة (BaseType=22)، ليس الاثنين معاً
+      (فاتورة مبنية على GRPO تحمل BaseType مختلف يشير لـGRPO نفسه لا لأمر الشراء)، لذلك جمعهما هون آمن ولا يُكرّر نفس حدث الاستلام. */
   monthlyAvailableTimeline(itemCode){
     const salesLines = SALES.linesForItem(itemCode).filter(l=>this.isAvailableWhs(l.WhsCode) && l.date instanceof Date);
-    const recvLines = IDX.rows('goodsReceipts','ItemCode',itemCode).filter(r=>this.isAvailableWhs(r.WhsCode) && r.DocDate instanceof Date);
+    const grpoLines = IDX.rows('goodsReceipts','ItemCode',itemCode).filter(r=>this.isAvailableWhs(r.WhsCode) && r.DocDate instanceof Date);
+    const invReceiptLines = IDX.rows('purchaseInvoices','ItemCode',itemCode).filter(r=>String(r.BaseType||'')==='22' && this.isAvailableWhs(r.WhsCode) && r.DocDate instanceof Date);
+    const recvLines = grpoLines.concat(invReceiptLines);
     if(!salesLines.length && !recvLines.length) return [];
     const allDates = salesLines.map(l=>l.date).concat(recvLines.map(r=>r.DocDate));
     const minD = new Date(U.minMax(allDates).min), maxD = new Date();
@@ -1487,20 +1526,30 @@ const SUPPLIER = {
   get(code){ return IDX.first('suppliers','SupplierCode',code); },
   name(code){ const s=this.get(code); return s ? s.SupplierName : (code||'—'); },
   country(code){ const s=this.get(code); return s ? s.Country : null; },
-  leadTimeDays(code){
+  /** مدة التوريد: كشف الموردين اليدوي (إن رُفع) ← مدة توريد الصنف القياسية (OITM.LeadTime، المصدر الحي الوحيد المؤكَّد) ←
+      مُشتقة من فارق أمر الشراء↔الاستلام الفعلي (GRPO أو فاتورة شراء مباشرة) ← افتراضية (Phase 2 — SAP Reality Alignment) */
+  leadTimeDays(code, itemCode){
     const s = this.get(code);
-    if(s && Number(s.LeadTimeDays)>0) return {days:Number(s.LeadTimeDays), source:'supplier_master', label:'من كشف الموردين'};
+    if(s && Number(s.LeadTimeDays)>0) return {days:Number(s.LeadTimeDays), source:'supplier_master', label:'من كشف الموردين (يدوي)'};
+    if(itemCode){
+      const it = IDX.first('items','ItemCode',itemCode);
+      if(it && Number(it.LeadTimeDays)>0) return {days:Number(it.LeadTimeDays), source:'item_master', label:'من بطاقة الصنف (OITM.LeadTime)'};
+    }
     const derived = this.deriveLeadTimeFromHistory(code);
     if(derived) return {days:derived, source:'derived', label:'مُشتقة من فارق أمر الشراء↔الاستلام الفعلي'};
     return {days:CONFIG.tunable.defaultLeadTimeDays, source:'default', label:'افتراضية (لا بيانات كافية)'};
   },
+  /** فارق أمر الشراء↔أول "استلام" فعلي — يشمل GRPO (PDN1) وفاتورة الشراء المباشرة (PCH1 BaseType=22)،
+      لأن التحقق الحي أثبت أن الاستلام الفعلي بهالبيئة يمر غالباً عبر فاتورة الشراء مباشرة وليس GRPO (Phase 2) */
   deriveLeadTimeFromHistory(code){
     const pos = IDX.rows('purchaseOrders','SupplierCode',code).filter(r=>r.DocDate instanceof Date);
     const grs = IDX.rows('goodsReceipts','SupplierCode',code).filter(r=>r.DocDate instanceof Date);
-    if(!pos.length || !grs.length) return null;
+    const invReceipts = IDX.rows('purchaseInvoices','SupplierCode',code).filter(r=>r.DocDate instanceof Date && String(r.BaseType||'')==='22');
+    if(!pos.length || (!grs.length && !invReceipts.length)) return null;
     const diffs = [];
     pos.forEach(po=>{
-      const matched = grs.filter(g=> (g.BaseEntry && po.DocEntry && String(g.BaseEntry)===String(po.DocEntry)) || (g.ItemCode===po.ItemCode && g.DocDate>=po.DocDate));
+      const matched = grs.filter(g=> (g.BaseEntry && po.DocEntry && String(g.BaseEntry)===String(po.DocEntry)) || (g.ItemCode===po.ItemCode && g.DocDate>=po.DocDate))
+        .concat(invReceipts.filter(v=> v.BaseEntry && po.DocEntry && String(v.BaseEntry)===String(po.DocEntry)));
       if(matched.length){
         const earliest = matched.reduce((a,b)=>a.DocDate<b.DocDate?a:b);
         const d = U.daysBetween(po.DocDate, earliest.DocDate);
@@ -1523,14 +1572,18 @@ const SUPPLIER = {
    ========================================================================================== */
 const POTRACK = {
   openLinesFor(itemCode){ return IDX.rows('purchaseOrders','ItemCode',itemCode).filter(r=>Number(r.OpenQty)>0); },
+  /** "استلام" أمر الشراء = GRPO + فاتورة شراء مباشرة (BaseType=22) بلا ازدواجية — نفس مبرر monthlyAvailableTimeline أعلاه (Phase 2).
+      "remaining" يبقى معتمداً على OpenQty من SAP نفسه (صحيح دائماً بغض النظر عن مسار الاستلام)؛ "received" هون معلوماتي/تفسيري فقط. */
   receiptsForPO(docEntry, itemCode){
-    return IDX.rows('goodsReceipts','ItemCode',itemCode).filter(r=>r.BaseEntry!=null && String(r.BaseEntry)===String(docEntry));
+    const viaGRPO = IDX.rows('goodsReceipts','ItemCode',itemCode).filter(r=>r.BaseEntry!=null && String(r.BaseEntry)===String(docEntry));
+    const viaInvoice = IDX.rows('purchaseInvoices','ItemCode',itemCode).filter(r=>r.BaseEntry!=null && String(r.BaseEntry)===String(docEntry) && String(r.BaseType||'')==='22');
+    return viaGRPO.concat(viaInvoice);
   },
   statusFor(itemCode){
     const today = new Date();
     return this.openLinesFor(itemCode).map(l=>{
       const received = this.receiptsForPO(l.DocEntry, itemCode).reduce((s,r)=>s+(Number(r.Quantity)||0), 0);
-      const remaining = Math.max(0, Number(l.OpenQty)||0);
+      const remaining = Math.max(0, Number(l.OpenQty)||0); // من SAP مباشرة — يبقى صحيحاً سواء الاستلام عبر GRPO أو فاتورة مباشرة
       const pastDue = l.DueDate instanceof Date && l.DueDate < today;
       const ov = STATE.docOverrides['PO_'+l.DocEntry+'_'+l.LineNum] || {};
       const inTransit = !!ov.treatAsInTransit || !pastDue;
@@ -1588,7 +1641,8 @@ const RECO = {
 
     const demand = DEMAND.adjustedMonthlyDemand(itemCode);
     const supplierInfo = resolveSupplierForItem(itemCode);
-    const leadTime = supplierInfo.code ? SUPPLIER.leadTimeDays(supplierInfo.code) : {days:CONFIG.tunable.defaultLeadTimeDays, source:'default', label:'لا يوجد مورد محدد لهذا الصنف بعد'};
+    // مدة التوريد: من المورد (يدوي) ← مدة توريد الصنف القياسية (OITM.LeadTime) ← مُشتقة ← افتراضية — حتى بدون مورد محدد (Phase 2)
+    const leadTime = SUPPLIER.leadTimeDays(supplierInfo.code, itemCode);
     const pattern = PURCHASE.patternFor(itemCode, supplierInfo.code);
 
     const available = INV.availableStock(itemCode);
@@ -1643,6 +1697,8 @@ const RECO = {
     if(pattern) reasons.push({k:'نمط الشراء التاريخي', v:`${U.num(pattern.min)} — ${U.num(pattern.max)} (الأكثر تكراراً ${U.num(pattern.mostCommon)}، ${pattern.count} عملية شراء)`});
     if(expired) reasons.push({k:'مخزون منتهي الصلاحية (غير محتسب بالمتاح)', v:U.num(expired)});
     if(near30) reasons.push({k:'قريب الانتهاء (30 يوم)', v:U.num(near30)});
+    const physReturns = IDX.rows('physicalReturns','ItemCode',itemCode).reduce((s,r)=>s+(Number(r.Quantity)||0), 0);
+    if(physReturns) reasons.push({k:'مرتجعات فعلية إضافية (ORDN، معلوماتية — غير مدمجة بصافي المبيعات تفادياً لازدواجية غير مؤكدة مع إشعار الدائن)', v:U.num(physReturns)});
 
     const narrative = [];
     if(status==='CRITICAL' || status==='ORDER_SOON'){
@@ -2167,19 +2223,20 @@ function renderRisks(){
 }
 function expiryRows(){
   const f = STATE.filters;
+  // ملاحظة (Phase 2 — SAP Reality Alignment): بيانات الباتش على مستوى الصنف فقط، لا يوجد ربط مستودع حي بهالبيئة —
+  // فلتر المستودع لا ينطبق هون عمداً (كان سابقاً يُسقط كل الصفوف بالخطأ لأنه يقارن حقلاً لم يعد موجوداً).
   let rows = (STATE.data.batches||[]).map(b=>Object.assign({}, b, {_status:classifyExpiry(b.ExpDate)})).filter(b=>b._status && b._status!=='VALID');
   if(f.item){ const q=f.item.toLowerCase(); rows = rows.filter(b=>String(b.ItemCode||'').toLowerCase().includes(q)); }
-  if(f.warehouse) rows = rows.filter(b=>b.WhsCode===f.warehouse);
   if(f.expiryStatus) rows = rows.filter(b=>b._status===f.expiryStatus);
   return rows;
 }
 function renderExpiryTable(){
   const key='riskExpiry';
-  const rows = applySort(key, expiryRows(), (b,c)=>({ItemCode:b.ItemCode, Batch:b.Batch, WhsCode:b.WhsCode, exp:(b.ExpDate||0).valueOf(), status:{EXPIRED:0,NEAR30:1,NEAR90:2}[b._status], qty:Number(b.BatchQty)||0})[c]);
+  const rows = applySort(key, expiryRows(), (b,c)=>({ItemCode:b.ItemCode, Batch:b.Batch, exp:(b.ExpDate||0).valueOf(), status:{EXPIRED:0,NEAR30:1,NEAR90:2}[b._status], qty:Number(b.BatchQty)||0})[c]);
   const T=(c,l)=>thSort(key,c,l);
   document.getElementById('riskExpiry').innerHTML = rows.length ? `<div class="tbl-scroll"><table class="dt"><thead><tr>
-      ${T('ItemCode','رمز الصنف')}<th>اسم الصنف</th>${T('Batch','الباتش')}${T('WhsCode','المستودع')}${T('exp','تاريخ الانتهاء')}${T('status','الحالة')}${T('qty','الكمية')}<th>المورد</th></tr></thead>
-    <tbody>${rows.map(b=>`<tr><td><span class="link num" onclick="openItemDetail('${U.esc(b.ItemCode)}')">${U.esc(b.ItemCode)}</span></td><td>${U.esc(itemDisplayName(b.ItemCode))}</td><td class="num">${U.esc(b.Batch)}</td><td class="num">${U.esc(b.WhsCode)}</td><td class="num">${U.fmtDate(b.ExpDate)}</td><td>${expiryBadge(b._status)}</td><td class="num">${U.num(b.BatchQty)}</td><td>${U.esc(b.SupplierName||'—')}</td></tr>`).join('')}</tbody></table></div>`
+      ${T('ItemCode','رمز الصنف')}<th>اسم الصنف</th>${T('Batch','الباتش')}${T('exp','تاريخ الانتهاء')}${T('status','الحالة')}${T('qty','الكمية (مستوى الصنف)')}<th>المورد</th></tr></thead>
+    <tbody>${rows.map(b=>`<tr><td><span class="link num" onclick="openItemDetail('${U.esc(b.ItemCode)}')">${U.esc(b.ItemCode)}</span></td><td>${U.esc(itemDisplayName(b.ItemCode))}</td><td class="num">${U.esc(b.Batch)}</td><td class="num">${U.fmtDate(b.ExpDate)}</td><td>${expiryBadge(b._status)}</td><td class="num">${U.num(b.BatchQty)}</td><td>${U.esc(b.SupplierName||'—')}</td></tr>`).join('')}</tbody></table></div>`
     : `<div class="empty-state"><b>لا مخاطر صلاحية</b>${(STATE.data.batches||[]).length?'لا باتشات منتهية أو قريبة الانتهاء ضمن الفلاتر':'لم تُرفع بيانات الباتشات بعد'}</div>`;
 }
 
@@ -2589,7 +2646,7 @@ async function confirmInTransit(key, itemCode, dateStr){
    13) DATA CENTER (نفس منطق الرفع/التحقق/الاستيراد/التراجع — عرض مُحسَّن)
    ------------------------------------------------------------------------------------------ */
 let _dcPendingImport = null;
-const DC_ORDER = ['salesInvoices','salesReturns','purchaseInvoices','purchaseOrders','goodsReceipts','inventory','salesOrders','salesQuotations','suppliers','itemSupplierMap','batches','items','landedCost'];
+const DC_ORDER = ['salesInvoices','salesReturns','physicalReturns','purchaseInvoices','purchaseOrders','goodsReceipts','inventory','salesOrders','salesQuotations','suppliers','itemSupplierMap','batches','items','landedCost'];
 async function renderDataCenter(){
   const el = document.getElementById('view-datacenter');
   const locked = await DB.getMeta('historicalLocked', false);
