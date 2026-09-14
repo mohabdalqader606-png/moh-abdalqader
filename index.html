@@ -516,10 +516,13 @@ var APPS = [
 var HOME_LIMIT = 12;
 
 /* ============ بوابة الدخول والصلاحيات (Supabase — نفس المشروع المستخدم بكل الشاشات) ============
-   كل مستخدم لازم يسجّل دخول قبل ما يشوف أي شي بالبوابة، وبعد الدخول بنعرضله بس التطبيقات
-   يلي عنده صلاحية عليها (allowed_apps بجدول profiles) — الباقي ما بيظهر إطلاقاً، حتى بالبحث
-   أو الخريطة أو "كل التطبيقات". لإعطاء مستخدم صلاحية شاشة معينة، ضيف قيمتها لعمود allowed_apps:
-     mil, mil-branch-sales, debt-aging, financials, procurement-intelligence, internal-audit-portal
+   كل مستخدم لازم يسجّل دخول قبل ما يشوف أي شي بالبوابة، وبعد الدخول بنعرضله بس التطبيقات يلي
+   عنده صلاحية عليها — الباقي ما بيظهر إطلاقاً، حتى بالبحث أو الخريطة أو "كل التطبيقات".
+   مصدر الصلاحية لكل تطبيق (PORTAL_APP_GATE أدناه) اثنين، أيّهما تحقق كفى:
+     1) allowed_apps بجدول profiles (الطريقة القديمة — لسا مستخدمة بشاشات ما انربطت بعد).
+     2) صف حقيقي (أي مستوى VIEW/INPUT/ADMIN) بمصفوفة user_screen_permissions لنفس screen_id
+        (الطريقة الجديدة — مصدر الحقيقة الفعلي لأي شاشة مربوطة بشاشة "إدارة المستخدمين والصلاحيات").
+   لإعطاء مستخدم صلاحية شاشة معينة استخدم إحدى الطريقتين (أو الاثنين معاً حسب حالة الشاشة).
    ملاحظة أمان: هاي الشاشة (وكل شاشات المستودع) مواقع ثابتة (GitHub Pages) بدون سيرفر خلفي —
    هاد التصفية بمستوى الواجهة فقط (تمنع التصفح العادي)، مش حماية مطلقة ضد شخص يفحص كود الصفحة
    مباشرة. الحماية الحقيقية الوحيدة لكل شاشة هي نظام الدخول والصلاحيات الخاص فيها هي (4 من 6
@@ -532,7 +535,7 @@ var PORTAL_APP_GATE = {
   "APP-SLS-02": "mil-branch-sales",
   "APP-FIN-02": "debt-aging",
   "APP-FIN-01": "financials",
-  "APP-FIN-03": false, // مشروع خارجي منفصل (kfc-tax) بنظام دخول وصلاحيات خاص فيه — دائماً ظاهر بالبوابة
+  "APP-FIN-03": "sales-tax-declaration", // مشروع خارجي منفصل (kfc-tax) — بطاقته تظهر فقط لمن عنده صلاحية فعلية (Matrix) على هذه الشاشة
   "APP-PRC-01": "procurement-intelligence",
   "APP-AUD-01": "internal-audit-portal",
   "APP-FLT-01": "fleet-vehicles",
@@ -541,19 +544,22 @@ var PORTAL_APP_GATE = {
 var portalSb = null;
 function gateStatus(msg, isErr){ var el=document.getElementById("portalGateStatus"); if(el){ el.textContent=msg; el.style.color = isErr? "var(--bad)" : "var(--muted)"; } }
 function hidePortalGate(){ var g=document.getElementById("portalGate"); if(g) g.style.display="none"; }
-function applyPortalGate(allowedApps){
+function applyPortalGate(allowedApps, matrixScreenIds){
   var allowed = new Set(allowedApps||[]);
+  var matrix = matrixScreenIds||new Set();
   APPS = APPS.filter(function(a){
     var gid = PORTAL_APP_GATE[a.id];
     if(gid===false) return true;
     if(!gid) return false;
-    return allowed.has(gid);
+    return allowed.has(gid) || matrix.has(gid);
   });
 }
 async function onPortalSignedIn(user){
   gateStatus("جارٍ تحميل الأنظمة المتاحة لحسابك...");
   var profQ = await portalSb.from("profiles").select("allowed_apps").eq("id", user.id).single();
-  applyPortalGate(profQ.data ? profQ.data.allowed_apps : []);
+  var permQ = await portalSb.from("user_screen_permissions").select("screen_id").eq("user_id", user.id);
+  var matrixScreenIds = new Set((permQ.data||[]).map(function(r){ return r.screen_id; }));
+  applyPortalGate(profQ.data ? profQ.data.allowed_apps : [], matrixScreenIds);
   hidePortalGate();
   portalBoot();
 }
