@@ -1652,10 +1652,29 @@ function queueCloudSave(){
   clearTimeout(cloudSaveTimer);
   cloudSaveTimer = setTimeout(pushStateToCloud, 1500);
 }
+// نضغط JSON بـLZString قبل رفعه للسيرفر — بيانات الشاشة (آلاف سطور التحويل/الطلبات/المبيعات)
+// صارت كبيرة لدرجة إن كتابتها الخام كـJSONB بتتجاوز مهلة الاستعلام المسموحة بقاعدة البيانات
+// (statement timeout) حتى بعد تكبيرها. الضغط بيقلل الحجم المنقول والوقت اللي Postgres
+// محتاجه يحلّل/يخزّن البنية بشكل كبير. نغلّفها بعلامة __compressed حتى نميّزها عن
+// صفوف قديمة محفوظة قبل هالتعديل (JSON خام بدون غلاف) ونضمن التوافق معها.
+function compressForCloud(obj){
+  const json = JSON.stringify(obj);
+  if(!window.LZString) return obj; // تعذر تحميل مكتبة الضغط — نرجع نرسل خام بدل ما نفشل بصمت
+  return {__compressed:true, payload:LZString.compressToUTF16(json)};
+}
+function decompressFromCloud(loaded){
+  if(loaded && loaded.__compressed && loaded.payload){
+    try{
+      const json = window.LZString ? LZString.decompressFromUTF16(loaded.payload) : null;
+      return json ? JSON.parse(json) : null;
+    }catch(e){ return null; }
+  }
+  return loaded; // صف قديم (قبل الضغط) — JSON خام كما هو
+}
 async function pushStateToCloud(){
   if(!sb || !curUser || !roleEdit || !cloudSynced) return;
   try{
-    const data = buildBackupObject();
+    const data = compressForCloud(buildBackupObject());
     await sb.from('mil_branch_sales_state').upsert({id:'main', data, updated_by:curUser.id, updated_at:new Date().toISOString()});
     const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ محفوظ على السيرفر المشترك · '+new Date().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}); el.className='status-msg ok'; }
   }catch(e){
@@ -1673,7 +1692,13 @@ async function pullStateFromCloud(){
       const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ عندك تعديلات لسا ما وصلت السيرفر وأحدث من نسخته — رح تترفع بدل ما تنمسح'; el.className='status-msg ok'; }
       return;
     }
-    applyLoadedData(data.data);
+    const loaded = decompressFromCloud(data.data);
+    if(!loaded){
+      cloudSynced = true;
+      const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '⚠ تعذر قراءة نسخة السيرفر (بيانات تالفة أو مكتبة الضغط ما تحمّلت) — حدّث الصفحة'; el.className='status-msg err'; }
+      return;
+    }
+    applyLoadedData(loaded);
     if(TRANSFERS.length || REQUESTS.length) resolveAllBranches();
     refreshAllFilters();
     renderCurrentPage();
