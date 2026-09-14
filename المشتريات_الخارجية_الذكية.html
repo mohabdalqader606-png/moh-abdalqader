@@ -275,6 +275,7 @@
     <button data-view="suppliers">الموردون</button>
     <button data-view="items">الأصناف</button>
     <button data-view="datacenter">مركز البيانات</button>
+    <button data-view="pilot">مراجعة الطيار</button>
   </nav>
 </header>
 
@@ -301,6 +302,7 @@
   <section class="view" id="view-suppliers" data-view="suppliers"></section>
   <section class="view" id="view-items" data-view="items"></section>
   <section class="view" id="view-datacenter" data-view="datacenter"></section>
+  <section class="view" id="view-pilot" data-view="pilot"></section>
 </main>
 
 <div class="overlay" id="drawerOverlay" onclick="if(event.target===this) closeDrawer()">
@@ -320,7 +322,7 @@
    ========================================================================================== */
 const CONFIG = {
   dbName: 'kfc_foreign_procurement_v1',
-  dbVersion: 2, // v2: إزالة فهارس IndexedDB غير المستخدمة (كل القراءات getAll + فهارس بالذاكرة) — تسريع الاستيراد الكبير
+  dbVersion: 3, // v3: إضافة مخزن pilotReviews (سجل مراجعة الطيار — مراقبة فقط، لا علاقة بمحرك التوصيات)
 
   // قواعد المستودعات الخاصة (ثابتة حسب طلب المستخدم — قسم 9)
   warehouseRules: {
@@ -353,7 +355,7 @@ const CONFIG = {
   historicalYears: [2022, 2023, 2024, 2025],
   currentYear: 2026,
 
-  version: '1.1.0-SAP-ALIGNED',
+  version: '1.2.0-PILOT-REVIEW',
   buildDate: '2026-09-14',
 };
 
@@ -849,6 +851,7 @@ const DB = {
         if(!db.objectStoreNames.contains('importLog')) db.createObjectStore('importLog', {keyPath:'id'});
         if(!db.objectStoreNames.contains('planOverrides')) db.createObjectStore('planOverrides', {keyPath:'ItemCode'});
         if(!db.objectStoreNames.contains('docOverrides')) db.createObjectStore('docOverrides', {keyPath:'_key'});
+        if(!db.objectStoreNames.contains('pilotReviews')) db.createObjectStore('pilotReviews', {keyPath:'id'});
         if(!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', {keyPath:'k'});
       };
       req.onsuccess = ()=>resolve(req.result);
@@ -911,6 +914,7 @@ const STATE = {
   filters: {},
   planOverrides: {},
   docOverrides: {},
+  pilotReviews: {},
   async loadAll(){
     for(const key of Object.keys(DATA_SOURCES)){
       STATE.data[key] = await DB.getAll(DATA_SOURCES[key].store);
@@ -921,6 +925,9 @@ const STATE = {
     const doc = await DB.getAll('docOverrides');
     STATE.docOverrides = {};
     doc.forEach(r=>{ STATE.docOverrides[r._key] = r; });
+    const pr = await DB.getAll('pilotReviews');
+    STATE.pilotReviews = {};
+    pr.forEach(r=>{ STATE.pilotReviews[r.id] = r; });
     STATE.loaded = true;
   },
 };
@@ -960,6 +967,80 @@ async function setPlanOverride(itemCode, patch){
   const t = await DB.tx('planOverrides','readwrite');
   await new Promise((res,rej)=>{ t.objectStore('planOverrides').put(rec); t.oncomplete=()=>res(); t.onerror=()=>rej(t.error); });
 }
+
+/* ------------------------------------------------------------------------------------------
+   PILOT REVIEW — سجل مراجعة الطيار: ملاحظات المشتري مقابل توصية النظام أثناء التشغيل التجريبي.
+   مراقبة/تدقيق فقط — لا يقرأ إلا من RECO.computeForItem ولا يكتب على أي مخزن بيانات آخر أو أي وزن/حساب.
+   لقطة recommendation تُجمَّد وقت الإنشاء ولا تُعدَّل بعد ذلك أبداً (سجل تدقيق).
+   ------------------------------------------------------------------------------------------ */
+const PILOT_DECISION_LABELS = {
+  AGREE: 'موافق على التوصية',
+  DISAGREE_MORE: 'مخالف — كمية أكبر',
+  DISAGREE_LESS: 'مخالف — كمية أقل',
+  DISAGREE_NO_ORDER: 'مخالف — بدون طلب',
+  DISAGREE_OTHER: 'مخالف — سبب آخر',
+};
+const PILOT_STATUS_LABELS = {OPEN:'مفتوح', REVIEWED:'تمت المراجعة', CLOSED:'مغلق'};
+const PILOT_STATUS_COLOR = {OPEN:'red', REVIEWED:'orange', CLOSED:'green'};
+const PILOT = {
+  async create(itemCode, fields){
+    const r = RECO.computeForItem(itemCode);
+    const id = 'pr_'+U.uid();
+    const rec = {
+      id, itemCode, itemName: r.ItemName,
+      createdAt: Date.now(), updatedAt: Date.now(),
+      buyerName: String(fields.buyerName||'').trim(),
+      buyerDecision: fields.buyerDecision || 'DISAGREE_OTHER',
+      buyerQty: (fields.buyerQty==null || fields.buyerQty==='' || isNaN(Number(fields.buyerQty))) ? null : Number(fields.buyerQty),
+      buyerNote: String(fields.buyerNote||'').trim(),
+      status: 'OPEN',
+      reviewNote: '',
+      reviewedAt: null,
+      closedAt: null,
+      recommendation: Object.freeze({
+        status: r.status,
+        recommendedQty: r.recommendedQty,
+        available: r.available,
+        physical: r.physical,
+        incoming: r.incoming,
+        unconfirmedIncoming: r.unconfirmedIncoming,
+        openSO: r.openSO,
+        openQuotation: r.openQuotation,
+        monthlyDemand: r.monthlyDemand,
+        coverageDays: r.coverageDays===Infinity ? null : r.coverageDays,
+        leadTimeDays: r.leadTime.days,
+        leadTimeLabel: r.leadTime.label,
+        supplierCode: r.supplier.code||'',
+        supplierName: r.supplier.name||'',
+        confidence: r.confidence,
+        reasonText: whySentence(r),
+      }),
+    };
+    STATE.pilotReviews[id] = rec;
+    await DB.bulkPut('pilotReviews', [rec]);
+    return rec;
+  },
+  async setStatus(id, status, reviewNote){
+    const rec = STATE.pilotReviews[id]; if(!rec) return;
+    rec.status = status;
+    if(reviewNote!=null) rec.reviewNote = String(reviewNote).trim();
+    if(status==='REVIEWED' && !rec.reviewedAt) rec.reviewedAt = Date.now();
+    if(status==='CLOSED' && !rec.closedAt) rec.closedAt = Date.now();
+    if(status==='OPEN'){ rec.reviewedAt = null; rec.closedAt = null; }
+    rec.updatedAt = Date.now();
+    await DB.bulkPut('pilotReviews', [rec]);
+  },
+  list(){ return Object.values(STATE.pilotReviews); },
+  summary(){
+    const all = PILOT.list();
+    const open = all.filter(r=>r.status==='OPEN').length;
+    const reviewed = all.filter(r=>r.status==='REVIEWED').length;
+    const closed = all.filter(r=>r.status==='CLOSED').length;
+    const agree = all.filter(r=>r.buyerDecision==='AGREE').length;
+    const disagree = all.length - agree;
+    return {total: all.length, open, reviewed, closed, agree, disagree, agreeRate: all.length ? Math.round(agree/all.length*100) : null};
+  },
+};
 
 /* ==========================================================================================
    4) IMPORT PIPELINE — Parse / Validate / Preview / Duplicate Detection / Commit / Rollback
@@ -2200,7 +2281,7 @@ function openWhyDrawer(itemCode){
         <div class="tile"><div class="k">الوصول المتوقع</div><div class="v txt">${arr.date?U.fmtDate(arr.date):'—'}</div></div>
         <div class="tile"><div class="k">مستوى الثقة</div><div class="v txt">${CONF_LABELS[r.confidence]}</div></div>
       </div>
-      <div class="drawer-actions" style="margin-top:14px"><button class="btn-ghost btn-sm" onclick="closeModal();openItemDetail('${U.esc(itemCode)}')">كل تفاصيل الصنف</button></div>
+      <div class="drawer-actions" style="margin-top:14px"><button class="btn-ghost btn-sm" onclick="closeModal();openItemDetail('${U.esc(itemCode)}')">كل تفاصيل الصنف</button><button class="btn-ghost btn-sm" onclick="openPilotLogModal('${U.esc(itemCode)}')">تسجيل قرار المشتري</button></div>
     </div>`;
   document.getElementById('modalOverlay').classList.add('open');
 }
@@ -2900,6 +2981,8 @@ function printCurrentView(){
   } else if(v==='items'){
     let rows = getRecos(); if(STATE.itemSearch) rows = rows.filter(r=>r.ItemCode.toLowerCase().includes(STATE.itemSearch)||(r.ItemName||'').toLowerCase().includes(STATE.itemSearch));
     PRINT.run({title:'تقرير الأصناف', sections:[printRecoSection('الأصناف', rows)]});
+  } else if(v==='pilot'){
+    printPilotReview();
   } else {
     const rows = DC_ORDER.map(k=>({k, label:DATA_SOURCES[k].label, n:(STATE.data[k]||[]).length}));
     PRINT.run({title:'مركز البيانات — حالة المصادر', sections:[{html:PRINT.table([{label:'المصدر',get:r=>r.label},{label:'السجلات',get:r=>U.num(r.n),num:true},{label:'الحالة',get:r=>r.n?'محمّل':'غير محمّل'}], rows)}]});
@@ -2952,9 +3035,195 @@ function printItemDetail(itemCode){
 }
 
 /* ------------------------------------------------------------------------------------------
+   15ب) PILOT REVIEW VIEW — سجل ملاحظات المشتري (مراقبة/تدقيق فقط — لا تغيير على أي حساب)
+   ------------------------------------------------------------------------------------------ */
+STATE.pilotFilter = {status:'', decision:'', q:''};
+function renderPilotReview(){
+  const el = document.getElementById('view-pilot');
+  const s = PILOT.summary();
+  el.innerHTML = `
+    <div class="page-title"><div><h1>مراجعة الطيار — ملاحظات المشتري</h1><div class="sub">سجل مراقبة وتدقيق لقرارات المشتري مقابل توصيات النظام أثناء التشغيل التجريبي — لا يُغيّر أي توصية أو حساب</div></div>
+      <div class="actions"><button class="btn-ghost btn-sm" onclick="exportPilotCSV()">تصدير CSV</button><button class="btn-ghost btn-sm" onclick="printCurrentView()">طباعة</button></div></div>
+    <div class="summary-strip">
+      <div class="sum-cell gray"><span class="k">إجمالي السجلات</span><span class="n">${U.num(s.total)}</span><span class="s">منذ بداية التجربة</span></div>
+      <div class="sum-cell red"><span class="k">مفتوح</span><span class="n">${U.num(s.open)}</span><span class="s">بانتظار المراجعة</span></div>
+      <div class="sum-cell orange"><span class="k">تمت المراجعة</span><span class="n">${U.num(s.reviewed)}</span><span class="s">قيد المتابعة</span></div>
+      <div class="sum-cell green"><span class="k">مغلق</span><span class="n">${U.num(s.closed)}</span><span class="s">انتهى التعامل معه</span></div>
+      <div class="sum-cell blue"><span class="k">مخالفات المشتري</span><span class="n">${U.num(s.disagree)}</span><span class="s">${s.agreeRate!=null?'نسبة التوافق '+s.agreeRate+'%':'لا سجلات بعد'}</span></div>
+    </div>
+    <section class="panel">
+      <div class="panel-head"><div><h2>السجل</h2><div class="hint" id="pilotHint"></div></div>
+        <div class="drawer-actions">
+          <input class="cell-input" style="width:170px" id="pilotSearch" placeholder="بحث برمز/اسم الصنف…" value="${U.esc(STATE.pilotFilter.q)}">
+          <select id="pilotStatusFilter"><option value="">كل الحالات</option>${Object.keys(PILOT_STATUS_LABELS).map(k=>`<option value="${k}" ${STATE.pilotFilter.status===k?'selected':''}>${PILOT_STATUS_LABELS[k]}</option>`).join('')}</select>
+          <select id="pilotDecisionFilter"><option value="">كل القرارات</option>${Object.keys(PILOT_DECISION_LABELS).map(k=>`<option value="${k}" ${STATE.pilotFilter.decision===k?'selected':''}>${PILOT_DECISION_LABELS[k]}</option>`).join('')}</select>
+        </div></div>
+      <div id="pilotTable"></div>
+    </section>`;
+  document.getElementById('pilotSearch').addEventListener('input', U.debounce(e=>{ STATE.pilotFilter.q = e.target.value.trim().toLowerCase(); TABLES.pilot(); }, 250));
+  document.getElementById('pilotStatusFilter').addEventListener('change', e=>{ STATE.pilotFilter.status = e.target.value; TABLES.pilot(); });
+  document.getElementById('pilotDecisionFilter').addEventListener('change', e=>{ STATE.pilotFilter.decision = e.target.value; TABLES.pilot(); });
+  TABLES.pilot = renderPilotTable;
+  renderPilotTable();
+}
+function pilotFilteredRows(){
+  const f = STATE.pilotFilter;
+  return PILOT.list().filter(r=>{
+    if(f.status && r.status!==f.status) return false;
+    if(f.decision && r.buyerDecision!==f.decision) return false;
+    if(f.q && !(String(r.itemCode).toLowerCase().includes(f.q) || String(r.itemName||'').toLowerCase().includes(f.q))) return false;
+    return true;
+  });
+}
+function renderPilotTable(){
+  const rows = pilotFilteredRows();
+  document.getElementById('pilotHint').textContent = `${rows.length} سجل`;
+  if(!rows.length){ document.getElementById('pilotTable').innerHTML = '<div class="empty-state"><b>لا توجد سجلات</b>سجّل ملاحظة المشتري من نافذة «لماذا؟» عند أي توصية</div>'; return; }
+  const getter = (r,col)=>({
+    date:r.createdAt, ItemCode:r.itemCode, ItemName:r.itemName, status:r.recommendation.status,
+    decision:r.buyerDecision, recQty:r.recommendation.recommendedQty, buyerQty:r.buyerQty==null?-1:r.buyerQty, pstatus:r.status,
+  })[col];
+  const sorted = applySort('pilot', rows, getter);
+  const T = (c,l,x)=>thSort('pilot',c,l,x);
+  const head = `<tr>${T('date','التاريخ')}${T('ItemCode','رمز الصنف','freeze')}${T('ItemName','اسم الصنف')}${T('status','توصية النظام')}${T('decision','قرار المشتري')}${T('recQty','الكمية الموصى بها')}${T('buyerQty','كمية المشتري')}${T('pstatus','الحالة')}<th></th></tr>`;
+  const rowHtml = r=>`<tr>
+    <td class="num">${U.fmtDateTime(r.createdAt)}</td>
+    <td class="freeze"><span class="link num" onclick="openItemDetail('${U.esc(r.itemCode)}')">${U.esc(r.itemCode)}</span></td>
+    <td>${U.esc(r.itemName)}</td>
+    <td>${statusBadge(r.recommendation.status)}</td>
+    <td>${U.esc(PILOT_DECISION_LABELS[r.buyerDecision]||r.buyerDecision)}</td>
+    <td class="num">${U.num(r.recommendation.recommendedQty)}</td>
+    <td class="num">${r.buyerQty!=null?U.num(r.buyerQty):'—'}</td>
+    <td><span class="badge ${PILOT_STATUS_COLOR[r.status]}">${PILOT_STATUS_LABELS[r.status]}</span></td>
+    <td><button class="btn-link" onclick="openPilotDetail('${r.id}')">تفاصيل</button></td>
+  </tr>`;
+  renderChunked('pilotTable', `<div class="tbl-scroll"><table class="dt"><thead>${head}</thead><tbody id="tb_pilotTable"></tbody></table></div>`, 'tb_pilotTable', sorted, rowHtml);
+}
+function openPilotLogModal(itemCode){
+  const r = RECO.computeForItem(itemCode);
+  document.getElementById('modalBox').innerHTML = `
+    <div class="drawer-head"><div><h3>تسجيل قرار المشتري</h3><div class="sub">${U.esc(r.ItemName)} · ${U.esc(itemCode)} — توصية النظام: ${U.esc(RECO_LABELS[r.status])} · ${U.num(r.recommendedQty)}</div></div><button class="btn-ghost btn-sm" onclick="closeModal()">إغلاق</button></div>
+    <div class="drawer-body">
+      <div class="status-msg" style="margin-bottom:10px">تسجيل للمراقبة والتدقيق فقط — لا يُغيّر التوصية أو أي حساب في النظام.</div>
+      <div class="facts" style="margin-bottom:10px">
+        <div class="k">اسم المشتري</div><div class="v txt"><input class="cell-input" style="width:100%" id="pilotBuyerName" placeholder="الاسم"></div>
+        <div class="k">القرار</div><div class="v txt"><select id="pilotDecisionSel" style="width:100%">${Object.keys(PILOT_DECISION_LABELS).map(k=>`<option value="${k}">${PILOT_DECISION_LABELS[k]}</option>`).join('')}</select></div>
+        <div class="k">الكمية الفعلية (إن وُجدت)</div><div class="v"><input class="cell-input" type="number" min="0" id="pilotBuyerQty" placeholder="${U.num(r.recommendedQty)}"></div>
+      </div>
+      <textarea class="pastebox" id="pilotBuyerNote" style="min-height:80px" placeholder="سبب المخالفة أو أي ملاحظة…"></textarea>
+      <div class="drawer-actions" style="margin-top:10px"><button class="btn-primary btn-sm" onclick="submitPilotLog('${U.esc(itemCode)}')">حفظ السجل</button></div>
+    </div>`;
+  document.getElementById('modalOverlay').classList.add('open');
+}
+async function submitPilotLog(itemCode){
+  const buyerName = document.getElementById('pilotBuyerName').value;
+  const buyerDecision = document.getElementById('pilotDecisionSel').value;
+  const buyerQty = document.getElementById('pilotBuyerQty').value;
+  const buyerNote = document.getElementById('pilotBuyerNote').value;
+  await PILOT.create(itemCode, {buyerName, buyerDecision, buyerQty, buyerNote});
+  U.toast('تم تسجيل ملاحظة المشتري', 'ok');
+  closeModal();
+  if(document.querySelector('.view.active').getAttribute('data-view')==='pilot') rerenderActiveView();
+}
+function openPilotDetail(id){
+  const r = STATE.pilotReviews[id]; if(!r) return;
+  const rec = r.recommendation;
+  document.getElementById('modalBox').innerHTML = `
+    <div class="drawer-head"><div><h3>سجل مراجعة الطيار</h3><div class="sub">${U.esc(r.itemName)} · ${U.esc(r.itemCode)} · ${U.fmtDateTime(r.createdAt)}</div></div><button class="btn-ghost btn-sm" onclick="closeModal()">إغلاق</button></div>
+    <div class="drawer-body">
+      <div class="section-title">لقطة توصية النظام وقت التسجيل (مجمَّدة — لا تتغير لاحقاً)</div>
+      <div class="facts">
+        <div class="k">الحالة</div><div class="v txt">${statusBadge(rec.status)}</div>
+        <div class="k">الكمية الموصى بها</div><div class="v">${U.num(rec.recommendedQty)}</div>
+        <div class="k">المتاح</div><div class="v">${U.num(rec.available)}</div>
+        <div class="k">الطلب الشهري المعدَّل</div><div class="v">${U.num(rec.monthlyDemand,1)}</div>
+        <div class="k">بالطريق</div><div class="v">${U.num(rec.incoming)}</div>
+        <div class="k">أوامر بيع مفتوحة</div><div class="v">${U.num(rec.openSO)}</div>
+        <div class="k">المورد</div><div class="v txt">${U.esc(rec.supplierName||'غير محدد')}</div>
+        <div class="k">مدة التوريد</div><div class="v">${rec.leadTimeDays} يوم</div>
+        <div class="k">الثقة</div><div class="v txt">${CONF_LABELS[rec.confidence]||rec.confidence}</div>
+        <div class="k">التغطية</div><div class="v">${rec.coverageDays==null?'∞':U.num(rec.coverageDays,0)} يوم</div>
+      </div>
+      <div class="reason-box ${RECO_COLOR[rec.status]}" style="margin-top:10px">${U.esc(rec.reasonText)}</div>
+
+      <div class="section-title" style="margin-top:14px">قرار المشتري</div>
+      <div class="facts">
+        <div class="k">المشتري</div><div class="v txt">${U.esc(r.buyerName||'—')}</div>
+        <div class="k">القرار</div><div class="v txt">${U.esc(PILOT_DECISION_LABELS[r.buyerDecision]||r.buyerDecision)}</div>
+        <div class="k">الكمية الفعلية</div><div class="v">${r.buyerQty!=null?U.num(r.buyerQty):'—'}</div>
+      </div>
+      ${r.buyerNote?`<div class="status-msg" style="margin-top:8px;white-space:normal">${U.esc(r.buyerNote)}</div>`:''}
+
+      <div class="section-title" style="margin-top:14px">مراجعة الإدارة</div>
+      <div class="drawer-actions" style="margin-bottom:8px">
+        <select id="pilotStatusSelect">${Object.keys(PILOT_STATUS_LABELS).map(k=>`<option value="${k}" ${r.status===k?'selected':''}>${PILOT_STATUS_LABELS[k]}</option>`).join('')}</select>
+      </div>
+      <textarea class="pastebox" id="pilotReviewNote" style="min-height:70px" placeholder="ملاحظة المراجعة (اختياري)…">${U.esc(r.reviewNote||'')}</textarea>
+      <div class="drawer-actions" style="margin-top:8px">
+        <button class="btn-primary btn-sm" onclick="savePilotReview('${id}')">حفظ</button>
+        <button class="btn-ghost btn-sm" onclick="printPilotDetail('${id}')">طباعة</button>
+      </div>
+    </div>`;
+  document.getElementById('modalOverlay').classList.add('open');
+}
+async function savePilotReview(id){
+  const status = document.getElementById('pilotStatusSelect').value;
+  const note = document.getElementById('pilotReviewNote').value;
+  await PILOT.setStatus(id, status, note);
+  U.toast('تم حفظ المراجعة', 'ok');
+  closeModal();
+  rerenderActiveView();
+}
+function exportPilotCSV(){
+  const rows = pilotFilteredRows();
+  if(!rows.length){ U.toast('لا توجد سجلات لتصديرها','err'); return; }
+  let csv = 'التاريخ,رمز الصنف,اسم الصنف,توصية النظام,الكمية الموصى بها,المورد,قرار المشتري,كمية المشتري,اسم المشتري,ملاحظة المشتري,الحالة,ملاحظة المراجعة\n';
+  const q = v=>'"'+String(v??'').replace(/"/g,'""')+'"';
+  rows.forEach(r=>{
+    csv += [U.fmtDateTime(r.createdAt), r.itemCode, r.itemName, RECO_LABELS[r.recommendation.status], r.recommendation.recommendedQty, r.recommendation.supplierName, PILOT_DECISION_LABELS[r.buyerDecision]||r.buyerDecision, r.buyerQty??'', r.buyerName, r.buyerNote, PILOT_STATUS_LABELS[r.status], r.reviewNote].map(q).join(',')+'\n';
+  });
+  const blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8;'});
+  const url = URL.createObjectURL(blob); const a = document.createElement('a');
+  a.href = url; a.download = 'مراجعة_الطيار_'+U.fmtDate(new Date())+'.csv'; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 3000);
+}
+function printPilotReview(){
+  const rows = pilotFilteredRows();
+  const s = PILOT.summary();
+  PRINT.run({title:'مراجعة الطيار — ملاحظات المشتري',
+    summary:[{k:'إجمالي',v:U.num(s.total)},{k:'مفتوح',v:U.num(s.open)},{k:'تمت المراجعة',v:U.num(s.reviewed)},{k:'مغلق',v:U.num(s.closed)},{k:'مخالفات',v:U.num(s.disagree)}],
+    sections:[{html: rows.length ? PRINT.table([
+      {label:'التاريخ',get:r=>U.fmtDateTime(r.createdAt)},
+      {label:'رمز الصنف',get:r=>r.itemCode,num:true},
+      {label:'اسم الصنف',get:r=>r.itemName},
+      {label:'توصية النظام',get:r=>RECO_LABELS[r.recommendation.status]},
+      {label:'الكمية الموصى بها',get:r=>U.num(r.recommendation.recommendedQty),num:true},
+      {label:'قرار المشتري',get:r=>PILOT_DECISION_LABELS[r.buyerDecision]||r.buyerDecision},
+      {label:'كمية المشتري',get:r=>r.buyerQty!=null?U.num(r.buyerQty):'—',num:true},
+      {label:'الحالة',get:r=>PILOT_STATUS_LABELS[r.status]},
+      {label:'ملاحظة',get:r=>r.buyerNote||''},
+    ], rows) : '<div>لا سجلات</div>'}]});
+}
+function printPilotDetail(id){
+  const r = STATE.pilotReviews[id]; if(!r) return;
+  const rec = r.recommendation;
+  PRINT.run({title:`سجل مراجعة الطيار — ${r.itemName} (${r.itemCode})`,
+    summary:[{k:'التاريخ',v:U.fmtDateTime(r.createdAt)},{k:'الحالة',v:PILOT_STATUS_LABELS[r.status]},{k:'قرار المشتري',v:PILOT_DECISION_LABELS[r.buyerDecision]||r.buyerDecision}],
+    sections:[
+      {title:'لقطة توصية النظام وقت التسجيل', html:PRINT.table([{label:'البند',get:x=>x.k},{label:'القيمة',get:x=>x.v,num:true}], [
+        {k:'الحالة',v:RECO_LABELS[rec.status]}, {k:'الكمية الموصى بها',v:U.num(rec.recommendedQty)}, {k:'المتاح',v:U.num(rec.available)},
+        {k:'الطلب الشهري',v:U.num(rec.monthlyDemand,1)}, {k:'بالطريق',v:U.num(rec.incoming)}, {k:'المورد',v:rec.supplierName||'—'},
+        {k:'مدة التوريد',v:rec.leadTimeDays+' يوم'}, {k:'الثقة',v:CONF_LABELS[rec.confidence]||rec.confidence},
+      ])},
+      {title:'سبب التوصية', html:`<div>${U.esc(rec.reasonText)}</div>`},
+      {title:'قرار المشتري وملاحظة المراجعة', html:`<div>المشتري: ${U.esc(r.buyerName||'—')}</div><div>ملاحظة المشتري: ${U.esc(r.buyerNote||'—')}</div><div>ملاحظة المراجعة: ${U.esc(r.reviewNote||'—')}</div>`},
+    ]});
+}
+
+/* ------------------------------------------------------------------------------------------
    16) NAVIGATION / ENGINE RUN / INIT
    ------------------------------------------------------------------------------------------ */
-const VIEW_RENDERERS = {decisions:renderDecisions, risks:renderRisks, plan:renderPlan, demand:renderDemand, suppliers:renderSuppliersView, items:renderItemsView, datacenter:renderDataCenter};
+const VIEW_RENDERERS = {decisions:renderDecisions, risks:renderRisks, plan:renderPlan, demand:renderDemand, suppliers:renderSuppliersView, items:renderItemsView, datacenter:renderDataCenter, pilot:renderPilotReview};
 function switchView(v){
   document.querySelectorAll('nav.mainnav button').forEach(b=>b.classList.toggle('active', b.getAttribute('data-view')===v));
   document.querySelectorAll('.view').forEach(s=>s.classList.toggle('active', s.getAttribute('data-view')===v));
