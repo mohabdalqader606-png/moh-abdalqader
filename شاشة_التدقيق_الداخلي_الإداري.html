@@ -9460,6 +9460,7 @@ function loadDB(){
       if(!db.exceptions) db.exceptions = [];
       if(!db.oversight) db.oversight = [];   /* Phase 9 — سجلات المراجعة الإدارية (Management Oversight)، مجموعة معزولة تُنشأ فقط إن لم تكن موجودة */
       if(!db.cashCounts) db.cashCounts = [];   /* سجلات نموذج جرد الصندوق المعتمدة — مجموعة معزولة تُنشأ فقط إن لم تكن موجودة */
+      if(!db.testWorkpapers) db.testWorkpapers = [];   /* Wave 1 — أوراق عمل الاختبار (Test Workpapers)، مجموعة معزولة تُنشأ فقط إن لم تكن موجودة */
       /* Traceability Core (Phase 1) — تهيئة دفاعية للحقول الجديدة على السجلات الموجودة فعلاً، بلا قيم مخترعة */
       db.queries.forEach(q=>{
         if(q.processId===undefined) q.processId = null;
@@ -9489,7 +9490,7 @@ function loadDB(){
       return db;
     }
   }catch(e){}
-  return {tasks:[], queries:[], recurring:[], findings:[], risks:[], universe:[], counters:{}, samplingMethods:[], quickNotes:[], policies:[], authority:[], kpis:[], meetings:[], improvements:[], emails:[], engagements:[], evidence:[], checklistTemplates:[], checklistExecutions:[], exceptions:[], oversight:[], cashCounts:[], settings: defaultSettings()};
+  return {tasks:[], queries:[], recurring:[], findings:[], risks:[], universe:[], counters:{}, samplingMethods:[], quickNotes:[], policies:[], authority:[], kpis:[], meetings:[], improvements:[], emails:[], engagements:[], evidence:[], checklistTemplates:[], checklistExecutions:[], exceptions:[], oversight:[], cashCounts:[], testWorkpapers:[], settings: defaultSettings()};
 }
 function saveDB(){
   dashCache = null;
@@ -11516,7 +11517,7 @@ document.getElementById("importFileInput").onchange = (e)=>{
         ["policies","سياسات"], ["authority","مصفوفة صلاحيات"], ["kpis","مؤشرات أداء"],
         ["meetings","اجتماعات"], ["improvements","تحسينات"], ["emails","مراسلات"],
         ["engagements","مهام تدقيق"], ["evidence","أدلة (Evidence)"], ["exceptions","استثناءات التدقيق المستمر"], ["oversight","سجلات المراجعة الإدارية (Oversight)"],
-        ["cashCounts","سجلات جرد الصندوق"],
+        ["cashCounts","سجلات جرد الصندوق"], ["testWorkpapers","أوراق عمل الاختبار"],
       ];
       const summary = [];
       collections.forEach(([key,label])=>{
@@ -13578,6 +13579,74 @@ const COMPLIANCE_META = {
   partial:{label:"التزام جزئي", color:"#F59E0B"},
   poor:{label:"التزام ضعيف", color:"#DC2626"},
 };
+
+/* ===================== TEST WORKPAPERS — Wave 1: Data Foundation Only =====================
+   طبقة أوراق عمل الاختبار فوق السلسلة القائمة (Risk→Control→Engagement→…→Closure) — لا تكرر أي كيان
+   موجود، فقط تربطه. Sampling عنصر متداخل هنا، وليس مجموعة DB مستقلة. لا واجهة مستخدم بهذه الموجة. */
+const TEST_WORKPAPER_TYPE_META = {
+  design:               {label:"اختبار التصميم (Design)"},
+  operating_effectiveness:{label:"اختبار الفعالية التشغيلية (Operating Effectiveness)"},
+  substantive:          {label:"اختبار جوهري (Substantive)"},
+  data_analytics:       {label:"تحليلات بيانات SAP (Data Analytics)"},
+};
+/* دورة الحياة: تُعيد استخدام مفردات engStatus حرفياً (لا نظام حالة موازٍ) — مجموعة فرعية فقط
+   (draft/in_progress/under_review/closed/reopened) مناسبة لحجم ورقة اختبار مفردة. */
+const TEST_WORKPAPER_STATUS_META = {
+  draft:        {label:"مسودة", color:"#64748B"},
+  in_progress:  {label:"قيد التنفيذ", color:"#2563EB"},
+  under_review: {label:"قيد المراجعة", color:"#7C3AED"},
+  closed:       {label:"مكتملة", color:"#16A34A"},
+  reopened:     {label:"أُعيدت للعمل", color:"#DC2626"},
+};
+/* نتيجة الاختبار مفهوم مختلف عن حالة دورة الحياة أعلاه (نتيجة إجراء، لا مرحلة) — قائمة صغيرة خاصة
+   بورقة العمل بدل تعديل CHECKLIST_RESULT_META المشتركة مع محرك قوائم التحقق (يبقى غير مُمَسّ). */
+const TEST_RESULT_META = {
+  pending:{label:"بانتظار الاختبار", color:"#94A3B8"},
+  pass:   {label:"ناجح", color:"#16A34A"},
+  fail:   {label:"فاشل", color:"#DC2626"},
+  partial:{label:"جزئي", color:"#F59E0B"},
+  na:     {label:"لا ينطبق", color:"#64748B"},
+};
+function testWorkpaperLog(tw, note){ if(!tw.log) tw.log = []; tw.log.push({date:todayStr(), note}); }
+/* الشكل الكامل لسجل جديد — مرجعي فقط بهذه الموجة (بلا نموذج/واجهة يستهلكه بعد) */
+function newTestWorkpaper(seed){
+  seed = seed || {};
+  const now = new Date().toISOString();
+  return {
+    id: uid(),
+    refCode: nextRefCode("TW","testWorkpapers"),
+    engagementId: seed.engagementId || null,          // رابط لـ DB.engagements
+    riskId: seed.riskId || null,                      // رابط لـ DB.risks
+    controlId: seed.controlId || null,                // id ضمن risk.controls[] — يُحلّ دائماً مع riskId معاً
+    checklistExecutionId: seed.checklistExecutionId || null, // رابط لـ DB.checklistExecutions (بند القوائم المرتبط، إن وجد)
+    queryRef: seed.workpaperType==="data_analytics" ? {queryId: seed.queryId || null, runDate: seed.runDate || null} : null, // رابط لكويري موجود ولتشغيلة محددة ضمن q.runs[] — لا نسخ لتعريف الكويري أو نتائجه
+    workpaperType: seed.workpaperType || "design",     // design | operating_effectiveness | substantive | data_analytics
+    objective: "",
+    criteria: "",
+    procedure: "",
+    population: {description:"", size:null},
+    sampling: {                                        // متداخل دائماً هنا، ليس مجموعة DB مستقلة
+      methodId: null,                                  // رابط لـ DB.samplingMethods
+      sampleSize: null,
+      selectionCriteria: "",
+      selectedItems: [],                                // [{ref, description, result, exceptionId}]
+      exceptionsInSample: null,
+      conclusion: "",
+    },
+    expectedResult: "",
+    actualResult: "",
+    result: "pending",                                  // TEST_RESULT_META
+    exceptionIds: [],                                    // روابط لـ DB.exceptions الموجودة — لا تكرار
+    findingIds: [],                                      // روابط لـ DB.findings الموجودة — لا تكرار
+    evidenceIds: [],                                      // روابط لسجلات DB.evidence الموجودة — لا تكرار
+    attachments: [],                                      // [{name,size,type}] — نفس شكل مرفقات نموذج جرد الصندوق تماماً، بلا محتوى ملف مُضمَّن
+    preparedBy: "", preparedDate: "",
+    reviewedBy: "", reviewedDate: "", reviewNotes: "",
+    status: "draft",                                      // TEST_WORKPAPER_STATUS_META
+    log: [],
+    createdAt: now, updatedAt: now,
+  };
+}
 
 document.getElementById("addPolicyBtn").onclick = ()=> openPolicyModal(null);
 document.getElementById("cancelPolicyModal").onclick = ()=> document.getElementById("policyOverlay").classList.remove("active");
