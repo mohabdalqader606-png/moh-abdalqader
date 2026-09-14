@@ -18,6 +18,19 @@
   2) منح صلاحية الدخول لهذه الشاشة للحسابات اللي بدها تشتغل عليها:
      update profiles set allowed_apps = coalesce(allowed_apps, '{}') || '{mil-branch-sales}'
        where id = (select id from auth.users where email = 'الحساب@مثال.com');
+
+  3) طبقة صلاحيات إضافية خاصة بهذه الشاشة (user_screen_permissions) — نفس آلية شاشة إقرار
+     ضريبة المبيعات. لازم صف بهذا الجدول لكل مستخدم بده يدخل، وإلا الدخول محجوب حتى لو
+     allowed_apps فيها mil-branch-sales:
+     insert into user_screen_permissions (user_id, screen_id, permission) values
+       ((select id from auth.users where email='الحساب@مثال.com'), 'mil-branch-sales', 'ADMIN')
+       -- القيم الممكنة: VIEW (مطالعة فقط) / INPUT (إدخال) / ADMIN (مدير)
+     on conflict (user_id, screen_id) do update set permission=excluded.permission;
+
+     لازم أيضاً تتأكد إن هذه الـpolicy موجودة على الجدول (بدونها أي مستخدم عادي بيفشل بفحص
+     صلاحية نفسه بسبب RLS ويرجعله NONE غلط):
+       create policy usp_self_select on public.user_screen_permissions
+         for select using (user_id = auth.uid());
 -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Kufi+Arabic:wght@500;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
@@ -210,6 +223,12 @@ details.opt summary{cursor:pointer; font-weight:700; font-size:12.5px; color:var
 #loginView input{width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:9px;}
 #loginView button{width:100%; margin-top:18px; padding:11px;}
 
+#unauthorizedView{max-width:420px; margin:70px auto; background:#fff; border:1px solid var(--border); border-radius:16px; padding:34px 32px; box-shadow:var(--elev-2); text-align:center;}
+#unauthorizedView h2{margin:0 0 10px; font-size:18px;}
+#unauthorizedView.err h2{color:#B3202E;}
+#unauthorizedView.warn h2{color:#8A6416;}
+#unauthorizedView p{font-size:12.5px; color:var(--muted); line-height:1.8; margin:0 0 18px;}
+
 @media (max-width:900px){
   .ksh-icbtn{display:inline-flex;}
   .ksh-sb{position:fixed; top:var(--k-hdr-h); bottom:0; inset-inline-end:0; width:min(84vw,300px); transform:translateX(100%); transition:transform var(--k-dur-2) var(--k-ease); z-index:70; box-shadow:-10px 0 30px rgba(0,0,0,.25);}
@@ -246,6 +265,12 @@ details.opt summary{cursor:pointer; font-weight:700; font-size:12.5px; color:var
   <div class="status-msg" id="loginMsg" style="margin-top:10px;"></div>
 </div>
 
+<div id="unauthorizedView" style="display:none;">
+  <h2 id="uaTitle">🚫 لا تملك صلاحية الدخول</h2>
+  <p id="uaMsg">حسابك غير مخوَّل بالدخول على شاشة مبيعات المؤسسة العسكرية حسب الفرع. راجع مدير الصلاحيات لمنحك صلاحية.</p>
+  <button class="btn btn-ghost" onclick="doLogout()">خروج</button>
+</div>
+
 <div id="appView" style="display:none;">
 <header class="ksh-hdr">
   <button class="ksh-icbtn" id="kshMenuBtn" aria-label="فتح قائمة التنقل" aria-controls="kshSidebar" aria-expanded="false">
@@ -264,9 +289,6 @@ details.opt summary{cursor:pointer; font-weight:700; font-size:12.5px; color:var
     <button class="btn btn-ghost btn-sm" onclick="doLogout()">خروج</button>
   </div>
 </header>
-
-<div id="storageBanner" style="display:none; background:#7A1622; color:#fff; padding:10px 20px; font-size:12.5px; text-align:center; line-height:1.7;"></div>
-<div id="storageOkBar" style="display:none; background:var(--kd-surface-2); color:var(--kd-muted); padding:5px 20px; font-size:11px; text-align:center;"></div>
 
 <div class="app-shell">
 <div class="ksh-backdrop" id="kshBackdrop" onclick="closeMobileDrawer()"></div>
@@ -721,9 +743,6 @@ ORDER BY "التاريخ", "نوع المستند", "رقم المستند"</pre
 <script>
 /* ==================== إعدادات عامة ==================== */
 const APP_ID = 'mil-branch-sales';
-const STORAGE_KEY = 'milBranchSales_v1';
-const SAVED_AT_KEY = STORAGE_KEY + '_savedAt';
-let IS_FRESH_LOAD = false;
 
 /* ==================== حالة البيانات ==================== */
 // {docNum, docDate(iso), fromWhs, toWhs, itemCode, itemDesc, qty(+توحيد الوحدة كما وردت)، uom, branchRaw, remarks, comments}
@@ -776,88 +795,28 @@ function normDateToISO(v){
 }
 function dateStr(iso){ return iso ? iso.split('-').reverse().join('/') : '—'; }
 
-/* ==================== تخزين محلي ==================== */
+/* ==================== تخزين — كلياً على السيرفر المشترك (Supabase)، بدون نسخة تلقائية بالمتصفح ==================== */
+// BRANCH_CODE_MAP ما بينحفظ ولا بينرجّع من النسخة الاحتياطية عمداً — هو جدول ترجمة ثابت
+// (كود SAP ← اسم الفرع) من DEFAULT_BRANCH_CODE_MAP بالكود دايماً، مش بيانات يعدّلها المستخدم.
+// لو انحفظ، أي فرع جديد ينضاف للكود لاحقاً كان رح يظل مخفي عن كل مستخدم عنده نسخة سيرفر
+// قديمة محفوظة قبل الإضافة (بالضبط متل ما صار مع "جاردنز").
 function buildBackupObject(){
-  return {TRANSFERS, SALES, REQUESTS, BRANCH_CODE_MAP, BRANCH_DOC_OVERRIDES, REQUEST_BRANCH_OVERRIDES, BRANCH_RENAMES, BRANCH_GUESS_REJECTED};
+  return {TRANSFERS, SALES, REQUESTS, BRANCH_DOC_OVERRIDES, REQUEST_BRANCH_OVERRIDES, BRANCH_RENAMES, BRANCH_GUESS_REJECTED};
 }
-// فحص فعلي (كتابة + قراءة + مقارنة) — بعض المتصفحات (خصوصاً بفتح الملف مباشرة file:// أو
-// بوضع التصفح الخاص) بتمنع localStorage بصمت، فما نعتمد على try/catch وبس، لازم نتأكد فعلاً
-function checkStorageAvailable(){
-  try{
-    const k = '__storage_test__'+Date.now();
-    localStorage.setItem(k, '1');
-    const ok = localStorage.getItem(k) === '1';
-    localStorage.removeItem(k);
-    return ok;
-  }catch(e){ return false; }
-}
-function showStorageBanner(msg){
-  const el = document.getElementById('storageBanner');
-  if(!el) return;
-  el.textContent = msg;
-  el.style.display = msg ? 'block' : 'none';
-}
-function showStorageOk(msg){
-  const el = document.getElementById('storageOkBar');
-  if(!el) return;
-  el.textContent = msg;
-  el.style.display = 'block';
-}
-// نضغط JSON قبل تخزينه بـ localStorage (LZString) لأن حجم البيانات (عشرات آلاف سطور التحويل/المبيعات)
-// بيتعدى مساحة المتصفح المسموحة (~5-10 ميجا) لو خزّناه كنص خام
-function saveBackupToLocalStorage(){
-  const json = JSON.stringify(buildBackupObject());
-  const toStore = (window.LZString ? LZString.compressToUTF16(json) : json);
-  localStorage.setItem(STORAGE_KEY, toStore);
-  localStorage.setItem(SAVED_AT_KEY, new Date().toISOString());
-}
-// نجرب فك الضغط أول؛ إذا الأمر مو مضغوط (نسخة قديمة محفوظة قبل تفعيل الضغط) بيرجع JSON.parse مباشرة
-function loadBackupFromLocalStorage(raw){
-  if(!raw) return null;
-  try{ return JSON.parse(raw); }catch(e){}
-  if(window.LZString){
-    try{
-      const decompressed = LZString.decompressFromUTF16(raw);
-      if(decompressed) return JSON.parse(decompressed);
-    }catch(e){}
-  }
-  return null;
-}
+// آخر وقت تغيّرت فيه البيانات بهالجلسة (بالذاكرة فقط، بيترجّع null بأي تحميل صفحة جديد) — لتفادي
+// إن سحب نسخة السيرفر (مثلاً بتأخر شبكة) يمحي تعديلات لسا ما وصلت السيرفر بنفس الجلسة
+let lastLocalChangeAt = null;
 function saveLocal(){
-  if(!checkStorageAvailable()){
-    showStorageBanner('⚠ تعذر حفظ البيانات محلياً بهالمتصفح — التخزين المحلي (localStorage) محجوب. الأسباب الشائعة: فتحت الملف بوضع تصفح خاص/متخفي، أو متصفحك (خصوصاً Safari) بيمنع التخزين لملف مفتوح مباشرة من الجهاز (file://). الحل: افتح الملف بوضع عادي (مو خاص)، أو جرّب متصفح Chrome، أو أنجز إعداد الحساب السحابي (Supabase) حتى يصير الحفظ عالسيرفر مباشرة بدل المتصفح.');
-    return;
-  }
-  showStorageBanner('');
-  try{
-    saveBackupToLocalStorage();
-    showStorageOk('✔ آخر حفظ محلي بهالمتصفح: '+new Date().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit',second:'2-digit'})+' — '+TRANSFERS.length+' سطر تحويل، '+REQUESTS.length+' سطر طلب تحويل، '+SALES.length+' سطر مبيعات');
-  }catch(e){
-    showStorageBanner('⚠ فشل الحفظ المحلي فعلياً رغم توفر التخزين — على الأغلب المساحة المخصصة للمتصفح امتلأت (بيانات كبيرة جداً). جرّب صدّر نسخة احتياطية (زر "💾 نسخة احتياطية") فوراً قبل ما تكمّل، وامسح بيانات قديمة إذا أمكن.');
-    console.warn('تعذر الحفظ المحلي', e);
-  }
+  lastLocalChangeAt = new Date().toISOString();
   queueCloudSave();
 }
 function loadLocal(){
-  if(!checkStorageAvailable()){
-    showStorageBanner('⚠ التخزين المحلي (localStorage) محجوب بهالمتصفح — أي بيانات تستوردها ما رح تتحفظ بعد إغلاق الصفحة إلا إذا أنجزت إعداد الحساب السحابي (Supabase). راجع تعليق أعلى الملف لخطوات الإعداد.');
-  }
-  const raw = localStorage.getItem(STORAGE_KEY);
-  IS_FRESH_LOAD = !raw;
-  try{
-    const d = loadBackupFromLocalStorage(raw);
-    if(d) applyLoadedData(d);
-  }catch(e){ console.warn('تعذر قراءة النسخة المحلية', e); }
   if(!Object.keys(BRANCH_CODE_MAP).length) BRANCH_CODE_MAP = {...DEFAULT_BRANCH_CODE_MAP};
-  // نعيد تحديد الفروع دايماً عند التحميل — بيانات قديمة محفوظة قبل تفعيل تقييد لائحة الفروع
-  // (أو قبل أي تصحيح/رفض اسم لاحق) ممكن يكون فيها rec.branch بقيمة قديمة غير معتمدة الآن
-  if(TRANSFERS.length || REQUESTS.length) resolveAllBranches();
 }
 function applyLoadedData(d){
   if(Array.isArray(d.TRANSFERS)) TRANSFERS = d.TRANSFERS;
   if(Array.isArray(d.SALES)) SALES = d.SALES;
   if(Array.isArray(d.REQUESTS)) REQUESTS = d.REQUESTS;
-  if(d.BRANCH_CODE_MAP && typeof d.BRANCH_CODE_MAP==='object' && Object.keys(d.BRANCH_CODE_MAP).length) BRANCH_CODE_MAP = d.BRANCH_CODE_MAP;
   if(d.BRANCH_DOC_OVERRIDES && typeof d.BRANCH_DOC_OVERRIDES==='object') BRANCH_DOC_OVERRIDES = d.BRANCH_DOC_OVERRIDES;
   if(d.REQUEST_BRANCH_OVERRIDES && typeof d.REQUEST_BRANCH_OVERRIDES==='object') REQUEST_BRANCH_OVERRIDES = d.REQUEST_BRANCH_OVERRIDES;
   if(d.BRANCH_RENAMES && typeof d.BRANCH_RENAMES==='object') BRANCH_RENAMES = d.BRANCH_RENAMES;
@@ -1612,6 +1571,16 @@ async function doLogin(){
   await onSignedIn(data.user);
 }
 async function doLogout(){ await sb.auth.signOut(); location.reload(); }
+function showUnauthorized(kind,title,msg){
+  document.getElementById('loginView').style.display = 'none';
+  document.getElementById('appView').style.display = 'none';
+  document.getElementById('userbox').style.display = 'none';
+  const box = document.getElementById('unauthorizedView');
+  box.className = kind;
+  document.getElementById('uaTitle').textContent = title;
+  document.getElementById('uaMsg').textContent = msg;
+  box.style.display = 'block';
+}
 async function onSignedIn(user){
   curUser = user;
   const {data:prof} = await sb.from('profiles').select('*').eq('id', user.id).single();
@@ -1621,9 +1590,27 @@ async function onSignedIn(user){
     flash('loginMsg','هذا الحساب ما إله صلاحية الدخول على هاي الشاشة — تواصل مع المدير.', false);
     return;
   }
-  roleEdit = ['admin','editor'].includes(curProfile.role);
-  isAdmin = curProfile.role === 'admin';
-  const roleAr = {admin:'مدير', editor:'مدخل بيانات', viewer:'مطالع'}[curProfile.role] || curProfile.role;
+
+  // صلاحية هذه الشاشة تحديداً (user_screen_permissions) — طبقة إضافية فوق allowed_apps الموجودة
+  const {data:permRow, error:permErr} = await sb.from('user_screen_permissions')
+    .select('permission').eq('user_id', user.id).eq('screen_id', APP_ID).maybeSingle();
+
+  if(permErr){
+    showUnauthorized('warn','⚠️ تعذّر التحقق من صلاحيتك',
+      'حصل خطأ تقني أثناء التحقق من صلاحيتك على هذه الشاشة (مشكلة اتصال بالسيرفر). حدّث الصفحة وحاول مجدداً، وإذا تكرر راجع مدير الصلاحيات.');
+    return;
+  }
+  const screenPerm = permRow ? permRow.permission : null; // null = NONE (لا صف)
+  if(!screenPerm){
+    showUnauthorized('err','🚫 لا تملك صلاحية الدخول',
+      'حسابك غير مخوَّل بالدخول على شاشة مبيعات المؤسسة العسكرية حسب الفرع. راجع مدير الصلاحيات لمنحك صلاحية (VIEW/INPUT/ADMIN) من شاشة إدارة المستخدمين والصلاحيات.');
+    return;
+  }
+
+  roleEdit = screenPerm==='INPUT' || screenPerm==='ADMIN';
+  isAdmin = screenPerm==='ADMIN';
+  const roleAr = {ADMIN:'مدير', INPUT:'مدخل بيانات', VIEW:'مطالع'}[screenPerm] || screenPerm;
+  document.getElementById('unauthorizedView').style.display = 'none';
   document.getElementById('uName').textContent = curProfile.full_name || user.email;
   document.getElementById('uRole').textContent = user.email + ' · ' + roleAr + (roleEdit ? '' : ' · 👁 مطالعة فقط');
   document.getElementById('userbox').style.display = 'flex';
@@ -1672,7 +1659,7 @@ async function pushStateToCloud(){
     await sb.from('mil_branch_sales_state').upsert({id:'main', data, updated_by:curUser.id, updated_at:new Date().toISOString()});
     const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ محفوظ على السيرفر المشترك · '+new Date().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}); el.className='status-msg ok'; }
   }catch(e){
-    const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '⚠ تعذر الحفظ على السيرفر المشترك — البيانات محفوظة محلياً بس'; el.className='status-msg err'; }
+    const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '⚠ تعذر الحفظ على السيرفر المشترك — حدّث الصفحة وتأكد من الاتصال، وحاول تحفظ مجدداً'; el.className='status-msg err'; }
   }
 }
 async function pullStateFromCloud(){
@@ -1680,25 +1667,21 @@ async function pullStateFromCloud(){
   try{
     const {data, error} = await sb.from('mil_branch_sales_state').select('data, updated_at').eq('id','main').maybeSingle();
     if(error || !data || !data.data){ cloudSynced = true; return; }
-    let localSavedAt = null;
-    try{ localSavedAt = localStorage.getItem(SAVED_AT_KEY); }catch(e){}
-    if(localSavedAt && data.updated_at && new Date(localSavedAt) > new Date(data.updated_at)){
+    if(lastLocalChangeAt && data.updated_at && new Date(lastLocalChangeAt) > new Date(data.updated_at)){
       cloudSynced = true;
       queueCloudSave();
-      const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ عندك تعديلات محلية أحدث من السيرفر — رح تترفع بدل ما تنمسح'; el.className='status-msg ok'; }
+      const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ عندك تعديلات لسا ما وصلت السيرفر وأحدث من نسخته — رح تترفع بدل ما تنمسح'; el.className='status-msg ok'; }
       return;
     }
     applyLoadedData(data.data);
     if(TRANSFERS.length || REQUESTS.length) resolveAllBranches();
-    try{ saveBackupToLocalStorage(); }catch(e){ console.warn('تعذر تخزين نسخة السيرفر محلياً (مساحة التخزين ممتلئة)', e); }
-    queueCloudSave(); // نرفع التصحيح (لو انصحح شي بإعادة تحديد الفروع) رجوع للسيرفر المشترك
     refreshAllFilters();
     renderCurrentPage();
     cloudSynced = true;
     const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ تم تحميل آخر نسخة من السيرفر المشترك'; el.className='status-msg ok'; }
   }catch(e){
     cloudSynced = true;
-    const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '⚠ تعذر الاتصال بالسيرفر المشترك — بتشتغل بالنسخة المحلية'; el.className='status-msg err'; }
+    const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '⚠ تعذر الاتصال بالسيرفر المشترك — البيانات فاضية لحد ما يرجع الاتصال، حدّث الصفحة وجرّب مجدداً'; el.className='status-msg err'; }
   }
 }
 
