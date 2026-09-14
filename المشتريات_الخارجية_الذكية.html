@@ -319,7 +319,7 @@
    ========================================================================================== */
 const CONFIG = {
   dbName: 'kfc_foreign_procurement_v1',
-  dbVersion: 1,
+  dbVersion: 2, // v2: إزالة فهارس IndexedDB غير المستخدمة (كل القراءات getAll + فهارس بالذاكرة) — تسريع الاستيراد الكبير
 
   // قواعد المستودعات الخاصة (ثابتة حسب طلب المستخدم — قسم 9)
   warehouseRules: {
@@ -777,6 +777,12 @@ const U = {
     cnt.forEach((n,v)=>{ if(n>bestN){ bestN=n; best=v; } });
     return best;
   },
+  /** أدنى/أعلى قيمة بحلقة عادية — Math.min(...arr) يفشل (RangeError) عند مئات الآلاف من العناصر */
+  minMax(arr){
+    let min = Infinity, max = -Infinity;
+    for(let i=0;i<arr.length;i++){ const v = +arr[i]; if(v<min) min=v; if(v>max) max=v; }
+    return {min, max};
+  },
   uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,8); },
   debounce(fn, ms){ let t; return function(...a){ clearTimeout(t); t=setTimeout(()=>fn.apply(this,a), ms||300); }; },
   normHeader(s){ return String(s||'').trim().replace(/\s+/g,' ').toLowerCase(); },
@@ -793,13 +799,15 @@ const DB = {
       const req = indexedDB.open(CONFIG.dbName, CONFIG.dbVersion);
       req.onupgradeneeded = (ev)=>{
         const db = ev.target.result;
+        const upTx = ev.target.transaction;
         Object.keys(DATA_SOURCES).forEach(srcKey=>{
           const src = DATA_SOURCES[srcKey];
           if(!db.objectStoreNames.contains(src.store)){
-            const os = db.createObjectStore(src.store, {keyPath:'_key'});
-            os.createIndex('ItemCode', 'ItemCode', {unique:false});
-            if(src.dateField) os.createIndex('_date', '_dateIdx', {unique:false});
-            os.createIndex('_batchId', '_batchId', {unique:false});
+            db.createObjectStore(src.store, {keyPath:'_key'});
+          } else {
+            // ترقية من v1: حذف الفهارس القديمة غير المستخدمة (لا تغيير بالبيانات نفسها)
+            const os = upTx.objectStore(src.store);
+            Array.from(os.indexNames).forEach(ix=>os.deleteIndex(ix));
           }
         });
         if(!db.objectStoreNames.contains('importLog')) db.createObjectStore('importLog', {keyPath:'id'});
@@ -950,14 +958,20 @@ const IMPORT = {
     const src = DATA_SOURCES[sourceKey];
     const map = {}; // columnIndex -> col.key
     const normed = headers.map(U.normHeader);
+    const used = new Set();
+    const namesOf = col=>[col.key, col.label, ...(col.aliases||[])].map(U.normHeader);
+    // المرحلة 1: مطابقة تامة فقط (عمود واحد لكل رأس)
     src.columns.forEach(col=>{
-      const names = [col.key, col.label, ...(col.aliases||[])].map(U.normHeader);
-      let idx = normed.findIndex(h=>names.includes(h));
-      if(idx === -1){
-        // مطابقة جزئية كحل أخير
-        idx = normed.findIndex(h=>names.some(n=>h.includes(n)||n.includes(h)));
-      }
-      if(idx !== -1) map[idx] = col.key;
+      const names = namesOf(col);
+      const idx = normed.findIndex((h,i)=>!used.has(i) && names.includes(h));
+      if(idx !== -1){ map[idx] = col.key; used.add(idx); }
+    });
+    // المرحلة 2: مطابقة جزئية كحل أخير للأعمدة التي لم تُطابَق، ودون سرقة رأس مأخوذ مسبقاً
+    src.columns.forEach(col=>{
+      if(Object.values(map).includes(col.key)) return;
+      const names = namesOf(col);
+      const idx = normed.findIndex((h,i)=>!used.has(i) && names.some(n=>h.includes(n)||n.includes(h)));
+      if(idx !== -1){ map[idx] = col.key; used.add(idx); }
     });
     return map;
   },
@@ -1050,7 +1064,9 @@ const IMPORT = {
       toWrite.push(rec);
     });
     await DB.bulkPut(src.store, toWrite);
-    STATE.data[sourceKey] = await DB.getAll(src.store);
+    // دمج بالذاكرة بدل إعادة قراءة الجدول كاملاً (نفس المحتوى — الترتيب بالمفتاح كما في IndexedDB)
+    toWrite.forEach(rec=>existingMap.set(rec._key, rec));
+    STATE.data[sourceKey] = Array.from(existingMap.values()).sort((a,b)=>a._key<b._key?-1:a._key>b._key?1:0);
     const logEntry = {
       id: batchId, source: sourceKey, ts: Date.now(),
       addedKeys: added, updatedBefore, recordCount: mapped.length,
@@ -1077,7 +1093,10 @@ const IMPORT = {
     if(log.updatedBefore && log.updatedBefore.length) await DB.bulkPut(src.store, log.updatedBefore);
     const t = await DB.tx('importLog','readwrite');
     await new Promise((res,rej)=>{ t.objectStore('importLog').delete(log.id); t.oncomplete=()=>res(); t.onerror=()=>rej(t.error); });
-    STATE.data[sourceKey] = await DB.getAll(src.store);
+    const m = new Map((STATE.data[sourceKey]||[]).map(r=>[r._key, r]));
+    log.addedKeys.forEach(k=>m.delete(k));
+    (log.updatedBefore||[]).forEach(r=>m.set(r._key, r));
+    STATE.data[sourceKey] = Array.from(m.values()).sort((a,b)=>a._key<b._key?-1:a._key>b._key?1:0);
     return {ok:true, removed: log.addedKeys.length, restored: log.updatedBefore.length};
   },
 };
@@ -1098,8 +1117,8 @@ const HEALTH = {
     if(src.dateField){
       const dates = rows.map(r=>r[src.dateField]).filter(d=>d instanceof Date);
       if(dates.length){
-        const min = new Date(Math.min(...dates)), max = new Date(Math.max(...dates));
-        coverage = {min, max};
+        const mm = U.minMax(dates);
+        coverage = {min:new Date(mm.min), max:new Date(mm.max)};
       }
     }
     const lastImp = await DB.getMeta('lastImport_'+sourceKey, null);
@@ -1193,7 +1212,7 @@ function getActiveDateRange(){
   let from = f.dateFrom ? new Date(f.dateFrom) : null;
   if(!to || !from){
     const dates = SALES.buildNetLines().map(l=>l.date).filter(d=>d instanceof Date);
-    const maxD = dates.length ? new Date(Math.max(...dates)) : new Date();
+    const maxD = dates.length ? new Date(U.minMax(dates).max) : new Date();
     if(!to) to = maxD;
     if(!from) from = new Date(to.getFullYear(), to.getMonth()-11, 1);
   }
@@ -1294,7 +1313,7 @@ const INV = {
     const recvLines = IDX.rows('goodsReceipts','ItemCode',itemCode).filter(r=>this.isAvailableWhs(r.WhsCode) && r.DocDate instanceof Date);
     if(!salesLines.length && !recvLines.length) return [];
     const allDates = salesLines.map(l=>l.date).concat(recvLines.map(r=>r.DocDate));
-    const minD = new Date(Math.min(...allDates)), maxD = new Date();
+    const minD = new Date(U.minMax(allDates).min), maxD = new Date();
     const months = monthsInRange(minD, maxD);
     const soldByMonth = new Map(), recvByMonth = new Map();
     salesLines.forEach(l=>{ const mk=U.monthKey(l.date); soldByMonth.set(mk, (soldByMonth.get(mk)||0)+l.qty); });
@@ -1349,8 +1368,9 @@ const DEMAND = {
     const lines = SALES.filteredLinesForItem(itemCode, {demandOnly:true, ignoreDateFilter:true});
     if(!lines.length) return [];
     const dates = lines.map(l=>l.date).filter(d=>d instanceof Date);
-    const maxDate = new Date(Math.max(...dates));
-    const firstSaleDate = new Date(Math.min(...dates));
+    const mm = U.minMax(dates);
+    const maxDate = new Date(mm.max);
+    const firstSaleDate = new Date(mm.min);
     const windowStart = new Date(maxDate.getFullYear(), maxDate.getMonth()-(nMonths-1), 1);
     // لا نملأ بأشهر صفرية قبل أول ظهور فعلي للصنف بالمبيعات (عدم توفر بيانات ≠ طلب صفري)
     const minMonth = firstSaleDate > windowStart ? new Date(firstSaleDate.getFullYear(), firstSaleDate.getMonth(), 1) : windowStart;
@@ -1520,7 +1540,10 @@ const POTRACK = {
       };
     });
   },
-  incomingQty(itemCode){ return this.statusFor(itemCode).reduce((s,l)=>s+l.remaining, 0); },
+  /** التوريد المؤكد فقط: أمر مفتوح بتاريخ تسليم مستقبلي، أو متأخر مع تاريخ وصول أدخله المستخدم واعتمده */
+  incomingQty(itemCode){ return this.statusFor(itemCode).filter(l=>l.inTransit).reduce((s,l)=>s+l.remaining, 0); },
+  /** أمر مفتوح متأخر عن تسليمه بلا تاريخ وصول مؤكد: يُعرض كمخاطرة ولا يدخل بحساب قرار الشراء */
+  unconfirmedIncomingQty(itemCode){ return this.statusFor(itemCode).filter(l=>l.needsUserDate).reduce((s,l)=>s+l.remaining, 0); },
   openSalesOrderQty(itemCode){ return IDX.rows('salesOrders','ItemCode',itemCode).reduce((s,r)=>s+(Number(r.OpenQty)||0), 0); },
   openQuotationQty(itemCode){ return IDX.rows('salesQuotations','ItemCode',itemCode).reduce((s,r)=>s+(Number(r.OpenQty)||0), 0); },
 };
@@ -1569,6 +1592,7 @@ const RECO = {
     const available = INV.availableStock(itemCode);
     const physical = INV.physicalStock(itemCode);
     const incoming = POTRACK.incomingQty(itemCode);
+    const unconfirmedIncoming = POTRACK.unconfirmedIncomingQty(itemCode);
     const openSO = POTRACK.openSalesOrderQty(itemCode);
     const openQuotationRaw = POTRACK.openQuotationQty(itemCode);
     const openQuotation = openQuotationRaw * CONFIG.tunable.quotationWeight;
@@ -1610,7 +1634,8 @@ const RECO = {
     reasons.push({k:'الطلب الشهري المعدَّل', v:U.num(monthlyDemand,1)});
     if(openSO) reasons.push({k:'أوامر بيع مفتوحة (طلب مؤكد)', v:U.num(openSO)});
     if(openQuotationRaw) reasons.push({k:`عروض أسعار مفتوحة (وزن ${CONFIG.tunable.quotationWeight})`, v:U.num(openQuotationRaw)+' → '+U.num(openQuotation,1)});
-    reasons.push({k:'بالطريق (Incoming)', v:U.num(incoming)});
+    reasons.push({k:'بالطريق (توريد مؤكد)', v:U.num(incoming)});
+    if(unconfirmedIncoming>0) reasons.push({k:'بضاعة متوقعة غير مؤكدة — تحتاج تاريخ وصول (لا تدخل بالقرار)', v:U.num(unconfirmedIncoming)});
     reasons.push({k:'مدة توريد المورد', v:leadTime.days+' يوم — '+leadTime.label});
     reasons.push({k:'تغطية المخزون الحالية', v: coverageDays===Infinity?'—':U.num(coverageDays,1)+' يوم'});
     if(pattern) reasons.push({k:'نمط الشراء التاريخي', v:`${U.num(pattern.min)} — ${U.num(pattern.max)} (الأكثر تكراراً ${U.num(pattern.mostCommon)}، ${pattern.count} عملية شراء)`});
@@ -1621,6 +1646,7 @@ const RECO = {
     if(status==='CRITICAL' || status==='ORDER_SOON'){
       if(coverageDays<CONFIG.tunable.minCoverageDaysSoon) narrative.push('تغطية مخزون منخفضة مقابل معدل الطلب الحالي');
       if(incoming<=0) narrative.push('لا يوجد توريد قادم مؤكد بالطريق');
+      if(unconfirmedIncoming>0) narrative.push(`يوجد أمر شراء متأخر عن تسليمه (${U.num(unconfirmedIncoming)}) بلا تاريخ وصول مؤكد — لم يُحتسب توريداً؛ أدخل تاريخ الوصول إن كان بالطريق فعلاً`);
       if(openSO) narrative.push('يوجد طلب عملاء مفتوح (أوامر بيع) يستهلك من هذا المخزون');
       narrative.push(`مدة توريد المورد ${leadTime.days} يوم — يجب الطلب الآن لتغطية فترة الانتظار`);
       if(pattern && pattern.mostCommon) narrative.push('نمط الشراء التاريخي يدعم الطلب بمضاعفات '+U.num(pattern.mostCommon));
@@ -1636,7 +1662,7 @@ const RECO = {
     const result = {
       ItemCode:itemCode, ItemName:itemDisplayName(itemCode), ItemGroup:itemGroupOf(itemCode),
       supplier:supplierInfo, leadTime, pattern, demand,
-      available, physical, incoming, openSO, openQuotation:openQuotationRaw, expired, near30, near90,
+      available, physical, incoming, unconfirmedIncoming, openSO, openQuotation:openQuotationRaw, expired, near30, near90,
       coverageDays, monthlyDemand, status, priority, recommendedQty, neededQtyRaw:neededQty,
       reasons, narrative, confidence, stockStatus:stockStat,
       expiryStatus: expired>0?'EXPIRED': near30>0?'NEAR30': near90>0?'NEAR90':'VALID',
@@ -1912,7 +1938,8 @@ function whySentence(r){
   const cov = r.coverageDays===Infinity ? null : r.coverageDays;
   const horizon = horizonDemandOf(r);
   const lt = r.leadTime.days;
-  const transitTxt = r.incoming>0 ? `والبضاعة بالطريق (${n(r.incoming)}) لا تكفي لتغطية الفجوة` : 'ولا توجد بضاعة بالطريق';
+  const unconfTxt = r.unconfirmedIncoming>0 ? ` (يوجد ${n(r.unconfirmedIncoming)} بضاعة متوقعة غير مؤكدة بأمر متأخر عن تسليمه — لم تُحتسب حتى يُعتمد تاريخ وصولها)` : '';
+  const transitTxt = (r.incoming>0 ? `والبضاعة المؤكدة بالطريق (${n(r.incoming)}) لا تكفي لتغطية الفجوة` : 'ولا توجد بضاعة مؤكدة بالطريق') + unconfTxt;
   const roundTxt = (r.pattern && r.pattern.mostCommon>0 && r.recommendedQty!==Math.round(r.neededQtyRaw)) ? ` (قُرِّبت من ${n(r.neededQtyRaw,0)} إلى مضاعف الشراء المعتاد ${n(r.pattern.mostCommon)})` : '';
   switch(r.status){
     case 'CRITICAL':
@@ -2041,7 +2068,7 @@ function renderNeedsOrderTable(hostId, tableKey, rows, opts){
     ${T('available','المتاح')}${T('demand','الطلب الشهري المعدَّل')}${T('openSO','أوامر بيع مفتوحة')}${T('incoming','بالطريق')}
     ${T('lead','مدة التوريد')}${T('qty','الكمية الموصى بها')}<th>الوحدة</th>${T('arrival','الوصول المتوقع')}${T('confidence','الثقة')}<th></th>
   </tr>`;
-  const body = sorted.map(r=>`<tr>
+  const rowHtml = r=>`<tr>
     ${opts.selectable?`<td><input type="checkbox" class="row-select" ${STATE.planSelection.has(r.ItemCode)?'checked':''} onchange="planToggle('${U.esc(r.ItemCode)}', this.checked)"></td>`:''}
     <td>${statusBadge(r.status)}</td>
     <td class="freeze"><span class="link num" onclick="openItemDetail('${U.esc(r.ItemCode)}')">${U.esc(r.ItemCode)}</span></td>
@@ -2050,17 +2077,35 @@ function renderNeedsOrderTable(hostId, tableKey, rows, opts){
     <td class="num ${r.available<=0?'strong':''}" style="${r.available<=0?'color:var(--red)':''}">${U.num(r.available)}</td>
     <td class="num">${U.num(r.monthlyDemand,0)}</td>
     <td class="num ${r.openSO?'':'muted'}">${U.num(r.openSO)}</td>
-    <td class="num ${r.incoming?'':'muted'}">${U.num(r.incoming)}</td>
+    <td class="num ${r.incoming?'':'muted'}">${U.num(r.incoming)}${r.unconfirmedIncoming>0?`<div style="font-size:10px;color:var(--red);white-space:nowrap" title="بضاعة متوقعة غير مؤكدة — تحتاج تاريخ وصول">+${U.num(r.unconfirmedIncoming)} غير مؤكد</div>`:''}</td>
     <td class="num">${r.leadTime.days} <span class="muted" style="font-size:10px">يوم</span></td>
     <td class="num strong">${opts.editable?`<input class="cell-input" type="number" min="0" value="${effectiveQty(r)}" onchange="planSetQty('${U.esc(r.ItemCode)}', this.value)">`:U.num(effectiveQty(r))}</td>
     <td class="muted">${U.esc(uomOf(r.ItemCode))}</td>
     <td>${fmtArrival(expectedArrivalFor(r))}</td>
     <td>${confidenceBadge(r.confidence)}</td>
     <td><button class="btn-link" onclick="openWhyDrawer('${U.esc(r.ItemCode)}')">لماذا؟</button>${opts.editable?`<br><input class="cell-note" placeholder="ملاحظة…" value="${U.esc(planNote(r))}" onchange="planSetNote('${U.esc(r.ItemCode)}', this.value)">`:''}</td>
-  </tr>`).join('');
-  document.getElementById(hostId).innerHTML = sorted.length
-    ? `<div class="tbl-scroll"><table class="dt"><thead>${head}</thead><tbody>${body}</tbody></table></div>`
-    : `<div class="empty-state"><b>لا توجد أصناف بهذا التصنيف</b>${opts.emptyHint||'حسب الفلاتر الحالية'}</div>`;
+  </tr>`;
+  if(!sorted.length){ document.getElementById(hostId).innerHTML = `<div class="empty-state"><b>لا توجد أصناف بهذا التصنيف</b>${opts.emptyHint||'حسب الفلاتر الحالية'}</div>`; return; }
+  renderChunked(hostId, `<div class="tbl-scroll"><table class="dt"><thead>${head}</thead><tbody id="tb_${hostId}"></tbody></table></div>`, 'tb_'+hostId, sorted, rowHtml);
+}
+/** عرض الصفوف على دفعات: أول 300 فوراً ثم الباقي دون حجب الواجهة — تُلغى الدفعات المعلّقة عند إعادة العرض */
+const RENDER_TOKENS = {};
+function renderChunked(hostId, shellHtml, tbodyId, rows, rowHtml, afterHtml){
+  const CH = 300;
+  const host = document.getElementById(hostId);
+  host.innerHTML = shellHtml;
+  const tb = document.getElementById(tbodyId);
+  tb.innerHTML = rows.slice(0, CH).map(rowHtml).join('');
+  const token = (RENDER_TOKENS[hostId]||0)+1; RENDER_TOKENS[hostId] = token;
+  let i = CH;
+  const step = ()=>{
+    if(RENDER_TOKENS[hostId]!==token) return;
+    const t = document.getElementById(tbodyId); if(!t) return;
+    t.insertAdjacentHTML('beforeend', rows.slice(i, i+CH).map(rowHtml).join(''));
+    i += CH;
+    if(i < rows.length) setTimeout(step, 0);
+  };
+  if(i < rows.length) setTimeout(step, 0);
 }
 function goToPlanTab(status){ STATE.planTab = status; switchView('plan'); }
 
@@ -2077,7 +2122,8 @@ function openWhyDrawer(itemCode){
     ['المتوسط الخام (قبل التعديل)', U.num(r.demand.raw,1)],
     ['أوامر بيع مفتوحة', U.num(r.openSO)],
     ['عروض أسعار مفتوحة (وزن '+CONFIG.tunable.quotationWeight+')', U.num(r.openQuotation)],
-    ['بالطريق', U.num(r.incoming)],
+    ['بالطريق (توريد مؤكد)', U.num(r.incoming)],
+    ...(r.unconfirmedIncoming>0 ? [['بضاعة متوقعة غير مؤكدة — تحتاج تاريخ وصول', U.num(r.unconfirmedIncoming), 'لا تدخل بحساب القرار حتى يُعتمد تاريخ الوصول']] : []),
     ['مدة توريد المورد', r.leadTime.days+' يوم', r.leadTime.label],
     ['نمط الشراء التاريخي', r.pattern ? `${U.num(r.pattern.min)} – ${U.num(r.pattern.max)} · الأكثر تكراراً ${U.num(r.pattern.mostCommon)} (${r.pattern.count} عملية)` : 'لا يوجد', null, true],
     ['تغطية المخزون', fmtCoverage(r.coverageDays)+' يوم'],
@@ -2284,14 +2330,13 @@ function renderDemandTable(){
     if(mode==='amount') return `<td class="num">${U.num(c.amount)}</td>`;
     return `<td class="num">${q}<div style="font-size:10px;color:var(--ink-4)">${U.num(c.amount)}</div></td>`;
   };
-  const body = rows.map(r=>`<tr>
+  const rowHtml = r=>`<tr>
     <td class="freeze"><span class="link num" onclick="openItemDetail('${U.esc(r.ItemCode)}')">${U.esc(r.ItemCode)}</span></td><td>${U.esc(r.ItemName)}</td><td>${U.esc(r.supplier.name)}</td>
     ${rep.months.map(mk=>cell(r,mk)).join('')}
-    <td class="num strong">${mode==='amount'?U.num(r.rawAvgAmount,1):U.num(r.rawAvgQty,1)}${mode==='both'?`<div style="font-size:10px;color:var(--ink-4);font-weight:400">${U.num(r.rawAvgAmount,1)}</div>`:''}</td></tr>`).join('');
+    <td class="num strong">${mode==='amount'?U.num(r.rawAvgAmount,1):U.num(r.rawAvgQty,1)}${mode==='both'?`<div style="font-size:10px;color:var(--ink-4);font-weight:400">${U.num(r.rawAvgAmount,1)}</div>`:''}</td></tr>`;
   const tot = rep.months.map(mk=>rows.reduce((s,r)=>{const c=r.monthly.get(mk); return s+(c?(mode==='amount'?c.amount:c.qty):0);},0));
-  document.getElementById('demandTable').innerHTML = rows.length
-    ? `<div class="tbl-scroll"><table class="dt"><thead>${head}</thead><tbody>${body}</tbody><tfoot><tr><td class="freeze" colspan="3">الإجمالي</td>${tot.map(v=>`<td class="num">${U.num(v)}</td>`).join('')}<td class="num">${U.num(rows.reduce((s,r)=>s+(mode==='amount'?r.rawAvgAmount:r.rawAvgQty),0),1)}</td></tr></tfoot></table></div>`
-    : `<div class="empty-state"><b>لا توجد مبيعات بالفترة/الفلاتر الحالية</b>ارفع فواتير المبيعات من مركز البيانات أو وسّع نطاق التاريخ</div>`;
+  if(!rows.length){ document.getElementById('demandTable').innerHTML = `<div class="empty-state"><b>لا توجد مبيعات بالفترة/الفلاتر الحالية</b>ارفع فواتير المبيعات من مركز البيانات أو وسّع نطاق التاريخ</div>`; return; }
+  renderChunked('demandTable', `<div class="tbl-scroll"><table class="dt"><thead>${head}</thead><tbody id="tb_demandTable"></tbody><tfoot><tr><td class="freeze" colspan="3">الإجمالي</td>${tot.map(v=>`<td class="num">${U.num(v)}</td>`).join('')}<td class="num">${U.num(rows.reduce((s,r)=>s+(mode==='amount'?r.rawAvgAmount:r.rawAvgQty),0),1)}</td></tr></tfoot></table></div>`, 'tb_demandTable', rows, rowHtml);
 }
 function customerDrilldownRows(itemCode, monthKey){
   const lines = SALES.filteredLinesForItem(itemCode, {}).filter(l=>U.monthKey(l.date)===monthKey);
@@ -2307,7 +2352,7 @@ function customerDrilldownRows(itemCode, monthKey){
 }
 function openCustomerDrilldown(itemCode, monthKey){
   STATE._dd = {itemCode, monthKey};
-  SORT_STATE.dd = {col:'qty', dir:'desc'};
+  SORT_STATE.dd = null; // الافتراضي: الأعلى ← الأقل بدون حالة فرز صريحة (النقرة الأولى = تنازلي)
   document.getElementById('drawerBox').innerHTML = `
     <div class="drawer-head"><div><h3>تفصيل العملاء — ${U.esc(itemDisplayName(itemCode))}</h3><div class="sub">${U.esc(itemCode)} · ${monthLabel(monthKey)} · صافي المبيعات</div></div>
       <div class="drawer-actions"><button class="btn-ghost btn-sm" onclick="printCustomerDrilldown()">طباعة</button><button class="btn-ghost btn-sm" onclick="closeDrawer()">إغلاق</button></div></div>
@@ -2766,7 +2811,7 @@ const PRINT = {
 const PRINT_RECO_COLS = [
   {label:'الأولوية', get:r=>RECO_LABELS[r.status]}, {label:'رمز الصنف', get:r=>r.ItemCode, num:true}, {label:'اسم الصنف', get:r=>r.ItemName},
   {label:'المورد', get:r=>r.supplier.name}, {label:'المتاح', get:r=>U.num(r.available), num:true}, {label:'الطلب الشهري', get:r=>U.num(r.monthlyDemand,0), num:true},
-  {label:'أوامر بيع', get:r=>U.num(r.openSO), num:true}, {label:'بالطريق', get:r=>U.num(r.incoming), num:true}, {label:'مدة التوريد', get:r=>r.leadTime.days+' يوم', num:true},
+  {label:'أوامر بيع', get:r=>U.num(r.openSO), num:true}, {label:'بالطريق', get:r=>U.num(r.incoming)+(r.unconfirmedIncoming>0?' (+'+U.num(r.unconfirmedIncoming)+' غير مؤكد)':''), num:true}, {label:'مدة التوريد', get:r=>r.leadTime.days+' يوم', num:true},
   {label:'الكمية الموصى بها', get:r=>U.num(effectiveQty(r)), num:true}, {label:'الوحدة', get:r=>uomOf(r.ItemCode)}, {label:'الوصول المتوقع', get:r=>{const a=expectedArrivalFor(r); return a.date?U.fmtDate(a.date):'—';}, num:true},
   {label:'الثقة', get:r=>CONF_LABELS[r.confidence]}, {label:'السبب', get:r=>r.narrative[0]||''},
 ];
