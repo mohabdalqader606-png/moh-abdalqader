@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v49.16-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v49.17-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -3711,8 +3711,8 @@ function renderReport(){if(!R)return;const is=R.IS.TOT,b=R.BSc,bo=R.BSo,cf=R.CF,
  const expByCat=['SELL','ADMIN','SALARY','DEPR','PROV','OTHER_EXP','FIN_EXP'].map(l=>{
   const rows=Object.entries(R.L[l].acc).map(([c,a])=>{const v=Object.values(a.mo).reduce((x,y)=>x+y,0);const ca=cm&&cm.L[l]?cm.L[l].acc[c]:null;const cv=ca?Object.values(ca.mo).reduce((x,y)=>x+y,0):null;return {c,name:accName(c),v,cv}}).filter(x=>x.v);
   rows.sort((a,b)=>b.v-a.v);
-  return {catName:LINES[l].n,tot:rows.reduce((a,x)=>a+x.v,0),top:rows.slice(0,5)};
- }).filter(g=>g.top.length);
+  return {catName:LINES[l].n,tot:rows.reduce((a,x)=>a+x.v,0),all:rows};
+ }).filter(g=>g.all.length);
  // ---- monthly best/worst
  const nm=per.map(k=>[k,R.IS[k].NI]).sort((a,b)=>b[1]-a[1]);const gmM=per.map(k=>[k,R.RATm[k].GM]).filter(x=>x[1]!=null).sort((a,b)=>b[1]-a[1]);
  // ---- compose
@@ -3722,9 +3722,9 @@ function renderReport(){if(!R)return;const is=R.IS.TOT,b=R.BSc,bo=R.BSo,cf=R.CF,
   `<div class="grid g3">${sc.map(([nm,v,ks])=>`<div class="kpi light" style="min-height:70px;height:auto;overflow:visible"><div class="lbl">${nm}</div><div class="val" style="font-size:18px;color:var(--gold)">${stars(v)}</div><div class="sub" style="display:block;white-space:normal;overflow:visible">${ks.map(k=>BENCH[k].n.split(' ').slice(0,3).join(' ')+': '+rfmt(k,r[k])).join(' | ')}</div></div>`).join('')}</div>`;
  h+=H('2. الإيجابيات')+LI(pos)+H('3. السلبيات ونقاط الضعف')+LI(neg.length?neg:['لا سلبيات جوهرية على مستوى المؤشرات المعيارية.']);
  h+=H('4. تحليل الربحية وهيكل التكاليف')+P(`نسبة كلفة المبيعات ${pct(is.COGS/is.NETSALES)} والمردودات ${pct(is.SALES_RET/is.SALES)} من المبيعات الإجمالية. المصاريف التشغيلية ${fmt(is.OPEX)} (${pct(r.OPEXR)}) موزعة: ${opexItems.map(x=>x[0]+' '+pct(x[1]/is.NETSALES)).join('، ')}. EBITDA ${fmt(is.EBITDA)} (${pct(r.EBITDAM)}). أفضل شهر ربحاً ${nm[0][0]} (${fmt(nm[0][1])}) وأضعفه ${nm[nm.length-1][0]} (${fmt(nm[nm.length-1][1])})؛ أعلى هامش مجمل في ${gmM[0]?gmM[0][0]+' ('+pct(gmM[0][1])+')':'—'} وأدناه ${gmM.length?gmM[gmM.length-1][0]+' ('+pct(gmM[gmM.length-1][1])+')':'—'}. نقطة التعادل ${fmt(( (is.ADMIN+is.SALARY+is.DEPR+is.FIN_EXP)/((is.NETSALES-is.COGS-is.SELL)/is.NETSALES||1)))} وهامش الأمان ${pct(1-((is.ADMIN+is.SALARY+is.DEPR+is.FIN_EXP)/((is.NETSALES-is.COGS-is.SELL)/is.NETSALES||1))/is.NETSALES)}.`)+
-  `<h4>أكبر 5 حسابات مصاريف من كل فئة${cm?' — مع المقارنة':''}</h4>`+
+  `<h4>جميع حسابات المصاريف حسب الفئة${cm?' — مع المقارنة':''}</h4>`+
   `<table><tr><th>الحساب</th><th>الاسم</th><th class="num">المبلغ</th><th class="num">% من فئته</th>${cm?'<th class="num">المقارنة</th><th class="num">التغير</th><th class="num">%</th>':''}</tr>`+
-  expByCat.map(g=>`<tr class="sec"><td colspan="${cm?7:4}">${g.catName} — إجمالي الفئة ${fmt(g.tot)}</td></tr>`+g.top.map(x=>{
+  expByCat.map(g=>`<tr class="sec"><td colspan="${cm?7:4}">${g.catName} — إجمالي الفئة ${fmt(g.tot)}</td></tr>`+g.all.map(x=>{
    const d=x.cv!=null?x.v-x.cv:null;
    return `<tr><td style="font-family:var(--mono);direction:ltr;text-align:right">${x.c}</td><td>${x.name}</td><td class="num">${fmt(x.v)}</td><td class="num">${pct(g.tot?x.v/g.tot:null)}</td>`+(cm?`<td class="num">${x.cv==null?'—':fmt(x.cv)}</td><td class="num ${d==null?'':cls(d)}">${d==null?'—':fmt(d)}</td><td class="num">${d==null?'—':c(x.v,x.cv)}</td>`:'')+'</tr>'
   }).join('')).join('')+'</table>';
@@ -3763,6 +3763,31 @@ function renderReport(){if(!R)return;const is=R.IS.TOT,b=R.BSc,bo=R.BSo,cf=R.CF,
  const apRows=apKeys.map(k=>{const [gc,gt]=g(k);const info=RINFO[k]||{};const note=[info.what,gc==='ok'?info.good:info.bad].filter(Boolean).join(' ');
   return `<tr><td>${BENCH[k].n}</td><td class="num">${rfmt(k,r[k])}</td>${cm?`<td class="num">${k in cm.RAT?rfmt(k,cm.RAT[k]):'—'}</td>`:''}<td class="num">${BENCH[k].fmt==='n'?'>0':BENCH[k].lo+'–'+BENCH[k].hi}</td><td><span class="badge ${gc}">${gt}</span></td><td class="ex">${note}</td></tr>`}).join('');
  h+=H('14. ملحق — النسب الرئيسية (بالشرح، لغايات الطباعة)')+`<table><tr><th>النسبة</th><th class="num">القيمة</th>${cm?'<th class="num">المقارنة</th>':''}<th class="num">المعيار</th><th>التقييم</th><th>الشرح</th></tr>${apRows}</table>`}
+ h+=H('15. ملحق كامل — تفصيل حسابات قائمة الدخل')+(()=>{
+  let t=`<table><tr><th>الحساب</th><th>الاسم</th><th class="num">الحالية</th>${cm?'<th class="num">المقارنة</th><th class="num">التغير</th><th class="num">%</th>':''}</tr>`;
+  ISL.forEach(l=>{const sg=['SALES','OTHER_INC','FIN_INC'].includes(l)?-1:1;
+   const accs=Object.entries(R.L[l].acc).filter(([code,acct])=>Object.keys(acct.mo).length);if(!accs.length)return;
+   const catTot=accs.reduce((a,[code,acct])=>a+Object.values(acct.mo).reduce((x,y)=>x+y,0)*sg,0);
+   t+=`<tr class="sec"><td colspan="${cm?6:3}">${LINES[l].n} — إجمالي ${fmt(catTot)}</td></tr>`;
+   accs.forEach(([code,acct])=>{const v=Object.values(acct.mo).reduce((x,y)=>x+y,0)*sg;const ca=cm&&cm.L[l]?cm.L[l].acc[code]:null;const cv=ca?Object.values(ca.mo).reduce((x,y)=>x+y,0)*sg:null;const d=cv!=null?v-cv:null;
+    t+=`<tr><td style="font-family:var(--mono);direction:ltr;text-align:right">${code}</td><td>${accName(code)}</td><td class="num">${fmt(v)}</td>${cm?`<td class="num">${cv==null?'—':fmt(cv)}</td><td class="num ${d==null?'':cls(d)}">${d==null?'—':fmt(d)}</td><td class="num">${d==null?'—':c(v,cv)}</td>`:''}</tr>`})});
+  return t+'</table>'})();
+ h+=H('16. ملحق كامل — تفصيل حسابات المركز المالي')+(()=>{
+  let t=`<table><tr><th>الحساب</th><th>الاسم</th><th class="num">نهاية الفترة</th>${cm?'<th class="num">المقارنة</th><th class="num">التغير</th><th class="num">%</th>':''}</tr>`;
+  BSROWS.forEach(row=>{if(row[0]==='sec'||row[0]==='sub'||row[0]==='tot')return;const l=row[0],sg=row[1]?-1:1;
+   const accs=Object.entries(R.L[l].acc).filter(([code,acct])=>acct.close);if(!accs.length)return;
+   const catTot=accs.reduce((a,[code,acct])=>a+acct.close*sg,0);
+   t+=`<tr class="sec"><td colspan="${cm?6:3}">${LINES[l].n} — إجمالي ${fmt(catTot)}</td></tr>`;
+   accs.forEach(([code,acct])=>{const v=acct.close*sg;const ca=cm&&cm.L[l]?cm.L[l].acc[code]:null;const cv=ca?ca.close*sg:null;const d=cv!=null?v-cv:null;
+    t+=`<tr><td style="font-family:var(--mono);direction:ltr;text-align:right">${code}</td><td>${accName(code)}</td><td class="num">${fmt(v)}</td>${cm?`<td class="num">${cv==null?'—':fmt(cv)}</td><td class="num ${d==null?'':cls(d)}">${d==null?'—':fmt(d)}</td><td class="num">${d==null?'—':c(v,cv)}</td>`:''}</tr>`})});
+  return t+'</table>'})();
+ h+=H('17. ملحق كامل — تفصيل بنود التدفقات النقدية')+(()=>{
+  let t=`<table><tr><th>البند</th><th class="num">الفترة الحالية</th>${cm?'<th class="num">المقارنة</th><th class="num">التغير</th><th class="num">%</th>':''}</tr>`;
+  CFROWS.forEach(row=>{if(row[0]==='sec'||row[0]==='sub'){t+=`<tr class="sec"><td colspan="${cm?5:2}">${row[1]}</td></tr>`;return}
+   const key=row[0]==='tot'?row[1]:row[0],lbl=row[0]==='tot'?row[2]:row[1];const v=cf[key];if(row[0]!=='tot'&&!v&&key!=='NI'&&key!=='CASH0')return;
+   const cv=cm?cm.CF[key]:null,d=cv!=null?v-cv:null;
+   t+=`<tr class="${row[0]==='tot'?'tot':''}"><td>${lbl}</td><td class="num">${fmt(v)}</td>${cm?`<td class="num">${cv==null?'—':fmt(cv)}</td><td class="num ${d==null?'':cls(d)}">${d==null?'—':fmt(d)}</td><td class="num">${d==null?'—':c(v,cv)}</td>`:''}</tr>`});
+  return t+'</table>'})();
  h+=P(`<span class="hint">تنويه: التقرير مولّد آلياً من الأرصدة والحركات المحمّلة والتصنيف الحالي؛ التقديرات (أثر الأيام، وفر الفوائد، تكلفة التمويل) تعتمد على معدلات الإعدادات وهي استرشادية.</span>`);
  document.getElementById('reportPage').innerHTML=h}
 
