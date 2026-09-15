@@ -958,13 +958,19 @@ ORDER BY T0."ShortName", T0."RefDate"</code>
   table.mrpt-tbl tbody td{padding:5px 8px; border-bottom:1px solid var(--mrpt-border);}
   table.mrpt-tbl tbody tr.mrpt-risk-row{background:var(--mrpt-risk-bg);}
   table.mrpt-tbl td.num{font-family:var(--mono); direction:ltr; text-align:left;}
+  table.mrpt-tbl tbody tr.mrpt-reason-row td{padding:4px 8px 10px; border-bottom:1px solid var(--mrpt-border); font-size:10.5px; color:var(--mrpt-risk); white-space:normal;}
+  .mrpt-viol-group{margin-bottom:20px; break-inside:avoid; page-break-inside:avoid;}
+  .mrpt-viol-head{display:flex; align-items:center; gap:10px; padding:8px 4px; border-bottom:2px solid var(--mrpt-navy-light); margin-bottom:6px;}
+  .mrpt-viol-name{font-weight:800; font-size:12.5px; color:var(--mrpt-navy-deep);}
+  .mrpt-viol-code{font-family:var(--mono); font-size:11px; color:var(--mrpt-muted);}
+  .mrpt-viol-count{margin-inline-start:auto; font-size:11px; font-weight:700; color:var(--mrpt-risk); background:var(--mrpt-risk-bg); border-radius:20px; padding:3px 10px;}
   @media print{
     body > *:not(#mrptOverlay){display:none !important;}
     #mrptOverlay{position:static !important; overflow:visible !important;}
     #mrptSidebar, #mrptCloseBtn{display:none !important;}
     #mrptBook{max-width:100% !important; margin:0 !important;}
     .mrpt-page{page-break-after:always;}
-    @page{ size:A4; margin:14mm; }
+    @page{ size:A4 landscape; margin:10mm; }
   }
 </style>
 
@@ -2780,26 +2786,45 @@ function mrptViolationsHtml(){
   if(rows.length===0){
     body = '<div style="padding:20px; color:var(--mrpt-muted); font-size:12px;">لا توجد فواتير مخالفة حالياً بالبيانات المحلَّلة. ✅</div>';
   } else {
-    body = `<table class="mrpt-tbl"><thead><tr>
-      <th>رمز العميل</th><th>اسم العميل</th><th>رقم الفاتورة</th><th>تاريخ الفاتورة</th><th>حالة الموافقة</th><th>السبب</th><th class="num">المبلغ المتأخر</th><th class="num">أيام التأخير</th>
-    </tr></thead><tbody>`;
+    // تجميع حسب العميل — كل عميل بيظهر مرة وحدة مع عدد فواتيره المخالفة، وكل فاتورة إلها سطر سبب كامل العرض إلها لحالها
+    const groups = [];
+    const byCard = new Map();
     rows.forEach(r=>{
-      const wentToApproval = r.apprStatus && r.apprStatus.trim()!=='' && r.apprStatus.trim()!=='لم تذهب للموافقة';
-      const apprLabel = wentToApproval ? r.apprStatus : 'لم تذهب للموافقة';
-      const worstChunk = (r.chunkResults||[]).filter(c=>c.state==='violation').reduce((a,b)=>(!a||b.amount>a.amount)?b:a, null);
-      body += `<tr class="${r.hasGap?'mrpt-risk-row':''}">
-        <td>${mrptEsc(r.cardCode)}</td><td>${mrptEsc(r.cardName)}</td><td>${mrptEsc(r.docNum)}</td>
-        <td>${r.invoiceDate?fmtDate(r.invoiceDate):'—'}</td><td>${mrptEsc(apprLabel)}</td>
-        <td style="white-space:normal; max-width:260px;">${mrptEsc(r.violationReason||'—')}</td>
-        <td class="num">${worstChunk?fmtNum(worstChunk.amount):'—'}</td>
-        <td class="num">${worstChunk?worstChunk.delayDays:'—'}</td>
-      </tr>`;
+      let g = byCard.get(r.cardCode);
+      if(!g){ g = { cardCode:r.cardCode, cardName:r.cardName, invoices:[] }; byCard.set(r.cardCode, g); groups.push(g); }
+      g.invoices.push(r);
     });
-    body += '</tbody></table>';
+    groups.sort((a,b)=> b.invoices.length - a.invoices.length);
+
+    body = groups.map(g=>{
+      const rowsHtml = g.invoices.map(r=>{
+        const wentToApproval = r.apprStatus && r.apprStatus.trim()!=='' && r.apprStatus.trim()!=='لم تذهب للموافقة';
+        const apprLabel = wentToApproval ? r.apprStatus : 'لم تذهب للموافقة';
+        const worstChunk = (r.chunkResults||[]).filter(c=>c.state==='violation').reduce((a,b)=>(!a||b.amount>a.amount)?b:a, null);
+        return `<tr class="${r.hasGap?'mrpt-risk-row':''}">
+          <td>${mrptEsc(r.docNum)}</td>
+          <td>${r.invoiceDate?fmtDate(r.invoiceDate):'—'}</td>
+          <td>${mrptEsc(apprLabel)}</td>
+          <td class="num">${worstChunk?fmtNum(worstChunk.amount):'—'}</td>
+          <td class="num">${worstChunk?worstChunk.delayDays:'—'}</td>
+        </tr>
+        <tr class="mrpt-reason-row"><td colspan="5">↳ السبب: ${mrptEsc(r.violationReason||'—')}</td></tr>`;
+      }).join('');
+      return `<div class="mrpt-viol-group">
+        <div class="mrpt-viol-head">
+          <span class="mrpt-viol-name">${mrptEsc(g.cardName)}</span>
+          <span class="mrpt-viol-code">${mrptEsc(g.cardCode)}</span>
+          <span class="mrpt-viol-count">⚠ ${g.invoices.length} فاتورة مخالفة</span>
+        </div>
+        <table class="mrpt-tbl"><thead><tr>
+          <th>رقم الفاتورة</th><th>تاريخ الفاتورة</th><th>حالة الموافقة</th><th class="num">المبلغ المتأخر</th><th class="num">أيام التأخير</th>
+        </tr></thead><tbody>${rowsHtml}</tbody></table>
+      </div>`;
+    }).join('');
   }
   return `<section id="mrpt-violations" class="mrpt-page mrpt-chapter" data-toc="المخالفات">
     <h1>مخالفات موافقات الفواتير</h1>
-    <div class="mrpt-sub">${rows.length} فاتورة مخالفة من إجمالي ${filtered.length}${currentFilter!=='all'?' (بحسب الفلتر النشط)':''}</div>
+    <div class="mrpt-sub">${rows.length} فاتورة مخالفة لـ${new Set(rows.map(r=>r.cardCode)).size} عميل، من إجمالي ${filtered.length}${currentFilter!=='all'?' (بحسب الفلتر النشط)':''}</div>
     ${body}
     <div class="mrpt-page-footer"><span>مركز الكيلاني للأغذية</span><span>${fmtDate(new Date())}</span></div>
   </section>`;
