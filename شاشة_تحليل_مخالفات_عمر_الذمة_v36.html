@@ -953,7 +953,8 @@ ORDER BY T0."ShortName", T0."RefDate"</code>
   .mrpt-chapter .mrpt-sub{font-size:12px; color:var(--mrpt-muted); margin-bottom:10px;}
   .mrpt-filter-row{margin-bottom:14px;}
   .mrpt-filter-box{width:100%; max-width:340px; border:1.5px solid var(--mrpt-border); border-radius:8px; padding:7px 10px; font-size:12px; font-family:inherit;}
-  .mrpt-reason-sub{font-size:10px; color:var(--mrpt-risk); margin-top:3px; font-weight:400; white-space:normal;}
+  table.mrpt-tbl tr.mrpt-reason-row td{padding:2px 8px 9px; font-size:10.5px; color:var(--mrpt-risk); font-weight:400; white-space:normal; line-height:1.5;}
+  table.mrpt-tbl tr:has(+ tr.mrpt-reason-row) td{border-bottom:none;}
   .mrpt-stat-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:18px;}
   .mrpt-stat-card{background:#fff; border:1px solid var(--mrpt-border); border-radius:10px; padding:11px 13px;}
   .mrpt-stat-card .mrpt-lbl{font-size:10.5px; color:var(--mrpt-muted); margin-bottom:4px;}
@@ -2805,26 +2806,25 @@ function mrptViolationsHtml(){
     groups.sort((a,b)=> b.invoices.length - a.invoices.length);
 
     body = `<table class="mrpt-tbl"><thead><tr>
-      <th>رمز العميل</th><th>اسم العميل / السبب</th><th class="num">عدد الفواتير المخالفة</th><th>آخر فاتورة</th><th>تاريخها</th><th>حالة الموافقة</th><th class="num">المبلغ المتأخر</th><th class="num">أيام التأخير</th>
+      <th>رمز العميل</th><th>اسم العميل</th><th class="num">عدد الفواتير المخالفة</th><th>آخر فاتورة</th><th>تاريخها</th><th>حالة الموافقة</th><th class="num">المبلغ المتأخر</th><th class="num">أيام التأخير</th>
     </tr></thead><tbody>` + groups.map(g=>{
       const r = g.lastInv;
       const wentToApproval = r.apprStatus && r.apprStatus.trim()!=='' && r.apprStatus.trim()!=='لم تذهب للموافقة';
       const apprLabel = wentToApproval ? r.apprStatus : 'لم تذهب للموافقة';
       const worstChunk = (r.chunkResults||[]).filter(c=>c.state==='violation').reduce((a,b)=>(!a||b.amount>a.amount)?b:a, null);
       const anyGap = g.invoices.some(inv=>inv.hasGap);
-      return `<tr class="${anyGap?'mrpt-risk-row':''}">
+      const riskClass = anyGap?'mrpt-risk-row':'';
+      return `<tr class="${riskClass}">
         <td>${mrptEsc(g.cardCode)}</td>
-        <td>
-          <div>${mrptEsc(g.cardName)}</div>
-          <div class="mrpt-reason-sub">↳ ${mrptEsc(r.violationReason||'—')}</div>
-        </td>
+        <td>${mrptEsc(g.cardName)}</td>
         <td class="num">${g.invoices.length}</td>
         <td>${mrptEsc(r.docNum)}</td>
         <td>${r.invoiceDate?fmtDate(r.invoiceDate):'—'}</td>
         <td>${mrptEsc(apprLabel)}</td>
         <td class="num">${worstChunk?fmtNum(worstChunk.amount):'—'}</td>
         <td class="num">${worstChunk?worstChunk.delayDays:'—'}</td>
-      </tr>`;
+      </tr>
+      <tr class="mrpt-reason-row ${riskClass}"><td colspan="8">↳ السبب (آخر فاتورة ${mrptEsc(r.docNum)}): ${mrptEsc(r.violationReason||'—')}</td></tr>`;
     }).join('') + '</tbody></table>';
   }
   return `<section id="mrpt-violations" class="mrpt-page mrpt-chapter" data-toc="المخالفات">
@@ -2943,9 +2943,18 @@ function mrptFilterRows(input){
   const section = input.closest('section.mrpt-page');
   const table = section ? section.querySelector('table.mrpt-tbl') : null;
   if(!table || !table.tBodies[0]) return;
-  Array.from(table.tBodies[0].rows).forEach(tr=>{
-    tr.style.display = (!q || tr.textContent.toLowerCase().includes(q)) ? '' : 'none';
-  });
+  // بعض الصفوف (زي سطر السبب بقسم المخالفات) تابعة للصف يلي قبلها مباشرة — لازم تظهر/تختفي معه سوا
+  const allRows = Array.from(table.tBodies[0].rows);
+  let i = 0;
+  while(i < allRows.length){
+    const group = [allRows[i]];
+    let j = i+1;
+    while(j < allRows.length && allRows[j].classList.contains('mrpt-reason-row')){ group.push(allRows[j]); j++; }
+    const combinedText = group.map(r=>r.textContent).join(' ').toLowerCase();
+    const show = !q || combinedText.includes(q);
+    group.forEach(r=> r.style.display = show ? '' : 'none');
+    i = j;
+  }
 }
 
 // ============================================================
