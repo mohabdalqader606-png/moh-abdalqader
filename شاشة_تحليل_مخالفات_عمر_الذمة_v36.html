@@ -1441,7 +1441,12 @@ function processFifoVerify(){
   if(parsed.length===0){ msg.textContent='ما قدرت أتعرف على أي صف صالح — تأكد من سطر العناوين.'; msg.className='status-msg err'; return; }
 
   FIFO_VERIFY_MAP = {};
+  let skippedNoDate = 0;
   parsed.forEach(r=>{
+    // صف بدون "عدد أيام التحصيل" (حركة مش قبض حقيقي، مثلاً مقاصة مع مورد أو تسوية/تعديل —
+    // الكويري بيرجّع تاريخ_للاحتساب فاضي إلها أصلاً) — تجاهله، ما منقدر نأكد منه تاريخ سداد فعلي.
+    // لو ما في صف تاني بنفس الشهر بتاريخ حقيقي، بتضل الفاتورة "لسا ما انسددت" بدل رقم تأخير وهمي.
+    if(!r.collectDays || r.collectDays.trim()===''){ skippedNoDate++; return; }
     const key = r.cardCode+'|'+r.monthLabel;
     const days = parseNum(r.collectDays);
     const monthEnd = parseSapDate(r.monthEnd);
@@ -1452,7 +1457,7 @@ function processFifoVerify(){
   });
 
   const fixedCount = applyFifoVerification();
-  msg.textContent = `تم تحليل ${parsed.length} صف تحقق (${Object.keys(FIFO_VERIFY_MAP).length} شهر/عميل). صُحّحت ${fixedCount} فاتورة كانت معلَّمة مخالفة غلط.`;
+  msg.textContent = `تم تحليل ${parsed.length} صف تحقق (${Object.keys(FIFO_VERIFY_MAP).length} شهر/عميل${skippedNoDate?`، وتجاهلت ${skippedNoDate} صف بدون تاريخ تحصيل فعلي (تسوية/مقاصة)`:''}). صُحّحت ${fixedCount} فاتورة كانت معلَّمة مخالفة غلط.`;
   msg.className='status-msg ok';
   renderList();
   scheduleAutoSave();
