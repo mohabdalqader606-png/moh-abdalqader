@@ -2213,9 +2213,13 @@ function computeAgingRow(r, snapshotDate, checksList){
 
   // ===== حالة الشيكات (منفصلة تماماً عن الرصيد) =====
   // نكمل استهلاك نفس الأشهر (من حيث وقف الرصيد) بالشيكات، مرتبة حسب تاريخ استحقاقها
+  // كويري الشيكات التفصيلي بيرجّع كل شيكات العميل تاريخياً بدون فلترة على الاستحقاق (بعكس عمود
+  // "الشيكات المؤجلة" بكويري ٨ نفسه يلي بيفلتر K."DueDate" > تاريخ اللقطة) — فلازم نطبّق نفس
+  // الفلترة هون، وإلا شيكات قديمة متصرّفة/مسدّدة من زمان بتظهر غلط كأنها "متأخرة" حالياً.
+  const outstandingChecks = checksList.filter(c => c.dueDate && c.dueDate > snapshotDate);
   let checksStatus='none', checksLabel='لا توجد شيكات تفصيلية', checksDelay=0;
-  if(checksList.length>0){
-    const sortedChecks = checksList.slice().sort((a,b)=>(a.dueDate?a.dueDate:0)-(b.dueDate?b.dueDate:0));
+  if(outstandingChecks.length>0){
+    const sortedChecks = outstandingChecks.slice().sort((a,b)=>(a.dueDate?a.dueDate:0)-(b.dueDate?b.dueDate:0));
     let cIdx = idx; // نكمل من حيث وقف استهلاك الرصيد
     let anyViolation=false, maxDelay=0, anyChecked=false;
     sortedChecks.forEach(chk=>{
