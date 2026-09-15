@@ -958,12 +958,6 @@ ORDER BY T0."ShortName", T0."RefDate"</code>
   table.mrpt-tbl tbody td{padding:5px 8px; border-bottom:1px solid var(--mrpt-border);}
   table.mrpt-tbl tbody tr.mrpt-risk-row{background:var(--mrpt-risk-bg);}
   table.mrpt-tbl td.num{font-family:var(--mono); direction:ltr; text-align:left;}
-  .mrpt-reason-line{margin-top:8px; padding:8px 12px; background:var(--mrpt-risk-bg); border-radius:8px; font-size:11.5px; color:var(--mrpt-risk); white-space:normal; line-height:1.6;}
-  .mrpt-viol-group{margin-bottom:20px; break-inside:avoid; page-break-inside:avoid;}
-  .mrpt-viol-head{display:flex; align-items:center; gap:10px; padding:8px 4px; border-bottom:2px solid var(--mrpt-navy-light); margin-bottom:6px;}
-  .mrpt-viol-name{font-weight:800; font-size:12.5px; color:var(--mrpt-navy-deep);}
-  .mrpt-viol-code{font-family:var(--mono); font-size:11px; color:var(--mrpt-muted);}
-  .mrpt-viol-count{margin-inline-start:auto; font-size:11px; font-weight:700; color:var(--mrpt-risk); background:var(--mrpt-risk-bg); border-radius:20px; padding:3px 10px;}
   @media print{
     body > *:not(#mrptOverlay){display:none !important;}
     #mrptOverlay{position:static !important; overflow:visible !important;}
@@ -2786,7 +2780,7 @@ function mrptViolationsHtml(){
   if(rows.length===0){
     body = '<div style="padding:20px; color:var(--mrpt-muted); font-size:12px;">لا توجد فواتير مخالفة حالياً بالبيانات المحلَّلة. ✅</div>';
   } else {
-    // تجميع حسب العميل — كل عميل بيظهر مرة وحدة مع عدد فواتيره المخالفة، وكل فاتورة إلها سطر سبب كامل العرض إلها لحالها
+    // تجميع حسب العميل — صف واحد لكل عميل: عمود لعدد فواتيره المخالفة، وتفاصيل + سبب آخر فاتورة بس (الأحدث تاريخاً)
     const groups = [];
     const byCard = new Map();
     rows.forEach(r=>{
@@ -2794,39 +2788,35 @@ function mrptViolationsHtml(){
       if(!g){ g = { cardCode:r.cardCode, cardName:r.cardName, invoices:[] }; byCard.set(r.cardCode, g); groups.push(g); }
       g.invoices.push(r);
     });
-    groups.sort((a,b)=> b.invoices.length - a.invoices.length);
-
-    body = groups.map(g=>{
-      const rowsHtml = g.invoices.map(r=>{
-        const wentToApproval = r.apprStatus && r.apprStatus.trim()!=='' && r.apprStatus.trim()!=='لم تذهب للموافقة';
-        const apprLabel = wentToApproval ? r.apprStatus : 'لم تذهب للموافقة';
-        const worstChunk = (r.chunkResults||[]).filter(c=>c.state==='violation').reduce((a,b)=>(!a||b.amount>a.amount)?b:a, null);
-        return `<tr class="${r.hasGap?'mrpt-risk-row':''}">
-          <td>${mrptEsc(r.docNum)}</td>
-          <td>${r.invoiceDate?fmtDate(r.invoiceDate):'—'}</td>
-          <td>${mrptEsc(apprLabel)}</td>
-          <td class="num">${worstChunk?fmtNum(worstChunk.amount):'—'}</td>
-          <td class="num">${worstChunk?worstChunk.delayDays:'—'}</td>
-        </tr>`;
-      }).join('');
-      // سبب آخر فاتورة بس (الأحدث تاريخاً) — مو سبب كل فاتورة لحالها
-      const lastInv = g.invoices.reduce((a,b)=>{
+    groups.forEach(g=>{
+      g.lastInv = g.invoices.reduce((a,b)=>{
         const at = a.invoiceDate ? a.invoiceDate.getTime() : -Infinity;
         const bt = b.invoiceDate ? b.invoiceDate.getTime() : -Infinity;
         return bt>=at ? b : a;
       });
-      return `<div class="mrpt-viol-group">
-        <div class="mrpt-viol-head">
-          <span class="mrpt-viol-name">${mrptEsc(g.cardName)}</span>
-          <span class="mrpt-viol-code">${mrptEsc(g.cardCode)}</span>
-          <span class="mrpt-viol-count">⚠ ${g.invoices.length} فاتورة مخالفة</span>
-        </div>
-        <table class="mrpt-tbl"><thead><tr>
-          <th>رقم الفاتورة</th><th>تاريخ الفاتورة</th><th>حالة الموافقة</th><th class="num">المبلغ المتأخر</th><th class="num">أيام التأخير</th>
-        </tr></thead><tbody>${rowsHtml}</tbody></table>
-        <div class="mrpt-reason-line">↳ سبب آخر فاتورة (${mrptEsc(lastInv.docNum)}): ${mrptEsc(lastInv.violationReason||'—')}</div>
-      </div>`;
-    }).join('');
+    });
+    groups.sort((a,b)=> b.invoices.length - a.invoices.length);
+
+    body = `<table class="mrpt-tbl"><thead><tr>
+      <th>رمز العميل</th><th>اسم العميل</th><th class="num">عدد الفواتير المخالفة</th><th>آخر فاتورة</th><th>تاريخها</th><th>حالة الموافقة</th><th class="num">المبلغ المتأخر</th><th class="num">أيام التأخير</th><th>سبب آخر فاتورة</th>
+    </tr></thead><tbody>` + groups.map(g=>{
+      const r = g.lastInv;
+      const wentToApproval = r.apprStatus && r.apprStatus.trim()!=='' && r.apprStatus.trim()!=='لم تذهب للموافقة';
+      const apprLabel = wentToApproval ? r.apprStatus : 'لم تذهب للموافقة';
+      const worstChunk = (r.chunkResults||[]).filter(c=>c.state==='violation').reduce((a,b)=>(!a||b.amount>a.amount)?b:a, null);
+      const anyGap = g.invoices.some(inv=>inv.hasGap);
+      return `<tr class="${anyGap?'mrpt-risk-row':''}">
+        <td>${mrptEsc(g.cardCode)}</td>
+        <td>${mrptEsc(g.cardName)}</td>
+        <td class="num">${g.invoices.length}</td>
+        <td>${mrptEsc(r.docNum)}</td>
+        <td>${r.invoiceDate?fmtDate(r.invoiceDate):'—'}</td>
+        <td>${mrptEsc(apprLabel)}</td>
+        <td class="num">${worstChunk?fmtNum(worstChunk.amount):'—'}</td>
+        <td class="num">${worstChunk?worstChunk.delayDays:'—'}</td>
+        <td style="white-space:normal; max-width:320px;">${mrptEsc(r.violationReason||'—')}</td>
+      </tr>`;
+    }).join('') + '</tbody></table>';
   }
   return `<section id="mrpt-violations" class="mrpt-page mrpt-chapter" data-toc="المخالفات">
     <h1>مخالفات موافقات الفواتير</h1>
