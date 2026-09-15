@@ -127,6 +127,14 @@
   #unauthorizedView.err h2{color:var(--crimson);}
   #unauthorizedView.warn h2{color:var(--gold);}
   #unauthorizedView p{font-size:12.5px; color:var(--ink-soft); line-height:1.8; margin:0 0 18px;}
+  .dd-filter{position:relative;}
+  .dd-panel{position:absolute; top:calc(100% + 4px); right:0; z-index:50; background:#fff; border:1.5px solid var(--line); border-radius:10px; box-shadow:0 14px 34px -16px rgba(21,42,74,.35); padding:8px; min-width:220px; max-height:260px; overflow-y:auto;}
+  .dd-panel-actions{display:flex; gap:6px; padding-bottom:6px; margin-bottom:6px; border-bottom:1px solid var(--line);}
+  .dd-panel-actions button{flex:1; border:1px solid var(--line); background:#fff; border-radius:6px; padding:4px 6px; font-size:11px; cursor:pointer; font-family:inherit;}
+  .dd-panel-actions button:hover{background:var(--panel-bg,#F4F6FA);}
+  .dd-panel-item{display:flex; align-items:center; gap:7px; padding:5px 6px; font-size:12px; border-radius:6px; cursor:pointer;}
+  .dd-panel-item:hover{background:#F4F6FA;}
+  .dd-panel-empty{padding:8px; font-size:11px; color:var(--ink-soft);}
 </style>
 </head>
 <body>
@@ -558,6 +566,10 @@ ORDER BY R."CardCode", K."DueDate"</code>
         <input type="number" id="agingDaysTo" min="0" placeholder="مثلاً 90" onchange="renderAging()" style="width:70px; border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12px;">
       </label>
       <button class="btn-ghost btn-sm" onclick="document.getElementById('agingDaysFrom').value=''; document.getElementById('agingDaysTo').value=''; renderAging();">تفريغ المدة</button>
+      <div class="dd-filter" id="agingRepFilterWrap">
+        <button class="btn-ghost btn-sm" type="button" onclick="toggleAgingRepPanel(event)">👤 المندوب <span id="agingRepFilterCount"></span></button>
+        <div class="dd-panel" id="agingRepFilterPanel" style="display:none;"></div>
+      </div>
       <div class="spacer"></div>
       <button class="btn-primary btn-sm" onclick="generateReminders()">✉️ توليد رسائل تذكير للمحددين</button>
       <div style="display:flex; gap:4px;">
@@ -826,6 +838,10 @@ ORDER BY T0."ShortName", T0."RefDate"</code>
         <input type="date" id="dailyDateToFilter" onchange="renderDaily()" style="border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12px;">
       </label>
       <button class="btn-ghost btn-sm" onclick="document.getElementById('dailyDateFromFilter').value=''; document.getElementById('dailyDateToFilter').value=''; renderDaily();">تفريغ التاريخ</button>
+      <div class="dd-filter" id="dailyRepFilterWrap">
+        <button class="btn-ghost btn-sm" type="button" onclick="toggleDailyRepPanel(event)">👤 المندوب <span id="dailyRepFilterCount"></span></button>
+        <div class="dd-panel" id="dailyRepFilterPanel" style="display:none;"></div>
+      </div>
       <div class="spacer"></div>
       <div style="display:flex; gap:4px;">
         <button class="print-btn" onclick="printFilteredDaily('all','كل التحصيلات')">🖨️ الكل</button>
@@ -1787,6 +1803,54 @@ function switchPage(page){
 
 let AGING_ROWS = [];
 let agingFilter = 'all';
+let agingRepFilter = new Set(); // فارغة = كل المندوبين
+
+function toggleAgingRepPanel(ev){
+  if(ev) ev.stopPropagation();
+  const panel = document.getElementById('agingRepFilterPanel');
+  panel.style.display = panel.style.display==='block' ? 'none' : 'block';
+}
+document.addEventListener('click', (e)=>{
+  const wrap = document.getElementById('agingRepFilterWrap');
+  const panel = document.getElementById('agingRepFilterPanel');
+  if(wrap && panel && panel.style.display==='block' && !wrap.contains(e.target)) panel.style.display='none';
+});
+
+function populateAgingRepFilter(){
+  const reps = Array.from(new Set(AGING_ROWS.map(r=>r.slpName||'').filter(Boolean))).sort((a,b)=>a.localeCompare(b,'ar'));
+  agingRepFilter = new Set(Array.from(agingRepFilter).filter(name=>reps.includes(name)));
+  const panel = document.getElementById('agingRepFilterPanel');
+  if(reps.length===0){
+    panel.innerHTML = '<div class="dd-panel-empty">ما في مندوبين بالبيانات</div>';
+  } else {
+    panel.innerHTML = `
+      <div class="dd-panel-actions">
+        <button type="button" onclick="setAllAgingRepFilter(true)">تحديد الكل</button>
+        <button type="button" onclick="setAllAgingRepFilter(false)">تفريغ</button>
+      </div>
+      ${reps.map(name=>`<label class="dd-panel-item"><input type="checkbox" ${agingRepFilter.has(name)?'checked':''} onchange="toggleAgingRepOption(this,'${name.replace(/'/g,"\\'")}')"> ${name}</label>`).join('')}
+    `;
+  }
+  updateAgingRepFilterBtnLabel();
+}
+
+function toggleAgingRepOption(cb, name){
+  if(cb.checked) agingRepFilter.add(name); else agingRepFilter.delete(name);
+  updateAgingRepFilterBtnLabel();
+  renderAging();
+}
+
+function setAllAgingRepFilter(all){
+  const reps = Array.from(new Set(AGING_ROWS.map(r=>r.slpName||'').filter(Boolean)));
+  agingRepFilter = all ? new Set(reps) : new Set();
+  populateAgingRepFilter();
+  renderAging();
+}
+
+function updateAgingRepFilterBtnLabel(){
+  const el = document.getElementById('agingRepFilterCount');
+  if(el) el.textContent = agingRepFilter.size>0 ? `(${agingRepFilter.size})` : '';
+}
 
 // ===== كويري ٥ — الاستهلاك الدقيق (يحل محل كويري ٤ بالكامل) =====
 const AGING_HEADER_MAP = {
@@ -1836,6 +1900,7 @@ function processAging(){
   msg.className='status-msg ok';
   renderAgingSummary();
   document.getElementById('agingToolbar').style.display='flex';
+  populateAgingRepFilter();
   renderAging();
 }
 
@@ -2004,6 +2069,7 @@ function renderAging(){
     rows = rows.filter(r => (r.status==='overdue' || r.status==='immaterial') && r.daysDiff>=minD && r.daysDiff<=maxD);
   }
   if(agingFilter!=='all') rows = rows.filter(r=>r.status===agingFilter);
+  if(agingRepFilter.size>0) rows = rows.filter(r=>agingRepFilter.has(r.slpName));
   if(search) rows = rows.filter(r =>
     (r.cardCode||'').toLowerCase().includes(search) ||
     (r.cardName||'').toLowerCase().includes(search) ||
@@ -2094,6 +2160,8 @@ function clearAging(){
   document.getElementById('agingToolbar').style.display='none';
   document.getElementById('agingTableWrap').innerHTML = `<div class="empty-state"><div class="ic">📊</div>لسا ما في بيانات — الصق كويري ٨ فوق واختر تاريخ اللقطة واضغط "تحليل عمر الذمة"</div>`;
   AGING_ROWS=[];
+  agingRepFilter = new Set();
+  populateAgingRepFilter();
 }
 
 function printFilteredAging(status, label){
@@ -2394,7 +2462,55 @@ DAILY_HEADER_MAP['M12plus أقدم من 12 شهر'] = 'm12';
 
 let DAILY_ROWS = [];
 let dailyFilter = 'all';
+let dailyRepFilter = new Set(); // فارغة = كل المندوبين
 const DAILY_GRACE = 5;
+
+function toggleDailyRepPanel(ev){
+  if(ev) ev.stopPropagation();
+  const panel = document.getElementById('dailyRepFilterPanel');
+  panel.style.display = panel.style.display==='block' ? 'none' : 'block';
+}
+document.addEventListener('click', (e)=>{
+  const wrap = document.getElementById('dailyRepFilterWrap');
+  const panel = document.getElementById('dailyRepFilterPanel');
+  if(wrap && panel && panel.style.display==='block' && !wrap.contains(e.target)) panel.style.display='none';
+});
+
+function populateDailyRepFilter(){
+  const reps = Array.from(new Set(DAILY_ROWS.map(r=>r.slpName||'').filter(Boolean))).sort((a,b)=>a.localeCompare(b,'ar'));
+  dailyRepFilter = new Set(Array.from(dailyRepFilter).filter(name=>reps.includes(name)));
+  const panel = document.getElementById('dailyRepFilterPanel');
+  if(reps.length===0){
+    panel.innerHTML = '<div class="dd-panel-empty">ما في مندوبين بالبيانات</div>';
+  } else {
+    panel.innerHTML = `
+      <div class="dd-panel-actions">
+        <button type="button" onclick="setAllDailyRepFilter(true)">تحديد الكل</button>
+        <button type="button" onclick="setAllDailyRepFilter(false)">تفريغ</button>
+      </div>
+      ${reps.map(name=>`<label class="dd-panel-item"><input type="checkbox" ${dailyRepFilter.has(name)?'checked':''} onchange="toggleDailyRepOption(this,'${name.replace(/'/g,"\\'")}')"> ${name}</label>`).join('')}
+    `;
+  }
+  updateDailyRepFilterBtnLabel();
+}
+
+function toggleDailyRepOption(cb, name){
+  if(cb.checked) dailyRepFilter.add(name); else dailyRepFilter.delete(name);
+  updateDailyRepFilterBtnLabel();
+  renderDaily();
+}
+
+function setAllDailyRepFilter(all){
+  const reps = Array.from(new Set(DAILY_ROWS.map(r=>r.slpName||'').filter(Boolean)));
+  dailyRepFilter = all ? new Set(reps) : new Set();
+  populateDailyRepFilter();
+  renderDaily();
+}
+
+function updateDailyRepFilterBtnLabel(){
+  const el = document.getElementById('dailyRepFilterCount');
+  if(el) el.textContent = dailyRepFilter.size>0 ? `(${dailyRepFilter.size})` : '';
+}
 
 function processDaily(){
   const raw = document.getElementById('dailyPasteArea').value;
@@ -2408,6 +2524,7 @@ function processDaily(){
   msg.className='status-msg ok';
   renderDailySummary();
   document.getElementById('dailyToolbar').style.display='flex';
+  populateDailyRepFilter();
   renderDaily();
 }
 
@@ -2521,6 +2638,7 @@ function renderDaily(){
   if(dateFrom) rows = rows.filter(r=>r.collectDate && r.collectDate>=dateFrom);
   if(dateTo) rows = rows.filter(r=>r.collectDate && r.collectDate<=dateTo);
   if(dailyFilter!=='all') rows = rows.filter(r=>r.status===dailyFilter);
+  if(dailyRepFilter.size>0) rows = rows.filter(r=>dailyRepFilter.has(r.slpName));
   if(search) rows = rows.filter(r =>
     (r.cardCode||'').toLowerCase().includes(search) ||
     (r.cardName||'').toLowerCase().includes(search) ||
@@ -2595,6 +2713,8 @@ function clearDaily(){
   document.getElementById('dailyToolbar').style.display='none';
   document.getElementById('dailyTableWrap').innerHTML = `<div class="empty-state"><div class="ic">💰</div>الصق نتيجة كويري ١٠ واضغط "تحليل التحصيل"</div>`;
   DAILY_ROWS=[];
+  dailyRepFilter = new Set();
+  populateDailyRepFilter();
 }
 
 function clearEverything(){
@@ -2705,6 +2825,7 @@ function mrptFilteredAging(){
     rows = rows.filter(r => (r.status==='overdue' || r.status==='immaterial') && r.daysDiff>=minD && r.daysDiff<=maxD);
   }
   if(agingFilter!=='all') rows = rows.filter(r=>r.status===agingFilter);
+  if(agingRepFilter.size>0) rows = rows.filter(r=>agingRepFilter.has(r.slpName));
   if(search) rows = rows.filter(r =>
     (r.cardCode||'').toLowerCase().includes(search) ||
     (r.cardName||'').toLowerCase().includes(search) ||
@@ -2721,6 +2842,7 @@ function mrptFilteredDaily(){
   if(dateFrom) rows = rows.filter(r=>r.collectDate && r.collectDate>=dateFrom);
   if(dateTo) rows = rows.filter(r=>r.collectDate && r.collectDate<=dateTo);
   if(dailyFilter!=='all') rows = rows.filter(r=>r.status===dailyFilter);
+  if(dailyRepFilter.size>0) rows = rows.filter(r=>dailyRepFilter.has(r.slpName));
   if(search) rows = rows.filter(r =>
     (r.cardCode||'').toLowerCase().includes(search) ||
     (r.cardName||'').toLowerCase().includes(search) ||
@@ -2858,7 +2980,7 @@ function mrptAgingHtml(){
   const overdue = rows.filter(r=>r.status==='overdue').length;
   return `<section id="mrpt-aging" class="mrpt-page mrpt-chapter" data-toc="عمر الذمة الحالي">
     <div class="mrpt-chapter-head"><h1>عمر الذمة الحالي — كل العملاء</h1><button class="mrpt-section-print" onclick="printMrptSection('mrpt-aging')">🖨️ طباعة هذا الجزء فقط</button></div>
-    <div class="mrpt-sub">${rows.length} عميل، منهم ${overdue} متأخر فعلياً${agingFilter!=='all'?' (بحسب الفلتر النشط)':''}</div>
+    <div class="mrpt-sub">${rows.length} عميل، منهم ${overdue} متأخر فعلياً${(agingFilter!=='all'||agingRepFilter.size>0)?' (بحسب الفلتر النشط)':''}</div>
     <div class="mrpt-filter-row"><input type="text" class="mrpt-filter-box" placeholder="🔍 فلترة برمز/اسم العميل داخل هذا الجزء..." oninput="mrptFilterRows(this)"></div>
     ${body}
     <div class="mrpt-page-footer"><span>مركز الكيلاني للأغذية</span><span>${fmtDate(new Date())}</span></div>
@@ -2886,7 +3008,7 @@ function mrptDailyHtml(){
   const late = rows.filter(r=>r.status==='late').length;
   return `<section id="mrpt-daily" class="mrpt-page mrpt-chapter" data-toc="التحصيل اليومي">
     <div class="mrpt-chapter-head"><h1>التحصيل اليومي</h1><button class="mrpt-section-print" onclick="printMrptSection('mrpt-daily')">🖨️ طباعة هذا الجزء فقط</button></div>
-    <div class="mrpt-sub">${rows.length} تحصيل، منهم ${late} متأخر${dailyFilter!=='all'?' (بحسب الفلتر النشط)':''}</div>
+    <div class="mrpt-sub">${rows.length} تحصيل، منهم ${late} متأخر${(dailyFilter!=='all'||dailyRepFilter.size>0)?' (بحسب الفلتر النشط)':''}</div>
     <div class="mrpt-filter-row"><input type="text" class="mrpt-filter-box" placeholder="🔍 فلترة برمز/اسم العميل داخل هذا الجزء..." oninput="mrptFilterRows(this)"></div>
     ${body}
     <div class="mrpt-page-footer"><span>مركز الكيلاني للأغذية</span><span>${fmtDate(new Date())}</span></div>
