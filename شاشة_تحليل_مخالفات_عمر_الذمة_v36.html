@@ -366,6 +366,25 @@ ORDER BY R."CardCode", K."DueDate"</code>
       <button class="btn-ghost btn-sm" onclick="collapseAll()">طي الكل</button>
     </div>
 
+    <details class="opt" id="fifoVerifyDetails" style="margin:0 24px 14px;">
+      <summary>🔍 تحقق FIFO دقيق للمخالفين الحاليين (يصحّح false positives الطريقة المجمّعة)</summary>
+      <div class="hint" style="margin-top:8px;">
+        الطريقة المجمّعة (كويري ١) بتفترض FIFO على الرصيد الإجمالي — ممكن تعلّم فاتورة "مخالفة" غلط لو العميل سدّد أشهر معينة بترتيب غير الافتراضي. هالأداة بتولّد كويري مطابقة زمنية دقيقة (بنفس منطق كويري ٩) بس محصورة برموز العملاء المعلَّمين مخالفة حالياً بس (مش كل الشركة)، وبتصحح النتائج تلقائياً بعد ما تلصق ناتجها.
+      </div>
+      <button class="btn-primary btn-sm" onclick="generateFifoVerifyQuery()" style="margin:8px 0;">توليد كويري التحقق للمخالفين الحاليين</button>
+      <div id="fifoVerifyQueryWrap" style="display:none;">
+        <button class="btn-ghost btn-sm" onclick="copyQueryBlock(this)" style="margin:6px 0; display:block;">📋 نسخ الكويري</button>
+        <code class="block" id="fifoVerifyQueryText"></code>
+      </div>
+      <div class="hint" style="margin-top:10px;">شغّل الكويري يلي فوق على SAP، والصق نتيجتها هون:</div>
+      <textarea id="fifoVerifyPasteArea" style="min-height:100px;" placeholder="الصق هنا نتيجة كويري التحقق FIFO..."></textarea>
+      <div class="row-actions" style="padding:8px 0 0;">
+        <button class="btn-primary" onclick="processFifoVerify()">✔ تحقق وصحّح النتائج</button>
+        <button class="btn-ghost" onclick="document.getElementById('fifoVerifyPasteArea').value=''; document.getElementById('fifoVerifyStatusMsg').textContent='';">تفريغ</button>
+        <span class="status-msg" id="fifoVerifyStatusMsg"></span>
+      </div>
+    </details>
+
     <div id="approvalsPrintHeader" class="print-report-header" style="display:none;"></div>
     <div id="violationReportWrap" style="display:none; padding:0 24px 18px;"></div>
 
@@ -1153,6 +1172,160 @@ function groupByCustomer(){
   CUSTOMERS = Object.values(map);
 }
 
+/* ================= تحقق FIFO دقيق للمخالفين الحاليين (اختياري، فوق الطريقة المجمّعة) ================= */
+function generateFifoVerifyQuery(){
+  const codes = [...new Set(INVOICES.filter(r=>r.hasViolation).map(r=>r.cardCode).filter(Boolean))];
+  if(codes.length===0){
+    alert('ما في فواتير معلَّمة "مخالفة" حالياً — حلّل بيانات كويري ١ أول.');
+    return;
+  }
+  const inList = codes.map(c=>`'${c.replace(/'/g,"''")}'`).join(', ');
+  const sql = `-- كويري تحقق FIFO دقيق — محصور بـ${codes.length} عميل معلَّم مخالفة حالياً بس (مش كل الشركة)
+-- بنفس منطق كويري ٩ (مطابقة زمنية حقيقية)، معمَّم لهالعملاء دفعة وحدة
+SELECT
+    W."رمز العميل",
+    W."رقم القيد",
+    W."تاريخ الحركة",
+    W."نوع الحركة",
+    W."تصنيف الحركة",
+    W."الحساب المقابل",
+    W."مبلغ الحركة الكامل",
+    W."شهر الفواتير المخصص له",
+    W."المبلغ المخصص لهذا الشهر",
+    W."تاريخ نهاية شهر الفواتير",
+    W."تاريخ استحقاق الحركة (خام)",
+    DAYS_BETWEEN(W."تاريخ نهاية شهر الفواتير", W."تاريخ_للاحتساب") AS "عدد أيام التحصيل"
+FROM (
+    SELECT
+        PMT."ShortName"      AS "رمز العميل",
+        PMT."TransId"        AS "رقم القيد",
+        PMT."RefDate"        AS "تاريخ الحركة",
+        PMT."TransType"      AS "نوع الحركة",
+        CASE
+            WHEN PMT."TransType" = '24' THEN 'قبض (نقد/شيك)'
+            WHEN PMT."ContraAct" LIKE 'V%' THEN 'مقاصة مع مورد'
+            ELSE 'تسوية / تعديل'
+        END AS "تصنيف الحركة",
+        PMT."ContraAct"      AS "الحساب المقابل",
+        PMT."Amount"         AS "مبلغ الحركة الكامل",
+        TO_VARCHAR(SM."SalesMonth", 'YYYY-MM') AS "شهر الفواتير المخصص له",
+        (CASE WHEN PMT."Amount" >= 0 THEN 1 ELSE -1 END) *
+        GREATEST(
+            LEAST(GREATEST(PMT."PrevCumPayment", PMT."CumPayment"), SM."CumSales")
+            - GREATEST(LEAST(PMT."PrevCumPayment", PMT."CumPayment"), SM."PrevCumSales"),
+            0
+        ) AS "المبلغ المخصص لهذا الشهر",
+        LAST_DAY(SM."SalesMonth") AS "تاريخ نهاية شهر الفواتير",
+        PMT."DueDate" AS "تاريخ استحقاق الحركة (خام)",
+        CASE
+            WHEN PMT."TransType" = '24' AND PMT."DueDate" IS NOT NULL AND PMT."DueDate" >= PMT."RefDate" THEN PMT."DueDate"
+            WHEN PMT."TransType" = '24' THEN PMT."RefDate"
+            ELSE NULL
+        END AS "تاريخ_للاحتساب"
+    FROM (
+        SELECT
+            X."ShortName", X."TransId", X."Line_ID", X."RefDate", X."DueDate", X."TransType", X."ContraAct", X."Amount",
+            SUM(X."Amount") OVER (PARTITION BY X."ShortName" ORDER BY X."RefDate", X."TransId", X."Line_ID" ROWS UNBOUNDED PRECEDING) AS "CumPayment",
+            SUM(X."Amount") OVER (PARTITION BY X."ShortName" ORDER BY X."RefDate", X."TransId", X."Line_ID" ROWS UNBOUNDED PRECEDING) - X."Amount" AS "PrevCumPayment"
+        FROM (
+            SELECT T0."ShortName", T0."TransId", T0."Line_ID", T0."RefDate", T0."DueDate", T0."TransType", T0."ContraAct",
+                   (T0."Credit" - T0."Debit") AS "Amount"
+            FROM "KAYLANI_LIVE"."JDT1" T0
+            WHERE T0."TransType" NOT IN ('13','14')
+              AND T0."ShortName" IN (${inList})
+        ) X
+    ) PMT
+    INNER JOIN (
+        SELECT
+            Y."ShortName", Y."SalesMonth", Y."NetSales",
+            SUM(Y."NetSales") OVER (PARTITION BY Y."ShortName" ORDER BY Y."SalesMonth" ROWS UNBOUNDED PRECEDING) AS "CumSales",
+            SUM(Y."NetSales") OVER (PARTITION BY Y."ShortName" ORDER BY Y."SalesMonth" ROWS UNBOUNDED PRECEDING) - Y."NetSales" AS "PrevCumSales"
+        FROM (
+            SELECT
+                T0."ShortName",
+                TO_DATE(TO_VARCHAR(T0."RefDate", 'YYYY-MM') || '-01', 'YYYY-MM-DD') AS "SalesMonth",
+                SUM(T0."Debit" - T0."Credit") AS "NetSales"
+            FROM "KAYLANI_LIVE"."JDT1" T0
+            WHERE T0."TransType" IN ('13','14')
+              AND T0."ShortName" IN (${inList})
+            GROUP BY T0."ShortName", TO_DATE(TO_VARCHAR(T0."RefDate", 'YYYY-MM') || '-01', 'YYYY-MM-DD')
+        ) Y
+    ) SM
+    ON PMT."ShortName" = SM."ShortName"
+    AND LEAST(PMT."PrevCumPayment", PMT."CumPayment") < SM."CumSales"
+    AND GREATEST(PMT."PrevCumPayment", PMT."CumPayment") > SM."PrevCumSales"
+) W
+WHERE W."المبلغ المخصص لهذا الشهر" <> 0
+ORDER BY W."رمز العميل", W."تاريخ الحركة", W."شهر الفواتير المخصص له"`;
+  document.getElementById('fifoVerifyQueryText').textContent = sql;
+  document.getElementById('fifoVerifyQueryWrap').style.display = 'block';
+}
+
+const FIFO_VERIFY_HEADER_MAP = {
+  'رمز العميل':'cardCode', 'رقم القيد':'transId', 'تاريخ الحركة':'refDate', 'نوع الحركة':'transType',
+  'تصنيف الحركة':'category', 'الحساب المقابل':'contraAct', 'مبلغ الحركة الكامل':'fullAmount',
+  'شهر الفواتير المخصص له':'monthLabel', 'المبلغ المخصص لهذا الشهر':'allocAmount',
+  'تاريخ نهاية شهر الفواتير':'monthEnd', 'تاريخ استحقاق الحركة (خام)':'rawDueDate', 'عدد أيام التحصيل':'collectDays'
+};
+let FIFO_VERIFY_MAP = {};
+
+function fifoMonthLabelFor(invoiceDate, monthIdx){
+  const anchor = addMonths(invoiceDate, -monthIdx);
+  return anchor.getFullYear()+'-'+String(anchor.getMonth()+1).padStart(2,'0');
+}
+
+function processFifoVerify(){
+  const raw = document.getElementById('fifoVerifyPasteArea').value;
+  const msg = document.getElementById('fifoVerifyStatusMsg');
+  if(!raw.trim()){ msg.textContent='ما في بيانات ملصوقة.'; msg.className='status-msg err'; return; }
+  const parsed = genericParse(raw, FIFO_VERIFY_HEADER_MAP).filter(r=>r.cardCode && r.monthLabel);
+  if(parsed.length===0){ msg.textContent='ما قدرت أتعرف على أي صف صالح — تأكد من سطر العناوين.'; msg.className='status-msg err'; return; }
+
+  FIFO_VERIFY_MAP = {};
+  parsed.forEach(r=>{
+    const key = r.cardCode+'|'+r.monthLabel;
+    const days = parseNum(r.collectDays);
+    const monthEnd = parseSapDate(r.monthEnd);
+    if(!monthEnd) return;
+    if(!FIFO_VERIFY_MAP[key] || days > FIFO_VERIFY_MAP[key].days){
+      FIFO_VERIFY_MAP[key] = { days, monthEnd };
+    }
+  });
+
+  const fixedCount = applyFifoVerification();
+  msg.textContent = `تم تحليل ${parsed.length} صف تحقق (${Object.keys(FIFO_VERIFY_MAP).length} شهر/عميل). صُحّحت ${fixedCount} فاتورة كانت معلَّمة مخالفة غلط.`;
+  msg.className='status-msg ok';
+  renderList();
+}
+
+function applyFifoVerification(){
+  let fixedCount = 0;
+  INVOICES.forEach(inv=>{
+    if(!inv.hasViolation || !inv.chunkResults || !inv.invoiceDate) return;
+    let stillViolating = inv.balanceExceeds || inv.checksExceed;
+    inv.chunkResults.forEach(c=>{
+      if(c.state!=='violation' || c.source!=='balance'){ if(c.state==='violation') stillViolating = true; return; }
+      const label = fifoMonthLabelFor(inv.invoiceDate, c.monthIdx);
+      const v = FIFO_VERIFY_MAP[inv.cardCode+'|'+label];
+      if(!v){ c.fifoVerified = 'unpaid'; stillViolating = true; return; }
+      const reqDue = requiredDueDateFromMonthEnd(v.monthEnd, inv.extraDays);
+      const actualSettled = addDays(v.monthEnd, v.days);
+      const delay = reqDue ? daysBetween(actualSettled, reqDue) : 0;
+      if(delay > 0){ c.fifoVerified = 'late'; c.fifoDelay = delay; stillViolating = true; }
+      else { c.fifoVerified = 'ok'; c.fifoDelay = delay; }
+    });
+    if(!stillViolating){
+      inv.hasViolation = false;
+      inv.hasGap = false;
+      inv.violationReason = 'تم التحقق بدقة FIFO (كويري ٩ معمَّم) — سليمة فعلياً، false positive بالطريقة المجمّعة';
+      inv.violationReasonsList = [inv.violationReason];
+      fixedCount++;
+    }
+  });
+  groupByCustomer();
+  return fixedCount;
+}
+
 function pctCardsHtml(items){
   return items.map(it=>{
     const pct = it.total>0 ? Math.round((it.count/it.total)*1000)/10 : 0;
@@ -1251,7 +1424,7 @@ function printFilteredList(status, label){
 function chunksTableHtml(r){
   if(r.chunkResults.length===0) return '<div style="font-size:11.5px;color:var(--ink-soft);padding:8px 0;">ما في تفاصيل استهلاك (تحقق من وجود بيانات الأشهر أو الرصيد=0).</div>';
   let html = `<table><thead><tr>
-    <th>المصدر</th><th>الشهر</th><th class="num">المبلغ المتبقي غير المسدد</th><th>الاستحقاق المفروض</th><th>التاريخ الفعلي</th><th class="num">التأخير (يوم)</th><th>الحالة</th>
+    <th>المصدر</th><th>الشهر</th><th class="num">المبلغ المتبقي غير المسدد</th><th>الاستحقاق المفروض</th><th>التاريخ الفعلي</th><th class="num">التأخير (يوم)</th><th>الحالة</th><th>تحقق FIFO دقيق</th>
   </tr></thead><tbody>`;
   r.chunkResults.forEach(c=>{
     const srcLabel = c.source==='balance' ? 'رصيد' : `شيك ${c.check.docNum||''}`;
@@ -1261,11 +1434,16 @@ function chunksTableHtml(r){
                 : c.state==='immaterial' ? '<span class="badge immaterial">◌ غير مؤثر مادياً</span>'
                 : c.state==='nomonth' ? '<span class="badge gray">∅ لا استهلاك (مرتجعات)</span>'
                 : '<span class="badge ok">✓ ضمن المهلة</span>';
+    const fifoBadge = c.fifoVerified==='ok' ? `<span class="badge ok">✓ اتأكدت سليمة (${c.fifoDelay} يوم)</span>`
+                     : c.fifoVerified==='late' ? `<span class="badge warn">🚨 مؤكَّدة متأخرة (${c.fifoDelay} يوم)</span>`
+                     : c.fifoVerified==='unpaid' ? `<span class="badge warn">🚨 مؤكَّدة — لسا ما انسددت</span>`
+                     : '<span class="badge gray">— غير محقَّقة</span>';
     if(c.state==='nomonth'){
       html += `<tr class="${rowClass}">
         <td>${srcLabel}</td><td>${monthLabel(c.monthIdx)}</td><td class="num">${fmtNum(c.amount)}</td>
         <td colspan="3" style="color:var(--ink-soft); font-size:11px;">صافي هذا الشهر سالب (مرتجعات تجاوزت المبيعات) — لا يمكن استهلاك رصيد منه، تم تخطيه بالحساب</td>
         <td>${badge}</td>
+        <td>—</td>
       </tr>`;
       return;
     }
@@ -1274,6 +1452,7 @@ function chunksTableHtml(r){
       <td>${c.reqDue?fmtDate(c.reqDue):'—'}</td><td>${c.actualDate?fmtDate(c.actualDate):'—'}</td>
       <td class="num">${c.delayDays>0?c.delayDays:'—'}</td>
       <td>${badge}</td>
+      <td>${c.source==='balance' ? fifoBadge : '—'}</td>
     </tr>`;
   });
   html += '</tbody></table>';
