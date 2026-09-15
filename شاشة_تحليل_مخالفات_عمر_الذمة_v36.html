@@ -163,6 +163,7 @@
     <div class="userbox" id="userbox" style="display:none;">
       <div class="who"><b id="uName"></b><span id="uRole"></span><span class="status-msg" id="cloudSyncMsg" style="margin-top:2px;"></span></div>
       <button class="btn-ghost btn-sm" onclick="pullStateFromCloud()" title="تحميل آخر نسخة من السيرفر المشترك">🔄</button>
+      <button class="btn-ghost btn-sm" onclick="openMasterReport()" title="تقرير شامل احترافي (مخالفات + عمر الذمة + التحصيل اليومي) بغلاف وفهرس جانبي">📖 تقرير شامل</button>
       <button class="btn-ghost btn-sm" onclick="clearEverything()" title="تفريغ كل الكويريات والنتائج بالتبويبات الأربعة (محلياً بس، تمهيداً للصق بيانات جديدة)">🗑️ حذف كل شي</button>
       <button class="btn-ghost btn-sm" onclick="doLogout()">خروج</button>
     </div>
@@ -909,6 +910,76 @@ ORDER BY T0."ShortName", T0."RefDate"</code>
     .print-report-header .prh-stats b{font-family:var(--mono) !important; font-size:14px !important; display:block !important;}
   }
 </style>
+
+<style>
+  #mrptOverlay{display:none; position:fixed; inset:0; background:var(--mrpt-paper); z-index:9999; overflow-y:auto;
+    --mrpt-navy:#0F2F4F; --mrpt-navy-deep:#0A2038; --mrpt-navy-light:#173F66;
+    --mrpt-gold:#B08D57; --mrpt-gold-light:#D9C09A;
+    --mrpt-paper:#FBF9F5; --mrpt-border:#E5E0D6; --mrpt-text:#20242B; --mrpt-muted:#6B7280;
+    --mrpt-risk:#B42318; --mrpt-risk-bg:#FDF1EF; font-family:'Segoe UI',Tahoma,sans-serif; color:var(--mrpt-text);
+  }
+  #mrptOverlay .mrpt-app{display:flex; align-items:flex-start; min-height:100vh;}
+  #mrptSidebar{width:240px; flex:0 0 240px; position:sticky; top:0; height:100vh; overflow-y:auto;
+    background:linear-gradient(180deg,var(--mrpt-navy-deep),var(--mrpt-navy)); color:#EAF0F6; padding:18px 14px 30px;}
+  #mrptSidebar .mrpt-brand{font-size:13px; font-weight:800; margin-bottom:2px;}
+  #mrptSidebar .mrpt-brand-sub{font-size:10.5px; color:#B9CBDD; margin-bottom:14px;}
+  #mrptSidebar button{width:100%; border:none; border-radius:8px; padding:9px; font-weight:700; font-size:12px; cursor:pointer; margin-bottom:8px; font-family:inherit;}
+  #mrptPrintBtn{background:var(--mrpt-gold); color:var(--mrpt-navy-deep);}
+  #mrptPrintBtn:hover{background:var(--mrpt-gold-light);}
+  #mrptCloseBtn{background:rgba(255,255,255,.1); color:#fff;}
+  #mrptCloseBtn:hover{background:rgba(255,255,255,.2);}
+  #mrptToc{font-size:12px; margin-top:10px;}
+  #mrptToc a{display:block; color:#D7E3EE; text-decoration:none; padding:6px 10px; border-radius:6px; margin:2px 0;}
+  #mrptToc a:hover{background:rgba(255,255,255,.08);}
+  #mrptToc a.active{background:rgba(255,255,255,.16); color:#fff; font-weight:700;}
+  #mrptBook{flex:1; min-width:0; max-width:920px; margin:0 auto; padding:0 0 60px;}
+  .mrpt-page{padding:44px 48px; background:var(--card); page-break-after:always;}
+  .mrpt-page + .mrpt-page{border-top:1px solid var(--mrpt-border);}
+  .mrpt-page-footer{margin-top:28px; padding-top:12px; border-top:1px solid var(--mrpt-border); display:flex; justify-content:space-between; font-size:10.5px; color:var(--mrpt-muted);}
+  #mrpt-cover{background:linear-gradient(160deg,var(--mrpt-navy-deep) 0%, var(--mrpt-navy) 55%, var(--mrpt-navy-light) 100%);
+    color:#fff; min-height:100vh; display:flex; flex-direction:column; justify-content:space-between; padding:60px 56px;}
+  #mrpt-cover .mrpt-eyebrow{font-size:12px; color:var(--mrpt-gold-light); letter-spacing:1px;}
+  #mrpt-cover h1{font-size:32px; margin:14px 0 8px; line-height:1.35;}
+  #mrpt-cover h2{font-size:15px; font-weight:400; color:#C9D6E4; margin:0;}
+  #mrpt-cover .mrpt-cover-stats{display:flex; gap:24px; margin-top:20px;}
+  #mrpt-cover .mrpt-cover-stats div{background:rgba(255,255,255,.08); border-radius:10px; padding:12px 18px;}
+  #mrpt-cover .mrpt-cover-stats b{display:block; font-size:22px; font-family:var(--mono);}
+  #mrpt-cover .mrpt-cover-stats span{font-size:11px; color:#B9CBDD;}
+  #mrpt-cover .mrpt-cover-foot{font-size:11px; color:#9FB3C8;}
+  .mrpt-chapter h1{font-size:20px; color:var(--mrpt-navy-deep); margin:0 0 4px; border-bottom:2px solid var(--mrpt-gold); padding-bottom:10px;}
+  .mrpt-chapter .mrpt-sub{font-size:12px; color:var(--mrpt-muted); margin-bottom:18px;}
+  .mrpt-stat-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:18px;}
+  .mrpt-stat-card{background:#fff; border:1px solid var(--mrpt-border); border-radius:10px; padding:11px 13px;}
+  .mrpt-stat-card .mrpt-lbl{font-size:10.5px; color:var(--mrpt-muted); margin-bottom:4px;}
+  .mrpt-stat-card .mrpt-val{font-family:var(--mono); font-size:18px; font-weight:800; color:var(--mrpt-navy-deep);}
+  .mrpt-stat-card.risk .mrpt-val{color:var(--mrpt-risk);}
+  table.mrpt-tbl{width:100%; border-collapse:collapse; font-size:10.5px;}
+  table.mrpt-tbl thead th{background:#F3F1EA; text-align:right; padding:7px 8px; border-bottom:2px solid var(--mrpt-gold); font-weight:700; white-space:nowrap;}
+  table.mrpt-tbl tbody td{padding:5px 8px; border-bottom:1px solid var(--mrpt-border);}
+  table.mrpt-tbl tbody tr.mrpt-risk-row{background:var(--mrpt-risk-bg);}
+  table.mrpt-tbl td.num{font-family:var(--mono); direction:ltr; text-align:left;}
+  @media print{
+    body > *:not(#mrptOverlay){display:none !important;}
+    #mrptOverlay{position:static !important; overflow:visible !important;}
+    #mrptSidebar, #mrptCloseBtn{display:none !important;}
+    #mrptBook{max-width:100% !important; margin:0 !important;}
+    .mrpt-page{page-break-after:always;}
+    @page{ size:A4; margin:14mm; }
+  }
+</style>
+
+<div id="mrptOverlay">
+  <div class="mrpt-app">
+    <div id="mrptSidebar">
+      <div class="mrpt-brand">مركز الكيلاني للأغذية</div>
+      <div class="mrpt-brand-sub">تدقيق داخلي — عمر الذمة</div>
+      <button id="mrptPrintBtn" onclick="window.print()">🖨 طباعة / تصدير PDF</button>
+      <button id="mrptCloseBtn" onclick="closeMasterReport()">✕ إغلاق</button>
+      <nav id="mrptToc"></nav>
+    </div>
+    <div id="mrptBook"></div>
+  </div>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
@@ -2565,6 +2636,171 @@ function exportDailyCsv(){
   const blob = new Blob(['\uFEFF'+lines.join('\n')], {type:'text/csv;charset=utf-8;'});
   const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='التحصيل_اليومي.csv'; a.click();
 }
+
+/* ================= تقرير شامل احترافي (غلاف + فهرس جانبي) ================= */
+function mrptEsc(s){ return String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function mrptCoverHtml(){
+  const total = INVOICES.length;
+  const violCount = INVOICES.filter(r=>r.hasViolation).length;
+  const stats = [];
+  if(total){ stats.push(['إجمالي الفواتير', total]); stats.push(['فاتورة فيها مخالفة', violCount]); stats.push(['عدد العملاء', CUSTOMERS.length]); }
+  if(AGING_ROWS.length) stats.push(['عميل بعمر الذمة', AGING_ROWS.length]);
+  if(DAILY_ROWS.length) stats.push(['تحصيل يومي', DAILY_ROWS.length]);
+  return `<section id="mrpt-cover" class="mrpt-page">
+    <div>
+      <div class="mrpt-eyebrow">مركز الكيلاني للأغذية — تدقيق داخلي</div>
+      <h1>تقرير مراجعة عمر الذمة<br>والمخالفات</h1>
+      <h2>مراجعة موافقات الفواتير، عمر الذمة الحالي، والتحصيل اليومي</h2>
+      <div class="mrpt-cover-stats">
+        ${stats.map(s=>`<div><b>${s[1]}</b><span>${s[0]}</span></div>`).join('')}
+      </div>
+    </div>
+    <div class="mrpt-cover-foot">تاريخ إصدار التقرير: ${fmtDate(new Date())}</div>
+  </section>`;
+}
+
+function mrptSummaryHtml(){
+  const total = INVOICES.length;
+  const warn = INVOICES.filter(r=>r.hasViolation).length;
+  const gaps = INVOICES.filter(r=>{
+    const went = r.apprStatus && r.apprStatus.trim()!=='' && r.apprStatus.trim()!=='لم تذهب للموافقة';
+    return r.hasViolation && !went;
+  }).length;
+  const agingOverdue = AGING_ROWS.filter(r=>r.status==='overdue').length;
+  const dailyLate = DAILY_ROWS.filter(r=>r.status==='late').length;
+  return `<section id="mrpt-summary" class="mrpt-page mrpt-chapter" data-toc="الملخص التنفيذي">
+    <h1>الملخص التنفيذي</h1>
+    <div class="mrpt-sub">نظرة عامة سريعة على الحالة الحالية عبر التبويبات الثلاثة</div>
+    <div class="mrpt-stat-grid">
+      <div class="mrpt-stat-card"><div class="mrpt-lbl">إجمالي الفواتير المحلَّلة</div><div class="mrpt-val">${total}</div></div>
+      <div class="mrpt-stat-card risk"><div class="mrpt-lbl">فواتير فيها مخالفة</div><div class="mrpt-val">${warn}</div></div>
+      <div class="mrpt-stat-card risk"><div class="mrpt-lbl">🚨 مخالفة بدون موافقة</div><div class="mrpt-val">${gaps}</div></div>
+      <div class="mrpt-stat-card"><div class="mrpt-lbl">عدد العملاء</div><div class="mrpt-val">${CUSTOMERS.length}</div></div>
+      <div class="mrpt-stat-card risk"><div class="mrpt-lbl">متأخرون فعلياً (عمر الذمة)</div><div class="mrpt-val">${agingOverdue}</div></div>
+      <div class="mrpt-stat-card risk"><div class="mrpt-lbl">تحصيلات متأخرة</div><div class="mrpt-val">${dailyLate}</div></div>
+    </div>
+    <div class="mrpt-page-footer"><span>مركز الكيلاني للأغذية</span><span>${fmtDate(new Date())}</span></div>
+  </section>`;
+}
+
+function mrptViolationsHtml(){
+  const rows = INVOICES.filter(r=>r.hasViolation);
+  let body;
+  if(rows.length===0){
+    body = '<div style="padding:20px; color:var(--mrpt-muted); font-size:12px;">لا توجد فواتير مخالفة حالياً بالبيانات المحلَّلة. ✅</div>';
+  } else {
+    body = `<table class="mrpt-tbl"><thead><tr>
+      <th>رمز العميل</th><th>اسم العميل</th><th>رقم الفاتورة</th><th>تاريخ الفاتورة</th><th>حالة الموافقة</th><th>السبب</th><th class="num">المبلغ المتأخر</th><th class="num">أيام التأخير</th>
+    </tr></thead><tbody>`;
+    rows.forEach(r=>{
+      const wentToApproval = r.apprStatus && r.apprStatus.trim()!=='' && r.apprStatus.trim()!=='لم تذهب للموافقة';
+      const apprLabel = wentToApproval ? r.apprStatus : 'لم تذهب للموافقة';
+      const worstChunk = (r.chunkResults||[]).filter(c=>c.state==='violation').reduce((a,b)=>(!a||b.amount>a.amount)?b:a, null);
+      body += `<tr class="${r.hasGap?'mrpt-risk-row':''}">
+        <td>${mrptEsc(r.cardCode)}</td><td>${mrptEsc(r.cardName)}</td><td>${mrptEsc(r.docNum)}</td>
+        <td>${r.invoiceDate?fmtDate(r.invoiceDate):'—'}</td><td>${mrptEsc(apprLabel)}</td>
+        <td style="white-space:normal; max-width:260px;">${mrptEsc(r.violationReason||'—')}</td>
+        <td class="num">${worstChunk?fmtNum(worstChunk.amount):'—'}</td>
+        <td class="num">${worstChunk?worstChunk.delayDays:'—'}</td>
+      </tr>`;
+    });
+    body += '</tbody></table>';
+  }
+  return `<section id="mrpt-violations" class="mrpt-page mrpt-chapter" data-toc="المخالفات">
+    <h1>مخالفات موافقات الفواتير</h1>
+    <div class="mrpt-sub">${rows.length} فاتورة مخالفة من إجمالي ${INVOICES.length}</div>
+    ${body}
+    <div class="mrpt-page-footer"><span>مركز الكيلاني للأغذية</span><span>${fmtDate(new Date())}</span></div>
+  </section>`;
+}
+
+function mrptAgingHtml(){
+  let body;
+  if(AGING_ROWS.length===0){
+    body = '<div style="padding:20px; color:var(--mrpt-muted); font-size:12px;">ما في بيانات عمر ذمة محلَّلة بعد.</div>';
+  } else {
+    body = `<table class="mrpt-tbl"><thead><tr>
+      <th>رمز العميل</th><th>اسم العميل</th><th>المندوب</th><th class="num">السقف الائتماني</th><th class="num">الرصيد</th><th class="num">الشيكات المؤجلة</th><th class="num">التعرض الكلي</th><th>الاستحقاق المفروض</th><th>الحالة</th>
+    </tr></thead><tbody>`;
+    AGING_ROWS.forEach(r=>{
+      body += `<tr class="${r.status==='overdue'?'mrpt-risk-row':''}">
+        <td>${mrptEsc(r.cardCode)}</td><td>${mrptEsc(r.cardName)}</td><td>${mrptEsc(r.slpName)}</td>
+        <td class="num">${r.creditLine?fmtNum(r.creditLine):'—'}</td>
+        <td class="num">${fmtNum(r.balance)}</td><td class="num">${fmtNum(r.checks)}</td><td class="num">${fmtNum(r.totalExposure)}</td>
+        <td>${r.dueDate?fmtDate(r.dueDate):'—'}</td><td>${mrptEsc(r.statusLabel)}</td>
+      </tr>`;
+    });
+    body += '</tbody></table>';
+  }
+  const overdue = AGING_ROWS.filter(r=>r.status==='overdue').length;
+  return `<section id="mrpt-aging" class="mrpt-page mrpt-chapter" data-toc="عمر الذمة الحالي">
+    <h1>عمر الذمة الحالي — كل العملاء</h1>
+    <div class="mrpt-sub">${AGING_ROWS.length} عميل، منهم ${overdue} متأخر فعلياً</div>
+    ${body}
+    <div class="mrpt-page-footer"><span>مركز الكيلاني للأغذية</span><span>${fmtDate(new Date())}</span></div>
+  </section>`;
+}
+
+function mrptDailyHtml(){
+  let body;
+  if(DAILY_ROWS.length===0){
+    body = '<div style="padding:20px; color:var(--mrpt-muted); font-size:12px;">ما في بيانات تحصيل يومي محلَّلة بعد.</div>';
+  } else {
+    body = `<table class="mrpt-tbl"><thead><tr>
+      <th>رمز العميل</th><th>اسم العميل</th><th>المندوب</th><th>تاريخ التحصيل</th><th class="num">القيمة</th><th>الاستحقاق المفروض</th><th>التاريخ الفعلي</th><th>الحالة</th>
+    </tr></thead><tbody>`;
+    DAILY_ROWS.forEach(r=>{
+      body += `<tr class="${r.status==='late'?'mrpt-risk-row':''}">
+        <td>${mrptEsc(r.cardCode)}</td><td>${mrptEsc(r.cardName)}</td><td>${mrptEsc(r.slpName)}</td>
+        <td>${r.collectDate?fmtDate(r.collectDate):'—'}</td><td class="num">${fmtNum(r.amount)}</td>
+        <td>${r.reqDue?fmtDate(r.reqDue):'—'}</td><td>${r.actualDate?fmtDate(r.actualDate):'—'}</td><td>${mrptEsc(r.statusLabel)}</td>
+      </tr>`;
+    });
+    body += '</tbody></table>';
+  }
+  const late = DAILY_ROWS.filter(r=>r.status==='late').length;
+  return `<section id="mrpt-daily" class="mrpt-page mrpt-chapter" data-toc="التحصيل اليومي">
+    <h1>التحصيل اليومي</h1>
+    <div class="mrpt-sub">${DAILY_ROWS.length} تحصيل، منهم ${late} متأخر</div>
+    ${body}
+    <div class="mrpt-page-footer"><span>مركز الكيلاني للأغذية</span><span>${fmtDate(new Date())}</span></div>
+  </section>`;
+}
+
+let mrptIO = null;
+function openMasterReport(){
+  const book = document.getElementById('mrptBook');
+  book.innerHTML = mrptCoverHtml() + mrptSummaryHtml() + mrptViolationsHtml() + mrptAgingHtml() + mrptDailyHtml();
+
+  const toc = document.getElementById('mrptToc');
+  toc.innerHTML = '';
+  book.querySelectorAll('[data-toc]').forEach(sec=>{
+    const a = document.createElement('a');
+    a.href = '#'+sec.id; a.textContent = sec.dataset.toc; a.dataset.target = sec.id;
+    toc.appendChild(a);
+  });
+
+  document.getElementById('mrptOverlay').style.display = 'block';
+  document.body.style.overflow = 'hidden';
+
+  if(mrptIO) mrptIO.disconnect();
+  mrptIO = new IntersectionObserver((entries)=>{
+    entries.forEach(entry=>{
+      if(entry.isIntersecting){
+        toc.querySelectorAll('a').forEach(a=> a.classList.toggle('active', a.dataset.target===entry.target.id));
+      }
+    });
+  }, {root: document.getElementById('mrptOverlay'), rootMargin:'-10% 0px -80% 0px'});
+  book.querySelectorAll('[data-toc]').forEach(sec=> mrptIO.observe(sec));
+}
+
+function closeMasterReport(){
+  document.getElementById('mrptOverlay').style.display = 'none';
+  document.body.style.overflow = '';
+  if(mrptIO){ mrptIO.disconnect(); mrptIO=null; }
+}
+
 // ============================================================
 // نسخة احتياطية / استرجاع — كل بيانات الشاشة (الأربع تبويبات)
 // ============================================================
