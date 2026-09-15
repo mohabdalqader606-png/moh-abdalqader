@@ -539,27 +539,29 @@ var PORTAL_APP_GATE = {
   "APP-PRC-01": "procurement-intelligence",
   "APP-AUD-01": "internal-audit-portal",
   "APP-FLT-01": "fleet-vehicles",
-  "APP-SYS-01": false // شاشة نظامية — لا تُدار عبر allowed_apps، الدخول الفعلي محكوم داخلياً بصلاحية إدارة الصلاحيات (is_permissions_admin بقاعدة البيانات)
+  "APP-SYS-01": "user-permissions" // شاشة نظامية — تظهر فقط لمن عنده صف صلاحية فعلي على screen_id='user-permissions'، أو لمدير قديم (Legacy Break-Glass)
 };
 var portalSb = null;
 function gateStatus(msg, isErr){ var el=document.getElementById("portalGateStatus"); if(el){ el.textContent=msg; el.style.color = isErr? "var(--bad)" : "var(--muted)"; } }
 function hidePortalGate(){ var g=document.getElementById("portalGate"); if(g) g.style.display="none"; }
-function applyPortalGate(allowedApps, matrixScreenIds){
+function applyPortalGate(allowedApps, matrixScreenIds, isLegacyAdmin){
   var allowed = new Set(allowedApps||[]);
   var matrix = matrixScreenIds||new Set();
   APPS = APPS.filter(function(a){
     var gid = PORTAL_APP_GATE[a.id];
     if(gid===false) return true;
     if(!gid) return false;
+    if(gid==="user-permissions" && isLegacyAdmin) return true;
     return allowed.has(gid) || matrix.has(gid);
   });
 }
 async function onPortalSignedIn(user){
   gateStatus("جارٍ تحميل الأنظمة المتاحة لحسابك...");
-  var profQ = await portalSb.from("profiles").select("allowed_apps").eq("id", user.id).single();
+  var profQ = await portalSb.from("profiles").select("allowed_apps, role").eq("id", user.id).single();
   var permQ = await portalSb.from("user_screen_permissions").select("screen_id").eq("user_id", user.id);
   var matrixScreenIds = new Set((permQ.data||[]).map(function(r){ return r.screen_id; }));
-  applyPortalGate(profQ.data ? profQ.data.allowed_apps : [], matrixScreenIds);
+  var isLegacyAdmin = !!(profQ.data && profQ.data.role === "admin");
+  applyPortalGate(profQ.data ? profQ.data.allowed_apps : [], matrixScreenIds, isLegacyAdmin);
   hidePortalGate();
   portalBoot();
 }
