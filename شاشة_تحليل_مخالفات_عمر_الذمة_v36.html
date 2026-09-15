@@ -357,6 +357,10 @@ ORDER BY R."CardCode", K."DueDate"</code>
         <input type="date" id="dateToFilter" onchange="renderList()" style="border:1.5px solid var(--line); border-radius:8px; padding:6px 8px; font-size:12px;">
       </label>
       <button class="btn-ghost btn-sm" onclick="document.getElementById('dateFromFilter').value=''; document.getElementById('dateToFilter').value=''; renderList();">تفريغ التاريخ</button>
+      <div class="dd-filter" id="invoiceRepFilterWrap">
+        <button class="btn-ghost btn-sm" type="button" onclick="toggleInvoiceRepPanel(event)">👤 المندوب <span id="invoiceRepFilterCount"></span></button>
+        <div class="dd-panel" id="invoiceRepFilterPanel" style="display:none;"></div>
+      </div>
       <div class="spacer"></div>
       <label style="display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--ink-soft); cursor:pointer;">
         <input type="checkbox" id="showHiddenChk" onchange="renderList()"> إظهار المخفي (<span id="hiddenCount">0</span>)
@@ -1047,6 +1051,65 @@ let currentFilter = 'all';
 let HIDDEN = new Set(); // رموز عملاء أو "cardCode|docNum" لفواتير مخفية
 const N_MONTHS = 10; // M0..M9plus
 
+// فلتر المندوب بتبويب مراجعة الموافقات — الكويري الرئيسي ما فيه عمود مندوب أصلاً،
+// فبنستنتجه من بيانات تبويب "عمر الذمة" (AGING_ROWS) بربط رمز العميل
+let invoiceRepFilter = new Set(); // فارغة = كل المندوبين
+let INVOICE_REP_MAP = {}; // cardCode -> slpName
+
+function rebuildInvoiceRepMap(){
+  INVOICE_REP_MAP = {};
+  AGING_ROWS.forEach(r=>{ if(r.cardCode && r.slpName) INVOICE_REP_MAP[r.cardCode] = r.slpName; });
+}
+
+function toggleInvoiceRepPanel(ev){
+  if(ev) ev.stopPropagation();
+  const panel = document.getElementById('invoiceRepFilterPanel');
+  panel.style.display = panel.style.display==='block' ? 'none' : 'block';
+}
+document.addEventListener('click', (e)=>{
+  const wrap = document.getElementById('invoiceRepFilterWrap');
+  const panel = document.getElementById('invoiceRepFilterPanel');
+  if(wrap && panel && panel.style.display==='block' && !wrap.contains(e.target)) panel.style.display='none';
+});
+
+function populateInvoiceRepFilter(){
+  rebuildInvoiceRepMap();
+  const reps = Array.from(new Set(Object.values(INVOICE_REP_MAP))).sort((a,b)=>a.localeCompare(b,'ar'));
+  invoiceRepFilter = new Set(Array.from(invoiceRepFilter).filter(name=>reps.includes(name)));
+  const panel = document.getElementById('invoiceRepFilterPanel');
+  if(!panel) return;
+  if(reps.length===0){
+    panel.innerHTML = '<div class="dd-panel-empty">هاد الكويري ما فيه عمود مندوب أصلاً — لازم تحلل بيانات تبويب "عمر الذمة الحالي" الأول عشان يبين أسماء المندوبين هون (بيتم استنتاجهم من هناك بربط رمز العميل)</div>';
+  } else {
+    panel.innerHTML = `
+      <div class="dd-panel-actions">
+        <button type="button" onclick="setAllInvoiceRepFilter(true)">تحديد الكل</button>
+        <button type="button" onclick="setAllInvoiceRepFilter(false)">تفريغ</button>
+      </div>
+      ${reps.map(name=>`<label class="dd-panel-item"><input type="checkbox" ${invoiceRepFilter.has(name)?'checked':''} onchange="toggleInvoiceRepOption(this,'${name.replace(/'/g,"\\'")}')"> ${name}</label>`).join('')}
+    `;
+  }
+  updateInvoiceRepFilterBtnLabel();
+}
+
+function toggleInvoiceRepOption(cb, name){
+  if(cb.checked) invoiceRepFilter.add(name); else invoiceRepFilter.delete(name);
+  updateInvoiceRepFilterBtnLabel();
+  renderList();
+}
+
+function setAllInvoiceRepFilter(all){
+  const reps = Array.from(new Set(Object.values(INVOICE_REP_MAP)));
+  invoiceRepFilter = all ? new Set(reps) : new Set();
+  populateInvoiceRepFilter();
+  renderList();
+}
+
+function updateInvoiceRepFilterBtnLabel(){
+  const el = document.getElementById('invoiceRepFilterCount');
+  if(el) el.textContent = invoiceRepFilter.size>0 ? `(${invoiceRepFilter.size})` : '';
+}
+
 function parseNum(v){ if(v==null) return 0; v=String(v).trim().replace(/,/g,''); if(v===''||v==='-') return 0; const n=parseFloat(v); return isNaN(n)?0:n; }
 function parseSapDate(v){
   if(!v) return null; v=String(v).trim();
@@ -1112,6 +1175,7 @@ function processData(){
   msg.className='status-msg ok';
   renderSummary();
   document.getElementById('toolbar').style.display='flex';
+  populateInvoiceRepFilter();
   renderList();
 
   // طي قسم الإدخال تلقائياً بعد نجاح التحليل لتوفير المساحة
@@ -1593,6 +1657,7 @@ function renderList(){
   else if(currentFilter==='grace') list = list.filter(c=>c.warnCount===0 && c.graceCount>0);
   else if(currentFilter==='immaterial') list = list.filter(c=>c.warnCount===0 && c.graceCount===0 && c.immaterialCount>0);
   else if(currentFilter==='ok') list = list.filter(c=>c.warnCount===0 && c.graceCount===0 && c.immaterialCount===0);
+  if(invoiceRepFilter.size>0) list = list.filter(c=>invoiceRepFilter.has(INVOICE_REP_MAP[c.cardCode]));
   if(search) list = list.filter(c => (c.cardCode||'').toLowerCase().includes(search) || (c.cardName||'').toLowerCase().includes(search));
   list.sort((a,b)=> (b.gapCount-a.gapCount) || (b.warnCount-a.warnCount));
 
@@ -1687,6 +1752,8 @@ function clearAll(){
   document.getElementById('inputPanelCollapsed').style.display='none';
   document.getElementById('collapseInputBtn').style.display='none';
   INVOICES=[]; CUSTOMERS=[]; CHECKS_BY_CUSTOMER={}; HIDDEN=new Set();
+  invoiceRepFilter = new Set();
+  populateInvoiceRepFilter();
 }
 
 let violationReportOpen = false;
@@ -1901,6 +1968,7 @@ function processAging(){
   renderAgingSummary();
   document.getElementById('agingToolbar').style.display='flex';
   populateAgingRepFilter();
+  if(INVOICES.length){ populateInvoiceRepFilter(); renderList(); } // بيانات المندوبين بتبويب الموافقات مستنتجة من هون
   renderAging();
 }
 
@@ -2162,6 +2230,8 @@ function clearAging(){
   AGING_ROWS=[];
   agingRepFilter = new Set();
   populateAgingRepFilter();
+  invoiceRepFilter = new Set();
+  if(INVOICES.length){ populateInvoiceRepFilter(); renderList(); } // مصدر بيانات المندوبين هون اتفرّغ
 }
 
 function printFilteredAging(status, label){
@@ -2803,6 +2873,7 @@ function mrptFilteredInvoices(){
   else if(currentFilter==='grace') list = list.filter(c=>c.warnCount===0 && c.graceCount>0);
   else if(currentFilter==='immaterial') list = list.filter(c=>c.warnCount===0 && c.graceCount===0 && c.immaterialCount>0);
   else if(currentFilter==='ok') list = list.filter(c=>c.warnCount===0 && c.graceCount===0 && c.immaterialCount===0);
+  if(invoiceRepFilter.size>0) list = list.filter(c=>invoiceRepFilter.has(INVOICE_REP_MAP[c.cardCode]));
   if(search) list = list.filter(c => (c.cardCode||'').toLowerCase().includes(search) || (c.cardName||'').toLowerCase().includes(search));
 
   let rows = [];
@@ -2890,7 +2961,7 @@ function mrptSummaryHtml(){
   const dailyLate = daily.filter(r=>r.status==='late').length;
   return `<section id="mrpt-summary" class="mrpt-page mrpt-chapter" data-toc="الملخص التنفيذي">
     <div class="mrpt-chapter-head"><h1>الملخص التنفيذي</h1><button class="mrpt-section-print" onclick="printMrptSection('mrpt-summary')">🖨️ طباعة هذا الجزء فقط</button></div>
-    <div class="mrpt-sub">نظرة عامة سريعة على الحالة الحالية عبر التبويبات الثلاثة${currentFilter!=='all'?' (بحسب الفلتر النشط)':''}</div>
+    <div class="mrpt-sub">نظرة عامة سريعة على الحالة الحالية عبر التبويبات الثلاثة${(currentFilter!=='all'||invoiceRepFilter.size>0)?' (بحسب الفلتر النشط)':''}</div>
     <div class="mrpt-stat-grid">
       <div class="mrpt-stat-card"><div class="mrpt-lbl">إجمالي الفواتير المحلَّلة</div><div class="mrpt-val">${total}</div></div>
       <div class="mrpt-stat-card risk"><div class="mrpt-lbl">فواتير فيها مخالفة</div><div class="mrpt-val">${warn}</div></div>
@@ -2951,7 +3022,7 @@ function mrptViolationsHtml(){
   }
   return `<section id="mrpt-violations" class="mrpt-page mrpt-chapter" data-toc="المخالفات">
     <div class="mrpt-chapter-head"><h1>مخالفات موافقات الفواتير</h1><button class="mrpt-section-print" onclick="printMrptSection('mrpt-violations')">🖨️ طباعة هذا الجزء فقط</button></div>
-    <div class="mrpt-sub">${rows.length} فاتورة مخالفة لـ${new Set(rows.map(r=>r.cardCode)).size} عميل، من إجمالي ${filtered.length}${currentFilter!=='all'?' (بحسب الفلتر النشط)':''}</div>
+    <div class="mrpt-sub">${rows.length} فاتورة مخالفة لـ${new Set(rows.map(r=>r.cardCode)).size} عميل، من إجمالي ${filtered.length}${(currentFilter!=='all'||invoiceRepFilter.size>0)?' (بحسب الفلتر النشط)':''}</div>
     <div class="mrpt-filter-row"><input type="text" class="mrpt-filter-box" placeholder="🔍 فلترة برمز/اسم العميل داخل هذا الجزء..." oninput="mrptFilterRows(this)"></div>
     ${body}
     <div class="mrpt-page-footer"><span>مركز الكيلاني للأغذية</span><span>${fmtDate(new Date())}</span></div>
