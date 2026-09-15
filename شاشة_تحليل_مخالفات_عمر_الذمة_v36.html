@@ -361,6 +361,10 @@ ORDER BY R."CardCode", K."DueDate"</code>
         <button class="btn-ghost btn-sm" type="button" onclick="toggleInvoiceRepPanel(event)">👤 المندوب <span id="invoiceRepFilterCount"></span></button>
         <div class="dd-panel" id="invoiceRepFilterPanel" style="display:none;"></div>
       </div>
+      <div class="dd-filter" id="invoiceManagerFilterWrap">
+        <button class="btn-ghost btn-sm" type="button" onclick="toggleInvoiceManagerPanel(event)">🧑‍💼 المدير <span id="invoiceManagerFilterCount"></span></button>
+        <div class="dd-panel" id="invoiceManagerFilterPanel" style="display:none;"></div>
+      </div>
       <div class="spacer"></div>
       <label style="display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--ink-soft); cursor:pointer;">
         <input type="checkbox" id="showHiddenChk" onchange="renderList()"> إظهار المخفي (<span id="hiddenCount">0</span>)
@@ -573,6 +577,10 @@ ORDER BY R."CardCode", K."DueDate"</code>
       <div class="dd-filter" id="agingRepFilterWrap">
         <button class="btn-ghost btn-sm" type="button" onclick="toggleAgingRepPanel(event)">👤 المندوب <span id="agingRepFilterCount"></span></button>
         <div class="dd-panel" id="agingRepFilterPanel" style="display:none;"></div>
+      </div>
+      <div class="dd-filter" id="agingManagerFilterWrap">
+        <button class="btn-ghost btn-sm" type="button" onclick="toggleAgingManagerPanel(event)">🧑‍💼 المدير <span id="agingManagerFilterCount"></span></button>
+        <div class="dd-panel" id="agingManagerFilterPanel" style="display:none;"></div>
       </div>
       <div class="spacer"></div>
       <button class="btn-primary btn-sm" onclick="generateReminders()">✉️ توليد رسائل تذكير للمحددين</button>
@@ -846,6 +854,10 @@ ORDER BY T0."ShortName", T0."RefDate"</code>
         <button class="btn-ghost btn-sm" type="button" onclick="toggleDailyRepPanel(event)">👤 المندوب <span id="dailyRepFilterCount"></span></button>
         <div class="dd-panel" id="dailyRepFilterPanel" style="display:none;"></div>
       </div>
+      <div class="dd-filter" id="dailyManagerFilterWrap">
+        <button class="btn-ghost btn-sm" type="button" onclick="toggleDailyManagerPanel(event)">🧑‍💼 المدير <span id="dailyManagerFilterCount"></span></button>
+        <div class="dd-panel" id="dailyManagerFilterPanel" style="display:none;"></div>
+      </div>
       <div class="spacer"></div>
       <div style="display:flex; gap:4px;">
         <button class="print-btn" onclick="printFilteredDaily('all','كل التحصيلات')">🖨️ الكل</button>
@@ -1051,6 +1063,93 @@ let currentFilter = 'all';
 let HIDDEN = new Set(); // رموز عملاء أو "cardCode|docNum" لفواتير مخفية
 const N_MONTHS = 10; // M0..M9plus
 
+// خريطة مندوب → مدير (مرفوعة يدوياً من ملف إكسل الشركة) — تُستخدم لفلتر "المدير" بكل التبويبات
+const REP_MANAGER_MAP = {
+  '-No Sales Employee-': 'الادارة',
+  'عملاء موقوفين': 'الادارة',
+  'مثقال عودة': 'اشرف ابو عزه',
+  'مروان السمهوري': 'محمد وادي',
+  'باسل نوري': 'باسل نوري',
+  'محمد عبد الحشحوش': 'محمد وادي',
+  'خالد للوة': 'اشرف ابو عزه',
+  'الأدارة العامة': 'الادارة',
+  'احمد صدقي': 'اشرف ابو عزه',
+  'اشرف ابو عزة': 'اشرف ابو عزه',
+  'محمد نمر شان': 'اشرف ابو عزه',
+  'جميل سعد': 'اشرف ابو عزه',
+  'غسان جمول': 'اشرف ابو عزه',
+  'مهدي جوده': 'اشرف ابو عزه',
+  'احمد الشريف': 'اشرف ابو عزه',
+  'أحمد الدبعي': 'اشرف ابو عزه',
+  'عدنان مصلح / قسم  اللحوم': 'اشرف ابو عزه',
+  'احمد قاسم': 'اشرف ابو عزه',
+  'ادارة مبيعات خاصة': 'الادارة',
+  'رائد صيام': 'محمد وادي',
+  'ادارة مبيعات الحلويات': 'محمد وادي',
+  'سامي زريقات-كاش فان': 'السيد عميره',
+  'محمد الرفاعي - حلويات': 'محمد وادي',
+  'فادي عرفات': 'محمد وادي',
+  'امجد نصاصره-كاش فان': 'السيد عميره',
+  'محمد زياد السويطي': 'السيد عميره',
+  'ماجد محمود المومني': 'السيد عميره',
+  'ادارة-تحويل-عينات-تبرعات': 'الادارة',
+  'غسان جمول -': 'اشرف ابو عزه',
+  'عبد الحميد العمله': 'اشرف ابو عزه',
+  'صهيب ابو عمشه': 'صهيب ابو عمشه',
+  'هاني الدويك': 'اشرف ابو عزه',
+  'سائد غسان': 'اشرف ابو عزه',
+  'محمد صافي': 'اشرف ابو عزه',
+  'سامر الرمحي': 'السيد عميره',
+  'مهند علي دعيس': 'السيد عميره',
+  'احمد ابو ديه': 'السيد عميره',
+  'لؤي فرهود': 'السيد عميره',
+  'محمد علي ابو نوفل': 'السيد عميره',
+  'قصي محمود اللوزي': 'محمد وادي',
+  'محمد الماني': 'اشرف ابو عزه',
+  'وائل ابراهيم': 'محمد وادي',
+  'بسام ذبالح': 'السيد عميره',
+  'عثمان زين': 'السيد عميره',
+  'قضايا وتسويات': 'الادارة',
+  'موظفين': 'الادارة',
+  'موردين': 'الادارة',
+  'نادر قويدر': 'صهيب ابو عمشه',
+  'ديون متعثرة': 'الادارة',
+  'سامر عطيه': 'اشرف ابو عزه',
+  'لؤي زريق': 'السيد عميره',
+  'محمد السويطي': 'السيد عميره',
+  'فادي صالح': 'محمد وادي',
+  'محمد وادي': 'محمد وادي',
+  'محمود الدعمس': 'صهيب ابو عمشه',
+  'امجد صافي': 'السيد عميره',
+  'احمد الحبايبه': 'السيد عميره',
+  'احمد عساف': 'السيد عميره',
+  'محمد عزام': 'الادارة',
+  'اسامه فياض': 'باسل نوري',
+  'سعيد ابو سير': 'محمد وادي',
+  'اسماء الحربي': 'اشرف ابو عزه',
+  'احمد السليمان': 'اشرف ابو عزه',
+  'اسعد ناصر': 'السيد عميره',
+  'مالك شلبايه': 'السيد عميره',
+  'عامر فواز': 'السيد عميره',
+  'فارس الحسين': 'السيد عميره',
+  'محمد عصام القزعه': 'السيد عميره',
+  'مشعل الرشده': 'اشرف ابو عزه',
+  'اوراق دفع': 'الادارة',
+  'المشروع الجديد': 'الادارة',
+  'مصطفى الرفاتي': 'السيد عميره',
+  'محمد سلهب': 'السيد عميره',
+  'علاء احمد الحنيف': 'السيد عميره',
+  'معاذ البحيصي': 'السيد عميره',
+  'ابراهيم الغوراني': 'محمد وادي',
+  'محمد حمدان': 'السيد عميره',
+  'عبدالله البشيتي': 'السيد عميره',
+  'بلال الرفاعي': 'السيد عميره',
+  'Basil Nori': 'باسل نوري',
+  'عزت صبيح': 'السيد عميره',
+  'محمد الزبن': 'السيد عميره',
+};
+const ALL_MANAGERS = Array.from(new Set(Object.values(REP_MANAGER_MAP))).sort((a,b)=>a.localeCompare(b,'ar'));
+
 // فلتر المندوب بتبويب مراجعة الموافقات — الكويري الرئيسي ما فيه عمود مندوب أصلاً،
 // فبنستنتجه من بيانات تبويب "عمر الذمة" (AGING_ROWS) بربط رمز العميل
 let invoiceRepFilter = new Set(); // فارغة = كل المندوبين
@@ -1108,6 +1207,50 @@ function setAllInvoiceRepFilter(all){
 function updateInvoiceRepFilterBtnLabel(){
   const el = document.getElementById('invoiceRepFilterCount');
   if(el) el.textContent = invoiceRepFilter.size>0 ? `(${invoiceRepFilter.size})` : '';
+}
+
+let invoiceManagerFilter = new Set(); // فارغة = كل المدراء
+
+function toggleInvoiceManagerPanel(ev){
+  if(ev) ev.stopPropagation();
+  const panel = document.getElementById('invoiceManagerFilterPanel');
+  panel.style.display = panel.style.display==='block' ? 'none' : 'block';
+}
+document.addEventListener('click', (e)=>{
+  const wrap = document.getElementById('invoiceManagerFilterWrap');
+  const panel = document.getElementById('invoiceManagerFilterPanel');
+  if(wrap && panel && panel.style.display==='block' && !wrap.contains(e.target)) panel.style.display='none';
+});
+
+function populateInvoiceManagerFilter(){
+  invoiceManagerFilter = new Set(Array.from(invoiceManagerFilter).filter(name=>ALL_MANAGERS.includes(name)));
+  const panel = document.getElementById('invoiceManagerFilterPanel');
+  if(!panel) return;
+  panel.innerHTML = `
+    <div class="dd-panel-actions">
+      <button type="button" onclick="setAllInvoiceManagerFilter(true)">تحديد الكل</button>
+      <button type="button" onclick="setAllInvoiceManagerFilter(false)">تفريغ</button>
+    </div>
+    ${ALL_MANAGERS.map(name=>`<label class="dd-panel-item"><input type="checkbox" ${invoiceManagerFilter.has(name)?'checked':''} onchange="toggleInvoiceManagerOption(this,'${name.replace(/'/g,"\\'")}')"> ${name}</label>`).join('')}
+  `;
+  updateInvoiceManagerFilterBtnLabel();
+}
+
+function toggleInvoiceManagerOption(cb, name){
+  if(cb.checked) invoiceManagerFilter.add(name); else invoiceManagerFilter.delete(name);
+  updateInvoiceManagerFilterBtnLabel();
+  renderList();
+}
+
+function setAllInvoiceManagerFilter(all){
+  invoiceManagerFilter = all ? new Set(ALL_MANAGERS) : new Set();
+  populateInvoiceManagerFilter();
+  renderList();
+}
+
+function updateInvoiceManagerFilterBtnLabel(){
+  const el = document.getElementById('invoiceManagerFilterCount');
+  if(el) el.textContent = invoiceManagerFilter.size>0 ? `(${invoiceManagerFilter.size})` : '';
 }
 
 function parseNum(v){ if(v==null) return 0; v=String(v).trim().replace(/,/g,''); if(v===''||v==='-') return 0; const n=parseFloat(v); return isNaN(n)?0:n; }
@@ -1663,6 +1806,7 @@ function renderList(){
   else if(currentFilter==='immaterial') list = list.filter(c=>c.warnCount===0 && c.graceCount===0 && c.immaterialCount>0);
   else if(currentFilter==='ok') list = list.filter(c=>c.warnCount===0 && c.graceCount===0 && c.immaterialCount===0);
   if(invoiceRepFilter.size>0) list = list.filter(c=>invoiceRepFilter.has(INVOICE_REP_MAP[c.cardCode]));
+  if(invoiceManagerFilter.size>0) list = list.filter(c=>invoiceManagerFilter.has(REP_MANAGER_MAP[INVOICE_REP_MAP[c.cardCode]]));
   if(search) list = list.filter(c => (c.cardCode||'').toLowerCase().includes(search) || (c.cardName||'').toLowerCase().includes(search));
   list.sort((a,b)=> (b.gapCount-a.gapCount) || (b.warnCount-a.warnCount));
 
@@ -1924,6 +2068,49 @@ function updateAgingRepFilterBtnLabel(){
   if(el) el.textContent = agingRepFilter.size>0 ? `(${agingRepFilter.size})` : '';
 }
 
+let agingManagerFilter = new Set(); // فارغة = كل المدراء
+
+function toggleAgingManagerPanel(ev){
+  if(ev) ev.stopPropagation();
+  const panel = document.getElementById('agingManagerFilterPanel');
+  panel.style.display = panel.style.display==='block' ? 'none' : 'block';
+}
+document.addEventListener('click', (e)=>{
+  const wrap = document.getElementById('agingManagerFilterWrap');
+  const panel = document.getElementById('agingManagerFilterPanel');
+  if(wrap && panel && panel.style.display==='block' && !wrap.contains(e.target)) panel.style.display='none';
+});
+
+function populateAgingManagerFilter(){
+  agingManagerFilter = new Set(Array.from(agingManagerFilter).filter(name=>ALL_MANAGERS.includes(name)));
+  const panel = document.getElementById('agingManagerFilterPanel');
+  panel.innerHTML = `
+    <div class="dd-panel-actions">
+      <button type="button" onclick="setAllAgingManagerFilter(true)">تحديد الكل</button>
+      <button type="button" onclick="setAllAgingManagerFilter(false)">تفريغ</button>
+    </div>
+    ${ALL_MANAGERS.map(name=>`<label class="dd-panel-item"><input type="checkbox" ${agingManagerFilter.has(name)?'checked':''} onchange="toggleAgingManagerOption(this,'${name.replace(/'/g,"\\'")}')"> ${name}</label>`).join('')}
+  `;
+  updateAgingManagerFilterBtnLabel();
+}
+
+function toggleAgingManagerOption(cb, name){
+  if(cb.checked) agingManagerFilter.add(name); else agingManagerFilter.delete(name);
+  updateAgingManagerFilterBtnLabel();
+  renderAging();
+}
+
+function setAllAgingManagerFilter(all){
+  agingManagerFilter = all ? new Set(ALL_MANAGERS) : new Set();
+  populateAgingManagerFilter();
+  renderAging();
+}
+
+function updateAgingManagerFilterBtnLabel(){
+  const el = document.getElementById('agingManagerFilterCount');
+  if(el) el.textContent = agingManagerFilter.size>0 ? `(${agingManagerFilter.size})` : '';
+}
+
 // ===== كويري ٥ — الاستهلاك الدقيق (يحل محل كويري ٤ بالكامل) =====
 const AGING_HEADER_MAP = {
   'رمز العميل':'cardCode', 'اسم العميل':'cardName', 'المندوب':'slpName',
@@ -2143,6 +2330,7 @@ function renderAging(){
   }
   if(agingFilter!=='all') rows = rows.filter(r=>r.status===agingFilter);
   if(agingRepFilter.size>0) rows = rows.filter(r=>agingRepFilter.has(r.slpName));
+  if(agingManagerFilter.size>0) rows = rows.filter(r=>agingManagerFilter.has(REP_MANAGER_MAP[r.slpName]));
   if(search) rows = rows.filter(r =>
     (r.cardCode||'').toLowerCase().includes(search) ||
     (r.cardName||'').toLowerCase().includes(search) ||
@@ -2587,6 +2775,49 @@ function updateDailyRepFilterBtnLabel(){
   if(el) el.textContent = dailyRepFilter.size>0 ? `(${dailyRepFilter.size})` : '';
 }
 
+let dailyManagerFilter = new Set(); // فارغة = كل المدراء
+
+function toggleDailyManagerPanel(ev){
+  if(ev) ev.stopPropagation();
+  const panel = document.getElementById('dailyManagerFilterPanel');
+  panel.style.display = panel.style.display==='block' ? 'none' : 'block';
+}
+document.addEventListener('click', (e)=>{
+  const wrap = document.getElementById('dailyManagerFilterWrap');
+  const panel = document.getElementById('dailyManagerFilterPanel');
+  if(wrap && panel && panel.style.display==='block' && !wrap.contains(e.target)) panel.style.display='none';
+});
+
+function populateDailyManagerFilter(){
+  dailyManagerFilter = new Set(Array.from(dailyManagerFilter).filter(name=>ALL_MANAGERS.includes(name)));
+  const panel = document.getElementById('dailyManagerFilterPanel');
+  panel.innerHTML = `
+    <div class="dd-panel-actions">
+      <button type="button" onclick="setAllDailyManagerFilter(true)">تحديد الكل</button>
+      <button type="button" onclick="setAllDailyManagerFilter(false)">تفريغ</button>
+    </div>
+    ${ALL_MANAGERS.map(name=>`<label class="dd-panel-item"><input type="checkbox" ${dailyManagerFilter.has(name)?'checked':''} onchange="toggleDailyManagerOption(this,'${name.replace(/'/g,"\\'")}')"> ${name}</label>`).join('')}
+  `;
+  updateDailyManagerFilterBtnLabel();
+}
+
+function toggleDailyManagerOption(cb, name){
+  if(cb.checked) dailyManagerFilter.add(name); else dailyManagerFilter.delete(name);
+  updateDailyManagerFilterBtnLabel();
+  renderDaily();
+}
+
+function setAllDailyManagerFilter(all){
+  dailyManagerFilter = all ? new Set(ALL_MANAGERS) : new Set();
+  populateDailyManagerFilter();
+  renderDaily();
+}
+
+function updateDailyManagerFilterBtnLabel(){
+  const el = document.getElementById('dailyManagerFilterCount');
+  if(el) el.textContent = dailyManagerFilter.size>0 ? `(${dailyManagerFilter.size})` : '';
+}
+
 function processDaily(){
   const raw = document.getElementById('dailyPasteArea').value;
   const msg = document.getElementById('dailyStatusMsg');
@@ -2714,6 +2945,7 @@ function renderDaily(){
   if(dateTo) rows = rows.filter(r=>r.collectDate && r.collectDate<=dateTo);
   if(dailyFilter!=='all') rows = rows.filter(r=>r.status===dailyFilter);
   if(dailyRepFilter.size>0) rows = rows.filter(r=>dailyRepFilter.has(r.slpName));
+  if(dailyManagerFilter.size>0) rows = rows.filter(r=>dailyManagerFilter.has(REP_MANAGER_MAP[r.slpName]));
   if(search) rows = rows.filter(r =>
     (r.cardCode||'').toLowerCase().includes(search) ||
     (r.cardName||'').toLowerCase().includes(search) ||
@@ -2879,6 +3111,7 @@ function mrptFilteredInvoices(){
   else if(currentFilter==='immaterial') list = list.filter(c=>c.warnCount===0 && c.graceCount===0 && c.immaterialCount>0);
   else if(currentFilter==='ok') list = list.filter(c=>c.warnCount===0 && c.graceCount===0 && c.immaterialCount===0);
   if(invoiceRepFilter.size>0) list = list.filter(c=>invoiceRepFilter.has(INVOICE_REP_MAP[c.cardCode]));
+  if(invoiceManagerFilter.size>0) list = list.filter(c=>invoiceManagerFilter.has(REP_MANAGER_MAP[INVOICE_REP_MAP[c.cardCode]]));
   if(search) list = list.filter(c => (c.cardCode||'').toLowerCase().includes(search) || (c.cardName||'').toLowerCase().includes(search));
 
   let rows = [];
@@ -2902,6 +3135,7 @@ function mrptFilteredAging(){
   }
   if(agingFilter!=='all') rows = rows.filter(r=>r.status===agingFilter);
   if(agingRepFilter.size>0) rows = rows.filter(r=>agingRepFilter.has(r.slpName));
+  if(agingManagerFilter.size>0) rows = rows.filter(r=>agingManagerFilter.has(REP_MANAGER_MAP[r.slpName]));
   if(search) rows = rows.filter(r =>
     (r.cardCode||'').toLowerCase().includes(search) ||
     (r.cardName||'').toLowerCase().includes(search) ||
@@ -2919,6 +3153,7 @@ function mrptFilteredDaily(){
   if(dateTo) rows = rows.filter(r=>r.collectDate && r.collectDate<=dateTo);
   if(dailyFilter!=='all') rows = rows.filter(r=>r.status===dailyFilter);
   if(dailyRepFilter.size>0) rows = rows.filter(r=>dailyRepFilter.has(r.slpName));
+  if(dailyManagerFilter.size>0) rows = rows.filter(r=>dailyManagerFilter.has(REP_MANAGER_MAP[r.slpName]));
   if(search) rows = rows.filter(r =>
     (r.cardCode||'').toLowerCase().includes(search) ||
     (r.cardName||'').toLowerCase().includes(search) ||
@@ -2966,7 +3201,7 @@ function mrptSummaryHtml(){
   const dailyLate = daily.filter(r=>r.status==='late').length;
   return `<section id="mrpt-summary" class="mrpt-page mrpt-chapter" data-toc="الملخص التنفيذي">
     <div class="mrpt-chapter-head"><h1>الملخص التنفيذي</h1><button class="mrpt-section-print" onclick="printMrptSection('mrpt-summary')">🖨️ طباعة هذا الجزء فقط</button></div>
-    <div class="mrpt-sub">نظرة عامة سريعة على الحالة الحالية عبر التبويبات الثلاثة${(currentFilter!=='all'||invoiceRepFilter.size>0)?' (بحسب الفلتر النشط)':''}</div>
+    <div class="mrpt-sub">نظرة عامة سريعة على الحالة الحالية عبر التبويبات الثلاثة${(currentFilter!=='all'||invoiceRepFilter.size>0||invoiceManagerFilter.size>0)?' (بحسب الفلتر النشط)':''}</div>
     <div class="mrpt-stat-grid">
       <div class="mrpt-stat-card"><div class="mrpt-lbl">إجمالي الفواتير المحلَّلة</div><div class="mrpt-val">${total}</div></div>
       <div class="mrpt-stat-card risk"><div class="mrpt-lbl">فواتير فيها مخالفة</div><div class="mrpt-val">${warn}</div></div>
@@ -3027,7 +3262,7 @@ function mrptViolationsHtml(){
   }
   return `<section id="mrpt-violations" class="mrpt-page mrpt-chapter" data-toc="المخالفات">
     <div class="mrpt-chapter-head"><h1>مخالفات موافقات الفواتير</h1><button class="mrpt-section-print" onclick="printMrptSection('mrpt-violations')">🖨️ طباعة هذا الجزء فقط</button></div>
-    <div class="mrpt-sub">${rows.length} فاتورة مخالفة لـ${new Set(rows.map(r=>r.cardCode)).size} عميل، من إجمالي ${filtered.length}${(currentFilter!=='all'||invoiceRepFilter.size>0)?' (بحسب الفلتر النشط)':''}</div>
+    <div class="mrpt-sub">${rows.length} فاتورة مخالفة لـ${new Set(rows.map(r=>r.cardCode)).size} عميل، من إجمالي ${filtered.length}${(currentFilter!=='all'||invoiceRepFilter.size>0||invoiceManagerFilter.size>0)?' (بحسب الفلتر النشط)':''}</div>
     <div class="mrpt-filter-row"><input type="text" class="mrpt-filter-box" placeholder="🔍 فلترة برمز/اسم العميل داخل هذا الجزء..." oninput="mrptFilterRows(this)"></div>
     ${body}
     <div class="mrpt-page-footer"><span>مركز الكيلاني للأغذية</span><span>${fmtDate(new Date())}</span></div>
@@ -3056,7 +3291,7 @@ function mrptAgingHtml(){
   const overdue = rows.filter(r=>r.status==='overdue').length;
   return `<section id="mrpt-aging" class="mrpt-page mrpt-chapter" data-toc="عمر الذمة الحالي">
     <div class="mrpt-chapter-head"><h1>عمر الذمة الحالي — كل العملاء</h1><button class="mrpt-section-print" onclick="printMrptSection('mrpt-aging')">🖨️ طباعة هذا الجزء فقط</button></div>
-    <div class="mrpt-sub">${rows.length} عميل، منهم ${overdue} متأخر فعلياً${(agingFilter!=='all'||agingRepFilter.size>0)?' (بحسب الفلتر النشط)':''}</div>
+    <div class="mrpt-sub">${rows.length} عميل، منهم ${overdue} متأخر فعلياً${(agingFilter!=='all'||agingRepFilter.size>0||agingManagerFilter.size>0)?' (بحسب الفلتر النشط)':''}</div>
     <div class="mrpt-filter-row"><input type="text" class="mrpt-filter-box" placeholder="🔍 فلترة برمز/اسم العميل داخل هذا الجزء..." oninput="mrptFilterRows(this)"></div>
     ${body}
     <div class="mrpt-page-footer"><span>مركز الكيلاني للأغذية</span><span>${fmtDate(new Date())}</span></div>
@@ -3084,7 +3319,7 @@ function mrptDailyHtml(){
   const late = rows.filter(r=>r.status==='late').length;
   return `<section id="mrpt-daily" class="mrpt-page mrpt-chapter" data-toc="التحصيل اليومي">
     <div class="mrpt-chapter-head"><h1>التحصيل اليومي</h1><button class="mrpt-section-print" onclick="printMrptSection('mrpt-daily')">🖨️ طباعة هذا الجزء فقط</button></div>
-    <div class="mrpt-sub">${rows.length} تحصيل، منهم ${late} متأخر${(dailyFilter!=='all'||dailyRepFilter.size>0)?' (بحسب الفلتر النشط)':''}</div>
+    <div class="mrpt-sub">${rows.length} تحصيل، منهم ${late} متأخر${(dailyFilter!=='all'||dailyRepFilter.size>0||dailyManagerFilter.size>0)?' (بحسب الفلتر النشط)':''}</div>
     <div class="mrpt-filter-row"><input type="text" class="mrpt-filter-box" placeholder="🔍 فلترة برمز/اسم العميل داخل هذا الجزء..." oninput="mrptFilterRows(this)"></div>
     ${body}
     <div class="mrpt-page-footer"><span>مركز الكيلاني للأغذية</span><span>${fmtDate(new Date())}</span></div>
@@ -3302,6 +3537,11 @@ async function pullStateFromCloud(){
   }catch(e){ console.warn('تعذر التحميل من السيرفر المشترك', e); }
 }
 loadStateLocal();
+
+// فلتر المدير ثابت (مستنتج من خريطة مندوب←مدير المرفوعة يدوياً) — تعبئته ما بتحتاج بيانات ملصوقة
+populateInvoiceManagerFilter();
+populateAgingManagerFilter();
+populateDailyManagerFilter();
 
 /* ================= تسجيل الدخول (Supabase — مشترك مع باقي شاشات المؤسسة) ================= */
 const SUPABASE_URL = 'https://fxjdmqqmcgccocfbgopm.supabase.co';
