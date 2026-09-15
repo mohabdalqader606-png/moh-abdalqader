@@ -946,8 +946,14 @@ ORDER BY T0."ShortName", T0."RefDate"</code>
   #mrpt-cover .mrpt-cover-stats b{display:block; font-size:22px; font-family:var(--mono);}
   #mrpt-cover .mrpt-cover-stats span{font-size:11px; color:#B9CBDD;}
   #mrpt-cover .mrpt-cover-foot{font-size:11px; color:#9FB3C8;}
-  .mrpt-chapter h1{font-size:20px; color:var(--mrpt-navy-deep); margin:0 0 4px; border-bottom:2px solid var(--mrpt-gold); padding-bottom:10px;}
-  .mrpt-chapter .mrpt-sub{font-size:12px; color:var(--mrpt-muted); margin-bottom:18px;}
+  .mrpt-chapter h1{font-size:20px; color:var(--mrpt-navy-deep); margin:0; border-bottom:none; padding-bottom:0;}
+  .mrpt-chapter-head{display:flex; justify-content:space-between; align-items:center; gap:12px; border-bottom:2px solid var(--mrpt-gold); padding-bottom:10px; margin-bottom:4px;}
+  .mrpt-section-print{flex:0 0 auto; background:#fff; color:var(--mrpt-navy-deep); border:1.5px solid var(--mrpt-navy-light); border-radius:8px; padding:6px 12px; font-size:11px; font-weight:700; cursor:pointer; font-family:inherit;}
+  .mrpt-section-print:hover{background:var(--mrpt-navy-light); color:#fff;}
+  .mrpt-chapter .mrpt-sub{font-size:12px; color:var(--mrpt-muted); margin-bottom:10px;}
+  .mrpt-filter-row{margin-bottom:14px;}
+  .mrpt-filter-box{width:100%; max-width:340px; border:1.5px solid var(--mrpt-border); border-radius:8px; padding:7px 10px; font-size:12px; font-family:inherit;}
+  .mrpt-reason-sub{font-size:10px; color:var(--mrpt-risk); margin-top:3px; font-weight:400; white-space:normal;}
   .mrpt-stat-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:18px;}
   .mrpt-stat-card{background:#fff; border:1px solid var(--mrpt-border); border-radius:10px; padding:11px 13px;}
   .mrpt-stat-card .mrpt-lbl{font-size:10.5px; color:var(--mrpt-muted); margin-bottom:4px;}
@@ -955,7 +961,7 @@ ORDER BY T0."ShortName", T0."RefDate"</code>
   .mrpt-stat-card.risk .mrpt-val{color:var(--mrpt-risk);}
   table.mrpt-tbl{width:100%; border-collapse:collapse; font-size:10.5px;}
   table.mrpt-tbl thead th{background:#F3F1EA; text-align:right; padding:7px 8px; border-bottom:2px solid var(--mrpt-gold); font-weight:700; white-space:nowrap;}
-  table.mrpt-tbl tbody td{padding:5px 8px; border-bottom:1px solid var(--mrpt-border);}
+  table.mrpt-tbl tbody td{padding:5px 8px; border-bottom:1px solid var(--mrpt-border); vertical-align:top;}
   table.mrpt-tbl tbody tr.mrpt-risk-row{background:var(--mrpt-risk-bg);}
   table.mrpt-tbl td.num{font-family:var(--mono); direction:ltr; text-align:left;}
   @media print{
@@ -964,6 +970,7 @@ ORDER BY T0."ShortName", T0."RefDate"</code>
     #mrptSidebar, #mrptCloseBtn{display:none !important;}
     #mrptBook{max-width:100% !important; margin:0 !important;}
     .mrpt-page{page-break-after:always;}
+    .mrpt-section-print, .mrpt-filter-row{display:none !important;}
     @page{ size:A4 landscape; margin:10mm; }
   }
 </style>
@@ -2759,7 +2766,7 @@ function mrptSummaryHtml(){
   const agingOverdue = aging.filter(r=>r.status==='overdue').length;
   const dailyLate = daily.filter(r=>r.status==='late').length;
   return `<section id="mrpt-summary" class="mrpt-page mrpt-chapter" data-toc="الملخص التنفيذي">
-    <h1>الملخص التنفيذي</h1>
+    <div class="mrpt-chapter-head"><h1>الملخص التنفيذي</h1><button class="mrpt-section-print" onclick="printMrptSection('mrpt-summary')">🖨️ طباعة هذا الجزء فقط</button></div>
     <div class="mrpt-sub">نظرة عامة سريعة على الحالة الحالية عبر التبويبات الثلاثة${currentFilter!=='all'?' (بحسب الفلتر النشط)':''}</div>
     <div class="mrpt-stat-grid">
       <div class="mrpt-stat-card"><div class="mrpt-lbl">إجمالي الفواتير المحلَّلة</div><div class="mrpt-val">${total}</div></div>
@@ -2798,7 +2805,7 @@ function mrptViolationsHtml(){
     groups.sort((a,b)=> b.invoices.length - a.invoices.length);
 
     body = `<table class="mrpt-tbl"><thead><tr>
-      <th>رمز العميل</th><th>اسم العميل</th><th class="num">عدد الفواتير المخالفة</th><th>آخر فاتورة</th><th>تاريخها</th><th>حالة الموافقة</th><th class="num">المبلغ المتأخر</th><th class="num">أيام التأخير</th><th>سبب آخر فاتورة</th>
+      <th>رمز العميل</th><th>اسم العميل / السبب</th><th class="num">عدد الفواتير المخالفة</th><th>آخر فاتورة</th><th>تاريخها</th><th>حالة الموافقة</th><th class="num">المبلغ المتأخر</th><th class="num">أيام التأخير</th>
     </tr></thead><tbody>` + groups.map(g=>{
       const r = g.lastInv;
       const wentToApproval = r.apprStatus && r.apprStatus.trim()!=='' && r.apprStatus.trim()!=='لم تذهب للموافقة';
@@ -2807,20 +2814,23 @@ function mrptViolationsHtml(){
       const anyGap = g.invoices.some(inv=>inv.hasGap);
       return `<tr class="${anyGap?'mrpt-risk-row':''}">
         <td>${mrptEsc(g.cardCode)}</td>
-        <td>${mrptEsc(g.cardName)}</td>
+        <td>
+          <div>${mrptEsc(g.cardName)}</div>
+          <div class="mrpt-reason-sub">↳ ${mrptEsc(r.violationReason||'—')}</div>
+        </td>
         <td class="num">${g.invoices.length}</td>
         <td>${mrptEsc(r.docNum)}</td>
         <td>${r.invoiceDate?fmtDate(r.invoiceDate):'—'}</td>
         <td>${mrptEsc(apprLabel)}</td>
         <td class="num">${worstChunk?fmtNum(worstChunk.amount):'—'}</td>
         <td class="num">${worstChunk?worstChunk.delayDays:'—'}</td>
-        <td style="white-space:normal; max-width:320px;">${mrptEsc(r.violationReason||'—')}</td>
       </tr>`;
     }).join('') + '</tbody></table>';
   }
   return `<section id="mrpt-violations" class="mrpt-page mrpt-chapter" data-toc="المخالفات">
-    <h1>مخالفات موافقات الفواتير</h1>
+    <div class="mrpt-chapter-head"><h1>مخالفات موافقات الفواتير</h1><button class="mrpt-section-print" onclick="printMrptSection('mrpt-violations')">🖨️ طباعة هذا الجزء فقط</button></div>
     <div class="mrpt-sub">${rows.length} فاتورة مخالفة لـ${new Set(rows.map(r=>r.cardCode)).size} عميل، من إجمالي ${filtered.length}${currentFilter!=='all'?' (بحسب الفلتر النشط)':''}</div>
+    <div class="mrpt-filter-row"><input type="text" class="mrpt-filter-box" placeholder="🔍 فلترة برمز/اسم العميل داخل هذا الجزء..." oninput="mrptFilterRows(this)"></div>
     ${body}
     <div class="mrpt-page-footer"><span>مركز الكيلاني للأغذية</span><span>${fmtDate(new Date())}</span></div>
   </section>`;
@@ -2847,8 +2857,9 @@ function mrptAgingHtml(){
   }
   const overdue = rows.filter(r=>r.status==='overdue').length;
   return `<section id="mrpt-aging" class="mrpt-page mrpt-chapter" data-toc="عمر الذمة الحالي">
-    <h1>عمر الذمة الحالي — كل العملاء</h1>
+    <div class="mrpt-chapter-head"><h1>عمر الذمة الحالي — كل العملاء</h1><button class="mrpt-section-print" onclick="printMrptSection('mrpt-aging')">🖨️ طباعة هذا الجزء فقط</button></div>
     <div class="mrpt-sub">${rows.length} عميل، منهم ${overdue} متأخر فعلياً${agingFilter!=='all'?' (بحسب الفلتر النشط)':''}</div>
+    <div class="mrpt-filter-row"><input type="text" class="mrpt-filter-box" placeholder="🔍 فلترة برمز/اسم العميل داخل هذا الجزء..." oninput="mrptFilterRows(this)"></div>
     ${body}
     <div class="mrpt-page-footer"><span>مركز الكيلاني للأغذية</span><span>${fmtDate(new Date())}</span></div>
   </section>`;
@@ -2874,8 +2885,9 @@ function mrptDailyHtml(){
   }
   const late = rows.filter(r=>r.status==='late').length;
   return `<section id="mrpt-daily" class="mrpt-page mrpt-chapter" data-toc="التحصيل اليومي">
-    <h1>التحصيل اليومي</h1>
+    <div class="mrpt-chapter-head"><h1>التحصيل اليومي</h1><button class="mrpt-section-print" onclick="printMrptSection('mrpt-daily')">🖨️ طباعة هذا الجزء فقط</button></div>
     <div class="mrpt-sub">${rows.length} تحصيل، منهم ${late} متأخر${dailyFilter!=='all'?' (بحسب الفلتر النشط)':''}</div>
+    <div class="mrpt-filter-row"><input type="text" class="mrpt-filter-box" placeholder="🔍 فلترة برمز/اسم العميل داخل هذا الجزء..." oninput="mrptFilterRows(this)"></div>
     ${body}
     <div class="mrpt-page-footer"><span>مركز الكيلاني للأغذية</span><span>${fmtDate(new Date())}</span></div>
   </section>`;
@@ -2912,6 +2924,28 @@ function closeMasterReport(){
   document.getElementById('mrptOverlay').style.display = 'none';
   document.body.style.overflow = '';
   if(mrptIO){ mrptIO.disconnect(); mrptIO=null; }
+}
+
+// طباعة جزء واحد بس من التقرير الشامل (يخفي باقي الأقسام مؤقتاً وقت الطباعة)
+function printMrptSection(sectionId){
+  const sections = document.querySelectorAll('#mrptBook > section');
+  const prevDisplay = [];
+  sections.forEach(s=>{ prevDisplay.push(s.style.display); s.style.display = (s.id===sectionId) ? '' : 'none'; });
+  window.print();
+  setTimeout(()=>{
+    sections.forEach((s,i)=>{ s.style.display = prevDisplay[i]; });
+  }, 500);
+}
+
+// فلترة صفوف الجدول داخل نفس الجزء (بحث حي برمز/اسم العميل أو أي نص بالصف)
+function mrptFilterRows(input){
+  const q = input.value.trim().toLowerCase();
+  const section = input.closest('section.mrpt-page');
+  const table = section ? section.querySelector('table.mrpt-tbl') : null;
+  if(!table || !table.tBodies[0]) return;
+  Array.from(table.tBodies[0].rows).forEach(tr=>{
+    tr.style.display = (!q || tr.textContent.toLowerCase().includes(q)) ? '' : 'none';
+  });
 }
 
 // ============================================================
