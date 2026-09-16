@@ -1442,8 +1442,12 @@ function computeInvoice(r){
     } else {
       const violatingChunks = chunkResults.filter(c=>c.state==='violation').sort((a,b)=>b.amount-a.amount);
       violationReasonsList = violatingChunks.map(c=>{
-        const srcTxt = c.source==='balance' ? 'رصيد' : `شيك ${c.check?c.check.docNum||'':''}`;
-        return `${srcTxt} بمبلغ ${fmtNum(c.amount)} د.أ من ${monthLabel(c.monthIdx)} متأخر ${c.delayDays} يوم عن استحقاقه (${c.reqDue?fmtDate(c.reqDue):'—'})`;
+        // "رصيد" = مبلغ لسا مفتوح ما تسدد أصلاً — لازم نوضح هيك صراحة، وإلا القارئ بيفهم إنه انسدد بس متأخر
+        if(c.source==='balance'){
+          return `رصيد لم يُسدَّد بعد بمبلغ ${fmtNum(c.amount)} د.أ من ${monthLabel(c.monthIdx)} — متأخر ${c.delayDays} يوم عن استحقاقه (${c.reqDue?fmtDate(c.reqDue):'—'})`;
+        }
+        const chkNum = c.check?c.check.docNum||'':'';
+        return `شيك ${chkNum} بمبلغ ${fmtNum(c.amount)} د.أ من ${monthLabel(c.monthIdx)} متأخر ${c.delayDays} يوم عن استحقاقه (${c.reqDue?fmtDate(c.reqDue):'—'})`;
       });
       violationReason = violationReasonsList.join(' | ');
     }
@@ -2203,8 +2207,8 @@ function computeAgingRow(r, snapshotDate, checksList){
   else if(balance <= 0.01){ status='ok'; statusLabel='لا يوجد رصيد مكشوف'; }
   else if(snapshotDate > dueDate){
     daysDiff = daysBetween(snapshotDate, dueDate);
-    if(balance <= AGING_MATERIALITY){ status='immaterial'; statusLabel=`غير مؤثر مادياً (${fmtNum(balance)} فقط، متأخر ${daysDiff} يوم)`; }
-    else { status='overdue'; statusLabel = `متأخر ${daysDiff} يوم`; }
+    if(balance <= AGING_MATERIALITY){ status='immaterial'; statusLabel=`غير مؤثر مادياً (${fmtNum(balance)} فقط، لم يُسدَّد بعد — متأخر ${daysDiff} يوم)`; }
+    else { status='overdue'; statusLabel = `لم يُسدَّد بعد — متأخر ${daysDiff} يوم عن الاستحقاق`; }
   } else {
     daysDiff = daysBetween(dueDate, snapshotDate);
     statusLabel = `باقي له ${daysDiff} يوم`;
