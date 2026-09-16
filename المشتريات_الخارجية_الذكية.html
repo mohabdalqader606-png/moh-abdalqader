@@ -49,6 +49,18 @@
   nav.mainnav button .cnt{background:rgba(255,255,255,.14);border-radius:10px;padding:0 7px;font-size:10.5px;font-family:var(--mono);line-height:17px;}
   nav.mainnav button .cnt.red{background:var(--red);color:#fff;}
   .appbar .right{display:flex;align-items:center;gap:8px;}
+  .userbox{display:flex;align-items:center;gap:10px;}
+  .userbox .who{display:flex;flex-direction:column;line-height:1.3;text-align:left;}
+  .userbox .who b{font-size:12px;color:#fff;}
+  .userbox .who span{font-size:10px;color:#AEB9CB;}
+
+  /* ===== Login / Password Reset gate (Supabase Auth) ===== */
+  #loginView,#resetView{max-width:360px;margin:80px auto;background:var(--surface);border:1px solid var(--line);border-radius:var(--r-lg);padding:26px 24px;box-shadow:0 1px 3px rgba(16,24,40,.06);}
+  #loginView h2,#resetView h2{margin-bottom:6px;}
+  #loginView .hint,#resetView .hint{font-size:11.5px;color:var(--ink-3);margin-bottom:16px;line-height:1.5;}
+  #loginView label,#resetView label{display:block;font-size:11.5px;color:var(--ink-2);font-weight:600;margin:10px 0 4px;}
+  #loginView input,#resetView input{width:100%;padding:8px 10px;border:1px solid var(--line-strong);border-radius:var(--r);font-family:var(--disp);font-size:13px;}
+  #loginView button,#resetView button{width:100%;margin-top:14px;padding:9px;font-size:13px;}
 
   /* ===== Context / toolbar strip ===== */
   .ctxbar{background:var(--surface);border-bottom:1px solid var(--line);position:sticky;top:54px;z-index:39;}
@@ -241,7 +253,7 @@
   @media print{
     @page{size:A4 landscape;margin:12mm 10mm 16mm 10mm;}
     body{background:#fff;padding:0;font-size:11px;color:#000;}
-    body.printing > *:not(#printRoot){display:none !important;}
+    body.printing *:not(#printRoot):not(#printRoot *){display:none !important;}
     #printRoot{display:block !important;}
     .print-head{border-bottom:2px solid #1B2A41;padding-bottom:8px;margin-bottom:10px;}
     .print-head h1{font-size:16px;margin:0 0 4px;color:#1B2A41;}
@@ -263,7 +275,31 @@
 </style>
 </head>
 <body>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 
+<div id="loginView">
+  <h2>تسجيل الدخول</h2>
+  <div class="hint">المشتريات الخارجية الذكية — مركز الكيلاني للأغذية. الدخول مقيَّد بصلاحية فعلية على هذه الشاشة تحديداً؛ راجع مدير الصلاحيات إذا ما قدرت تدخل.</div>
+  <label>البريد الإلكتروني</label>
+  <input type="text" id="loginEmail" autocomplete="username" style="direction:ltr; text-align:left;">
+  <label>كلمة السر</label>
+  <input type="password" id="loginPass" autocomplete="current-password" onkeydown="if(event.key==='Enter') doLogin()">
+  <button class="btn-primary" id="loginBtn" onclick="doLogin()">دخول</button>
+  <div class="status-msg" id="loginMsg" style="margin-top:10px;"></div>
+</div>
+
+<div id="resetView" style="display:none;">
+  <h2>تعيين كلمة سر جديدة</h2>
+  <div class="hint">وصلت من رابط استعادة كلمة السر. حدّد كلمة سر جديدة لحسابك، وبعدها رح تدخل مباشرة على الشاشة.</div>
+  <label>كلمة السر الجديدة (6 أحرف على الأقل)</label>
+  <input type="password" id="newPass1" autocomplete="new-password">
+  <label>تأكيد كلمة السر</label>
+  <input type="password" id="newPass2" autocomplete="new-password" onkeydown="if(event.key==='Enter') doSetNewPassword()">
+  <button class="btn-primary" onclick="doSetNewPassword()">حفظ والدخول</button>
+  <div class="status-msg" id="resetMsg" style="margin-top:10px;"></div>
+</div>
+
+<div id="appView" style="display:none;">
 <header class="appbar">
   <div class="brand"><b>المشتريات الخارجية الذكية</b><span>مركز الكيلاني للأغذية · نظام دعم قرار الشراء</span></div>
   <span id="versionBadge" style="align-self:center;font-size:9.5px;font-family:var(--mono);color:#7C8AA3;background:rgba(255,255,255,.06);border-radius:4px;padding:2px 7px;white-space:nowrap;" title="نسخة مجمَّدة نهائية — لا تعديل إلا بعد اعتماد بيانات SAP الحقيقية"></span>
@@ -277,6 +313,10 @@
     <button data-view="datacenter">مركز البيانات</button>
     <button data-view="pilot">مراجعة الطيار</button>
   </nav>
+  <div class="right userbox" id="userbox" style="display:none;">
+    <div class="who"><b id="uName"></b><span id="uRole"></span></div>
+    <button class="btn-ghost btn-sm" onclick="doLogout()">خروج</button>
+  </div>
 </header>
 
 <!-- شريط السياق: الفترة / آخر تحديث / صحة البيانات / الفلاتر / تشغيل المحرك / طباعة -->
@@ -310,6 +350,8 @@
 </div>
 <div class="overlay" id="modalOverlay" onclick="if(event.target===this) closeModal()">
   <div class="drawer narrow" id="modalBox"></div>
+</div>
+
 </div>
 
 <div id="printRoot"></div>
@@ -2370,8 +2412,8 @@ function planSelectVisible(on){
   getRecos().filter(r=>r.status===STATE.planTab).forEach(r=>{ if(on) STATE.planSelection.add(r.ItemCode); else STATE.planSelection.delete(r.ItemCode); });
   TABLES.plan();
 }
-function planSetQty(code, val){ setPlanOverride(code, {qty:Number(val)}).then(()=>{ if(STATE.planBuilt) buildSupplierPlan(true); }); }
-function planSetNote(code, val){ setPlanOverride(code, {note:val}); }
+function planSetQty(code, val){ if(!requirePermission('input', 'تعديل كمية الخطة')) return; setPlanOverride(code, {qty:Number(val)}).then(()=>{ if(STATE.planBuilt) buildSupplierPlan(true); }); }
+function planSetNote(code, val){ if(!requirePermission('input', 'تعديل ملاحظة الخطة')) return; setPlanOverride(code, {note:val}); }
 
 /** تجميع الأصناف المختارة حسب المورد (نفس منطق التجميع بالمحرك: المورد الغالب لكل صنف + مدة توريده) */
 function selectedPlanGroups(){
@@ -2715,6 +2757,7 @@ function openItemDetail(itemCode){
   document.getElementById('drawerBox').scrollTop = 0;
 }
 async function confirmInTransit(key, itemCode, dateStr){
+  if(!requirePermission('input', 'اعتماد تاريخ وصول')) return;
   if(!dateStr) return;
   await setDocOverride(key, {treatAsInTransit:true, expectedArrival:dateStr});
   refreshComputed();
@@ -2829,6 +2872,7 @@ async function runImportPreview(sourceKey){
     <div class="drawer-actions" style="margin-top:12px"><button class="btn-green btn-sm" onclick="confirmImport()" ${!mapped.length?'disabled':''}>تأكيد الاستيراد</button></div>`;
 }
 async function confirmImport(){
+  if(!requirePermission('input', 'رفع بيانات')) return;
   if(!_dcPendingImport) return;
   const {sourceKey, mapped, errors} = _dcPendingImport;
   const prev = await IMPORT.preview(sourceKey, mapped);
@@ -2843,6 +2887,7 @@ async function confirmImport(){
   await onDataChanged();
 }
 async function rollbackImport(sourceKey){
+  if(!requirePermission('input', 'التراجع عن استيراد')) return;
   const log = await IMPORT.lastImportLogFor(sourceKey);
   if(!log){ U.toast('لا يوجد استيراد سابق لهذا المصدر','err'); return; }
   if(!confirm(`التراجع عن آخر استيراد لـ"${DATA_SOURCES[sourceKey].label}" (${U.fmtDateTime(log.ts)}، ${log.recordCount} سطر)؟`)) return;
@@ -2851,6 +2896,7 @@ async function rollbackImport(sourceKey){
   else U.toast(res.msg,'err');
 }
 async function lockHistoricalToggle(){
+  if(!requirePermission('admin', 'قفل/فتح الأساس التاريخي')) return;
   const cur = await DB.getMeta('historicalLocked', false);
   await DB.setMeta('historicalLocked', !cur);
   U.toast(!cur ? 'تم قفل الأساس التاريخي 2022–2025' : 'تم فتح الأساس التاريخي', 'ok');
@@ -2868,6 +2914,7 @@ function renderDcSettings(){
   document.getElementById('dcSettings').innerHTML = `<div class="settings-grid">${fields.map(([k,l])=>`<div class="fld"><label>${l}</label><input type="number" step="0.01" value="${t[k]}" style="font-family:var(--mono)" onchange="updateTunable('${k}', this.value)"></div>`).join('')}</div>`;
 }
 async function updateTunable(key, val){
+  if(!requirePermission('admin', 'تعديل إعدادات المحرك')) return;
   CONFIG.tunable[key] = Number(val);
   await DB.setMeta('tunable', CONFIG.tunable);
   U.toast('تم حفظ الإعداد — اضغط «تشغيل المحرك» لتحديث النتائج', 'ok');
@@ -3116,6 +3163,7 @@ function openPilotLogModal(itemCode){
   document.getElementById('modalOverlay').classList.add('open');
 }
 async function submitPilotLog(itemCode){
+  if(!requirePermission('input', 'تسجيل قرار المشتري')) return;
   const buyerName = document.getElementById('pilotBuyerName').value;
   const buyerDecision = document.getElementById('pilotDecisionSel').value;
   const buyerQty = document.getElementById('pilotBuyerQty').value;
@@ -3167,6 +3215,7 @@ function openPilotDetail(id){
   document.getElementById('modalOverlay').classList.add('open');
 }
 async function savePilotReview(id){
+  if(!requirePermission('input', 'تحديث حالة مراجعة الطيار')) return;
   const status = document.getElementById('pilotStatusSelect').value;
   const note = document.getElementById('pilotReviewNote').value;
   await PILOT.setStatus(id, status, note);
@@ -3253,6 +3302,76 @@ function closeDrawer(){ document.getElementById('drawerOverlay').classList.remov
 function closeModal(){ document.getElementById('modalOverlay').classList.remove('open'); }
 document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ closeModal(); closeDrawer(); } });
 
+/* ------------------------------------------------------------------------------------------
+   17) تسجيل الدخول والصلاحيات (Supabase Auth — نفس المشروع المستخدم بكل شاشات المؤسسة)
+   الدخول حقيقي، والصلاحية الفعلية من user_screen_permissions لهذا screen_id تحديداً — نفس نمط
+   بوابة index.html ونفس نمط "نظام ذكاء المشتريات والمخزون". ثلاث مستويات: view (عرض فقط) /
+   input (+ رفع بيانات، تسجيل قرارات المشتري) / admin (+ إعدادات المحرك، قفل الأساس التاريخي).
+   الحماية الفعلية دايماً بمستوى الدالة (requirePermission) بغض النظر شو ظاهر بالواجهة.
+   ------------------------------------------------------------------------------------------ */
+const SUPABASE_URL = 'https://fxjdmqqmcgccocfbgopm.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_NGtGX9SN8hXSoq-JRidGcQ_NfAyYCP5'; // مفتاح عام — الحماية عبر RLS
+const APP_ID = 'foreign-procurement-intelligence';
+let sb = null, curUser = null, curProfile = null, myPermission = null;
+const PERM_RANK = {view:0, input:1, admin:2};
+const PERMISSION_LABELS = {admin:'مدير (كل الصلاحيات)', input:'إدخال بيانات', view:'عرض فقط'};
+function isAdmin(){ return myPermission==='admin'; }
+function hasPermission(minLevel){ return PERM_RANK[myPermission]!==undefined && PERM_RANK[myPermission] >= PERM_RANK[minLevel]; }
+function requirePermission(minLevel, actionLabel){
+  if(hasPermission(minLevel)) return true;
+  U.toast('ما عندك صلاحية تعمل هالإجراء'+(actionLabel?(' — '+actionLabel):'')+' — صلاحيتك الحالية: '+(PERMISSION_LABELS[myPermission]||'غير معروفة'), 'err');
+  return false;
+}
+function applyPermissionUI(){
+  document.body.classList.toggle('perm-view-only', myPermission==='view');
+  document.body.classList.toggle('perm-not-admin', !isAdmin());
+}
+function authMsg(txt, ok){ const el=document.getElementById('loginMsg'); el.textContent=txt; el.className='status-msg '+(ok?'ok':'err'); }
+async function doLogin(){
+  const email = document.getElementById('loginEmail').value.trim();
+  const pass = document.getElementById('loginPass').value;
+  if(!email || !pass){ authMsg('أدخل البريد وكلمة السر', false); return; }
+  document.getElementById('loginBtn').disabled = true;
+  authMsg('جارٍ الدخول...', true);
+  const {data, error} = await sb.auth.signInWithPassword({email, password: pass});
+  document.getElementById('loginBtn').disabled = false;
+  if(error){ authMsg('فشل الدخول: تحقق من البريد وكلمة السر', false); return; }
+  await onSignedIn(data.user);
+}
+async function doLogout(){ await sb.auth.signOut(); location.reload(); }
+function resetMsg(txt, ok){ const el=document.getElementById('resetMsg'); el.textContent=txt; el.className='status-msg '+(ok?'ok':'err'); }
+async function doSetNewPassword(){
+  const p1 = document.getElementById('newPass1').value;
+  const p2 = document.getElementById('newPass2').value;
+  if(!p1 || p1.length<6){ resetMsg('كلمة السر لازم تكون 6 أحرف على الأقل', false); return; }
+  if(p1!==p2){ resetMsg('كلمتا السر مش متطابقتين', false); return; }
+  resetMsg('جارٍ الحفظ...', true);
+  const {data, error} = await sb.auth.updateUser({password:p1});
+  if(error){ resetMsg('تعذر الحفظ: '+error.message, false); return; }
+  document.getElementById('resetView').style.display='none';
+  await onSignedIn(data.user);
+}
+async function onSignedIn(user){
+  curUser = user;
+  const {data:prof} = await sb.from('profiles').select('*').eq('id', user.id).single();
+  curProfile = prof || {full_name:user.email};
+  const {data:permRow} = await sb.from('user_screen_permissions').select('permission')
+    .eq('user_id', user.id).eq('screen_id', APP_ID).maybeSingle();
+  myPermission = (permRow && permRow.permission) ? String(permRow.permission).trim().toLowerCase() : null;
+  if(!PERM_RANK.hasOwnProperty(myPermission)){
+    await sb.auth.signOut();
+    authMsg('هذا الحساب ما إله صلاحية على هاي الشاشة — تواصل مع المدير.', false);
+    return;
+  }
+  document.getElementById('uName').textContent = curProfile.full_name || user.email;
+  document.getElementById('uRole').textContent = user.email + ' · ' + (PERMISSION_LABELS[myPermission]||myPermission);
+  document.getElementById('userbox').style.display = 'flex';
+  document.getElementById('loginView').style.display = 'none';
+  document.getElementById('appView').style.display = 'block';
+  applyPermissionUI();
+  await initApp();
+}
+
 async function initApp(){
   try{
     document.getElementById('versionBadge').textContent = 'v'+CONFIG.version+' · '+CONFIG.buildDate;
@@ -3270,7 +3389,20 @@ async function initApp(){
     U.toast('خطأ بتحميل النظام: '+err.message, 'err');
   }
 }
-document.addEventListener('DOMContentLoaded', initApp);
+(async function bootAuth(){
+  if(!window.supabase){ authMsg('تعذر تحميل مكتبة الاتصال — تحقق من الإنترنت وحدّث الصفحة', false); return; }
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  const isRecoveryLink = location.hash.indexOf('type=recovery') >= 0;
+  sb.auth.onAuthStateChange((event)=>{
+    if(event==='PASSWORD_RECOVERY'){
+      document.getElementById('loginView').style.display='none';
+      document.getElementById('resetView').style.display='block';
+    }
+  });
+  if(isRecoveryLink) return; // بانتظار حدث PASSWORD_RECOVERY أعلاه فقط — لا دخول تلقائي بجلسة الاستعادة
+  const {data:{session}} = await sb.auth.getSession();
+  if(session && session.user) await onSignedIn(session.user);
+})();
 </script>
 </body>
 </html>
