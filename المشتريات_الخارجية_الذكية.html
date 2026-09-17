@@ -438,8 +438,7 @@ const DATA_SOURCES = {
       {key:'LineTotal', label:'المبلغ', aliases:['المبلغ','LineTotal'], type:'number', required:false},
       {key:'Canceled', label:'ملغى؟ (اختياري — لا يوجد حقل مقابل بهالبيئة، انظر ملاحظة)', aliases:['ملغى','Canceled'], type:'text', required:false},
     ],
-    sql: `-- فواتير المبيعات — أساس صافي المبيعات مع طرح المرتجعات لاحقاً (بلا شرط إلغاء: OINV بهالبيئة لا يملك حقل Canceled، انظر ملاحظة أدناه)
-SELECT
+    sql: `SELECT
   T0."DocEntry"                       AS "DocEntry",
   T0."DocNum"                         AS "DocNum",
   T1."LineNum"                        AS "LineNum",
@@ -476,8 +475,7 @@ ORDER BY T1."ItemCode", T0."DocDate"`,
       {key:'LineTotal', label:'المبلغ', aliases:['المبلغ','LineTotal'], type:'number', required:false},
       {key:'Canceled', label:'ملغى؟ (اختياري — لا يوجد حقل مقابل بهالبيئة، انظر ملاحظة)', aliases:['ملغى','Canceled'], type:'text', required:false},
     ],
-    sql: `-- مرتجعات المبيعات / إشعارات دائن — تُطرح من الفواتير لحساب صافي المبيعات (بلا شرط إلغاء: ORIN بهالبيئة لا يملك حقل Canceled، انظر ملاحظة أدناه)
-SELECT
+    sql: `SELECT
   T0."DocEntry" AS "DocEntry", T1."LineNum" AS "LineNum", T0."DocDate" AS "التاريخ",
   T1."ItemCode" AS "رمز الصنف", T1."Quantity" AS "الكمية", T1."WhsCode" AS "المستودع",
   T0."CardCode" AS "رمز العميل", T0."CardName" AS "العميل", T1."LineTotal" AS "المبلغ"
@@ -503,9 +501,7 @@ ORDER BY T1."ItemCode", T0."DocDate"`,
       {key:'CardName', label:'اسم العميل', aliases:['العميل','CardName'], type:'text', required:false},
       {key:'RelatedInvoice', label:'الفاتورة المرتبطة (إن وُجدت)', aliases:['RelatedInvoice','CorrInv'], type:'text', required:false},
     ],
-    sql: `-- مستند إرجاع فعلي منفصل عن إشعار الدائن — تحقق SAP حي (Phase 2) أثبت استخدامه فعلياً وباستمرار (132 مستند، 2018–2025)
--- مُستقل عن ORIN/RIN1 وليس بديلاً عنه؛ لا يوجد حقل SAP مؤكَّد حياً يربطه بإشعار دائن مطابق بلا لبس — لذلك يُرفع هنا بشكل منفصل ولا يُدمج تلقائياً بصافي المبيعات
-SELECT
+    sql: `SELECT
   T0."DocEntry" AS "DocEntry", T1."LineNum" AS "LineNum", T0."DocDate" AS "التاريخ",
   T1."ItemCode" AS "رمز الصنف", T1."Quantity" AS "الكمية",
   T0."CardCode" AS "رمز العميل", T0."CardName" AS "العميل", T0."CorrInv" AS "الفاتورة المرتبطة"
@@ -536,9 +532,7 @@ ORDER BY T1."ItemCode", T0."DocDate"`,
       {key:'BaseLine', label:'سطر أمر الشراء الأصل', aliases:['BaseLine'], type:'text', required:false},
       {key:'BaseType', label:'نوع المستند الأصل', aliases:['BaseType'], type:'text', required:false},
     ],
-    sql: `-- فواتير المشتريات — تُستخدم لبناء نمط الشراء التاريخي الفعلي لكل صنف+مورد (min/max/median)
--- ولإشارة "الاستلام الفعلي" عند BaseType=22 (فاتورة مباشرة من أمر شراء بلا GRPO — مؤكَّد بتحقق SAP حي أنه المسار الغالب 83.8% بهالبيئة، Phase 2)
-SELECT
+    sql: `SELECT
   T0."DocEntry" AS "DocEntry", T0."DocNum" AS "DocNum", T1."LineNum" AS "LineNum",
   T0."DocDate" AS "تاريخ الاستلام", T1."ItemCode" AS "رمز الصنف",
   T0."CardCode" AS "رمز المورد", T0."CardName" AS "المورد",
@@ -569,8 +563,7 @@ ORDER BY T1."ItemCode", T0."DocDate"`,
       {key:'OpenQty', label:'الكمية المتبقية', aliases:['المتبقي','OpenQty'], type:'number', required:false},
       {key:'DocStatus', label:'حالة المستند', aliases:['الحالة','DocStatus'], type:'text', required:false},
     ],
-    sql: `-- أوامر الشراء المفتوحة (Open) — أساس "البضاعة قيد الطلب / بالطريق"
-SELECT
+    sql: `SELECT
   T0."DocEntry" AS "DocEntry", T0."DocNum" AS "DocNum", T1."LineNum" AS "LineNum",
   T0."DocDate" AS "تاريخ الأمر", T1."ShipDate" AS "تاريخ التسليم", T1."ItemCode" AS "رمز الصنف",
   T0."CardCode" AS "رمز المورد", T0."CardName" AS "المورد",
@@ -598,8 +591,7 @@ ORDER BY T1."ItemCode", T1."ShipDate"`,
       {key:'BaseEntry', label:'مرجع أمر الشراء', aliases:['BaseEntry'], type:'text', required:false},
       {key:'BaseLine', label:'مرجع سطر أمر الشراء', aliases:['BaseLine'], type:'text', required:false},
     ],
-    sql: `-- محاضر الاستلام — تُطابق مع أوامر الشراء عبر BaseEntry/BaseLine لحساب Ordered/Received/Remaining
-SELECT
+    sql: `SELECT
   T0."DocEntry" AS "DocEntry", T1."LineNum" AS "LineNum", T0."DocDate" AS "تاريخ الاستلام",
   T1."ItemCode" AS "رمز الصنف", T0."CardCode" AS "رمز المورد",
   T1."Quantity" AS "الكمية", T1."WhsCode" AS "المستودع",
@@ -626,8 +618,7 @@ ORDER BY T1."ItemCode", T0."DocDate"`,
       {key:'OpenQty', label:'الكمية المفتوحة', aliases:['المفتوح','OpenQty'], type:'number', required:true},
       {key:'DocStatus', label:'الحالة', aliases:['الحالة','DocStatus'], type:'text', required:false},
     ],
-    sql: `-- أوامر البيع المفتوحة — طلب مؤكد يُضاف لحساب الاحتياج (Committed Demand، قسم 14)
-SELECT
+    sql: `SELECT
   T0."DocEntry" AS "DocEntry", T1."LineNum" AS "LineNum", T0."DocDate" AS "التاريخ",
   T1."ItemCode" AS "رمز الصنف", T0."CardCode" AS "رمز العميل",
   T1."Quantity" AS "الكمية", T1."OpenQty" AS "المفتوح", T0."DocStatus" AS "الحالة"
@@ -635,7 +626,7 @@ FROM ORDR T0
 INNER JOIN RDR1 T1 ON T0."DocEntry" = T1."DocEntry"
 WHERE T0."DocStatus" = 'O' AND T1."OpenQty" > 0
 ORDER BY T1."ItemCode", T0."DocDate"`,
-    sqlNote: '',
+    sqlNote: 'طلب مؤكد (Committed Demand، قسم 14) — يُضاف مباشرة لحساب الاحتياج المتوقع، بعكس عروض الأسعار يلي توزن بأقل من 1.',
   },
 
   salesQuotations: {
@@ -652,8 +643,7 @@ ORDER BY T1."ItemCode", T0."DocDate"`,
       {key:'Quantity', label:'الكمية', aliases:['الكمية','Quantity'], type:'number', required:true},
       {key:'OpenQty', label:'الكمية المفتوحة', aliases:['المفتوح','OpenQty'], type:'number', required:true},
     ],
-    sql: `-- عروض أسعار مبيعات مفتوحة — طلب محتمل بوزن قابل للتعديل بالإعدادات (قسم 15)
-SELECT
+    sql: `SELECT
   T0."DocEntry" AS "DocEntry", T1."LineNum" AS "LineNum", T0."DocDate" AS "التاريخ",
   T1."ItemCode" AS "رمز الصنف", T0."CardCode" AS "رمز العميل",
   T1."Quantity" AS "الكمية", T1."OpenQty" AS "المفتوح"
@@ -677,8 +667,7 @@ ORDER BY T1."ItemCode", T0."DocDate"`,
       {key:'OnOrder', label:'تحت الطلب', aliases:['تحت الطلب','OnOrder'], type:'number', required:false},
       {key:'Committed', label:'محجوز', aliases:['محجوز','IsCommited','Committed'], type:'number', required:false},
     ],
-    sql: `-- المخزون الحالي حسب المستودع — أساس "Physical Stock"، ويُطبَّق عليه لاحقاً استبعاد المستودعات الخاصة
-SELECT
+    sql: `SELECT
   T0."ItemCode" AS "رمز الصنف", T0."WhsCode" AS "المستودع", T1."WhsName" AS "اسم المستودع",
   T0."OnHand" AS "الرصيد الحالي", T0."OnOrder" AS "تحت الطلب", T0."IsCommited" AS "محجوز"
 FROM OITW T0
@@ -702,9 +691,7 @@ LEFT JOIN OWHS T1 ON T0."WhsCode" = T1."WhsCode"`,
       {key:'SupplierName', label:'المورد', aliases:['المورد','SupplierName'], type:'text', required:false},
       {key:'Weight', label:'الوزن', aliases:['الوزن','Weight'], type:'number', required:false},
     ],
-    sql: `-- أرصدة الباتشات على مستوى الصنف — بلا ربط مستودع (تحقّق حي أكّد: لا IBT1 ولا OBTN ولا OBVL فيهم عمود مستودع بهالبيئة)
--- آخر صف OBVL لكل صنف+باتش (SysNumber) يعطي الرصيد الصحيح: AccQty-AccNegQ = الكمية المتبقية، Balance = قيمة نقدية (لا كمية)
-WITH LATEST_OBVL AS (
+    sql: `WITH LATEST_OBVL AS (
   SELECT V.*, ROW_NUMBER() OVER (PARTITION BY V."ItemCode", V."SysNumber" ORDER BY V."CreateDate" DESC, V."CreateTime" DESC, V."AbsEntry" DESC) AS "RN"
   FROM OBVL V
 )
@@ -733,8 +720,7 @@ WHERE (L."AccQty" - L."AccNegQ") > 0`,
       {key:'Country', label:'بلد المنشأ', aliases:['البلد','Country'], type:'text', required:false},
       {key:'LeadTimeDays', label:'مدة التوريد (يوم)', aliases:['مدة التوريد','LeadTimeDays'], type:'number', required:false},
     ],
-    sql: `-- كشف الموردين مع بلد المنشأ (بلا مدة توريد من SAP — لا يوجد حقل مدة توريد على مستوى المورد بهالبيئة، انظر ملاحظة أدناه)
-SELECT
+    sql: `SELECT
   T0."CardCode" AS "رمز المورد", T0."CardName" AS "اسم المورد",
   T0."Country" AS "البلد"
 FROM OCRD T0
@@ -759,15 +745,14 @@ WHERE T0."CardType" = 'S'`,
       {key:'LandedCostAmount', label:'إجمالي التكاليف المضافة', aliases:['إجمالي التكاليف','LandedCostAmount'], type:'number', required:false},
       {key:'FinalUnitCost', label:'الكلفة النهائية للوحدة', aliases:['الكلفة النهائية','FinalUnitCost'], type:'number', required:false},
     ],
-    sql: `-- مستندات اللاندد كوست — اختياري، يُستخدم بتحليل الكلفة/ربحية المشتريات وليس بمحرك التوصية مباشرة (قسم 35)
-SELECT
-  T0."DocEntry" AS "DocEntry", T0."DocNum" AS "DocNum", T0."PostDate" AS "التاريخ",
-  T1."ItemCode" AS "رمز الصنف", T0."CardName" AS "المورد",
+    sql: `SELECT
+  T0."DocEntry" AS "DocEntry", T0."DocNum" AS "DocNum", T0."DocDate" AS "التاريخ",
+  T1."ItemCode" AS "رمز الصنف", T0."SuppName" AS "المورد",
   T1."BaseSum" AS "سعر المنشأ", T1."AddSum" AS "إجمالي التكاليف"
 FROM OIPF T0
 INNER JOIN IPF1 T1 ON T0."DocEntry" = T1."DocEntry"
-WHERE T0."PostDate" BETWEEN '[%0]' AND '[%1]'`,
-    sqlNote: 'اختياري تماماً — لا يدخل بمحرك التوصية إلا إذا فُعِّل صراحة (قسم 35: "لا تجعل Landed Cost يثقل Recommendation Engine إذا لم يكن ضرورياً").',
+WHERE T0."DocDate" BETWEEN '[%0]' AND '[%1]'`,
+    sqlNote: 'اختياري تماماً — لا يدخل بمحرك التوصية إلا إذا فُعِّل صراحة (قسم 35: "لا تجعل Landed Cost يثقل Recommendation Engine إذا لم يكن ضرورياً"). تأكَّد مباشرة بتشغيل حي: OIPF بهالبيئة ما إله عمود PostDate (الاسم الصحيح DocDate) ولا CardName (الاسم الصحيح SuppName) — صُححوا هون. عمود Canceled موجود فعلياً على OIPF (بعكس OINV/ORIN/OPCH/OPDN)، بس ما استُخدم هون لأنه هاد المصدر اختياري بالأساس ولا تحقق حي أثبت أثره.',
   },
 
   items: {
@@ -783,8 +768,7 @@ WHERE T0."PostDate" BETWEEN '[%0]' AND '[%1]'`,
       {key:'UnitWeight', label:'وزن الوحدة (كغ)', aliases:['وزن الوحدة','UnitWeight','SWeight1'], type:'number', required:false},
       {key:'LeadTimeDays', label:'مدة توريد الصنف (يوم)', aliases:['مدة توريد الصنف','ItemLeadTimeDays','LeadTime'], type:'number', required:false},
     ],
-    sql: `-- كشف الأصناف مع مجموعة الصنف ومدة التوريد القياسية على مستوى الصنف (المصدر الحي الوحيد المؤكَّد لمدة التوريد بهالبيئة)
-SELECT T0."ItemCode" AS "رمز الصنف", T0."ItemName" AS "اسم الصنف", T1."ItmsGrpNam" AS "مجموعة الصنف",
+    sql: `SELECT T0."ItemCode" AS "رمز الصنف", T0."ItemName" AS "اسم الصنف", T1."ItmsGrpNam" AS "مجموعة الصنف",
        T0."SalUnitMsr" AS "وحدة القياس", T0."SWeight1" AS "وزن الوحدة", T0."LeadTime" AS "مدة توريد الصنف"
 FROM OITM T0
 LEFT JOIN OITB T1 ON T0."ItmsGrpCod" = T1."ItmsGrpCod"`,
@@ -803,8 +787,7 @@ LEFT JOIN OITB T1 ON T0."ItmsGrpCod" = T1."ItmsGrpCod"`,
       {key:'MOQ', label:'الحد الأدنى للطلب', aliases:['الحد الأدنى','MOQ'], type:'number', required:false},
       {key:'OrderMultiple', label:'مضاعف الطلب', aliases:['مضاعف الطلب','OrderMultiple'], type:'number', required:false},
     ],
-    sql: `-- تفضيل يدوي لربط صنف↔مورد (يُستخدم فقط لو غاب نمط شراء تاريخي واضح — القاعدة الأساس تبقى Purchase History الفعلي)
-SELECT DISTINCT T1."ItemCode" AS "رمز الصنف", T0."CardCode" AS "رمز المورد"
+    sql: `SELECT DISTINCT T1."ItemCode" AS "رمز الصنف", T0."CardCode" AS "رمز المورد"
 FROM OPCH T0 INNER JOIN PCH1 T1 ON T0."DocEntry"=T1."DocEntry"`,
     sqlNote: 'اختياري بالكامل — النظام يشتق ربط الصنف بالمورد أساساً من فواتير المشتريات الفعلية (قسم 12)، وهذا المصدر يُستخدم فقط كتفضيل يدوي إضافي أو MOQ/مضاعف طلب معروفين مسبقاً.',
   },
