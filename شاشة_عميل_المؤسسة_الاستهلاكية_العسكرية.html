@@ -164,6 +164,11 @@
   #loginView label{display:block; font-size:12.5px; font-weight:600; margin:12px 0 5px;}
   #loginView input{width:100%;}
   #loginView button{width:100%; margin-top:18px; padding:11px;}
+  #unauthorizedView{max-width:420px; margin:60px auto; background:#fff; border:1px solid var(--line); border-radius:16px; padding:34px 32px; box-shadow:0 18px 44px -20px rgba(21,42,74,.35); text-align:center;}
+  #unauthorizedView h2{margin:0 0 10px; font-size:18px;}
+  #unauthorizedView.err h2{color:var(--crimson);}
+  #unauthorizedView.warn h2{color:#8A6416;}
+  #unauthorizedView p{font-size:12.5px; color:var(--ink-soft); line-height:1.8; margin:0 0 18px;}
   .userbox{display:flex; align-items:center; gap:10px; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.16); border-radius:10px; padding:8px 14px; font-size:12px;}
   .userbox .who b{display:block; font-size:12.5px;}
   .userbox .who span{color:#9FB0CC; font-size:11px;}
@@ -197,6 +202,12 @@ var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],
   <input type="password" id="loginPass" autocomplete="current-password" onkeydown="if(event.key==='Enter') doLogin()">
   <button class="btn-primary" id="loginBtn" onclick="doLogin()">دخول</button>
   <div class="status-msg" id="loginMsg" style="margin-top:10px;"></div>
+</div>
+
+<div id="unauthorizedView" style="display:none;">
+  <h2 id="uaTitle">🚫 لا تملك صلاحية الدخول</h2>
+  <p id="uaMsg">حسابك غير مخوَّل بالدخول على شاشة عميل المؤسسة الاستهلاكية العسكرية. راجع مدير الصلاحيات لمنحك صلاحية.</p>
+  <button class="btn-ghost" onclick="doLogout()">خروج</button>
 </div>
 
 <div id="appView" style="display:none;">
@@ -4767,6 +4778,16 @@ async function doLogin(){
   await onSignedIn(data.user);
 }
 async function doLogout(){ await sb.auth.signOut(); location.reload(); }
+function showUnauthorized(kind, title, msg){
+  document.getElementById('loginView').style.display = 'none';
+  document.getElementById('appView').style.display = 'none';
+  document.getElementById('userbox').style.display = 'none';
+  const box = document.getElementById('unauthorizedView');
+  box.className = kind;
+  document.getElementById('uaTitle').textContent = title;
+  document.getElementById('uaMsg').textContent = msg;
+  box.style.display = 'block';
+}
 async function onSignedIn(user){
   curUser = user;
   const {data:prof} = await sb.from('profiles').select('*').eq('id', user.id).single();
@@ -4776,12 +4797,30 @@ async function onSignedIn(user){
     flash('loginMsg','هذا الحساب ما إله صلاحية الدخول على هاي الشاشة — تواصل مع المدير.', false);
     return;
   }
-  roleEdit = ['admin','editor'].includes(curProfile.role);
-  isAdmin = curProfile.role === 'admin';
-  const roleAr = {admin:'مدير', editor:'مدخل بيانات', viewer:'مطالع'}[curProfile.role] || curProfile.role;
+
+  // صلاحية هذه الشاشة تحديداً (user_screen_permissions) — طبقة إضافية فوق allowed_apps الموجودة
+  const {data:permRow, error:permErr} = await sb.from('user_screen_permissions')
+    .select('permission').eq('user_id', user.id).eq('screen_id','mil').maybeSingle();
+
+  if(permErr){
+    showUnauthorized('warn', '⚠️ تعذّر التحقق من صلاحيتك',
+      'حصل خطأ تقني أثناء التحقق من صلاحيتك على هذه الشاشة (مشكلة اتصال بالسيرفر). حدّث الصفحة وحاول مجدداً، وإذا تكرر راجع مدير الصلاحيات.');
+    return;
+  }
+  const screenPerm = permRow ? permRow.permission : null; // null = NONE (لا صف)
+  if(!screenPerm){
+    showUnauthorized('err', '🚫 لا تملك صلاحية الدخول',
+      'حسابك غير مخوَّل بالدخول على شاشة عميل المؤسسة الاستهلاكية العسكرية. راجع مدير الصلاحيات لمنحك صلاحية (VIEW/INPUT/ADMIN) من شاشة إدارة المستخدمين والصلاحيات.');
+    return;
+  }
+
+  roleEdit = screenPerm==='INPUT' || screenPerm==='ADMIN';
+  isAdmin = screenPerm==='ADMIN';
+  const roleAr = {ADMIN:'مدير', INPUT:'مدخل بيانات', VIEW:'مطالع'}[screenPerm] || screenPerm;
   document.getElementById('uName').textContent = curProfile.full_name || user.email;
   document.getElementById('uRole').textContent = user.email + ' · ' + roleAr + (roleEdit ? '' : ' · 👁 مطالعة فقط');
   document.getElementById('userbox').style.display = 'flex';
+  document.getElementById('unauthorizedView').style.display = 'none';
   document.getElementById('loginView').style.display = 'none';
   // نسحب آخر نسخة من السيرفر المشترك *قبل* ما نكشف الشاشة — هيك ما ينعرض/ينتعدل عليه أي بيانات محلية قديمة/فاضية قبل ما نتأكد من آخر نسخة، وما ينفتح المجال لأي حفظ تلقائي يستبق السحب
   await pullStateFromCloud();

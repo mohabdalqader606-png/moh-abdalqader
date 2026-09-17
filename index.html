@@ -238,6 +238,8 @@ header.topnav{position:sticky; top:0; z-index:39; backdrop-filter:blur(12px); ba
 .map-node.empty .nbg{stroke-dasharray:4 4;}
 .map-app{animation:appNodeIn var(--dur-slow) var(--ease-emphasized) backwards;}
 .map-app .act{cursor:pointer;}
+.map-app-open{cursor:pointer;}
+.map-app-open:hover rect, .map-app-open:focus-visible rect{filter:brightness(1.18); stroke-width:1.8;}
 .map-app .act:hover circle, .map-app .act:focus-visible circle{fill:var(--gold-soft); stroke:var(--gold);}
 @keyframes appNodeIn{from{opacity:0; transform:translateY(6px);} to{opacity:1; transform:translateY(0);}}
 .map-app-link{stroke:var(--gold); stroke-width:1.2; fill:none; opacity:.7; stroke-dasharray:220; stroke-dashoffset:220; animation:drawLine .5s var(--ease-standard) forwards;}
@@ -467,13 +469,17 @@ var CATEGORIES = {
   procurement:{ ar:"المشتريات", en:"PROCUREMENT", color:"#E8B14A" },
   inventory:{ ar:"المخزون", en:"INVENTORY", color:"#8E7CF0" },
   audit:{ ar:"التدقيق والحوكمة", en:"AUDIT & GRC", color:"#CBA467" },
-  hr:{ ar:"الموارد البشرية", en:"HR", color:"#6B7A99" }
+  hr:{ ar:"الموارد البشرية", en:"HR", color:"#6B7A99" },
+  fleet:{ ar:"الأسطول والتوزيع", en:"FLEET & DISTRIBUTION", color:"#FF8A5B" },
+  system:{ ar:"النظام والإدارة", en:"SYSTEM & ADMIN", color:"#4A5578" }
 };
 var ICONS = {
   sales:'<path d="M4 7h16l-1.5 9a2 2 0 01-2 1.7H7.5a2 2 0 01-2-1.7z"/><path d="M8 7V5a4 4 0 018 0v2"/>',
   finance:'<path d="M4 20V9M10 20V4M16 20v-7M22 20H2"/>',
   procurement:'<path d="M3 8l9-5 9 5-9 5-9-5z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>',
-  audit:'<path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/>'
+  audit:'<path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/>',
+  fleet:'<path d="M2 7h11v9H2z"/><path d="M13 10h4l4 3v3h-8z"/><circle cx="6.5" cy="18" r="1.6"/><circle cx="17.5" cy="18" r="1.6"/>',
+  system:'<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/>'
 };
 function app(o){ return Object.assign({ id:null,name:null,category:null,tags:[],desc:"",url:null,external:false,icon:null,version:null,owner:null,accessLevel:null,status:null,lastUpdated:null,pinned:false }, o); }
 var APPS = [
@@ -498,15 +504,25 @@ var APPS = [
     url:"شاشة_ذكاء_المشتريات_والمخزون.html" }),
   app({ id:"APP-AUD-01", name:"نظام إدارة التدقيق الداخلي والحوكمة", category:"audit", icon:"audit",
     desc:"لوحة قيادة تنفيذية GRC، الملاحظات والمخاطر، الخطة السنوية، والحوكمة",
-    url:"شاشة_التدقيق_الداخلي_الإداري.html" })
+    url:"شاشة_التدقيق_الداخلي_الإداري.html" }),
+  app({ id:"APP-FLT-01", name:"أسطول السيارات", category:"fleet", icon:"fleet",
+    desc:"ملخص يومي لكل سائق — عدد العملاء، الوزن، الترانسفيرات، والأصناف الموزَّعة",
+    url:"شاشة_أسطول_السيارات.html" }),
+  app({ id:"APP-SYS-01", name:"إدارة المستخدمين والصلاحيات", category:"system", icon:"system",
+    desc:"مصفوفة صلاحيات المستخدمين على شاشات النظام — الدخول مقيَّد بمدير صلاحيات معتمد",
+    accessLevel:"مقيَّد بمدير صلاحيات",
+    url:"شاشة_إدارة_المستخدمين_والصلاحيات.html" })
 ];
 var HOME_LIMIT = 12;
 
 /* ============ بوابة الدخول والصلاحيات (Supabase — نفس المشروع المستخدم بكل الشاشات) ============
-   كل مستخدم لازم يسجّل دخول قبل ما يشوف أي شي بالبوابة، وبعد الدخول بنعرضله بس التطبيقات
-   يلي عنده صلاحية عليها (allowed_apps بجدول profiles) — الباقي ما بيظهر إطلاقاً، حتى بالبحث
-   أو الخريطة أو "كل التطبيقات". لإعطاء مستخدم صلاحية شاشة معينة، ضيف قيمتها لعمود allowed_apps:
-     mil, mil-branch-sales, debt-aging, financials, procurement-intelligence, internal-audit-portal
+   كل مستخدم لازم يسجّل دخول قبل ما يشوف أي شي بالبوابة، وبعد الدخول بنعرضله بس التطبيقات يلي
+   عنده صلاحية عليها — الباقي ما بيظهر إطلاقاً، حتى بالبحث أو الخريطة أو "كل التطبيقات".
+   مصدر الصلاحية لكل تطبيق (PORTAL_APP_GATE أدناه) اثنين، أيّهما تحقق كفى:
+     1) allowed_apps بجدول profiles (الطريقة القديمة — لسا مستخدمة بشاشات ما انربطت بعد).
+     2) صف حقيقي (أي مستوى VIEW/INPUT/ADMIN) بمصفوفة user_screen_permissions لنفس screen_id
+        (الطريقة الجديدة — مصدر الحقيقة الفعلي لأي شاشة مربوطة بشاشة "إدارة المستخدمين والصلاحيات").
+   لإعطاء مستخدم صلاحية شاشة معينة استخدم إحدى الطريقتين (أو الاثنين معاً حسب حالة الشاشة).
    ملاحظة أمان: هاي الشاشة (وكل شاشات المستودع) مواقع ثابتة (GitHub Pages) بدون سيرفر خلفي —
    هاد التصفية بمستوى الواجهة فقط (تمنع التصفح العادي)، مش حماية مطلقة ضد شخص يفحص كود الصفحة
    مباشرة. الحماية الحقيقية الوحيدة لكل شاشة هي نظام الدخول والصلاحيات الخاص فيها هي (4 من 6
@@ -519,26 +535,33 @@ var PORTAL_APP_GATE = {
   "APP-SLS-02": "mil-branch-sales",
   "APP-FIN-02": "debt-aging",
   "APP-FIN-01": "financials",
-  "APP-FIN-03": false, // مشروع خارجي منفصل (kfc-tax) بنظام دخول وصلاحيات خاص فيه — دائماً ظاهر بالبوابة
+  "APP-FIN-03": "sales-tax-declaration", // مشروع خارجي منفصل (kfc-tax) — بطاقته تظهر فقط لمن عنده صلاحية فعلية (Matrix) على هذه الشاشة
   "APP-PRC-01": "procurement-intelligence",
-  "APP-AUD-01": "internal-audit-portal"
+  "APP-AUD-01": "internal-audit-portal",
+  "APP-FLT-01": "fleet-vehicles",
+  "APP-SYS-01": "user-permissions" // شاشة نظامية — تظهر فقط لمن عنده صف صلاحية فعلي على screen_id='user-permissions'، أو لمدير قديم (Legacy Break-Glass)
 };
 var portalSb = null;
 function gateStatus(msg, isErr){ var el=document.getElementById("portalGateStatus"); if(el){ el.textContent=msg; el.style.color = isErr? "var(--bad)" : "var(--muted)"; } }
 function hidePortalGate(){ var g=document.getElementById("portalGate"); if(g) g.style.display="none"; }
-function applyPortalGate(allowedApps){
+function applyPortalGate(allowedApps, matrixScreenIds, isLegacyAdmin){
   var allowed = new Set(allowedApps||[]);
+  var matrix = matrixScreenIds||new Set();
   APPS = APPS.filter(function(a){
     var gid = PORTAL_APP_GATE[a.id];
     if(gid===false) return true;
     if(!gid) return false;
-    return allowed.has(gid);
+    if(gid==="user-permissions" && isLegacyAdmin) return true;
+    return allowed.has(gid) || matrix.has(gid);
   });
 }
 async function onPortalSignedIn(user){
   gateStatus("جارٍ تحميل الأنظمة المتاحة لحسابك...");
-  var profQ = await portalSb.from("profiles").select("allowed_apps").eq("id", user.id).single();
-  applyPortalGate(profQ.data ? profQ.data.allowed_apps : []);
+  var profQ = await portalSb.from("profiles").select("allowed_apps, role").eq("id", user.id).single();
+  var permQ = await portalSb.from("user_screen_permissions").select("screen_id").eq("user_id", user.id);
+  var matrixScreenIds = new Set((permQ.data||[]).map(function(r){ return r.screen_id; }));
+  var isLegacyAdmin = !!(profQ.data && profQ.data.role === "admin");
+  applyPortalGate(profQ.data ? profQ.data.allowed_apps : [], matrixScreenIds, isLegacyAdmin);
   hidePortalGate();
   portalBoot();
 }
@@ -728,10 +751,12 @@ function focusCategory(cat){
     var a=list[i], shared=a.category!==cat, nm=a.name.length>30?a.name.slice(0,29)+"…":a.name;
     html+='<line class="map-app-link" x1="'+n.x+'" y1="'+n.y+'" x2="'+px+'" y2="'+py+'" style="animation-delay:'+(i*70)+'ms"/>'+
       '<g class="map-app" transform="translate('+(px-122)+','+(py-24)+')" style="animation-delay:'+(120+i*70)+'ms">'+
+      '<a class="map-app-open" href="'+esc(a.url)+'" data-open data-id="'+a.id+'" aria-label="فتح '+esc(a.name)+'">'+
       '<rect width="244" height="48" rx="11" fill="var(--surface-3)" stroke="'+c.color+'88" stroke-width="1.2"/>'+
       '<text x="140" y="18" text-anchor="middle" font-size="10" font-weight="600" fill="var(--ink)" font-family="var(--font-body)">'+esc(nm)+'</text>'+
       '<text x="140" y="31" text-anchor="middle" font-size="8" letter-spacing="1" fill="'+(shared?'var(--faint)':c.color)+'" font-family="var(--font-mono)">'+a.id+(shared?' · SHARED':'')+'</text>'+
-      '<a href="'+esc(a.url)+'" data-open data-id="'+a.id+'" aria-label="فتح '+esc(a.name)+'"><g class="act" transform="translate(10,24)"><circle cx="0" cy="0" r="9" fill="var(--surface-2)" stroke="var(--border)"/><svg x="-5.5" y="-5.5" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--gold-strong)" stroke-width="2"><path d="M9 6l7 6-7 6z" fill="currentColor" stroke="none"/></svg></g></a>'+
+      '<g class="act" transform="translate(10,24)"><circle cx="0" cy="0" r="9" fill="var(--surface-2)" stroke="var(--border)"/><svg x="-5.5" y="-5.5" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--gold-strong)" stroke-width="2"><path d="M9 6l7 6-7 6z" fill="currentColor" stroke="none"/></svg></g>'+
+      '</a>'+
       mapAct(a.id,"fav",36,24,'<path d="M12 17.3l-5.6 3 1.1-6.2L3 9.5l6.3-.9L12 3l2.7 5.6 6.3.9-4.5 4.6 1.1 6.2z"/>')+mapAct(a.id,"preview",62,24,'<circle cx="12" cy="12" r="3"/><path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6S2 12 2 12z"/>')+
       '<text x="140" y="43" text-anchor="middle" font-size="7.5" letter-spacing="1" fill="var(--faint)" font-family="var(--font-mono)">OPEN · FAVORITE · PREVIEW</text></g>';
   }
