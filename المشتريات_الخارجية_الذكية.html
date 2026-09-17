@@ -214,7 +214,15 @@
   .dc-cadence-head .hint{font-size:11.5px;color:var(--ink-3);margin-bottom:10px;}
   .dc-card{border:1px solid var(--line);border-radius:var(--r-lg);background:#fff;display:flex;flex-direction:column;}
   .dc-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:11px 14px;border-bottom:1px solid var(--line);}
-  .dc-card-title{font-weight:700;font-size:12.5px;color:var(--ink);}
+  .dc-card-title{font-weight:700;font-size:12.5px;color:var(--ink);display:flex;align-items:center;gap:7px;}
+  .dc-num{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 4px;border-radius:50%;background:var(--navy);color:#fff;font-size:10.5px;font-weight:700;font-family:var(--mono);flex-shrink:0;}
+  .dc-info-panel{position:fixed;z-index:60;background:#fff;border:1px solid var(--line-strong);border-radius:var(--r-lg);box-shadow:0 8px 24px rgba(16,24,40,.18);padding:14px 16px;display:none;max-width:calc(100vw - 16px);}
+  .dc-info-panel.open{display:block;}
+  .dc-info-title{display:flex;align-items:center;gap:7px;font-weight:700;font-size:13px;color:var(--navy);margin-bottom:10px;padding-bottom:8px;border-bottom:1px solid var(--line);}
+  .dc-info-row{margin-bottom:9px;}
+  .dc-info-row:last-child{margin-bottom:0;}
+  .dc-info-row b{display:block;font-size:10px;color:var(--ink-3);margin-bottom:2px;font-weight:700;}
+  .dc-info-row div{font-size:12px;color:var(--ink-2);line-height:1.55;}
   .dc-card-body{padding:10px 14px;display:flex;flex-direction:column;gap:8px;}
   .dc-meta{display:grid;grid-template-columns:1fr 1fr;gap:4px 12px;font-size:11px;color:var(--ink-3);}
   .dc-meta b{color:var(--ink);font-family:var(--mono);font-weight:600;}
@@ -2786,6 +2794,93 @@ const DC_CADENCE_META = {
   rare:{label:'نادراً — بيانات مرجعية', hint:'ارفعها مرة، ورجّعلها بس لو تغيّر شي فعلي (مورد جديد، صنف جديد، تعديل مدة توريد)'},
   optional:{label:'اختياري', hint:'تحليل كلفة/ربحية إضافي فقط — غير داخل بحساب التوصية إطلاقاً'},
 };
+/* بطاقة معلومات لكل مصدر — تُعرض عند تمرير المؤشر فوق رأس البطاقة (عرض فقط، لا تُستخدم بأي حساب) */
+const DC_INFO = {
+  salesInvoices: {
+    what:'فواتير المبيعات الفعلية (OINV/INV1) — كل سطر صنف تم بيعه فعلياً لعميل.',
+    purpose:'حساب صافي المبيعات (فواتير − مرتجعات) وبناء متوسط الطلب الشهري لكل صنف.',
+    feeds:'تحليل الطلب والمبيعات، و"الطلب الشهري المعدَّل" يلي مبني عليه كل قرار شراء.',
+    impact:'بدونها المحرك ما بعرف شو معدل بيع الصنف — كل التوصيات بتتوقف أو تصير غير دقيقة. أهم مصدر بعد المخزون.',
+  },
+  salesReturns: {
+    what:'إشعارات دائن/مرتجعات رسمية مرتبطة بفواتير (ORIN/RIN1).',
+    purpose:'تُطرح من فواتير المبيعات لحساب صافي المبيعات الحقيقي.',
+    feeds:'نفس حساب الطلب الشهري (صافي = فواتير − مرتجعات).',
+    impact:'بدونها الطلب بينحسب أعلى من الحقيقي، فالتوصيات ممكن تقترح كمية أكبر من اللازم.',
+  },
+  physicalReturns: {
+    what:'مستند إرجاع بضاعة فعلي منفصل عن إشعار الدائن (ORDN/RDN1).',
+    purpose:'معلوماتية فقط — تأكيد وجود بضاعة رجعت فعلياً للمستودع.',
+    feeds:'تظهر كملاحظة إضافية بشرح التوصية، بلا طرح تلقائي من صافي المبيعات (تفادي ازدواجية غير مؤكدة).',
+    impact:'اختيارية — غيابها ما بأثر على أي حساب، بس بتفقد سياق إضافي بالشرح.',
+  },
+  purchaseInvoices: {
+    what:'فواتير شراء فعلية معتمدة من الموردين (OPCH/PCH1).',
+    purpose:'بناء نمط الشراء التاريخي (أقل/أعلى/الأكثر تكراراً) لكل صنف+مورد، وتحديد شو استُلم فعلياً من كل أمر شراء.',
+    feeds:'تقريب الكمية الموصى بها لمضاعف الشراء المعتاد، وحساب المتبقي من أوامر الشراء المفتوحة.',
+    impact:'بدونها ما في نمط شراء تاريخي (الكمية المقترحة بتصير خام بدون تقريب منطقي)، وتتبع الاستلام الفعلي بيضعف.',
+  },
+  purchaseOrders: {
+    what:'أوامر شراء مفتوحة عند المورد لسا ما وصلت بالكامل (OPOR/POR1).',
+    purpose:'معرفة شو بالطريق فعلياً، عشان ما نطلب نفس الكمية مرتين.',
+    feeds:'حالة "بالطريق" (IN_TRANSIT)، وحساب الكمية المتبقية المطلوبة.',
+    impact:'بدونها المحرك ما بعرف في طلب موجود أصلاً، فبيقترح تكرار طلب بضاعة أصلاً بالطريق.',
+  },
+  goodsReceipts: {
+    what:'محاضر استلام بضاعة رسمية مرتبطة بأمر شراء (OPDN/PDN1).',
+    purpose:'مصدر ثانوي/احتياطي لتأكيد الاستلام (المصدر الأساسي أصبح فاتورة الشراء المباشرة حسب التحقق الحي).',
+    feeds:'يُجمع مع فواتير المشتريات لحساب المستلم فعلياً من كل أمر شراء.',
+    impact:'تأثير محدود بهالبيئة (0% من الاستلامات فعلياً بتمر GRPO حسب التحقق الحي) — رفعها اختياري عملياً.',
+  },
+  salesOrders: {
+    what:'أوامر بيع مؤكدة من عملاء لسا ما اتفوترت بالكامل (ORDR/RDR1).',
+    purpose:'طلب مؤكد (Committed Demand) لازم يُحتسب فوق المتوسط الشهري العادي.',
+    feeds:'يُضاف مباشرة لحساب الاحتياج المتوقع خلال فترة التوريد.',
+    impact:'بدونها طلبات عملاء مؤكدة بتضيع من الحساب، فالتوصية ممكن تكون أقل من الحاجة الفعلية.',
+  },
+  salesQuotations: {
+    what:'عروض أسعار مفتوحة لعملاء لسا ما تحولت لفاتورة (OQUT/QUT1).',
+    purpose:'طلب محتمل (مش مؤكد 100%) — يُحتسب بوزن أقل من 1 (قابل للتعديل بالإعدادات).',
+    feeds:'يُضاف بوزن جزئي (افتراضياً 0.3) لحساب الاحتياج المتوقع.',
+    impact:'بدونها بعض الطلب المحتمل بيضيع؛ الوزن الجزئي أصلاً بيمنع المبالغة لو العرض ما تحول لبيع فعلي.',
+  },
+  inventory: {
+    what:'أرصدة المخزون الحالية لكل صنف بكل مستودع (OITW/OWHS).',
+    purpose:'أساس "المخزون المتاح" — أهم قيمة بكل الحسابات.',
+    feeds:'كل شي تقريباً: حالة التوصية (اطلب الآن/فائض/راكد)، تغطية المخزون بالأيام.',
+    impact:'بدونها أو لو قديمة، كل التوصيات غلط تماماً — هاد أهم مصدر بيانات بالشاشة كلها.',
+  },
+  batches: {
+    what:'أرصدة الباتشات مع تاريخ الانتهاء على مستوى الصنف.',
+    purpose:'كشف مخاطر الصلاحية (منتهي / قريب الانتهاء خلال 30 أو 90 يوم).',
+    feeds:'تبويب "المخاطر" وتحذيرات الصلاحية بشرح التوصية.',
+    impact:'بدونها ما في تنبيه لبضاعة قربت تنتهي أو انتهت فعلياً — خطر خسارة مخزون بصمت.',
+  },
+  suppliers: {
+    what:'قائمة الموردين مع بلد المنشأ (OCRD).',
+    purpose:'اسم/بلد كل مورد، ومصدر يدوي اختياري لمدة التوريد لو رُفعت.',
+    feeds:'أسماء الموردين بكل الشاشة، وتجميع "خطة الشراء" حسب المورد.',
+    impact:'بدونها بتظهر أكواد الموردين بس بدون أسماء/بلد — الوظائف الأساسية بتضل شغالة.',
+  },
+  itemSupplierMap: {
+    what:'تفضيل يدوي لربط صنف بمورد محدد.',
+    purpose:'تغطية حالات نادرة ما فيها تاريخ شراء كافي لتحديد المورد تلقائياً.',
+    feeds:'تحديد المورد لصنف معين، بس بالأولوية الأخيرة (بعد نمط الشراء الفعلي).',
+    impact:'اختياري تماماً — القاعدة الأساسية تبقى نمط الشراء الفعلي، ما بتغيّر شي إذا ما رُفع.',
+  },
+  items: {
+    what:'بيانات مرجعية للصنف: الاسم، مجموعة الصنف، وحدة القياس، وزن الوحدة، مدة توريد الصنف.',
+    purpose:'مصدر مدة التوريد الأساسي (OITM.LeadTime) لو ما في مدة توريد يدوية للمورد.',
+    feeds:'مدة التوريد الافتراضية لكل صنف، واسم الصنف/الوحدة بكل الشاشة.',
+    impact:'بدونها بتظهر أكواد الأصناف بدون أسماء، ومدة التوريد بترجع لقيمة افتراضية عامة أقل دقة.',
+  },
+  landedCost: {
+    what:'مستندات الكلفة النهائية بعد التخليص الجمركي (اختياري).',
+    purpose:'تحليل كلفة/ربحية إضافي فقط.',
+    feeds:'لا شي بمحرك التوصية — تحليلي بحت.',
+    impact:'صفر تأثير على أي توصية أو قرار شراء — اختياري بالكامل.',
+  },
+};
 async function renderDataCenter(){
   const el = document.getElementById('view-datacenter');
   const locked = await DB.getMeta('historicalLocked', false);
@@ -2818,23 +2913,48 @@ async function renderDcHealthBox(){
   const lvl = healthLevel(h.overall);
   document.getElementById('dcHealthBox').innerHTML = `<div class="tile ${lvl.cls==='ok'?'green':lvl.cls==='warn'?'orange':'red'}" style="cursor:pointer" onclick="openHealthDetails()"><div class="k">Data Health</div><div class="v txt"><span class="health-dot ${lvl.cls}"></span>${lvl.label} <span style="font-family:var(--mono);font-size:12px;color:var(--ink-3)">${h.overall}%</span></div><div style="font-size:10.5px;color:var(--ink-4);margin-top:3px">اضغط للتفاصيل</div></div>`;
 }
-function dcCardHtml(key){
+/** ترتيب العرض الفعلي على الشاشة (حسب مجموعات الدورية) — الأرقام يلي بيشوفها المستخدم مبنية عليه */
+function dcDisplayOrder(){
+  const out = [];
+  DC_CADENCE_ORDER.forEach(c=>{ DC_ORDER.filter(k=>DC_CADENCE[k]===c).forEach(k=>out.push(k)); });
+  return out;
+}
+function dcCardHtml(key, num){
   const src = DATA_SOURCES[key];
-  return `<div class="dc-card" id="dcCard_${key}"><div class="dc-card-head"><div class="dc-card-title">${U.esc(src.label)}</div><span id="dcLoaded_${key}"></span></div>
+  return `<div class="dc-card" id="dcCard_${key}"><div class="dc-card-head" onmouseenter="dcInfoPanelShow('${key}', this)" onmouseleave="dcInfoPanelHide()"><div class="dc-card-title"><span class="dc-num">${num}</span>${U.esc(src.label)}</div><span id="dcLoaded_${key}"></span></div>
     <div class="dc-card-body"><div class="dc-meta" id="dcStats_${key}">…</div>
       <details class="sqlbox"><summary>كويري SAP HANA المقترح</summary><code class="sql">${U.esc(src.sql)}</code>${src.sqlNote?`<div class="status-msg" style="margin-top:6px">${U.esc(src.sqlNote)}</div>`:''}<button class="btn-ghost btn-xs" style="margin-top:8px" onclick="copySql(this,'${key}')">نسخ الكويري</button></details>
     </div>
     <div class="dc-card-actions"><button class="btn-primary btn-xs" onclick="openImportModal('${key}')">رفع / لصق بيانات</button><button class="btn-ghost btn-xs" onclick="rollbackImport('${key}')">تراجع عن آخر استيراد</button></div></div>`;
 }
 function renderDcGrid(){
+  const order = dcDisplayOrder();
   document.getElementById('dcGrid').innerHTML = DC_CADENCE_ORDER.map(c=>{
     const keys = DC_ORDER.filter(k=>DC_CADENCE[k]===c);
     if(!keys.length) return '';
     const meta = DC_CADENCE_META[c];
-    return `<div class="dc-cadence-head"><h3>${U.esc(meta.label)}</h3><div class="hint">${U.esc(meta.hint)}</div></div>` + keys.map(dcCardHtml).join('');
+    return `<div class="dc-cadence-head"><h3>${U.esc(meta.label)}</h3><div class="hint">${U.esc(meta.hint)}</div></div>` + keys.map(k=>dcCardHtml(k, order.indexOf(k)+1)).join('');
   }).join('');
   DC_ORDER.forEach(refreshSourceStats);
 }
+function dcInfoPanelShow(key, anchorEl){
+  const info = DC_INFO[key]; if(!info) return;
+  let panel = document.getElementById('dcInfoPanel');
+  if(!panel){ panel = document.createElement('div'); panel.id = 'dcInfoPanel'; panel.className = 'dc-info-panel'; document.body.appendChild(panel); }
+  const num = dcDisplayOrder().indexOf(key)+1;
+  panel.innerHTML = `<div class="dc-info-title"><span class="dc-num">${num}</span>${U.esc(DATA_SOURCES[key].label)}</div>
+    <div class="dc-info-row"><b>شو هي؟</b><div>${U.esc(info.what)}</div></div>
+    <div class="dc-info-row"><b>الهدف منها</b><div>${U.esc(info.purpose)}</div></div>
+    <div class="dc-info-row"><b>وين بتنعكس بالشاشة</b><div>${U.esc(info.feeds)}</div></div>
+    <div class="dc-info-row"><b>لو غابت أو قديمة</b><div>${U.esc(info.impact)}</div></div>`;
+  const r = anchorEl.getBoundingClientRect();
+  const w = 400;
+  panel.style.width = w+'px';
+  panel.style.top = Math.min(window.innerHeight-20, r.bottom+6) + 'px';
+  panel.style.left = Math.max(8, Math.min(window.innerWidth-w-8, r.left)) + 'px';
+  panel.classList.add('open');
+}
+function dcInfoPanelHide(){ const p = document.getElementById('dcInfoPanel'); if(p) p.classList.remove('open'); }
 async function refreshSourceStats(key){
   const h = await HEALTH.scoreSource(key);
   const box = document.getElementById('dcStats_'+key); if(!box) return;
