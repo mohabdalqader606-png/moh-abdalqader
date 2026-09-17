@@ -208,6 +208,10 @@
 
   /* ===== Data center ===== */
   .dc-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px;}
+  .dc-cadence-head{grid-column:1/-1;padding-top:16px;border-top:1px solid var(--line);}
+  .dc-cadence-head:first-child{padding-top:0;border-top:none;}
+  .dc-cadence-head h3{font-size:13px;font-weight:700;color:var(--ink);margin:0 0 3px;}
+  .dc-cadence-head .hint{font-size:11.5px;color:var(--ink-3);margin-bottom:10px;}
   .dc-card{border:1px solid var(--line);border-radius:var(--r-lg);background:#fff;display:flex;flex-direction:column;}
   .dc-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:11px 14px;border-bottom:1px solid var(--line);}
   .dc-card-title{font-weight:700;font-size:12.5px;color:var(--ink);}
@@ -2771,6 +2775,20 @@ async function confirmInTransit(key, itemCode, dateStr){
    ------------------------------------------------------------------------------------------ */
 let _dcPendingImport = null;
 const DC_ORDER = ['salesInvoices','salesReturns','physicalReturns','purchaseInvoices','purchaseOrders','goodsReceipts','inventory','salesOrders','salesQuotations','suppliers','itemSupplierMap','batches','items','landedCost'];
+/* تصنيف كل مصدر حسب دورية التحديث الواقعية — بيانات (لا يغيّر منطق الاستيراد/الحساب، تنظيم عرض فقط بمركز البيانات) */
+const DC_CADENCE = {
+  inventory:'daily', purchaseOrders:'daily', goodsReceipts:'daily', purchaseInvoices:'daily', salesOrders:'daily', salesQuotations:'daily',
+  salesInvoices:'weekly', salesReturns:'weekly', physicalReturns:'weekly', batches:'weekly',
+  suppliers:'rare', items:'rare', itemSupplierMap:'rare',
+  landedCost:'optional',
+};
+const DC_CADENCE_ORDER = ['daily','weekly','rare','optional'];
+const DC_CADENCE_META = {
+  daily:{label:'تحديث يومي', hint:'بتغيّر التوصية يوم عن يوم — حدّثها كل يوم عمل'},
+  weekly:{label:'تحديث أسبوعي', hint:'بتأثر على المتوسطات والتحليل بس ما بتتغير بشكل محسوس يوم عن يوم — كافي أسبوعياً'},
+  rare:{label:'نادراً — بيانات مرجعية', hint:'ارفعها مرة، ورجّعلها بس لو تغيّر شي فعلي (مورد جديد، صنف جديد، تعديل مدة توريد)'},
+  optional:{label:'اختياري', hint:'تحليل كلفة/ربحية إضافي فقط — غير داخل بحساب التوصية إطلاقاً'},
+};
 async function renderDataCenter(){
   const el = document.getElementById('view-datacenter');
   const locked = await DB.getMeta('historicalLocked', false);
@@ -2803,14 +2821,20 @@ async function renderDcHealthBox(){
   const lvl = healthLevel(h.overall);
   document.getElementById('dcHealthBox').innerHTML = `<div class="tile ${lvl.cls==='ok'?'green':lvl.cls==='warn'?'orange':'red'}" style="cursor:pointer" onclick="openHealthDetails()"><div class="k">Data Health</div><div class="v txt"><span class="health-dot ${lvl.cls}"></span>${lvl.label} <span style="font-family:var(--mono);font-size:12px;color:var(--ink-3)">${h.overall}%</span></div><div style="font-size:10.5px;color:var(--ink-4);margin-top:3px">اضغط للتفاصيل</div></div>`;
 }
+function dcCardHtml(key){
+  const src = DATA_SOURCES[key];
+  return `<div class="dc-card" id="dcCard_${key}"><div class="dc-card-head"><div class="dc-card-title">${U.esc(src.label)}</div><span id="dcLoaded_${key}"></span></div>
+    <div class="dc-card-body"><div class="dc-meta" id="dcStats_${key}">…</div>
+      <details class="sqlbox"><summary>كويري SAP HANA المقترح</summary><code class="sql">${U.esc(src.sql)}</code>${src.sqlNote?`<div class="status-msg" style="margin-top:6px">${U.esc(src.sqlNote)}</div>`:''}<button class="btn-ghost btn-xs" style="margin-top:8px" onclick="copySql(this,'${key}')">نسخ الكويري</button></details>
+    </div>
+    <div class="dc-card-actions"><button class="btn-primary btn-xs" onclick="openImportModal('${key}')">رفع / لصق بيانات</button><button class="btn-ghost btn-xs" onclick="rollbackImport('${key}')">تراجع عن آخر استيراد</button></div></div>`;
+}
 function renderDcGrid(){
-  document.getElementById('dcGrid').innerHTML = DC_ORDER.map(key=>{
-    const src = DATA_SOURCES[key];
-    return `<div class="dc-card" id="dcCard_${key}"><div class="dc-card-head"><div class="dc-card-title">${U.esc(src.label)}</div><span id="dcLoaded_${key}"></span></div>
-      <div class="dc-card-body"><div class="dc-meta" id="dcStats_${key}">…</div>
-        <details class="sqlbox"><summary>كويري SAP HANA المقترح</summary><code class="sql">${U.esc(src.sql)}</code>${src.sqlNote?`<div class="status-msg" style="margin-top:6px">${U.esc(src.sqlNote)}</div>`:''}<button class="btn-ghost btn-xs" style="margin-top:8px" onclick="copySql(this,'${key}')">نسخ الكويري</button></details>
-      </div>
-      <div class="dc-card-actions"><button class="btn-primary btn-xs" onclick="openImportModal('${key}')">رفع / لصق بيانات</button><button class="btn-ghost btn-xs" onclick="rollbackImport('${key}')">تراجع عن آخر استيراد</button></div></div>`;
+  document.getElementById('dcGrid').innerHTML = DC_CADENCE_ORDER.map(c=>{
+    const keys = DC_ORDER.filter(k=>DC_CADENCE[k]===c);
+    if(!keys.length) return '';
+    const meta = DC_CADENCE_META[c];
+    return `<div class="dc-cadence-head"><h3>${U.esc(meta.label)}</h3><div class="hint">${U.esc(meta.hint)}</div></div>` + keys.map(dcCardHtml).join('');
   }).join('');
   DC_ORDER.forEach(refreshSourceStats);
 }
