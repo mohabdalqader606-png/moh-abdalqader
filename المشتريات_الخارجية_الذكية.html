@@ -466,20 +466,18 @@ ORDER BY T1."ItemCode", T0."DocDate"`,
       {key:'CardCode', label:'رمز العميل', aliases:['رمز العميل','CardCode'], type:'text', required:false},
       {key:'CardName', label:'اسم العميل', aliases:['العميل','CardName'], type:'text', required:false},
       {key:'LineTotal', label:'المبلغ', aliases:['المبلغ','LineTotal'], type:'number', required:false},
-      {key:'Canceled', label:'ملغى؟', aliases:['ملغى','Canceled'], type:'text', required:false},
+      {key:'Canceled', label:'ملغى؟ (اختياري — لا يوجد حقل مقابل بهالبيئة، انظر ملاحظة)', aliases:['ملغى','Canceled'], type:'text', required:false},
     ],
-    sql: `-- مرتجعات المبيعات / إشعارات دائن — تُطرح من الفواتير لحساب صافي المبيعات
+    sql: `-- مرتجعات المبيعات / إشعارات دائن — تُطرح من الفواتير لحساب صافي المبيعات (بلا شرط إلغاء: ORIN بهالبيئة لا يملك حقل Canceled، انظر ملاحظة أدناه)
 SELECT
   T0."DocEntry" AS "DocEntry", T1."LineNum" AS "LineNum", T0."DocDate" AS "التاريخ",
   T1."ItemCode" AS "رمز الصنف", T1."Quantity" AS "الكمية", T1."WhsCode" AS "المستودع",
-  T0."CardCode" AS "رمز العميل", T0."CardName" AS "العميل", T1."LineTotal" AS "المبلغ",
-  T0."Canceled" AS "ملغى"
+  T0."CardCode" AS "رمز العميل", T0."CardName" AS "العميل", T1."LineTotal" AS "المبلغ"
 FROM ORIN T0
 INNER JOIN RIN1 T1 ON T0."DocEntry" = T1."DocEntry"
 WHERE T0."DocDate" BETWEEN '[%0]' AND '[%1]'
-  AND T0."Canceled" = 'N'
 ORDER BY T1."ItemCode", T0."DocDate"`,
-    sqlNote: 'مستند إشعار دائن ملغى (Canceled=Y) لا يُحتسب مرتجعاً. مرتجع تم إلغاؤه لاحقاً لا يُعامل كمبيعات إضافية — هو ببساطة يخرج من حساب المرتجعات. ملاحظة: شرط Canceled=N هون لم يُتحقق حياً لـORIN تحديداً (التحقق الحي شمل OINV فقط) — أُبقي كما كان. تحقق SAP حي منفصل (Phase 2) أثبت وجود مستند إرجاع فعلي مستقل (ORDN/RDN1) مستخدَم فعلياً بهالبيئة (132 مستند حقيقي 2018–2025) — انظر مصدر "مرتجعات فعلية منفصلة (ORDN)" أدناه؛ لا يُدمج تلقائياً هون تفادياً لازدواجية غير مؤكدة.',
+    sqlNote: 'تأكَّد مباشرة بتشغيل حي من هذا الحساب: ORIN بهالبيئة لا يملك عمود "Canceled" إطلاقاً — تشغيل النسخة القديمة بـWHERE Canceled=\'N\' فشل بخطأ "invalid column name" (نفس واقع OINV المؤكَّد بـPhase 2). الاستعلام هلق بلا شرط إلغاء، ومقروء بأمان: عمود "ملغى؟" اختياري بجدول الرفع وتتعامل الشاشة مع غيابه كـ"غير ملغى" تلقائياً (نفس منطق فواتير المبيعات). لا يوجد لغاية الآن تحقق حي منفصل يثبت وجود آلية إلغاء بديلة لإشعارات الدائن بهالبيئة — إذا ظهر لاحقاً حقل أو نمط إلغاء فعلي، يُضاف هون بدليل مباشر لا افتراضاً. تحقق SAP حي منفصل (Phase 2) أثبت وجود مستند إرجاع فعلي مستقل (ORDN/RDN1) مستخدَم فعلياً بهالبيئة (132 مستند حقيقي 2018–2025) — انظر مصدر "مرتجعات فعلية منفصلة (ORDN)" أدناه؛ لا يُدمج تلقائياً هون تفادياً لازدواجية غير مؤكدة.',
   },
 
   physicalReturns: {
