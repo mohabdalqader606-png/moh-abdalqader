@@ -731,28 +731,167 @@ WHERE T0."CardType" = 'S'`,
   landedCost: {
     label: 'الكلفة النهائية بعد التخليص (Landed Cost — اختياري)',
     store: 'landedCost',
-    keyFields: ['DocEntry','ItemCode','Batch'],
-    dateField: 'CostDate',
+    keyFields: ['DocNum','ItemCode','BaseRowNum'],
+    dateField: 'DocDate',
     columns: [
-      {key:'DocEntry', label:'DocEntry', aliases:['DocEntry'], type:'text', required:true},
-      {key:'DocNum', label:'رقم المستند', aliases:['DocNum'], type:'text', required:false},
-      {key:'CostDate', label:'التاريخ', aliases:['التاريخ','CostDate'], type:'date', required:true},
-      {key:'ItemCode', label:'رمز الصنف', aliases:['رمز الصنف','ItemCode'], type:'text', required:true},
-      {key:'SupplierName', label:'المورد', aliases:['المورد','Vendor'], type:'text', required:false},
-      {key:'Batch', label:'الباتش', aliases:['الباتش','Batch'], type:'text', required:false},
-      {key:'Qty', label:'الكمية', aliases:['الكمية','Qty'], type:'number', required:false},
-      {key:'BasePrice', label:'سعر المنشأ', aliases:['سعر المنشأ','BasePrice'], type:'number', required:false},
-      {key:'LandedCostAmount', label:'إجمالي التكاليف المضافة', aliases:['إجمالي التكاليف','LandedCostAmount'], type:'number', required:false},
-      {key:'FinalUnitCost', label:'الكلفة النهائية للوحدة', aliases:['الكلفة النهائية','FinalUnitCost'], type:'number', required:false},
+      {key:'DocNum', label:'رقم مستند اللاندد كوست', aliases:['Landed Cost No','رقم المستند','DocNum'], type:'text', required:true},
+      {key:'DocDate', label:'التاريخ', aliases:['Landed Cost Date','التاريخ','DocDate'], type:'date', required:true},
+      {key:'Ref1', label:'المرجع', aliases:['Reference 1','Ref1'], type:'text', required:false},
+      {key:'CardCode', label:'رمز المورد', aliases:['Vendor Code','رمز المورد','CardCode'], type:'text', required:false},
+      {key:'SupplierName', label:'اسم المورد', aliases:['Vendor Name','المورد','Vendor'], type:'text', required:false},
+      {key:'BaseDocType', label:'نوع المستند الأصل', aliases:['Base Document Type'], type:'text', required:false},
+      {key:'BaseEntry', label:'رقم المستند الأصل الداخلي', aliases:['Base Document Internal ID','BaseEntry'], type:'text', required:false},
+      {key:'BaseRowNum', label:'رقم السطر بالمستند الأصل', aliases:['Base Row Number','BaseRowNum'], type:'text', required:true},
+      {key:'ItemCode', label:'رمز الصنف', aliases:['Item Code','رمز الصنف','ItemCode'], type:'text', required:true},
+      {key:'ItemDescription', label:'اسم الصنف', aliases:['Item Description'], type:'text', required:false},
+      {key:'WhsCode', label:'المستودع', aliases:['Warehouse','المستودع','WhsCode'], type:'text', required:false},
+      {key:'Qty', label:'الكمية', aliases:['Quantity','الكمية','Qty'], type:'number', required:false},
+      {key:'UoM', label:'وحدة القياس', aliases:['UoM'], type:'text', required:false},
+      {key:'Batch', label:'الباتش', aliases:['Batch Number','الباتش','Batch'], type:'text', required:false},
+      {key:'Currency', label:'العملة', aliases:['Currency'], type:'text', required:false},
+      {key:'Rate', label:'سعر الصرف', aliases:['Exchange Rate','Rate'], type:'number', required:false},
+      {key:'BasePrice', label:'سعر المنشأ (بالمستودع)', aliases:['Base Doc. Price','سعر المنشأ','BasePrice'], type:'number', required:false},
+      {key:'BaseValue', label:'قيمة سعر المنشأ', aliases:['Base Doc. Value'], type:'number', required:false},
+      {key:'FobValue', label:'قيمة FOB', aliases:['FOB Value'], type:'number', required:false},
+      {key:'Customs', label:'الجمارك', aliases:['Customs'], type:'number', required:false},
+      {key:'AdditionalCost', label:'تكلفة إضافية', aliases:['Additional Cost'], type:'number', required:false},
+      {key:'LandedCostAmount', label:'إجمالي تكاليف اللاندد كوست', aliases:['Landed Cost Amount','إجمالي التكاليف','LandedCostAmount'], type:'number', required:false},
+      {key:'Total', label:'الإجمالي الكلي', aliases:['Total'], type:'number', required:false},
+      {key:'FinalUnitCost', label:'الكلفة النهائية للوحدة', aliases:['Final Unit Cost','الكلفة النهائية','FinalUnitCost'], type:'number', required:false},
+      {key:'IncreasePerUnit', label:'زيادة الكلفة لكل وحدة', aliases:['Landed Cost Increase Per Unit'], type:'number', required:false},
+      {key:'IncreasePct', label:'نسبة الزيادة %', aliases:['Increase %'], type:'number', required:false},
+      {key:'VatGroup', label:'مجموعة الضريبة', aliases:['VAT Group'], type:'text', required:false},
+      {key:'VatPct', label:'نسبة الضريبة %', aliases:['VAT %'], type:'number', required:false},
     ],
     sql: `SELECT
-  T0."DocEntry" AS "DocEntry", T0."DocNum" AS "DocNum", T0."DocDate" AS "التاريخ",
-  T1."ItemCode" AS "رمز الصنف", T0."SuppName" AS "المورد",
-  T1."BaseSum" AS "سعر المنشأ", T1."AddSum" AS "إجمالي التكاليف"
+
+/* Landed Cost Header */
+
+T0."DocNum" AS "Landed Cost No",
+T0."DocDate" AS "Landed Cost Date",
+T0."Ref1" AS "Reference 1",
+
+T0."CardCode" AS "Vendor Code",
+T0."SuppName" AS "Vendor Name",
+
+
+/* Base Document */
+
+CASE
+    WHEN T1."BaseType" = 20 THEN 'GRPO'
+    WHEN T1."BaseType" = 18 THEN 'A/P Invoice'
+    WHEN T1."BaseType" = 69 THEN 'Landed Cost'
+    ELSE CAST(T1."BaseType" AS NVARCHAR(20))
+END AS "Base Document Type",
+
+T1."BaseEntry" AS "Base Document Internal ID",
+T1."BaseRowNum" AS "Base Row Number",
+
+
+/* Item Details */
+
+T1."ItemCode" AS "Item Code",
+T1."Dscription" AS "Item Description",
+T1."WhsCode" AS "Warehouse",
+
+T1."Quantity" AS "Quantity",
+T1."UnitCode" AS "UoM",
+T1."DistNumber" AS "Batch Number",
+
+
+/* Purchase Cost */
+
+T1."Currency" AS "Currency",
+T1."Rate" AS "Exchange Rate",
+
+T1."PriceAtWH" AS "Base Doc. Price",
+
+(T1."PriceAtWH" * T1."Quantity") AS "Base Doc. Value",
+
+
+/* Landed Cost Details */
+
+T1."FobValue" AS "FOB Value",
+T1."FobValCurr" AS "FOB Currency",
+
+T1."Custom" AS "Customs",
+
+T1."Cost" AS "Additional Cost",
+
+T1."TtlExpndLC" AS "Landed Cost Amount",
+
+
+/* Final Cost */
+
+T1."TtlCostLC" AS "Total",
+
+CASE
+    WHEN T1."Quantity" <> 0
+    THEN T1."TtlCostLC" / T1."Quantity"
+    ELSE 0
+END AS "Final Unit Cost",
+
+
+/* Increase Analysis */
+
+CASE
+    WHEN T1."Quantity" <> 0
+    THEN
+        (T1."TtlCostLC" / T1."Quantity")
+        -
+        T1."PriceAtWH"
+    ELSE 0
+END AS "Landed Cost Increase Per Unit",
+
+
+CASE
+    WHEN T1."PriceAtWH" <> 0
+    THEN
+        (((T1."TtlCostLC" / T1."Quantity")
+        -
+        T1."PriceAtWH")
+        /
+        T1."PriceAtWH") * 100
+    ELSE 0
+END AS "Increase %",
+
+
+/* Tax */
+
+T1."VatGroup" AS "VAT Group",
+T1."VatPrcnt" AS "VAT %"
+
+
 FROM OIPF T0
-INNER JOIN IPF1 T1 ON T0."DocEntry" = T1."DocEntry"
-WHERE T0."DocDate" BETWEEN '[%0]' AND '[%1]'`,
-    sqlNote: 'اختياري تماماً — لا يدخل بمحرك التوصية إلا إذا فُعِّل صراحة (قسم 35: "لا تجعل Landed Cost يثقل Recommendation Engine إذا لم يكن ضرورياً"). تأكَّد مباشرة بتشغيل حي: OIPF بهالبيئة ما إله عمود PostDate (الاسم الصحيح DocDate) ولا CardName (الاسم الصحيح SuppName) — صُححوا هون. عمود Canceled موجود فعلياً على OIPF (بعكس OINV/ORIN/OPCH/OPDN)، بس ما استُخدم هون لأنه هاد المصدر اختياري بالأساس ولا تحقق حي أثبت أثره.',
+
+INNER JOIN IPF1 T1
+ON T0."DocEntry" = T1."DocEntry"
+
+
+/* Take Last Landed Cost in Chain */
+
+WHERE NOT EXISTS
+(
+    SELECT 1
+
+    FROM IPF1 N1
+
+    WHERE
+        N1."BaseType" = 69
+        AND N1."BaseEntry" = T0."DocEntry"
+        AND N1."ItemCode" = T1."ItemCode"
+)
+
+
+AND T0."DocDate" BETWEEN '[%0]' AND '[%1]'
+
+
+ORDER BY
+
+T0."DocDate",
+T0."DocNum",
+T1."ItemCode"`,
+    sqlNote: 'اختياري تماماً — لا يدخل بمحرك التوصية إلا إذا فُعِّل صراحة (قسم 35: "لا تجعل Landed Cost يثقل Recommendation Engine إذا لم يكن ضرورياً"). النسخة الحالية مبنية على كويري مُتحقَّق منه فعلياً على بيانات هذه البيئة (قيم حقيقية تأكَّدت حسابياً: Base Doc. Value + Landed Cost Amount = Total). تتعامل بذكاء مع سلاسل مستندات اللاندد كوست المتتالية على نفس الاستلام (WHERE NOT EXISTS) فتاخذ آخر تصحيح كلفة بالسلسلة فقط، مش كل الحلقات الوسيطة — لتفادي مضاعفة التكلفة. "الكلفة النهائية للوحدة" و"نسبة الزيادة %" محسوبتان مباشرة بالكويري (Total÷Quantity، والفرق عن Base Doc. Price كنسبة).',
   },
 
   items: {
