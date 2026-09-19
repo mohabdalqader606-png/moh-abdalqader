@@ -109,8 +109,8 @@ tr.incomplete td{background:var(--accent-soft)}
   .p-page{page:statement}
   .letter{page:letter}
 }
-@page statement{size:landscape}
-@page letter{size:portrait}
+@page statement{size:A4 landscape}
+@page letter{size:A4 portrait}
 #printStatement, #printLetter{background:#fff;color:#111;font-family:"Tajawal","Cairo",sans-serif}
 .p-page{padding:10mm;page-break-after:always}
 .p-page:last-child{page-break-after:auto}
@@ -154,7 +154,6 @@ const SUPABASE_URL = 'https://fxjdmqqmcgccocfbgopm.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_NGtGX9SN8hXSoq-JRidGcQ_NfAyYCP5';
 const SCREEN_ID    = 'damage-reports';
 const LS_COMPANY  = 'kaylani_damage_company_v1';
-const ROWS_PER_PAGE = 16;
 
 let sb = null;
 let SESSION = null;
@@ -926,35 +925,52 @@ function renderDamageView(){
 /* ---------------- طباعة ---------------- */
 function buildStatementHtml(b, company){
   const items = b.items;
-  const pages = []; for(let i=0;i<items.length;i+=ROWS_PER_PAGE) pages.push(items.slice(i,i+ROWS_PER_PAGE));
-  if(!pages.length) pages.push([]);
   const t = damageTotals(items);
   const colWidths = [3,7,8,25,6,6,7,7,7,6,6,5,7];
   const colgroup = '<colgroup>' + colWidths.map(w=>`<col style="width:${w}%">`).join('') + '</colgroup>';
   const head = '<tr><th>#</th><th>التاريخ</th><th>رمز الصنف</th><th>الصنف</th><th>الكمية</th><th>وزن الوحدة</th><th>اجمالي الوزن</th><th>كلفة الوحدة</th><th>اجمالي الكلفة</th><th>الوحدة</th><th>المستودع</th><th>الضريبة</th><th>مبلغ الضريبة</th></tr>';
-  let n=0;
-  return pages.map((pageItems,pi)=>{
-    const rows = pageItems.map(r=>{
-      n++;
-      const rw=r.qty*r.unitWeight, rc=r.qty*r.unitCost, rt=(rc*r.taxPct)/100;
-      return `<tr><td>${n}</td><td>${fmtDate(b.batchDate)}</td><td>${esc(r.itemCode)}</td><td style="text-align:right">${esc(r.itemName||'')}</td>
-        <td class="num">${fmtN(r.qty,3)}</td><td class="num">${fmtN(r.unitWeight,3)}</td><td class="num">${fmtN(rw,3)}</td>
-        <td class="num">${fmtN(r.unitCost,3)}</td><td class="num">${fmtN(rc,3)}</td><td>${esc(r.uom||'')}</td><td>${esc(r.storage||'')}</td>
-        <td class="num">${fmtN(r.taxPct,0)}%</td><td class="num">${fmtN(rt,3)}</td></tr>`;
-    }).join('');
-    const totalsRow = pi===pages.length-1 ? `<tr class="p-total"><td colspan="6">الإجمالي</td><td class="num">${fmtN(t.tw,3)}</td><td></td><td class="num">${fmtN(t.tc,3)}</td><td colspan="2"></td><td></td><td class="num">${fmtN(t.tt,3)}</td></tr>` : '';
-    const wordsLine = pi===pages.length-1 ? `<div style="margin-top:10px;font-weight:800;font-size:11px;text-align:center">${esc(amountInWordsJOD(t.tc))}</div>` : '';
-    return `<div class="p-page">
-      <div class="p-head"><h1>${esc(company.name)}</h1><div class="pn">Page ${pi+1} of ${pages.length}</div></div>
-      <div class="p-title">كشف اتلاف</div>
-      <table class="p-table">${colgroup}<thead>${head}</thead><tbody>${rows}${totalsRow}</tbody></table>
-      ${wordsLine}
-    </div>`;
+  const rows = items.map((r,i)=>{
+    const rw=r.qty*r.unitWeight, rc=r.qty*r.unitCost, rt=(rc*r.taxPct)/100;
+    return `<tr><td>${i+1}</td><td>${fmtDate(b.batchDate)}</td><td>${esc(r.itemCode)}</td><td style="text-align:right">${esc(r.itemName||'')}</td>
+      <td class="num">${fmtN(r.qty,3)}</td><td class="num">${fmtN(r.unitWeight,3)}</td><td class="num">${fmtN(rw,3)}</td>
+      <td class="num">${fmtN(r.unitCost,3)}</td><td class="num">${fmtN(rc,3)}</td><td>${esc(r.uom||'')}</td><td>${esc(r.storage||'')}</td>
+      <td class="num">${fmtN(r.taxPct,0)}%</td><td class="num">${fmtN(rt,3)}</td></tr>`;
   }).join('');
+  const totalsRow = `<tr class="p-total"><td colspan="6">الإجمالي</td><td class="num">${fmtN(t.tw,3)}</td><td></td><td class="num">${fmtN(t.tc,3)}</td><td colspan="2"></td><td></td><td class="num">${fmtN(t.tt,3)}</td></tr>`;
+  const wordsLine = `<div style="margin-top:10px;font-weight:800;font-size:11px;text-align:center">${esc(amountInWordsJOD(t.tc))}</div>`;
+  return `<div class="p-page">
+    <div class="p-head"><h1>${esc(company.name)}</h1><div class="pn">${fmtDate(b.batchDate)}</div></div>
+    <div class="p-title">كشف اتلاف</div>
+    <table class="p-table">${colgroup}<thead>${head}</thead><tbody>${rows}${totalsRow}</tbody></table>
+    ${wordsLine}
+  </div>`;
+}
+function estimateStatementPageCount(b, company){
+  const holder = document.createElement('div');
+  holder.style.cssText = 'position:fixed;visibility:hidden;left:-9999px;top:0;width:1100px;';
+  holder.innerHTML = buildStatementHtml(b, company);
+  document.body.appendChild(holder);
+  const headBlock = holder.querySelector('.p-head');
+  const titleBlock = holder.querySelector('.p-title');
+  const thead = holder.querySelector('thead');
+  const rows = [...holder.querySelectorAll('tbody tr')];
+  const rowsHeight = rows.reduce((s,r)=>s+r.getBoundingClientRect().height,0);
+  const wordsEl = holder.querySelector('.p-page > div:last-child');
+  const wordsHeight = wordsEl && wordsEl.tagName!=='TABLE' ? wordsEl.getBoundingClientRect().height : 0;
+  const theadHeight = thead ? thead.getBoundingClientRect().height : 0;
+  const firstPageOverhead = (headBlock?headBlock.getBoundingClientRect().height:0)
+    + (titleBlock?titleBlock.getBoundingClientRect().height:0) + theadHeight + 76;
+  document.body.removeChild(holder);
+  const PAGE_BUDGET_PX = 750;
+  const contentHeight = rowsHeight + wordsHeight;
+  const firstBudget = Math.max(100, PAGE_BUDGET_PX - firstPageOverhead);
+  if(contentHeight <= firstBudget) return 1;
+  const laterBudget = Math.max(100, PAGE_BUDGET_PX - theadHeight - 76);
+  return 1 + Math.ceil((contentHeight - firstBudget) / laterBudget);
 }
 function buildLetterHtml(b, company){
   const t = damageTotals(b.items);
-  const pageCount = Math.max(1, Math.ceil(b.items.length / ROWS_PER_PAGE));
+  const pageCount = Math.max(1, estimateStatementPageCount(b, company));
   const [y,m,d] = isoToday().split('-');
   return `<div class="letter">
     <div class="lhead"><h1>${esc(company.name)}</h1>
