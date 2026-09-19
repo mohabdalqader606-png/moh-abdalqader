@@ -109,7 +109,7 @@ tr.incomplete td{background:var(--accent-soft)}
   .p-page{page:statement}
   .letter{page:letter}
 }
-@page statement{size:A4 landscape;margin:6mm 0}
+@page statement{size:A4 landscape;margin:24mm 0}
 @page statement{@bottom-center{content:"صفحة " counter(page) " من " counter(pages);font-size:9px;font-family:"Tajawal",sans-serif}}
 @page letter{size:A4 portrait}
 #printStatement, #printLetter{background:#fff;color:#111;font-family:"Tajawal","Cairo",sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -963,18 +963,20 @@ function buildStatementHtml(b, company){
   return build(fit.breakBeforeTotals);
 }
 function statementPageContentHeightPx(){
-  // 210mm (A4 landscape short side) - @page statement margin (6mm top+bottom) - .p-page padding (8mm top+bottom)
+  // 210mm (A4 landscape short side) - @page statement margin (24mm top+bottom, repeats on every
+  // physical page, unlike .p-page's own padding which only applies to the first/last page of the flow)
   const probe = document.createElement('div');
-  probe.style.cssText = 'position:fixed;visibility:hidden;height:182mm;width:1px;top:0;left:0;';
+  probe.style.cssText = 'position:fixed;visibility:hidden;height:162mm;width:1px;top:0;left:0;';
   document.body.appendChild(probe);
   const h = probe.getBoundingClientRect().height;
   document.body.removeChild(probe);
   return h;
 }
 function measureStatementFit(html){
-  // 297mm (A4 landscape long side) - @page statement margin (0 left+right) - .p-page padding (12mm left+right)
+  // 297mm (A4 landscape long side) - @page statement margin (0 left+right); .p-page's own CSS padding
+  // (12mm left+right) is part of the html being measured, so it must NOT be subtracted again here
   const holder = document.createElement('div');
-  holder.style.cssText = 'position:fixed;visibility:hidden;left:-9999px;top:0;width:273mm;';
+  holder.style.cssText = 'position:fixed;visibility:hidden;left:-9999px;top:0;width:297mm;';
   holder.innerHTML = html;
   document.body.appendChild(holder);
   const headBlock = holder.querySelector('.p-head');
@@ -997,7 +999,8 @@ function measureStatementFit(html){
   }
   const totalsHeight = totalsEl ? totalsEl.getBoundingClientRect().height : 0;
   const footerHeight = footerEl && footerEl.tagName!=='TABLE' ? footerEl.getBoundingClientRect().height : 0;
-  const breakBeforeTotals = remaining < totalsHeight + footerHeight;
+  const SAFETY_BUFFER_PX = 40;
+  const breakBeforeTotals = remaining < totalsHeight + footerHeight + SAFETY_BUFFER_PX;
   document.body.removeChild(holder);
   return { pages: breakBeforeTotals ? pages+1 : pages, breakBeforeTotals };
 }
