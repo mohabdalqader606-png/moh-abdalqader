@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v49.17-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v49.18-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -1491,6 +1491,7 @@ th.yd,td.yd{background:rgba(11,31,58,.035);font-size:.92em}th.yd{color:var(--mut
 <section class="tab" id="tab-board">
  <div class="row noprint"><button class="btn gold" onclick="printTab('board')">طباعة تقرير مجلس الإدارة</button><span class="hint">صفحة واحدة تنفيذية بأسلوب التقارير السنوية للشركات العالمية</span></div>
  <div class="row noprint"><button class="btn gold" onclick="printBoardPackage()">📄 الملف الشامل لمجلس الإدارة (PDF): القوائم + البنوك</button><span class="hint">قائمة الدخل والمركز المالي والتدفقات النقدية والنسب المالية بالمجاميع فقط مع شرح لكل رقم، بالإضافة لمركز البنوك — للفترة وفترة المقارنة المحدَّدتين أعلى الشاشة (يدعم "فترة مخصصة" بقائمة المقارنة). افتح ثم اطبع/احفظ PDF من المتصفح.</span></div>
+ <div class="row noprint"><button class="btn gold" onclick="exportBoardPPTX()">📊 تصدير عرض تقديمي PowerPoint</button><span class="hint">نفس أرقام الملف الشامل (قوائم + نسب + بنوك) بشكل سلايدات PowerPoint (.pptx) قابلة للتنقل والعرض المباشر — مفيد لمن لن يفتح الشاشة نفسه. يحتاج اتصال إنترنت لتحميل مكتبة الإنشاء أول مرة.</span></div>
  <div class="board" id="boardPage"></div>
 </section>
 </main>
@@ -1516,6 +1517,7 @@ th.yd,td.yd{background:rgba(11,31,58,.035);font-size:.92em}th.yd{color:var(--mut
 <div id="modal" style="display:none;position:fixed;inset:0;background:rgba(11,31,58,.55);z-index:90;padding:30px" onclick="if(event.target===this)closeModal()"><div style="background:#fff;border-radius:12px;max-width:1400px;margin:0 auto;max-height:90vh;overflow:auto;padding:18px;box-shadow:0 10px 40px rgba(0,0,0,.35)"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px"><h2 id="mdTitle" style="margin:0;color:var(--navy);font-size:16px"></h2><button class="btn ghost sm" onclick="closeModal()">إغلاق ✕</button></div><div id="mdBody"></div></div></div>
 <div id="toast" style="position:fixed;bottom:18px;left:18px;background:var(--navy);color:#fff;padding:10px 16px;border-radius:8px;display:none;z-index:99"></div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pptxgenjs@4.0.1/dist/pptxgen.bundle.js"></script>
 <script>
 /* ================= STATE ================= */
 let LSK='fs_engine_v1';const PROFK='fs_profiles';
@@ -4504,6 +4506,113 @@ function printBoardPackage(){
  <div class="sig"><div><b>أعدّه</b><div class="line">التدقيق الداخلي</div></div><div><b>راجعه</b><div class="line">&nbsp;</div></div><div><b>اعتمده</b><div class="line">&nbsp;</div></div></div>
  </body></html>`;
  const blob=new Blob([doc],{type:'text/html'});window.open(URL.createObjectURL(blob),'_blank');
+}
+
+/* ================= PowerPoint export: نفس بيانات "الملف الشامل لمجلس الإدارة" بشكل سلايدات (لمن ما رح يقدر يفتح الشاشة نفسها) ================= */
+async function exportBoardPPTX(){
+ if(!R){alert('يجب الاحتساب أولاً (اضغط زر "احتساب" أعلى الشاشة).');return}
+ if(typeof PptxGenJS==='undefined'){alert('تعذر تحميل مكتبة PowerPoint — تحقق من الإنترنت وحدّث الصفحة');return}
+ const is=R.IS.TOT,b=R.BSc,cf=R.CF,rt=R.RAT,cm=R.CMP,cur=S.settings.cur,co=S.settings.co;
+ const cmpLabel=cm?cm.label:null,periodLabel=R.per[0]+' → '+R.per[R.per.length-1];
+ const today=new Date().toLocaleDateString('ar-JO');
+ const NAVY='0B1F3A',GOLD='C9A227',TEAL='1B998B',WHITE='FFFFFF',LIGHT='F5F6FA',TEXT='1A2233',MUTED='6B7A90';
+ const pctArrow=(a,cv)=>{if(cv==null)return null;const d=chg(a,cv);if(d==null)return null;return (d>=0?'▲ ':'▼ ')+pct(Math.abs(d))};
+
+ const pptx=new PptxGenJS();
+ pptx.defineLayout({name:'WIDE',width:13.33,height:7.5});
+ pptx.layout='WIDE';
+ pptx.rtlMode=true;
+ pptx.title='عرض تقديمي تنفيذي — '+co;
+ const RTL={rtlMode:true,align:'right',fontFace:'Arial'};
+
+ const addHeader=(slide,title)=>{
+  slide.background={color:WHITE};
+  slide.addShape('rect',{x:0,y:0,w:13.33,h:0.9,fill:{color:NAVY}});
+  slide.addText(title,{x:0.4,y:0,w:12.53,h:0.9,...RTL,fontSize:24,bold:true,color:WHITE,valign:'middle'});
+  slide.addShape('rect',{x:0,y:0.9,w:13.33,h:0.04,fill:{color:GOLD}});
+ };
+ const addFooter=(slide)=>{slide.addText(`${co} — ${periodLabel}`,{x:0.4,y:7.1,w:12.53,h:0.3,...RTL,fontSize:9,color:MUTED})};
+ const tableSlide=(title,headRow,rows)=>{
+  const s=pptx.addSlide();addHeader(s,title);
+  const tRows=[headRow.map(h=>({text:h,options:{bold:true,color:WHITE,fill:{color:NAVY},align:'center',fontSize:12}}))];
+  rows.forEach((r,i)=>tRows.push(r.map((cell,ci)=>({text:String(cell),options:{align:ci===0?'right':'center',fontSize:11,fill:{color:i%2?LIGHT:WHITE},color:TEXT}}))));
+  s.addTable(tRows,{x:0.4,y:1.3,w:12.53,h:5.5,rtlMode:true,border:{type:'solid',color:'DDE2EC',pt:0.5},autoPage:false});
+  addFooter(s);return s;
+ };
+
+ {const s=pptx.addSlide();s.background={color:NAVY};
+  s.addText(co,{x:0.8,y:2.4,w:11.73,h:1.0,...RTL,align:'center',fontSize:40,bold:true,color:WHITE});
+  s.addText('عرض تقديمي تنفيذي — القوائم المالية والتحليل المالي',{x:0.8,y:3.4,w:11.73,h:0.6,...RTL,align:'center',fontSize:20,color:GOLD});
+  s.addText(`الفترة: ${periodLabel}${cmpLabel?'   •   المقارنة: '+cmpLabel:''}`,{x:0.8,y:4.1,w:11.73,h:0.5,...RTL,align:'center',fontSize:14,color:WHITE});
+  s.addText(`تاريخ الإصدار: ${today}  |  أُعدّ آلياً من محرك القوائم الختامية`,{x:0.8,y:6.7,w:11.73,h:0.4,...RTL,align:'center',fontSize:11,color:'9FB0C8'});
+ }
+
+ {const s=pptx.addSlide();addHeader(s,'أهم المؤشرات');
+  const kpis=[
+   ['صافي المبيعات',fmt(is.NETSALES),cm?pctArrow(is.NETSALES,cm.IS.TOT.NETSALES):null],
+   ['صافي الربح',fmt(is.NI),cm?pctArrow(is.NI,cm.IS.TOT.NI):null],
+   ['التدفق النقدي التشغيلي',fmt(cf.CFO),cm?pctArrow(cf.CFO,cm.CF.CFO):null],
+   ['إجمالي الأصول',fmt(b.TA),cm?pctArrow(b.TA,cm.BSc.TA):null],
+  ];
+  const cardW=2.9,gap=0.25,startX=0.4,y=1.3,h=2.0;
+  kpis.forEach((k,i)=>{const x=startX+i*(cardW+gap);
+   s.addShape('roundRect',{x,y,w:cardW,h,fill:{color:LIGHT},line:{color:'DDE2EC',width:1},rectRadius:0.08});
+   s.addText(k[0],{x:x+0.15,y:y+0.15,w:cardW-0.3,h:0.5,...RTL,fontSize:12,color:MUTED});
+   s.addText(k[1]+' '+cur,{x:x+0.15,y:y+0.65,w:cardW-0.3,h:0.6,align:'center',fontSize:18,bold:true,color:NAVY,fontFace:'Arial'});
+   if(k[2])s.addText(k[2]+' مقابل المقارنة',{x:x+0.15,y:y+1.3,w:cardW-0.3,h:0.4,...RTL,fontSize:11,color:TEAL});
+  });
+  addFooter(s);
+ }
+
+ tableSlide('قائمة الدخل — الإجماليات',['البند','الفترة الحالية','فترة المقارنة','التغير'],[
+  ['صافي المبيعات',fmt(is.NETSALES),cm?fmt(cm.IS.TOT.NETSALES):'—',cm?pctArrow(is.NETSALES,cm.IS.TOT.NETSALES)||'—':'—'],
+  ['مجمل الربح',fmt(is.GP),cm?fmt(cm.IS.TOT.GP):'—',cm?pctArrow(is.GP,cm.IS.TOT.GP)||'—':'—'],
+  ['EBITDA',fmt(is.EBITDA),cm?fmt(cm.IS.TOT.EBITDA):'—',cm?pctArrow(is.EBITDA,cm.IS.TOT.EBITDA)||'—':'—'],
+  ['EBIT',fmt(is.EBIT),cm?fmt(cm.IS.TOT.EBIT):'—',cm?pctArrow(is.EBIT,cm.IS.TOT.EBIT)||'—':'—'],
+  ['الربح قبل الضريبة',fmt(is.EBT),cm?fmt(cm.IS.TOT.EBT):'—',cm?pctArrow(is.EBT,cm.IS.TOT.EBT)||'—':'—'],
+  ['صافي الربح',fmt(is.NI),cm?fmt(cm.IS.TOT.NI):'—',cm?pctArrow(is.NI,cm.IS.TOT.NI)||'—':'—'],
+ ]);
+
+ tableSlide('المركز المالي — الإجماليات (نهاية الفترة)',['البند','الفترة الحالية','فترة المقارنة','التغير'],[
+  ['الأصول المتداولة',fmt(b.CA),cm?fmt(cm.BSc.CA):'—',cm?pctArrow(b.CA,cm.BSc.CA)||'—':'—'],
+  ['الأصول غير المتداولة',fmt(b.NCA),cm?fmt(cm.BSc.NCA):'—',cm?pctArrow(b.NCA,cm.BSc.NCA)||'—':'—'],
+  ['إجمالي الأصول',fmt(b.TA),cm?fmt(cm.BSc.TA):'—',cm?pctArrow(b.TA,cm.BSc.TA)||'—':'—'],
+  ['الالتزامات المتداولة',fmt(b.CL),cm?fmt(cm.BSc.CL):'—',cm?pctArrow(b.CL,cm.BSc.CL)||'—':'—'],
+  ['الالتزامات غير المتداولة',fmt(b.NCL),cm?fmt(cm.BSc.NCL):'—',cm?pctArrow(b.NCL,cm.BSc.NCL)||'—':'—'],
+  ['إجمالي الالتزامات',fmt(b.TL),cm?fmt(cm.BSc.TL):'—',cm?pctArrow(b.TL,cm.BSc.TL)||'—':'—'],
+  ['حقوق الملكية',fmt(b.EQ),cm?fmt(cm.BSc.EQ):'—',cm?pctArrow(b.EQ,cm.BSc.EQ)||'—':'—'],
+ ]);
+
+ tableSlide('التدفقات النقدية — الإجماليات',['البند','الفترة الحالية','فترة المقارنة','التغير'],[
+  ['التدفق النقدي التشغيلي',fmt(cf.CFO),cm?fmt(cm.CF.CFO):'—',cm?pctArrow(cf.CFO,cm.CF.CFO)||'—':'—'],
+  ['التدفق النقدي الاستثماري',fmt(cf.CFI),cm?fmt(cm.CF.CFI):'—',cm?pctArrow(cf.CFI,cm.CF.CFI)||'—':'—'],
+  ['التدفق النقدي التمويلي',fmt(cf.CFF),cm?fmt(cm.CF.CFF):'—',cm?pctArrow(cf.CFF,cm.CF.CFF)||'—':'—'],
+  ['صافي التغيّر بالنقد',fmt(cf.NET),cm?fmt(cm.CF.NET):'—',cm?pctArrow(cf.NET,cm.CF.NET)||'—':'—'],
+  ['رصيد النقد أول الفترة',fmt(cf.CASH0),cm?fmt(cm.CF.CASH0):'—',cm?pctArrow(cf.CASH0,cm.CF.CASH0)||'—':'—'],
+  ['رصيد النقد آخر الفترة',fmt(cf.CASH1),cm?fmt(cm.CF.CASH1):'—',cm?pctArrow(cf.CASH1,cm.CF.CASH1)||'—':'—'],
+ ]);
+
+ tableSlide('أهم النسب المالية',['المؤشر','الحالية','المقارنة','الحالة'],
+  ['GM','EBITDAM','NM','CR','QR','DSO','DIO','DPO','CCC','DE','ICR','ROA','ROE','Z'].map(k=>{
+   const v=rt[k],cv=cm?cm.RAT[k]:null,g=grade(k,v);
+   return [BENCH[k].n,rfmt(k,v),cm?rfmt(k,cv):'—',g[1]];
+  }));
+
+ const {list:bankList,BT}=bpBankData();
+ if(bankList.length){
+  tableSlide('مركز البنوك (نهاية الفترة)',['البنك','صافي حركة الفترة','صافي المركز','الحالة'],
+   bankList.map(x=>[x.bn,fmt(x.mov),fmt(x.n2),x.n2>=0?'لي عند البنك':'عليّ للبنك'])
+    .concat([['الإجمالي',fmt(BT.MOV),fmt(BT.NET),BT.NET>=0?'صافي لي':'صافي عليّ']]));
+ }
+
+ {const s=pptx.addSlide();addHeader(s,'ملاحظة منهجية');
+  s.addText('كل الأرقام أعلاه مُستخرجة آلياً من محرك القوائم الختامية بحسب تصنيف الحسابات والفترة وفترة المقارنة المحدَّدتين أعلى الشاشة وقت إصدار هذا العرض.',
+   {x:0.6,y:1.5,w:12.13,h:2,...RTL,fontSize:16,color:TEXT,valign:'top'});
+  addFooter(s);
+ }
+
+ const fname='عرض_تقديمي_'+String(co).replace(/\s+/g,'_')+'_'+R.per[0]+'_'+R.per[R.per.length-1]+'.pptx';
+ await pptx.writeFile({fileName:fname});
 }
 
 /* ---------- Tooltips & Voice ---------- */
