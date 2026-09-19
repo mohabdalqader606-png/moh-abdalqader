@@ -163,6 +163,7 @@ let DAMAGE_DRAFT = [];
 let DAMAGE_HEADER = { batchDate:'', transferDocNum:'', notes:'' };
 let IM_DRAFT = [];
 let IM_Q = '';
+let IM_SELECTED = new Set();
 let MSG_ITEMS = '';
 let MSG_DAMAGE = '';
 let ITEMS_CACHE = [];
@@ -315,6 +316,10 @@ async function upsertItemsRemote(rows){
 }
 async function deleteItemRemote(code){
   const { error } = await sb.from('item_master').delete().eq('item_code', code);
+  if(error) throw error;
+}
+async function deleteItemsRemote(codes){
+  const { error } = await sb.from('item_master').delete().in('item_code', codes);
   if(error) throw error;
 }
 async function lookupItemsRemote(codes){
@@ -502,6 +507,37 @@ async function deleteItemMaster(code){
   }catch(e){ alert('فشل الحذف: ' + e.message); }
   render();
 }
+function exportItemsBackup(){
+  const rows = ITEMS_CACHE.map(r=>[r.itemCode, r.itemName||'', r.uom||'', r.unitWeight||0, r.unitCost||0, r.storage||'', r.taxPct||0].join('\t'));
+  const blob = new Blob([rows.join('\n')], {type:'text/plain;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = `item_master_backup_${isoToday()}.txt`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+function toggleImSelectAll(checked){
+  document.querySelectorAll('#imListWrap .im-row-check').forEach(cb=>{
+    cb.checked = checked;
+    if(checked) IM_SELECTED.add(cb.dataset.code); else IM_SELECTED.delete(cb.dataset.code);
+  });
+  renderItemsListOnly();
+}
+function toggleImSelectOne(code, checked){
+  if(checked) IM_SELECTED.add(code); else IM_SELECTED.delete(code);
+  renderItemsListOnly();
+}
+async function deleteSelectedItems(){
+  if(!IM_SELECTED.size) return;
+  if(!confirm(`حذف ${IM_SELECTED.size} صنف محدد من قاعدة الأصناف؟ يُفضّل تصدير نسخة احتياطية أولاً (زر "تصدير نسخة احتياطية") قبل المتابعة.`)) return;
+  const codes = [...IM_SELECTED];
+  try{
+    await deleteItemsRemote(codes);
+    ITEMS_CACHE = ITEMS_CACHE.filter(it=>!IM_SELECTED.has(it.itemCode));
+    IM_SELECTED.clear();
+  }catch(e){ alert('فشل الحذف: ' + e.message); }
+  render();
+}
 function renderItemsView(){
   const q = IM_Q.trim().toLowerCase();
   const list = q ? ITEMS_CACHE.filter(it => it.itemCode.toLowerCase().includes(q) || (it.itemName||'').toLowerCase().includes(q)) : ITEMS_CACHE;
@@ -536,10 +572,15 @@ function renderItemsView(){
   </div>`;
 }
 function renderItemsListTable(list){
-  if(!list.length) return '<div class="empty">لا توجد أصناف محفوظة بعد.</div>';
-  return `<div class="tablewrap"><table>
-    <thead><tr><th class="name">الصنف</th><th>كود الصنف</th><th>الوحدة</th><th>وزن الوحدة</th><th>كلفة الوحدة</th><th>المستودع</th><th>الضريبة %</th><th></th></tr></thead>
-    <tbody>${list.map(r=>`<tr><td class="name">${esc(r.itemName||'')}</td><td>${esc(r.itemCode)}</td><td>${esc(r.uom||'')}</td><td class="num">${fmtN(r.unitWeight,3)}</td><td class="num">${fmtN(r.unitCost,3)}</td><td>${esc(r.storage||'')}</td><td class="num">${fmtN(r.taxPct,0)}%</td><td>${CAN_EDIT?`<button class="btn ghost sm" onclick="deleteItemMaster('${esc(r.itemCode)}')">حذف</button>`:''}</td></tr>`).join('')}</tbody>
+  const actionsBar = CAN_EDIT ? `<div class="row" style="margin-bottom:10px">
+    <button class="btn ghost sm" onclick="exportItemsBackup()">⬇️ تصدير نسخة احتياطية</button>
+    ${IM_SELECTED.size ? `<button class="btn danger sm" onclick="deleteSelectedItems()">🗑️ حذف المحدد (${IM_SELECTED.size})</button>` : ''}
+  </div>` : '';
+  if(!list.length) return actionsBar + '<div class="empty">لا توجد أصناف محفوظة بعد.</div>';
+  const allChecked = list.every(it=>IM_SELECTED.has(it.itemCode));
+  return `${actionsBar}<div class="tablewrap"><table>
+    <thead><tr>${CAN_EDIT?`<th style="width:28px"><input type="checkbox" ${allChecked?'checked':''} onchange="toggleImSelectAll(this.checked)"></th>`:''}<th class="name">الصنف</th><th>كود الصنف</th><th>الوحدة</th><th>وزن الوحدة</th><th>كلفة الوحدة</th><th>المستودع</th><th>الضريبة %</th><th></th></tr></thead>
+    <tbody>${list.map(r=>`<tr>${CAN_EDIT?`<td><input type="checkbox" class="im-row-check" data-code="${esc(r.itemCode)}" ${IM_SELECTED.has(r.itemCode)?'checked':''} onchange="toggleImSelectOne('${esc(r.itemCode)}',this.checked)"></td>`:''}<td class="name">${esc(r.itemName||'')}</td><td>${esc(r.itemCode)}</td><td>${esc(r.uom||'')}</td><td class="num">${fmtN(r.unitWeight,3)}</td><td class="num">${fmtN(r.unitCost,3)}</td><td>${esc(r.storage||'')}</td><td class="num">${fmtN(r.taxPct,0)}%</td><td>${CAN_EDIT?`<button class="btn ghost sm" onclick="deleteItemMaster('${esc(r.itemCode)}')">حذف</button>`:''}</td></tr>`).join('')}</tbody>
   </table></div>`;
 }
 function renderItemsListOnly(){
