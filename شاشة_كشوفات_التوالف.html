@@ -158,6 +158,7 @@ let VIEW = 'items';
 let DAMAGE_MODE = 'list';
 let DAMAGE_EDIT_ID = null;
 let DAMAGE_DETAIL_ID = null;
+let DAMAGE_DETAIL_SORT = { key:null, dir:1 };
 let DAMAGE_DRAFT = [];
 let DAMAGE_HEADER = { batchDate:'', transferDocNum:'', notes:'' };
 let IM_DRAFT = [];
@@ -590,7 +591,40 @@ function editDamageBatch(id){
   DAMAGE_EDIT_ID = id; DAMAGE_MODE='new'; MSG_DAMAGE='';
   render();
 }
-function viewDamageBatch(id){ DAMAGE_MODE='view'; DAMAGE_DETAIL_ID=id; render(); }
+function viewDamageBatch(id){ DAMAGE_MODE='view'; DAMAGE_DETAIL_ID=id; DAMAGE_DETAIL_SORT={key:null,dir:1}; render(); }
+const DAMAGE_SORT_COLUMNS = {
+  itemCode: r=>r.itemCode||'',
+  itemName: r=>r.itemName||'',
+  qty: r=>+r.qty||0,
+  uom: r=>r.uom||'',
+  unitWeight: r=>+r.unitWeight||0,
+  totalWeight: r=>(+r.qty||0)*(+r.unitWeight||0),
+  unitCost: r=>+r.unitCost||0,
+  totalCost: r=>(+r.qty||0)*(+r.unitCost||0),
+  taxPct: r=>+r.taxPct||0,
+  storage: r=>r.storage||'',
+  taxAmount: r=>((+r.qty||0)*(+r.unitCost||0)*(+r.taxPct||0))/100,
+};
+function sortDamageDetail(key){
+  if(DAMAGE_DETAIL_SORT.key === key){ DAMAGE_DETAIL_SORT.dir *= -1; }
+  else { DAMAGE_DETAIL_SORT.key = key; DAMAGE_DETAIL_SORT.dir = 1; }
+  render();
+}
+function sortedDamageItems(items){
+  const { key, dir } = DAMAGE_DETAIL_SORT;
+  if(!key) return items;
+  const getVal = DAMAGE_SORT_COLUMNS[key];
+  return items.slice().sort((a,b)=>{
+    const va = getVal(a), vb = getVal(b);
+    if(typeof va === 'string' || typeof vb === 'string') return String(va).localeCompare(String(vb), 'ar') * dir;
+    return (va - vb) * dir;
+  });
+}
+function damageSortHeader(label, key, cls){
+  const active = DAMAGE_DETAIL_SORT.key===key;
+  const arrow = active ? (DAMAGE_DETAIL_SORT.dir===1?' ▲':' ▼') : '';
+  return `<th${cls?` class="${cls}"`:''} style="cursor:pointer;user-select:none" onclick="sortDamageDetail('${key}')">${esc(label)}${arrow}</th>`;
+}
 async function deleteDamageBatch(id){
   if(!confirm('حذف هذا الكشف نهائياً؟')) return;
   try{
@@ -769,8 +803,8 @@ function renderDamageDetail(){
   </div>
   <div class="card">
     <div class="tablewrap"><table>
-      <thead><tr><th>#</th><th>كود الصنف</th><th class="name">اسم الصنف</th><th>الكمية</th><th>الوحدة</th><th>وزن الوحدة</th><th>اجمالي الوزن</th><th>كلفة الوحدة</th><th>اجمالي الكلفة</th><th>الضريبة %</th><th>المستودع</th><th>مبلغ الضريبة</th></tr></thead>
-      <tbody>${b.items.map((r,i)=>`<tr><td>${i+1}</td><td>${esc(r.itemCode)}</td><td class="name">${esc(r.itemName||'')}</td><td class="num">${fmtN(r.qty,3)}</td><td>${esc(r.uom||'')}</td><td class="num">${fmtN(r.unitWeight,3)}</td><td class="num">${fmtN(r.qty*r.unitWeight,3)}</td><td class="num">${fmtN(r.unitCost,3)}</td><td class="num">${fmtN(r.qty*r.unitCost,3)}</td><td class="num">${fmtN(r.taxPct,0)}%</td><td>${esc(r.storage||'')}</td><td class="num">${fmtN((r.qty*r.unitCost*r.taxPct)/100,3)}</td></tr>`).join('')}</tbody>
+      <thead><tr><th>#</th>${damageSortHeader('كود الصنف','itemCode')}${damageSortHeader('اسم الصنف','itemName','name')}${damageSortHeader('الكمية','qty')}${damageSortHeader('الوحدة','uom')}${damageSortHeader('وزن الوحدة','unitWeight')}${damageSortHeader('اجمالي الوزن','totalWeight')}${damageSortHeader('كلفة الوحدة','unitCost')}${damageSortHeader('اجمالي الكلفة','totalCost')}${damageSortHeader('الضريبة %','taxPct')}${damageSortHeader('المستودع','storage')}${damageSortHeader('مبلغ الضريبة','taxAmount')}</tr></thead>
+      <tbody>${sortedDamageItems(b.items).map((r,i)=>`<tr><td>${i+1}</td><td>${esc(r.itemCode)}</td><td class="name">${esc(r.itemName||'')}</td><td class="num">${fmtN(r.qty,3)}</td><td>${esc(r.uom||'')}</td><td class="num">${fmtN(r.unitWeight,3)}</td><td class="num">${fmtN(r.qty*r.unitWeight,3)}</td><td class="num">${fmtN(r.unitCost,3)}</td><td class="num">${fmtN(r.qty*r.unitCost,3)}</td><td class="num">${fmtN(r.taxPct,0)}%</td><td>${esc(r.storage||'')}</td><td class="num">${fmtN((r.qty*r.unitCost*r.taxPct)/100,3)}</td></tr>`).join('')}</tbody>
     </table></div>
   </div>`;
 }
