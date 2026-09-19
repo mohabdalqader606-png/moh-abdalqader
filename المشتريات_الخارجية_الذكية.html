@@ -717,15 +717,17 @@ WHERE (L."AccQty" - L."AccNegQ") > 0`,
     columns: [
       {key:'SupplierCode', label:'رمز المورد', aliases:['رمز المورد','CardCode'], type:'text', required:true},
       {key:'SupplierName', label:'اسم المورد', aliases:['اسم المورد','CardName'], type:'text', required:true},
-      {key:'Country', label:'بلد المنشأ', aliases:['البلد','Country'], type:'text', required:false},
+      {key:'Country', label:'بلد المنشأ', aliases:['البلد','Country','الدولة'], type:'text', required:false},
       {key:'LeadTimeDays', label:'مدة التوريد (يوم)', aliases:['مدة التوريد','LeadTimeDays'], type:'number', required:false},
+      {key:'PrepDays', label:'مدة تجهيز الطلب (يوم)', aliases:['مدة تجهيز الطلب','مدة تجهيز الطلب (يوم)'], type:'number', required:false},
+      {key:'TransitDays', label:'مدة وصول البضاعة (يوم)', aliases:['مدة وصول البضاعة','مدة وصول البضاعة (يوم)'], type:'number', required:false},
     ],
     sql: `SELECT
   T0."CardCode" AS "رمز المورد", T0."CardName" AS "اسم المورد",
   T0."Country" AS "البلد"
 FROM OCRD T0
 WHERE T0."CardType" = 'S'`,
-    sqlNote: 'مؤكَّد بتحقق SAP حي (Phase 2 — SAP Reality Alignment): لا يوجد حقل "مدة توريد" على مستوى المورد بهالبيئة (فحصنا كل الحقول الحرة على OCRD — ولا واحد منها Lead Time). المصدر القياسي الوحيد هو مدة التوريد على مستوى الصنف (OITM.LeadTime — انظر مصدر "كشف الأصناف"). عمود "مدة التوريد" هون بقي متاحاً فقط لو حابب ترفعه يدوياً من مصدر خارج SAP (Excel مثلاً)؛ إذا رُفع، يبقى له الأولوية على مدة توريد الصنف.',
+    sqlNote: 'مؤكَّد بتحقق SAP حي (Phase 2 — SAP Reality Alignment): لا يوجد حقل "مدة توريد" على مستوى المورد بهالبيئة (فحصنا كل الحقول الحرة على OCRD — ولا واحد منها Lead Time). المصدر القياسي الوحيد هو مدة التوريد على مستوى الصنف (OITM.LeadTime — انظر مصدر "كشف الأصناف"). عمود "مدة التوريد" هون بقي متاحاً فقط لو حابب ترفعه يدوياً من مصدر خارج SAP (Excel مثلاً)؛ إذا رُفع، يبقى له الأولوية على مدة توريد الصنف. يدعم أيضاً ملف "بيانات الموردين" (Excel معتمد من الشركة) بعمودين منفصلين: "مدة تجهيز الطلب" (من تأكيد الطلب حتى جاهزية البضاعة للشحن) و"مدة وصول البضاعة" (من الشحن حتى الوصول) — إذا رُفع العمودان ولم يُرفع "مدة التوريد" مباشرة، تُجمع الشاشة الرقمين تلقائياً لتكوين مدة التوريد الإجمالية.',
   },
 
   landedCost: {
@@ -1308,6 +1310,10 @@ const IMPORT = {
         const n = blankLineNumCounters.get(row.DocEntry) || 0;
         blankLineNumCounters.set(row.DocEntry, n+1);
         row.LineNum = '~auto'+n;
+      }
+      // ملف "بيانات الموردين" يفصل مدة التوريد لتجهيز + وصول بدل رقم واحد — نجمعهم تلقائياً إذا ما رُفع "مدة التوريد" مباشرة
+      if(!rowErrors.length && sourceKey==='suppliers' && !(Number(row.LeadTimeDays)>0) && (Number(row.PrepDays)>0 || Number(row.TransitDays)>0)){
+        row.LeadTimeDays = (Number(row.PrepDays)||0) + (Number(row.TransitDays)||0);
       }
       if(!rowErrors.length){
         const key = this.buildKey(sourceKey, row);
