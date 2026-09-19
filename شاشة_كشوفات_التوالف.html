@@ -934,20 +934,14 @@ function renderDamageView(){
 }
 
 /* ---------------- طباعة ---------------- */
-function buildStatementHtml(b, company){
-  const items = b.items;
-  const t = damageTotals(items);
+function statementColgroup(){
   const colWidths = [3,7,8,25,6,6,7,7,7,6,6,5,7];
-  const colgroup = '<colgroup>' + colWidths.map(w=>`<col style="width:${w}%">`).join('') + '</colgroup>';
-  const head = '<tr><th>#</th><th>التاريخ</th><th>رمز الصنف</th><th>الصنف</th><th>الكمية</th><th>وزن الوحدة</th><th>اجمالي الوزن</th><th>كلفة الوحدة</th><th>اجمالي الكلفة</th><th>الوحدة</th><th>المستودع</th><th>الضريبة</th><th>مبلغ الضريبة</th></tr>';
-  const rows = items.map((r,i)=>{
-    const rw=r.qty*r.unitWeight, rc=r.qty*r.unitCost, rt=(rc*r.taxPct)/100;
-    return `<tr><td>${i+1}</td><td>${fmtDate(b.batchDate)}</td><td>${esc(r.itemCode)}</td><td style="text-align:right">${esc(r.itemName||'')}</td>
-      <td class="num">${fmtN(r.qty,3)}</td><td class="num">${fmtN(r.unitWeight,3)}</td><td class="num">${fmtN(rw,3)}</td>
-      <td class="num">${fmtN(r.unitCost,3)}</td><td class="num">${fmtN(rc,3)}</td><td>${esc(r.uom||'')}</td><td>${esc(r.storage||'')}</td>
-      <td class="num">${fmtN(r.taxPct,0)}%</td><td class="num">${fmtN(rt,3)}</td></tr>`;
-  }).join('');
-  const totalsRow = (breakBefore) => `<tr class="p-total"${breakBefore?' style="break-before:page"':''}><td colspan="6">الإجمالي</td><td class="num">${fmtN(t.tw,3)}</td><td></td><td class="num">${fmtN(t.tc,3)}</td><td colspan="2"></td><td></td><td class="num">${fmtN(t.tt,3)}</td></tr>`;
+  return '<colgroup>' + colWidths.map(w=>`<col style="width:${w}%">`).join('') + '</colgroup>';
+}
+function statementHead(){
+  return '<tr><th>#</th><th>التاريخ</th><th>رمز الصنف</th><th>الصنف</th><th>الكمية</th><th>وزن الوحدة</th><th>اجمالي الوزن</th><th>كلفة الوحدة</th><th>اجمالي الكلفة</th><th>الوحدة</th><th>المستودع</th><th>الضريبة</th><th>مبلغ الضريبة</th></tr>';
+}
+function statementFooterHtml(t){
   const sigCol = () => `<div style="text-align:center;flex:1">
       <div style="display:flex;align-items:flex-end;justify-content:center;gap:6px">
         <span>الاسم:</span><div style="flex:1;max-width:55%;border-top:1px solid #333"></div>
@@ -956,67 +950,88 @@ function buildStatementHtml(b, company){
         <span>التوقيع:</span><div style="flex:1;max-width:55%;border-top:1px solid #333"></div>
       </div>
     </div>`;
-  const footer = `<div>
+  return `<div>
     <div style="margin-top:10px;font-weight:800;font-size:11px;text-align:center">${esc(amountInWordsJOD(t.tc))}</div>
     <div style="margin-top:40px;display:flex;justify-content:space-between;font-size:10.5px;font-weight:700">
-      ${sigCol()}
-      ${sigCol()}
-      ${sigCol()}
+      ${sigCol()}${sigCol()}${sigCol()}
     </div>
   </div>`;
-  const build = (breakBeforeTotals) => `<div class="p-page">
+}
+function statementPage(company, b, bodyRowsHtml, trailingHtml){
+  return `<div class="p-page">
     <div class="p-head"><h1>${esc(company.name)}</h1><div class="pn">${fmtDate(b.batchDate)}</div></div>
     <div class="p-title">كشف اتلاف</div>
-    <table class="p-table">${colgroup}<thead>${head}</thead><tbody>${rows}${totalsRow(breakBeforeTotals)}</tbody></table>
-    ${footer}
+    <table class="p-table">${statementColgroup()}<thead>${statementHead()}</thead><tbody>${bodyRowsHtml}</tbody></table>
+    ${trailingHtml||''}
   </div>`;
-  const fit = measureStatementFit(build(false));
-  return build(fit.breakBeforeTotals);
 }
-function statementPageContentHeightPx(){
-  // 210mm (A4 landscape short side) - @page statement margin (6mm top+bottom, repeats on every
-  // physical page, unlike .p-page's own padding which only applies to the first/last page of the flow)
-  const probe = document.createElement('div');
-  probe.style.cssText = 'position:fixed;visibility:hidden;height:198mm;width:1px;top:0;left:0;';
-  document.body.appendChild(probe);
-  const h = probe.getBoundingClientRect().height;
-  document.body.removeChild(probe);
-  return h;
-}
-function measureStatementFit(html){
-  // 297mm (A4 landscape long side) - @page statement margin (0 left+right); .p-page's own CSS padding
-  // (12mm left+right) is part of the html being measured, so it must NOT be subtracted again here
+// Each physical page is built as its own standalone .p-page block (rather than one continuous
+// table relying on natural CSS page-break flow), so .p-page's own margin/padding reliably applies
+// to every page, not just the first/last fragment of the flow.
+function chunkStatementPages(b, company){
+  const items = b.items;
+  const t = damageTotals(items);
+  const rowsHtml = items.map((r,i)=>{
+    const rw=r.qty*r.unitWeight, rc=r.qty*r.unitCost, rt=(rc*r.taxPct)/100;
+    return `<tr><td>${i+1}</td><td>${fmtDate(b.batchDate)}</td><td>${esc(r.itemCode)}</td><td style="text-align:right">${esc(r.itemName||'')}</td>
+      <td class="num">${fmtN(r.qty,3)}</td><td class="num">${fmtN(r.unitWeight,3)}</td><td class="num">${fmtN(rw,3)}</td>
+      <td class="num">${fmtN(r.unitCost,3)}</td><td class="num">${fmtN(rc,3)}</td><td>${esc(r.uom||'')}</td><td>${esc(r.storage||'')}</td>
+      <td class="num">${fmtN(r.taxPct,0)}%</td><td class="num">${fmtN(rt,3)}</td></tr>`;
+  });
+  const totalsRowHtml = `<tr class="p-total"><td colspan="6">الإجمالي</td><td class="num">${fmtN(t.tw,3)}</td><td></td><td class="num">${fmtN(t.tc,3)}</td><td colspan="2"></td><td></td><td class="num">${fmtN(t.tt,3)}</td></tr>`;
+  const footerHtml = statementFooterHtml(t);
+  // Measure everything once against a single-page structure identical to what statementPage() builds.
   const holder = document.createElement('div');
   holder.style.cssText = 'position:fixed;visibility:hidden;left:-9999px;top:0;width:297mm;';
-  holder.innerHTML = html;
+  holder.innerHTML = statementPage(company, b, rowsHtml.join('') + totalsRowHtml) + `<div id="__footProbe">${footerHtml}</div>`;
   document.body.appendChild(holder);
   const headBlock = holder.querySelector('.p-head');
   const titleBlock = holder.querySelector('.p-title');
   const thead = holder.querySelector('thead');
   const trs = [...holder.querySelectorAll('tbody tr')];
-  const itemRows = trs.slice(0, -1);
-  const totalsEl = trs[trs.length-1];
-  const footerEl = holder.querySelector('.p-page > div:last-child');
-  const theadHeight = thead ? thead.getBoundingClientRect().height : 0;
+  const rowHeights = trs.slice(0, -1).map(r=>r.getBoundingClientRect().height);
+  const totalsHeight = trs[trs.length-1].getBoundingClientRect().height;
+  const footerHeight = holder.querySelector('#__footProbe').getBoundingClientRect().height;
+  const theadHeight = thead.getBoundingClientRect().height;
   const pageHeight = statementPageContentHeightPx();
-  const firstBudget = pageHeight - ((headBlock?headBlock.getBoundingClientRect().height:0)
-    + (titleBlock?titleBlock.getBoundingClientRect().height:0) + theadHeight);
-  const laterBudget = pageHeight - theadHeight;
-  let remaining = firstBudget, pages = 1;
-  for(const r of itemRows){
-    const h = r.getBoundingClientRect().height;
-    if(remaining - h < 0){ remaining = laterBudget - h; pages++; }
-    else remaining -= h;
-  }
-  const totalsHeight = totalsEl ? totalsEl.getBoundingClientRect().height : 0;
-  const footerHeight = footerEl && footerEl.tagName!=='TABLE' ? footerEl.getBoundingClientRect().height : 0;
   const SAFETY_BUFFER_PX = 40;
-  const breakBeforeTotals = remaining < totalsHeight + footerHeight + SAFETY_BUFFER_PX;
+  const budget = pageHeight - ((headBlock?headBlock.getBoundingClientRect().height:0)
+    + (titleBlock?titleBlock.getBoundingClientRect().height:0) + theadHeight) - SAFETY_BUFFER_PX;
   document.body.removeChild(holder);
-  return { pages: breakBeforeTotals ? pages+1 : pages, breakBeforeTotals };
+  // Chunk rows into pages (every page pays the same head+title+thead overhead, since each is standalone).
+  const pages = [];
+  let current = [], remaining = budget;
+  rowHeights.forEach((h,i)=>{
+    if(current.length && remaining - h < 0){ pages.push(current); current = []; remaining = budget; }
+    current.push(i); remaining -= h;
+  });
+  if(current.length || !pages.length) pages.push(current);
+  // Does the totals row + footer fit alongside the last page's rows?
+  if(remaining < totalsHeight + footerHeight + SAFETY_BUFFER_PX){
+    pages.push([]); // totals+footer get their own trailing page
+  }
+  return { rowsHtml, totalsRowHtml, footerHtml, pages };
+}
+function buildStatementHtml(b, company){
+  const { rowsHtml, totalsRowHtml, footerHtml, pages } = chunkStatementPages(b, company);
+  return pages.map((rowIdxs, pageIdx) => {
+    const isLast = pageIdx === pages.length - 1;
+    const body = rowIdxs.map(i=>rowsHtml[i]).join('') + (isLast ? totalsRowHtml : '');
+    return statementPage(company, b, body, isLast ? footerHtml : '');
+  }).join('');
+}
+function statementPageContentHeightPx(){
+  // 210mm (A4 landscape short side) - @page statement margin (6mm top+bottom) - .p-page's own padding
+  // (8mm top+bottom, applies per-page now that every page is its own standalone .p-page block) = 182mm
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;visibility:hidden;height:182mm;width:1px;top:0;left:0;';
+  document.body.appendChild(probe);
+  const h = probe.getBoundingClientRect().height;
+  document.body.removeChild(probe);
+  return h;
 }
 function estimateStatementPageCount(b, company){
-  return measureStatementFit(buildStatementHtml(b, company)).pages;
+  return chunkStatementPages(b, company).pages.length;
 }
 function buildLetterHtml(b, company){
   const t = damageTotals(b.items);
