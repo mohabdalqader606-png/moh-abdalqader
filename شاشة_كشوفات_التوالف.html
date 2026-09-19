@@ -543,6 +543,22 @@ function renderItemsListOnly(){
 }
 
 /* ---------------- كشوفات التوالف ---------------- */
+/* كويري SAP تجيب كل الأصناف الموجودة فعلياً بمستودع 100 (كود، اسم، كمية، وحدة) —
+   بديل عن النسخ اليدوي من سند التحويل. */
+const SAP_WHS100_ITEMS_QUERY = `SELECT
+  T0."ItemCode",
+  T0."ItemName",
+  T1."OnHand" AS "Quantity",
+  T0."SalUnitMsr" AS "UoM"
+FROM OITM T0
+INNER JOIN OITW T1 ON T0."ItemCode" = T1."ItemCode" AND T1."WhsCode" = '100' AND T1."OnHand" <> 0
+ORDER BY T0."ItemCode"`;
+function copyWhs100Query(){
+  const el = document.getElementById('whs100QueryBox');
+  const done = ()=>{ MSG_DAMAGE = 'تم نسخ الكويري — نفّذها بـ Query Generator بالسAP والصق نتيجتها بمربع اللصق تحت.'; render(); };
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(SAP_WHS100_ITEMS_QUERY).then(done).catch(()=>{ el.select(); document.execCommand('copy'); done(); }); }
+  else { el.select(); document.execCommand('copy'); done(); }
+}
 function parseDamagePaste(text){
   const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
   const rows = []; let start = 0;
@@ -680,6 +696,12 @@ function renderDamageForm(){
       <button class="btn ghost sm" onclick="addDamageRow()">➕ إضافة سطر يدوياً</button>
     </div>
     ${MSG_DAMAGE ? `<p class="hint" style="margin-top:8px">${esc(MSG_DAMAGE)}</p>` : ''}
+    <details style="margin-top:12px">
+      <summary style="cursor:pointer;font-weight:700;font-size:12.5px;color:var(--ink2)">🗄️ كويري SAP جاهزة (كل الأصناف الموجودة فعلياً بمستودع 100 الآن)</summary>
+      <p class="hint" style="margin-top:8px">بديل عن النسخ اليدوي من سند التحويل — نفّذها بـ Query Generator بالسAP، وانسخ النتيجة كاملة والصقها بمربع اللصق فوق مباشرة.</p>
+      <textarea id="whs100QueryBox" rows="8" readonly style="font-size:11px">${esc(SAP_WHS100_ITEMS_QUERY)}</textarea>
+      <div class="row" style="margin-top:8px"><button class="btn ghost sm" onclick="copyWhs100Query()">📋 نسخ الكويري</button></div>
+    </details>
   </div>
   <div class="card">
     <h2>الأصناف <span class="badge teal">${DAMAGE_DRAFT.length}</span></h2>
