@@ -1,0 +1,728 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>كشوفات التوالف — مركز الكيلاني</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800&family=Tajawal:wght@400;500;700&display=swap">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<style>
+:root{
+  --ink:#132840; --ink2:#5c6b80; --paper:#f3f5f9; --card:#ffffff; --line:#e1e6ee;
+  --accent:#c1592a; --accent-ink:#ffffff; --accent-soft:#fbe9e0;
+  --teal:#1f6f5c; --teal-soft:#e2f2ee;
+  --warn:#8a6d00; --warn-soft:#fdf6da;
+  --danger:#b23a2e; --danger-soft:#fbe7e4;
+  --shadow:0 1px 2px rgba(19,40,64,.06),0 4px 14px rgba(19,40,64,.05);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ink:#eef2f8; --ink2:#a9b6c9; --paper:#0e1826; --card:#152139; --line:#293a56;
+    --accent:#e58a54; --accent-ink:#241205; --accent-soft:#3a2415;
+    --teal:#5cd8b3; --teal-soft:#123227;
+    --warn:#e6c94f; --warn-soft:#2e2810;
+    --danger:#e57a6c; --danger-soft:#391a17;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px rgba(0,0,0,.35);
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--paper);color:var(--ink);direction:rtl;font-family:"Tajawal","Cairo",system-ui,"Segoe UI",Tahoma,Arial,sans-serif;font-size:14px;line-height:1.55;font-variant-numeric:tabular-nums}
+h1,h2,h3{font-family:"Cairo","Tajawal",sans-serif;text-wrap:balance;margin:0}
+.shell{max-width:1180px;margin:0 auto;padding-inline:16px;padding-block:14px 40px}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-block:6px 16px}
+.brand{display:flex;align-items:center;gap:10px}
+.brand .mark{width:38px;height:38px;border-radius:10px;background:linear-gradient(155deg,var(--accent),#e0824c);display:flex;align-items:center;justify-content:center;color:var(--accent-ink);font-weight:800;font-family:"Cairo",sans-serif;font-size:15px;flex:none;box-shadow:var(--shadow)}
+.brand-text b{display:block;font-size:16px;font-weight:800}
+.brand-text span{display:block;font-size:11.5px;color:var(--ink2)}
+.status-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 11px;border-radius:99px;font-size:11.5px;font-weight:700}
+.status-pill.ok{background:var(--teal-soft);color:var(--teal)}
+.status-pill.warn{background:var(--warn-soft);color:var(--warn)}
+nav.tabs{display:flex;gap:6px;margin-bottom:16px;border-bottom:1px solid var(--line);padding-bottom:0}
+nav.tabs button{appearance:none;border:none;background:transparent;color:var(--ink2);font:inherit;font-weight:700;font-size:13.5px;padding:10px 6px;cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-1px;display:flex;align-items:center;gap:7px}
+nav.tabs button.on{color:var(--ink);border-color:var(--accent)}
+nav.tabs button .dot{width:6px;height:6px;border-radius:99px;background:var(--ink2);opacity:.35}
+nav.tabs button.on .dot{background:var(--accent);opacity:1}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-bottom:16px;box-shadow:var(--shadow)}
+.card > h2{font-size:15.5px;margin-bottom:4px}
+.card .sub{color:var(--ink2);font-size:12.5px;margin:0 0 14px}
+.hint{color:var(--ink2);font-size:12px;line-height:1.6}
+.err{color:var(--danger);font-size:12.5px;background:var(--danger-soft);border-radius:8px;padding:8px 11px;margin-top:8px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px}
+.field{display:flex;flex-direction:column;gap:5px;min-width:0}
+.field label{font-size:11.5px;color:var(--ink2);font-weight:700}
+input[type=text],input[type=email],input[type=password],input[type=number],input[type=date],textarea,select{
+  border:1px solid var(--line);background:var(--paper);color:var(--ink);border-radius:9px;
+  padding:8px 10px;font:inherit;font-size:13px;min-width:0
+}
+input:focus,textarea:focus,select:focus,button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+textarea{width:100%;resize:vertical;font-family:ui-monospace,"Tajawal",monospace;font-size:12.5px;direction:ltr;text-align:right}
+.btn{appearance:none;border:none;border-radius:9px;padding:9px 16px;font:inherit;font-size:13px;font-weight:700;cursor:pointer;background:var(--accent);color:var(--accent-ink);display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.btn:hover{filter:brightness(1.06)}
+.btn.ghost{background:transparent;color:var(--ink);border:1px solid var(--line)}
+.btn.sm{padding:6px 11px;font-size:12px;border-radius:8px}
+.btn.danger{background:var(--danger-soft);color:var(--danger)}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:11px}
+table{width:100%;border-collapse:collapse;font-size:12.5px;min-width:640px}
+th,td{padding:8px 10px;text-align:center;border-bottom:1px solid var(--line);white-space:nowrap}
+thead th{background:color-mix(in srgb, var(--ink) 4%, var(--card));color:var(--ink2);font-weight:700;font-size:11.5px}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover td{background:color-mix(in srgb, var(--ink) 3%, var(--card))}
+td.name,th.name{text-align:right;white-space:normal;min-width:160px}
+td.num{font-family:ui-monospace,"Tajawal",monospace;direction:ltr}
+tr.unmatched td{background:var(--warn-soft)}
+.cell-input{width:100%;border:1px solid transparent;background:transparent;border-radius:6px;padding:4px 6px;font:inherit;font-size:12.5px;text-align:center;color:var(--ink)}
+.cell-input:hover,.cell-input:focus{border-color:var(--line);background:var(--paper)}
+.cell-input.name{text-align:right}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin-bottom:16px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 14px;box-shadow:var(--shadow)}
+.kpi b{display:block;font-size:20px;font-family:"Cairo",sans-serif}
+.kpi span{font-size:11.5px;color:var(--ink2)}
+.badge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:99px;font-size:11px;font-weight:700}
+.badge.teal{background:var(--teal-soft);color:var(--teal)}
+.empty{color:var(--ink2);font-size:12.5px;padding:22px 10px;text-align:center}
+.batchlist .row-item{display:flex;align-items:center;gap:14px;padding:12px 4px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.batchlist .row-item:last-child{border-bottom:none}
+.batchlist .meta{flex:1;min-width:220px}
+.batchlist .meta b{font-family:"Cairo",sans-serif;font-size:13.5px}
+.batchlist .meta .nums{display:flex;gap:14px;color:var(--ink2);font-size:12px;margin-top:3px;flex-wrap:wrap}
+.batchlist .meta .nums b{font-family:inherit;font-size:inherit;color:var(--ink)}
+.actions{display:flex;gap:6px;flex-wrap:wrap}
+.print-only{display:none}
+.gate{max-width:420px;margin:60px auto;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:26px;box-shadow:var(--shadow)}
+.gate h1{font-size:17px;margin-bottom:6px}
+.gate .sub{color:var(--ink2);font-size:12.5px;margin-bottom:18px}
+.gate .field{margin-bottom:12px}
+.gate input{width:100%}
+.center-load{text-align:center;color:var(--ink2);padding:60px 10px;font-size:13px}
+@media (max-width:520px){
+  .card{padding:15px}
+  th,td{padding:7px 7px;font-size:11.5px}
+  nav.tabs button{font-size:12.5px;padding:9px 4px}
+}
+@media print{
+  body > .shell{display:none}
+  body.printing-statement #printStatement,
+  body.printing-letter #printLetter{display:block !important}
+}
+#printStatement, #printLetter{background:#fff;color:#111;font-family:"Tajawal","Cairo",sans-serif}
+.p-page{padding:10mm;page-break-after:always}
+.p-page:last-child{page-break-after:auto}
+.p-head{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #333;padding-bottom:6px;margin-bottom:6px}
+.p-head h1{font-size:15px;margin:0;font-family:"Cairo",sans-serif}
+.p-head .pn{font-size:10.5px;color:#555}
+.p-title{text-align:center;font-size:13px;font-weight:800;margin:6px 0 10px}
+.p-table{width:100%;border-collapse:collapse;font-size:10px}
+.p-table th,.p-table td{border:1px solid #999;padding:3px 5px;text-align:center}
+.p-table thead th{background:#eee}
+.p-table td.num{direction:ltr;font-variant-numeric:tabular-nums}
+.p-total td{font-weight:800;background:#f2f2f2}
+.letter{padding:18mm;font-family:"Tajawal",sans-serif}
+.letter .lhead{border-bottom:2px solid #333;padding-bottom:8px;margin-bottom:18px}
+.letter .lhead h1{font-size:16px;margin:0 0 4px}
+.letter .lhead .lmeta{font-size:10.5px;color:#333;line-height:1.6}
+.letter .ldate{text-align:left;margin-bottom:16px;font-size:12px}
+.letter .lto{margin-bottom:16px;font-size:12px}
+.letter .lsubject{font-weight:800;text-align:center;margin:14px 0;font-size:13px}
+.letter p{font-size:12.5px;line-height:1.95;margin:9px 0}
+.letter .lsign{margin-top:50px;font-weight:800;text-align:center}
+</style>
+</head>
+<body>
+
+<div class="shell" id="shell">
+  <div class="center-load" id="bootLoading">جاري التحميل...</div>
+</div>
+
+<div id="printStatement" class="print-only"></div>
+<div id="printLetter" class="print-only"></div>
+
+<script>
+/* =================================================================
+   الاتصال بمشروع Supabase الموحّد لكل شاشات الكيلاني (نفس المفتاح العام
+   المستخدم بباقي الشاشات — الحماية الفعلية عبر RLS + مصفوفة الصلاحيات).
+   ================================================================= */
+const SUPABASE_URL = 'https://fxjdmqqmcgccocfbgopm.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_NGtGX9SN8hXSoq-JRidGcQ_NfAyYCP5';
+const SCREEN_ID    = 'damage-reports';
+const LS_COMPANY  = 'kaylani_damage_company_v1';
+const ROWS_PER_PAGE = 24;
+
+let sb = null;
+let SESSION = null;
+let SCREEN_PERM = null;   // 'VIEW' | 'INPUT' | 'ADMIN' — null = لا صلاحية (NONE)
+let CAN_EDIT = false;
+let VIEW = 'items';
+let DAMAGE_MODE = 'list';
+let DAMAGE_EDIT_ID = null;
+let DAMAGE_DETAIL_ID = null;
+let DAMAGE_DRAFT = [];
+let DAMAGE_HEADER = { batchDate:'', transferDocNum:'', notes:'' };
+let IM_DRAFT = [];
+let IM_Q = '';
+let MSG_ITEMS = '';
+let MSG_DAMAGE = '';
+let ITEMS_CACHE = [];
+let BATCHES_CACHE = [];
+
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function fmtN(n,d){ if(n==null||isNaN(n)) return '—'; return (+n).toLocaleString('en-US',{minimumFractionDigits:d==null?0:d,maximumFractionDigits:d==null?3:d}); }
+function fmtDate(iso){ if(!iso) return '—'; const [y,m,d]=String(iso).split('-'); return `${d}/${m}/${y}`; }
+function isoToday(){ return new Date().toISOString().slice(0,10); }
+function safeGet(key, fallback){ try{ const v = localStorage.getItem(key); return v==null ? fallback : JSON.parse(v); } catch(e){ return fallback; } }
+function safeSet(key, val){ try{ localStorage.setItem(key, JSON.stringify(val)); }catch(e){} }
+function splitTabOrComma(line){ return line.includes('\t') ? line.split('\t') : line.split(','); }
+function normalizeStorage(raw){
+  const s = String(raw||'').trim().toLowerCase();
+  if(!s) return '';
+  if(s.includes('sweet')||s.includes('حلويات')) return 'حلويات';
+  if(s.includes('chill')||s.includes('مبرد')) return 'مبرد';
+  if(s.includes('frozen')||s.includes('مجمد')) return 'مجمد';
+  if(s.includes('dry')||s.includes('نواشف')||s.includes('جاف')) return 'نواشف';
+  return String(raw).trim();
+}
+function defaultCompany(){
+  return {
+    name:'مركز الكيلاني للأغذية', city:'عمان - الاردن',
+    phone:'(962-6) 4300700', fax:'(962-6) 4300723',
+    poBox:'ص.ب: 830574 عمان 11183 الأردن', email:'sarah@kaylanifc.com',
+    salesTaxNo:'0020904', incomeTaxNo:'001503570',
+    attn:'عطوفة/ مدير عام دائرة ضريبة الدخل والمبيعات المحترم',
+  };
+}
+function loadCompany(){ let v = safeGet(LS_COMPANY, null); if(!v){ v = defaultCompany(); safeSet(LS_COMPANY, v); } return v; }
+
+/* ---------------- تسجيل الدخول (Supabase Auth) ---------------- */
+function renderLoginGate(errMsg){
+  document.getElementById('shell').innerHTML = `
+  <div class="gate">
+    <h1>🔐 تسجيل الدخول</h1>
+    <p class="sub">مركز الكيلاني للأغذية — كشوفات التوالف</p>
+    <div class="field"><label>البريد الإلكتروني</label><input type="email" id="loginEmail"></div>
+    <div class="field"><label>كلمة المرور</label><input type="password" id="loginPass"></div>
+    <button class="btn" style="width:100%" onclick="doLogin()">دخول</button>
+    ${errMsg?`<div class="err">${esc(errMsg)}</div>`:''}
+  </div>`;
+}
+async function doLogin(){
+  const email = document.getElementById('loginEmail').value.trim();
+  const password = document.getElementById('loginPass').value;
+  if(!email || !password){ renderLoginGate('الرجاء إدخال البريد الإلكتروني وكلمة المرور.'); return; }
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  if(error){ renderLoginGate('فشل الدخول: ' + error.message); return; }
+  SESSION = data.session;
+  await checkPermissionAndRender();
+}
+async function doLogout(){ await sb.auth.signOut(); SESSION = null; SCREEN_PERM = null; CAN_EDIT = false; renderLoginGate(''); }
+
+/* ---------------- صلاحية هذه الشاشة (user_screen_permissions) ---------------- */
+function renderUnauthorized(kind, title, msg){
+  document.getElementById('shell').innerHTML = `
+  <div class="gate">
+    <h1>${kind==='err'?'🚫':'⚠️'} ${esc(title)}</h1>
+    <p class="sub">${esc(msg)}</p>
+    <button class="btn ghost" style="width:100%" onclick="doLogout()">تسجيل خروج</button>
+  </div>`;
+}
+async function checkPermissionAndRender(){
+  document.getElementById('shell').innerHTML = '<div class="center-load">جاري التحقق من صلاحيتك...</div>';
+  const { data: permRow, error: permErr } = await sb.from('user_screen_permissions')
+    .select('permission').eq('user_id', SESSION.user.id).eq('screen_id', SCREEN_ID).maybeSingle();
+  if(permErr){
+    renderUnauthorized('warn', 'تعذّر التحقق من صلاحيتك',
+      'حصل خطأ تقني أثناء التحقق من صلاحيتك على هذه الشاشة. حدّث الصفحة وحاول مجدداً، وإذا تكرر راجع مدير الصلاحيات.');
+    return;
+  }
+  SCREEN_PERM = permRow ? permRow.permission : null;
+  if(!SCREEN_PERM){
+    renderUnauthorized('err', 'لا تملك صلاحية الدخول',
+      'حسابك غير مخوَّل بالدخول على شاشة كشوفات التوالف. راجع مدير الصلاحيات لمنحك صلاحية (VIEW/INPUT/ADMIN) من شاشة إدارة المستخدمين والصلاحيات.');
+    return;
+  }
+  CAN_EDIT = SCREEN_PERM==='INPUT' || SCREEN_PERM==='ADMIN';
+  await loadInitialDataAndRender();
+}
+
+/* ---------------- الإقلاع ---------------- */
+async function boot(){
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  const { data: { session }, error } = await sb.auth.getSession();
+  if(error){ renderLoginGate('تعذّر التحقق من الجلسة: ' + error.message); return; }
+  if(!session){ renderLoginGate(); return; }
+  SESSION = session;
+  await checkPermissionAndRender();
+}
+document.addEventListener('DOMContentLoaded', boot);
+
+/* ---------------- طبقة البيانات (Supabase) ---------------- */
+async function fetchItems(){
+  const { data, error } = await sb.from('item_master').select('*').order('item_code');
+  if(error) throw error;
+  return data || [];
+}
+async function upsertItemsRemote(rows){
+  const payload = rows.map(r=>({
+    item_code:r.itemCode, item_name:r.itemName||null, uom:r.uom||null,
+    unit_weight:r.unitWeight||0, unit_cost:r.unitCost||0, storage:r.storage||null,
+    tax_pct:r.taxPct||0, updated_at:new Date().toISOString(),
+  }));
+  const { error } = await sb.from('item_master').upsert(payload, { onConflict:'item_code' });
+  if(error) throw error;
+}
+async function deleteItemRemote(code){
+  const { error } = await sb.from('item_master').delete().eq('item_code', code);
+  if(error) throw error;
+}
+async function lookupItemsRemote(codes){
+  if(!codes.length) return {};
+  const { data, error } = await sb.from('item_master').select('*').in('item_code', codes);
+  if(error) throw error;
+  const map = {}; (data||[]).forEach(r=>map[r.item_code]=r); return map;
+}
+async function fetchBatches(){
+  const { data, error } = await sb.from('damage_batches')
+    .select('*, damage_items(*)')
+    .order('batch_date', { ascending:false }).order('id', { ascending:false });
+  if(error) throw error;
+  return data || [];
+}
+async function insertBatchRemote(header, items){
+  const { data: userData } = await sb.auth.getUser();
+  const { data: batch, error } = await sb.from('damage_batches').insert({
+    batch_date: header.batchDate, transfer_doc_num: header.transferDocNum || null,
+    notes: header.notes || null, created_by: userData && userData.user ? userData.user.id : null,
+  }).select().single();
+  if(error) throw error;
+  await insertItemsRemote(batch.id, items);
+  return batch.id;
+}
+async function insertItemsRemote(batchId, items){
+  const payload = items.map((it, idx)=>({
+    batch_id: batchId, line_no: idx+1, item_code: it.itemCode, item_name: it.itemName || null,
+    qty: it.qty, uom: it.uom || null, unit_weight: it.unitWeight || 0, unit_cost: it.unitCost || 0,
+    tax_pct: it.taxPct || 0, storage: it.storage || null,
+  }));
+  const { error } = await sb.from('damage_items').insert(payload);
+  if(error) throw error;
+}
+async function updateBatchRemote(id, header, items){
+  const { error } = await sb.from('damage_batches').update({
+    batch_date: header.batchDate, transfer_doc_num: header.transferDocNum || null, notes: header.notes || null,
+  }).eq('id', id);
+  if(error) throw error;
+  const { error: delErr } = await sb.from('damage_items').delete().eq('batch_id', id);
+  if(delErr) throw delErr;
+  await insertItemsRemote(id, items);
+}
+async function deleteBatchRemote(id){
+  const { error } = await sb.from('damage_batches').delete().eq('id', id);
+  if(error) throw error;
+}
+
+function normalizeBatchRow(b){
+  return {
+    id:b.id, batchDate:b.batch_date, transferDocNum:b.transfer_doc_num, notes:b.notes,
+    items:(b.damage_items||[]).slice().sort((x,y)=>x.line_no-y.line_no).map(it=>({
+      itemCode:it.item_code, itemName:it.item_name, qty:+it.qty, uom:it.uom,
+      unitWeight:+it.unit_weight, unitCost:+it.unit_cost, taxPct:+it.tax_pct, storage:it.storage,
+    })),
+  };
+}
+function normalizeItemRow(r){
+  return { itemCode:r.item_code, itemName:r.item_name, uom:r.uom, unitWeight:+r.unit_weight, unitCost:+r.unit_cost, storage:r.storage, taxPct:+r.tax_pct };
+}
+
+async function loadInitialDataAndRender(){
+  document.getElementById('shell').innerHTML = '<div class="center-load">جاري تحميل البيانات من Supabase...</div>';
+  try{
+    const [items, batches] = await Promise.all([fetchItems(), fetchBatches()]);
+    ITEMS_CACHE = items.map(normalizeItemRow);
+    BATCHES_CACHE = batches.map(normalizeBatchRow);
+    renderShell();
+  }catch(e){
+    document.getElementById('shell').innerHTML = `<div class="card"><h2>تعذّر تحميل البيانات</h2><p class="err">${esc(e.message)}</p><p class="hint">تأكد أن الجداول item_master / damage_batches / damage_items موجودة على مشروع Supabase (راجع ملف SQL المرفق)، وأن سياسات RLS تسمح للمستخدم المسجّل بالقراءة.</p></div>`;
+  }
+}
+
+function renderShell(){
+  document.getElementById('shell').innerHTML = `
+    <div class="topbar">
+      <div class="brand">
+        <div class="mark">ك</div>
+        <div class="brand-text"><b>مركز الكيلاني للأغذية</b><span>كشوفات التوالف — مستودع 100</span></div>
+      </div>
+      <div class="row" style="margin:0">
+        <span class="status-pill ok">🟢 ${esc(SESSION && SESSION.user ? SESSION.user.email : '')} · ${esc({VIEW:'مطالعة فقط',INPUT:'مدخل بيانات',ADMIN:'مدير'}[SCREEN_PERM]||'')}</span>
+        <button class="btn ghost sm" onclick="doLogout()">خروج</button>
+      </div>
+    </div>
+    <nav class="tabs" id="tabs"></nav>
+    <main id="main"></main>
+  `;
+  render();
+}
+
+function switchTab(t){ VIEW = t; render(); }
+function renderTabs(){
+  const tabs = [['items','📦 بيانات الأصناف'],['damage','📋 كشوفات التوالف']];
+  document.getElementById('tabs').innerHTML = tabs.map(([k,l])=>
+    `<button class="${k===VIEW?'on':''}" onclick="switchTab('${k}')"><span class="dot"></span>${l}</button>`
+  ).join('');
+}
+function render(){
+  renderTabs();
+  const m = document.getElementById('main');
+  m.innerHTML = VIEW==='items' ? renderItemsView() : renderDamageView();
+}
+
+/* ---------------- بيانات الأصناف ---------------- */
+function parseItemMasterPaste(text){
+  const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  const rows = []; let start = 0;
+  if(lines.length){ const c0 = splitTabOrComma(lines[0]); if(c0[3]!=null && isNaN(parseFloat(c0[3]))) start = 1; }
+  for(let i=start;i<lines.length;i++){
+    const c = splitTabOrComma(lines[i]);
+    if(c.length<2) continue;
+    const itemCode = (c[0]||'').trim();
+    if(!itemCode) continue;
+    const unitWeight = parseFloat(c[3]); const unitCost = parseFloat(c[4]); const taxPct = parseFloat(c[6]);
+    rows.push({ itemCode, itemName:(c[1]||'').trim(), uom:(c[2]||'').trim(),
+      unitWeight:isNaN(unitWeight)?0:unitWeight, unitCost:isNaN(unitCost)?0:unitCost,
+      storage:normalizeStorage(c[5]), taxPct:isNaN(taxPct)?0:taxPct });
+  }
+  return rows;
+}
+function parseItemsPreview(){
+  const text = document.getElementById('imPasteArea').value;
+  const parsed = parseItemMasterPaste(text);
+  MSG_ITEMS = parsed.length ? '' : 'لم يتم التعرف على أي صنف — تأكد من ترتيب الأعمدة.';
+  IM_DRAFT = parsed;
+  render();
+}
+async function saveItemsDraft(){
+  MSG_ITEMS = 'جاري الحفظ...'; render();
+  try{
+    await upsertItemsRemote(IM_DRAFT);
+    ITEMS_CACHE = (await fetchItems()).map(normalizeItemRow);
+    IM_DRAFT = []; MSG_ITEMS = 'تم الحفظ بقاعدة البيانات.';
+  }catch(e){ MSG_ITEMS = 'فشل الحفظ: ' + e.message; }
+  render();
+}
+async function deleteItemMaster(code){
+  if(!confirm('حذف هذا الصنف من قاعدة الأصناف؟')) return;
+  try{
+    await deleteItemRemote(code);
+    ITEMS_CACHE = ITEMS_CACHE.filter(it=>it.itemCode!==code);
+  }catch(e){ alert('فشل الحذف: ' + e.message); }
+  render();
+}
+function renderItemsView(){
+  const q = IM_Q.trim().toLowerCase();
+  const list = q ? ITEMS_CACHE.filter(it => it.itemCode.toLowerCase().includes(q) || (it.itemName||'').toLowerCase().includes(q)) : ITEMS_CACHE;
+  return `
+  <div class="card">
+    <h2>📦 قاعدة بيانات الأصناف</h2>
+    <p class="sub">تُستخدم تلقائياً عند إنشاء كشف تالف — يكفي لصق كود الصنف والكمية بشاشة الكشف، والباقي (الوزن، الكلفة، المستودع، الضريبة) يُستكمل من هنا.</p>
+    <p class="hint">أعمدة اللصق بالترتيب (Tab أو فاصلة): كود الصنف، اسم الصنف، الوحدة، وزن الوحدة (كغم)، كلفة الوحدة (كلفة الباتش الحالي بمستودع 100)، الخاصية (Sweet/Chilled/Frozen/Dry أو حلويات/مبرد/مجمد/نواشف)، نسبة الضريبة %.</p>
+    <textarea id="imPasteArea" rows="4" placeholder="CHS00002	جبنة حلوم ميماس	Piece	0.4	1.227	Chilled	5"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button class="btn sm" onclick="parseItemsPreview()">تحليل ومعاينة</button>
+      ${IM_DRAFT.length && CAN_EDIT ? `<button class="btn sm" onclick="saveItemsDraft()">💾 حفظ/تحديث (${IM_DRAFT.length})</button>` : ''}
+    </div>
+    ${MSG_ITEMS ? `<p class="hint" style="margin-top:8px">${esc(MSG_ITEMS)}</p>` : ''}
+    ${IM_DRAFT.length ? `<div class="tablewrap" style="margin-top:12px"><table>
+      <thead><tr><th class="name">الصنف</th><th>كود الصنف</th><th>الوحدة</th><th>وزن الوحدة</th><th>كلفة الوحدة</th><th>المستودع</th><th>الضريبة %</th></tr></thead>
+      <tbody>${IM_DRAFT.map(r=>`<tr><td class="name">${esc(r.itemName)}</td><td>${esc(r.itemCode)}</td><td>${esc(r.uom)}</td><td class="num">${fmtN(r.unitWeight,3)}</td><td class="num">${fmtN(r.unitCost,3)}</td><td>${esc(r.storage)}</td><td class="num">${fmtN(r.taxPct,0)}%</td></tr>`).join('')}</tbody>
+    </table></div>` : ''}
+  </div>
+  <div class="card">
+    <h2>الأصناف المحفوظة <span class="badge teal">${list.length}</span></h2>
+    <div class="row">
+      <div class="field" style="min-width:220px"><label>بحث</label><input type="text" id="imSearch" value="${esc(IM_Q)}" placeholder="كود أو اسم الصنف" oninput="IM_Q=this.value;renderItemsListOnly()"></div>
+    </div>
+    <div id="imListWrap">${renderItemsListTable(list)}</div>
+  </div>`;
+}
+function renderItemsListTable(list){
+  if(!list.length) return '<div class="empty">لا توجد أصناف محفوظة بعد.</div>';
+  return `<div class="tablewrap"><table>
+    <thead><tr><th class="name">الصنف</th><th>كود الصنف</th><th>الوحدة</th><th>وزن الوحدة</th><th>كلفة الوحدة</th><th>المستودع</th><th>الضريبة %</th><th></th></tr></thead>
+    <tbody>${list.map(r=>`<tr><td class="name">${esc(r.itemName||'')}</td><td>${esc(r.itemCode)}</td><td>${esc(r.uom||'')}</td><td class="num">${fmtN(r.unitWeight,3)}</td><td class="num">${fmtN(r.unitCost,3)}</td><td>${esc(r.storage||'')}</td><td class="num">${fmtN(r.taxPct,0)}%</td><td>${CAN_EDIT?`<button class="btn ghost sm" onclick="deleteItemMaster('${esc(r.itemCode)}')">حذف</button>`:''}</td></tr>`).join('')}</tbody>
+  </table></div>`;
+}
+function renderItemsListOnly(){
+  const q = IM_Q.trim().toLowerCase();
+  const list = q ? ITEMS_CACHE.filter(it => it.itemCode.toLowerCase().includes(q) || (it.itemName||'').toLowerCase().includes(q)) : ITEMS_CACHE;
+  document.getElementById('imListWrap').innerHTML = renderItemsListTable(list);
+}
+
+/* ---------------- كشوفات التوالف ---------------- */
+function parseDamagePaste(text){
+  const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  const rows = []; let start = 0;
+  if(lines.length){ const c0 = splitTabOrComma(lines[0]); if(c0[2]!=null && isNaN(parseFloat(c0[2]))) start = 1; }
+  for(let i=start;i<lines.length;i++){
+    const c = splitTabOrComma(lines[i]);
+    if(c.length<3) continue;
+    const itemCode = (c[0]||'').trim(); const qty = parseFloat(c[2]);
+    if(!itemCode || isNaN(qty)) continue;
+    rows.push({ itemCode, itemName:(c[1]||'').trim(), qty, uom:(c[3]||'').trim() });
+  }
+  return rows;
+}
+function newDamageBatch(){
+  DAMAGE_MODE='new'; DAMAGE_EDIT_ID=null; DAMAGE_DRAFT=[]; MSG_DAMAGE='';
+  DAMAGE_HEADER = { batchDate:isoToday(), transferDocNum:'', notes:'' };
+  render();
+}
+function editDamageBatch(id){
+  const b = BATCHES_CACHE.find(x=>x.id===id);
+  if(!b) return;
+  DAMAGE_HEADER = { batchDate:b.batchDate, transferDocNum:b.transferDocNum||'', notes:b.notes||'' };
+  DAMAGE_DRAFT = b.items.map(it=>({...it}));
+  DAMAGE_EDIT_ID = id; DAMAGE_MODE='new'; MSG_DAMAGE='';
+  render();
+}
+function viewDamageBatch(id){ DAMAGE_MODE='view'; DAMAGE_DETAIL_ID=id; render(); }
+async function deleteDamageBatch(id){
+  if(!confirm('حذف هذا الكشف نهائياً؟')) return;
+  try{
+    await deleteBatchRemote(id);
+    BATCHES_CACHE = BATCHES_CACHE.filter(b=>b.id!==id);
+  }catch(e){ alert('فشل الحذف: ' + e.message); }
+  DAMAGE_MODE='list'; render();
+}
+async function parseDamageAndMerge(){
+  const text = document.getElementById('dmgPasteArea').value;
+  const parsed = parseDamagePaste(text);
+  if(!parsed.length){ MSG_DAMAGE = 'لم يتم التعرف على أي صنف — تأكد من ترتيب الأعمدة.'; render(); return; }
+  MSG_DAMAGE = 'جاري الجلب من قاعدة الأصناف...'; render();
+  let master = {};
+  try{ master = await lookupItemsRemote([...new Set(parsed.map(r=>r.itemCode))]); }
+  catch(e){ MSG_DAMAGE = 'تعذّر الاتصال بقاعدة الأصناف: ' + e.message; render(); return; }
+  const merged = parsed.map(r=>{
+    const m = master[r.itemCode];
+    return {
+      itemCode:r.itemCode, itemName:r.itemName || (m?m.item_name:'') || '', qty:r.qty,
+      uom:r.uom || (m?m.uom:'') || '',
+      unitWeight:m?+m.unit_weight:0, unitCost:m?+m.unit_cost:0, taxPct:m?+m.tax_pct:0, storage:m?(m.storage||''):'',
+      unmatched:!m,
+    };
+  });
+  DAMAGE_DRAFT = DAMAGE_DRAFT.concat(merged);
+  const missing = merged.filter(r=>r.unmatched).length;
+  MSG_DAMAGE = missing ? `تنبيه: ${missing} صنف غير موجود بقاعدة الأصناف — عبّئ بياناته يدوياً بالجدول أو أضفه بشاشة "بيانات الأصناف".` : '';
+  render();
+}
+function addDamageRow(){ DAMAGE_DRAFT.push({itemCode:'',itemName:'',qty:0,uom:'',unitWeight:0,unitCost:0,taxPct:0,storage:''}); render(); }
+function removeDamageRow(idx){ DAMAGE_DRAFT.splice(idx,1); render(); }
+function updateDamageField(idx, field, value){
+  const numeric = ['qty','unitWeight','unitCost','taxPct'];
+  DAMAGE_DRAFT[idx][field] = numeric.includes(field) ? (parseFloat(value)||0) : value;
+  if(numeric.includes(field)){
+    const r = DAMAGE_DRAFT[idx];
+    document.getElementById(`dW-${idx}`).textContent = fmtN(r.qty*r.unitWeight,3);
+    document.getElementById(`dC-${idx}`).textContent = fmtN(r.qty*r.unitCost,3);
+    document.getElementById(`dT-${idx}`).textContent = fmtN(r.qty*r.unitCost*r.taxPct/100,3);
+    const el = document.getElementById('dmgFooterTotals'); if(el) el.textContent = damageTotalsText(DAMAGE_DRAFT);
+  }
+}
+function damageTotals(items){
+  const tw = items.reduce((s,r)=>s+(+r.qty||0)*(+r.unitWeight||0),0);
+  const tc = items.reduce((s,r)=>s+(+r.qty||0)*(+r.unitCost||0),0);
+  const tt = items.reduce((s,r)=>s+((+r.qty||0)*(+r.unitCost||0)*(+r.taxPct||0))/100,0);
+  return {tw,tc,tt};
+}
+function damageTotalsText(items){
+  const t = damageTotals(items);
+  return `إجمالي الوزن: ${fmtN(t.tw,3)} كغم — إجمالي الكلفة: ${fmtN(t.tc,3)} — إجمالي الضريبة: ${fmtN(t.tt,3)}`;
+}
+async function saveDamageBatch(){
+  if(!DAMAGE_DRAFT.length){ MSG_DAMAGE='أضف صنفاً واحداً على الأقل.'; render(); return; }
+  MSG_DAMAGE = 'جاري الحفظ...'; render();
+  const items = DAMAGE_DRAFT.map(({unmatched, ...rest})=>rest);
+  try{
+    let id = DAMAGE_EDIT_ID;
+    if(id){ await updateBatchRemote(id, DAMAGE_HEADER, items); }
+    else{ id = await insertBatchRemote(DAMAGE_HEADER, items); }
+    BATCHES_CACHE = (await fetchBatches()).map(normalizeBatchRow);
+    DAMAGE_DETAIL_ID = id; DAMAGE_MODE='view'; DAMAGE_DRAFT=[]; MSG_DAMAGE='';
+  }catch(e){ MSG_DAMAGE = 'فشل الحفظ: ' + e.message; }
+  render();
+}
+function renderDamageDraftRows(){
+  return DAMAGE_DRAFT.map((r,idx)=>{
+    const rw = (r.qty||0)*(r.unitWeight||0), rc=(r.qty||0)*(r.unitCost||0), rt=(rc*(r.taxPct||0))/100;
+    return `<tr class="${r.unmatched?'unmatched':''}">
+      <td>${idx+1}</td>
+      <td><input class="cell-input" value="${esc(r.itemCode)}" oninput="updateDamageField(${idx},'itemCode',this.value)" style="width:82px"></td>
+      <td><input class="cell-input name" value="${esc(r.itemName)}" oninput="updateDamageField(${idx},'itemName',this.value)" style="width:200px"></td>
+      <td><input class="cell-input" type="number" step="any" value="${r.qty}" oninput="updateDamageField(${idx},'qty',this.value)" style="width:64px"></td>
+      <td><input class="cell-input" value="${esc(r.uom)}" oninput="updateDamageField(${idx},'uom',this.value)" style="width:60px"></td>
+      <td><input class="cell-input" type="number" step="any" value="${r.unitWeight}" oninput="updateDamageField(${idx},'unitWeight',this.value)" style="width:66px"></td>
+      <td class="num" id="dW-${idx}">${fmtN(rw,3)}</td>
+      <td><input class="cell-input" type="number" step="any" value="${r.unitCost}" oninput="updateDamageField(${idx},'unitCost',this.value)" style="width:66px"></td>
+      <td class="num" id="dC-${idx}">${fmtN(rc,3)}</td>
+      <td><input class="cell-input" type="number" step="any" value="${r.taxPct}" oninput="updateDamageField(${idx},'taxPct',this.value)" style="width:46px"></td>
+      <td><input class="cell-input" value="${esc(r.storage)}" list="storageList" oninput="updateDamageField(${idx},'storage',this.value)" style="width:62px"></td>
+      <td class="num" id="dT-${idx}">${fmtN(rt,3)}</td>
+      <td><button class="btn ghost sm" onclick="removeDamageRow(${idx})">حذف</button></td>
+    </tr>`;
+  }).join('');
+}
+function renderDamageForm(){
+  return `
+  <div class="card">
+    <h2>${DAMAGE_EDIT_ID?'تعديل كشف تالف':'كشف تالف جديد'}</h2>
+    <div class="row">
+      <div class="field"><label>تاريخ الكشف</label><input type="date" value="${esc(DAMAGE_HEADER.batchDate)}" oninput="DAMAGE_HEADER.batchDate=this.value"></div>
+      <div class="field"><label>رقم سند التحويل (اختياري)</label><input type="text" value="${esc(DAMAGE_HEADER.transferDocNum)}" oninput="DAMAGE_HEADER.transferDocNum=this.value"></div>
+      <div class="field" style="min-width:220px"><label>ملاحظات</label><input type="text" value="${esc(DAMAGE_HEADER.notes)}" oninput="DAMAGE_HEADER.notes=this.value"></div>
+    </div>
+  </div>
+  <div class="card">
+    <h2>لصق بيانات الأصناف (من مستودع التوالف 100)</h2>
+    <p class="hint">سطر لكل صنف، الأعمدة: كود الصنف، اسم الصنف، الكمية، الوحدة. وزن الوحدة وكلفة الوحدة والمستودع ونسبة الضريبة تُستكمل تلقائياً من "📦 بيانات الأصناف" — الأصناف غير الموجودة هناك تظهر مظلّلة وتحتاج تعبئة يدوية.</p>
+    <textarea id="dmgPasteArea" rows="4" placeholder="CHS00002	جبنة حلوم ميماس	21	Piece"></textarea>
+    <div class="row" style="margin-top:10px">
+      <button class="btn sm" onclick="parseDamageAndMerge()">تحليل ودمج للجدول</button>
+      <button class="btn ghost sm" onclick="addDamageRow()">➕ إضافة سطر يدوياً</button>
+    </div>
+    ${MSG_DAMAGE ? `<p class="hint" style="margin-top:8px">${esc(MSG_DAMAGE)}</p>` : ''}
+  </div>
+  <div class="card">
+    <h2>الأصناف <span class="badge teal">${DAMAGE_DRAFT.length}</span></h2>
+    <datalist id="storageList"><option value="حلويات"><option value="مبرد"><option value="مجمد"><option value="نواشف"></datalist>
+    <div class="tablewrap"><table>
+      <thead><tr><th>#</th><th>كود الصنف</th><th class="name">اسم الصنف</th><th>الكمية</th><th>الوحدة</th><th>وزن الوحدة</th><th>اجمالي الوزن</th><th>كلفة الوحدة</th><th>اجمالي الكلفة</th><th>الضريبة %</th><th>المستودع</th><th>مبلغ الضريبة</th><th></th></tr></thead>
+      <tbody>${DAMAGE_DRAFT.length ? renderDamageDraftRows() : '<tr><td colspan="13" class="empty">لا توجد أصناف — الصق البيانات أعلاه أو أضف سطراً يدوياً</td></tr>'}</tbody>
+    </table></div>
+    <p class="hint" id="dmgFooterTotals" style="font-weight:700;margin-top:10px">${damageTotalsText(DAMAGE_DRAFT)}</p>
+    <div class="row" style="margin-top:6px">
+      ${CAN_EDIT ? `<button class="btn" onclick="saveDamageBatch()">💾 حفظ الكشف</button>` : ''}
+      <button class="btn ghost" onclick="DAMAGE_MODE='list';DAMAGE_DRAFT=[];DAMAGE_EDIT_ID=null;render()">إلغاء</button>
+    </div>
+  </div>`;
+}
+function renderDamageList(){
+  const batches = BATCHES_CACHE;
+  return `
+  <div class="card">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:0">
+      <h2 style="margin:0">📋 كشوفات التوالف</h2>
+      ${CAN_EDIT ? `<button class="btn sm" onclick="newDamageBatch()">➕ كشف تالف جديد</button>` : ''}
+    </div>
+  </div>
+  <div class="card batchlist">
+    ${batches.length ? batches.map(b=>{
+      const t = damageTotals(b.items);
+      return `<div class="row-item">
+        <div class="meta"><b>${fmtDate(b.batchDate)}</b> ${b.transferDocNum?`<span class="hint">— سند تحويل ${esc(b.transferDocNum)}</span>`:''}
+          <div class="nums"><span>الأصناف: <b>${b.items.length}</b></span><span>الوزن: <b>${fmtN(t.tw,3)}</b> كغم</span><span>الكلفة: <b>${fmtN(t.tc,3)}</b></span><span>الضريبة: <b>${fmtN(t.tt,3)}</b></span></div>
+        </div>
+        <div class="actions"><button class="btn ghost sm" onclick="viewDamageBatch(${b.id})">عرض</button></div>
+      </div>`;
+    }).join('') : '<div class="empty">لا توجد كشوفات تالف بعد.</div>'}
+  </div>`;
+}
+function renderDamageDetail(){
+  const b = BATCHES_CACHE.find(x=>x.id===DAMAGE_DETAIL_ID);
+  if(!b) { DAMAGE_MODE='list'; return renderDamageList(); }
+  const t = damageTotals(b.items);
+  return `
+  <div class="card">
+    <div class="row" style="justify-content:space-between;align-items:center;margin-bottom:0">
+      <h2 style="margin:0">كشف تالف — ${fmtDate(b.batchDate)}</h2>
+      <div class="actions">
+        <button class="btn sm" onclick="printStatement(${b.id})">🖨️ طباعة كشف التالف</button>
+        <button class="btn sm" onclick="printLetter(${b.id})">🖨️ طباعة طلب الإتلاف</button>
+        ${CAN_EDIT ? `<button class="btn ghost sm" onclick="editDamageBatch(${b.id})">تعديل</button>` : ''}
+        ${CAN_EDIT ? `<button class="btn danger sm" onclick="deleteDamageBatch(${b.id})">حذف</button>` : ''}
+        <button class="btn ghost sm" onclick="DAMAGE_MODE='list';render()">⬅ رجوع</button>
+      </div>
+    </div>
+    ${b.notes?`<p class="hint" style="margin-top:8px">${esc(b.notes)}</p>`:''}
+  </div>
+  <div class="kpis">
+    <div class="kpi"><b>${b.items.length}</b><span>عدد الأصناف</span></div>
+    <div class="kpi"><b>${fmtN(t.tw,3)}</b><span>إجمالي الوزن (كغم)</span></div>
+    <div class="kpi"><b>${fmtN(t.tc,3)}</b><span>إجمالي الكلفة</span></div>
+    <div class="kpi"><b>${fmtN(t.tt,3)}</b><span>إجمالي الضريبة</span></div>
+  </div>
+  <div class="card">
+    <div class="tablewrap"><table>
+      <thead><tr><th>#</th><th>كود الصنف</th><th class="name">اسم الصنف</th><th>الكمية</th><th>الوحدة</th><th>وزن الوحدة</th><th>اجمالي الوزن</th><th>كلفة الوحدة</th><th>اجمالي الكلفة</th><th>الضريبة %</th><th>المستودع</th><th>مبلغ الضريبة</th></tr></thead>
+      <tbody>${b.items.map((r,i)=>`<tr><td>${i+1}</td><td>${esc(r.itemCode)}</td><td class="name">${esc(r.itemName||'')}</td><td class="num">${fmtN(r.qty,3)}</td><td>${esc(r.uom||'')}</td><td class="num">${fmtN(r.unitWeight,3)}</td><td class="num">${fmtN(r.qty*r.unitWeight,3)}</td><td class="num">${fmtN(r.unitCost,3)}</td><td class="num">${fmtN(r.qty*r.unitCost,3)}</td><td class="num">${fmtN(r.taxPct,0)}%</td><td>${esc(r.storage||'')}</td><td class="num">${fmtN((r.qty*r.unitCost*r.taxPct)/100,3)}</td></tr>`).join('')}</tbody>
+    </table></div>
+  </div>`;
+}
+function renderDamageView(){
+  if(DAMAGE_MODE==='new') return renderDamageForm();
+  if(DAMAGE_MODE==='view') return renderDamageDetail();
+  return renderDamageList();
+}
+
+/* ---------------- طباعة ---------------- */
+function buildStatementHtml(b, company){
+  const items = b.items;
+  const pages = []; for(let i=0;i<items.length;i+=ROWS_PER_PAGE) pages.push(items.slice(i,i+ROWS_PER_PAGE));
+  if(!pages.length) pages.push([]);
+  const t = damageTotals(items);
+  const head = '<tr><th>#</th><th>التاريخ</th><th>رمز الصنف</th><th>الصنف</th><th>الكمية</th><th>وزن الوحدة</th><th>اجمالي الوزن</th><th>كلفة الوحدة</th><th>اجمالي الكلفة</th><th>الوحدة</th><th>المستودع</th><th>الضريبة</th><th>مبلغ الضريبة</th></tr>';
+  let n=0;
+  return pages.map((pageItems,pi)=>{
+    const rows = pageItems.map(r=>{
+      n++;
+      const rw=r.qty*r.unitWeight, rc=r.qty*r.unitCost, rt=(rc*r.taxPct)/100;
+      return `<tr><td>${n}</td><td>${fmtDate(b.batchDate)}</td><td>${esc(r.itemCode)}</td><td style="text-align:right">${esc(r.itemName||'')}</td>
+        <td class="num">${fmtN(r.qty,3)}</td><td class="num">${fmtN(r.unitWeight,3)}</td><td class="num">${fmtN(rw,3)}</td>
+        <td class="num">${fmtN(r.unitCost,3)}</td><td class="num">${fmtN(rc,3)}</td><td>${esc(r.uom||'')}</td><td>${esc(r.storage||'')}</td>
+        <td class="num">${fmtN(r.taxPct,0)}%</td><td class="num">${fmtN(rt,3)}</td></tr>`;
+    }).join('');
+    const totalsRow = pi===pages.length-1 ? `<tr class="p-total"><td colspan="6">الإجمالي</td><td class="num">${fmtN(t.tw,3)}</td><td></td><td class="num">${fmtN(t.tc,3)}</td><td colspan="2"></td><td></td><td class="num">${fmtN(t.tt,3)}</td></tr>` : '';
+    return `<div class="p-page">
+      <div class="p-head"><h1>${esc(company.name)}</h1><div class="pn">Page ${pi+1} of ${pages.length}</div></div>
+      <div class="p-title">كشف تالف</div>
+      <table class="p-table">${head}${rows}${totalsRow}</table>
+    </div>`;
+  }).join('');
+}
+function buildLetterHtml(b, company){
+  const t = damageTotals(b.items);
+  const pageCount = Math.max(1, Math.ceil(b.items.length / ROWS_PER_PAGE));
+  const [y,m,d] = isoToday().split('-');
+  return `<div class="letter">
+    <div class="lhead"><h1>${esc(company.name)}</h1>
+      <div class="lmeta">${esc(company.city)}<br>هاتف الادارة: ${esc(company.phone)} — فاكس: ${esc(company.fax)}<br>${esc(company.poBox)}<br>البريد الإلكتروني: ${esc(company.email)}</div>
+    </div>
+    <div class="ldate">التاريخ: ${y}/${m}/${d}</div>
+    <div class="lto">${esc(company.attn)}<br>${esc(company.city)}</div>
+    <div class="lsubject">الموضوع / طلب إتلاف مواد غذائية</div>
+    <p>تحية طيبة وبعد ،،</p>
+    <p>نرجوا التكرم بتحديد موعد لعملية إتلاف كمية من المواد الغذائية وزن (${fmtN(t.tw,3)}) كغم وبقيمة (${fmtN(t.tc,3)}) دينار أردني، وانتداب مندوب من دائرتكم الموقّرة لحضور عملية الإتلاف. رقم ضريبة المبيعات (${esc(company.salesTaxNo)}) رقم ضريبة الدخل (${esc(company.incomeTaxNo)}).</p>
+    <p>مرفق كشف مكون من ( ${pageCount} صفحات ).</p>
+    <p>شاكرين لكم حسن تعاونكم ...</p>
+    <p>وتفضلوا بقبول فائق الإحترام ....</p>
+    <div class="lsign">${esc(company.name)}</div>
+  </div>`;
+}
+function printStatement(id){
+  const b = BATCHES_CACHE.find(x=>x.id===id); if(!b) return;
+  document.getElementById('printStatement').innerHTML = buildStatementHtml(b, loadCompany());
+  document.body.classList.add('printing-statement');
+  window.print();
+}
+function printLetter(id){
+  const b = BATCHES_CACHE.find(x=>x.id===id); if(!b) return;
+  document.getElementById('printLetter').innerHTML = buildLetterHtml(b, loadCompany());
+  document.body.classList.add('printing-letter');
+  window.print();
+}
+window.addEventListener('afterprint', ()=>{
+  document.body.classList.remove('printing-statement');
+  document.body.classList.remove('printing-letter');
+});
+</script>
+</body>
+</html>
