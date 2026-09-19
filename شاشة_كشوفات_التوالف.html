@@ -110,13 +110,13 @@ tr.invalidnum td{background:var(--danger-soft)}
   .p-page{page:statement}
   .letter{page:letter}
 }
-@page statement{size:A4 landscape;margin:6mm 0}
-@page statement{@bottom-center{content:"صفحة " counter(page) " من " counter(pages);font-size:9px;font-family:"Tajawal",sans-serif}}
+@page statement{size:A4 landscape;margin:0}
 @page letter{size:A4 portrait}
 #printStatement, #printLetter{background:#fff;color:#111;font-family:"Tajawal","Cairo",sans-serif;-webkit-print-color-adjust:exact;print-color-adjust:exact}
 #printStatement *, #printLetter *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.p-page{padding:8mm 12mm;page-break-after:always}
+.p-page{box-sizing:border-box;min-height:210mm;padding:8mm 12mm;page-break-after:always;display:flex;flex-direction:column}
 .p-page:last-child{page-break-after:auto}
+.p-pagenum{margin-top:auto;padding-top:6px;text-align:center;font-size:9px;color:#555}
 .p-head{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #333;padding-bottom:6px;margin-bottom:6px}
 .p-head h1{font-size:15px;margin:0;font-family:"Cairo",sans-serif}
 .p-head .pn{font-size:10.5px;color:#555}
@@ -957,12 +957,13 @@ function statementFooterHtml(t){
     </div>
   </div>`;
 }
-function statementPage(company, b, bodyRowsHtml, trailingHtml){
+function statementPage(company, b, bodyRowsHtml, trailingHtml, pageNumHtml){
   return `<div class="p-page">
     <div class="p-head"><h1>${esc(company.name)}</h1><div class="pn">${fmtDate(b.batchDate)}</div></div>
     <div class="p-title">كشف اتلاف</div>
     <table class="p-table">${statementColgroup()}<thead>${statementHead()}</thead><tbody>${bodyRowsHtml}</tbody></table>
     ${trailingHtml||''}
+    <div class="p-pagenum">${pageNumHtml||''}</div>
   </div>`;
 }
 // Each physical page is built as its own standalone .p-page block (rather than one continuous
@@ -983,11 +984,12 @@ function chunkStatementPages(b, company){
   // Measure everything once against a single-page structure identical to what statementPage() builds.
   const holder = document.createElement('div');
   holder.style.cssText = 'position:fixed;visibility:hidden;left:-9999px;top:0;width:297mm;';
-  holder.innerHTML = statementPage(company, b, rowsHtml.join('') + totalsRowHtml) + `<div id="__footProbe">${footerHtml}</div>`;
+  holder.innerHTML = statementPage(company, b, rowsHtml.join('') + totalsRowHtml, '', 'صفحة 1 من 1') + `<div id="__footProbe">${footerHtml}</div>`;
   document.body.appendChild(holder);
   const headBlock = holder.querySelector('.p-head');
   const titleBlock = holder.querySelector('.p-title');
   const thead = holder.querySelector('thead');
+  const pageNumBlock = holder.querySelector('.p-pagenum');
   const trs = [...holder.querySelectorAll('tbody tr')];
   const rowHeights = trs.slice(0, -1).map(r=>r.getBoundingClientRect().height);
   const totalsHeight = trs[trs.length-1].getBoundingClientRect().height;
@@ -997,7 +999,8 @@ function chunkStatementPages(b, company){
   const ROW_SAFETY_BUFFER_PX = 18;
   const FOOTER_SAFETY_BUFFER_PX = 40;
   const budget = pageHeight - ((headBlock?headBlock.getBoundingClientRect().height:0)
-    + (titleBlock?titleBlock.getBoundingClientRect().height:0) + theadHeight) - ROW_SAFETY_BUFFER_PX;
+    + (titleBlock?titleBlock.getBoundingClientRect().height:0) + theadHeight
+    + (pageNumBlock?pageNumBlock.getBoundingClientRect().height:0)) - ROW_SAFETY_BUFFER_PX;
   document.body.removeChild(holder);
   // Chunk rows into pages (every page pays the same head+title+thead overhead, since each is standalone).
   const pages = [];
@@ -1018,14 +1021,15 @@ function buildStatementHtml(b, company){
   return pages.map((rowIdxs, pageIdx) => {
     const isLast = pageIdx === pages.length - 1;
     const body = rowIdxs.map(i=>rowsHtml[i]).join('') + (isLast ? totalsRowHtml : '');
-    return statementPage(company, b, body, isLast ? footerHtml : '');
+    const pageNum = `صفحة ${pageIdx+1} من ${pages.length}`;
+    return statementPage(company, b, body, isLast ? footerHtml : '', pageNum);
   }).join('');
 }
 function statementPageContentHeightPx(){
-  // 210mm (A4 landscape short side) - @page statement margin (6mm top+bottom) - .p-page's own padding
-  // (8mm top+bottom, applies per-page now that every page is its own standalone .p-page block) = 182mm
+  // 210mm (A4 landscape short side; @page margin is 0, all spacing comes from .p-page's own padding
+  // so it doesn't depend on @page margin support) - .p-page's own padding (8mm top+bottom) = 194mm
   const probe = document.createElement('div');
-  probe.style.cssText = 'position:fixed;visibility:hidden;height:182mm;width:1px;top:0;left:0;';
+  probe.style.cssText = 'position:fixed;visibility:hidden;height:194mm;width:1px;top:0;left:0;';
   document.body.appendChild(probe);
   const h = probe.getBoundingClientRect().height;
   document.body.removeChild(probe);
