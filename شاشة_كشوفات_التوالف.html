@@ -72,6 +72,7 @@ tbody tr:hover td{background:color-mix(in srgb, var(--ink) 3%, var(--card))}
 td.name,th.name{text-align:right;white-space:normal;min-width:160px}
 td.num{font-family:ui-monospace,"Tajawal",monospace;direction:ltr}
 tr.unmatched td{background:var(--warn-soft)}
+tr.incomplete td{background:var(--accent-soft)}
 .cell-input{width:100%;border:1px solid transparent;background:transparent;border-radius:6px;padding:4px 6px;font:inherit;font-size:12.5px;text-align:center;color:var(--ink)}
 .cell-input:hover,.cell-input:focus{border-color:var(--line);background:var(--paper)}
 .cell-input.name{text-align:right}
@@ -182,6 +183,43 @@ function normalizeStorage(raw){
   if(s.includes('dry')||s.includes('نواشف')||s.includes('جاف')) return 'نواشف';
   return String(raw).trim();
 }
+/* ---------------- تحويل رقم إلى كتابة عربية (للمبلغ بالدينار) ---------------- */
+function numToArWords(num){
+  num = Math.floor(num);
+  if(num === 0) return 'صفر';
+  const ones = ['','واحد','اثنان','ثلاثة','أربعة','خمسة','ستة','سبعة','ثمانية','تسعة'];
+  const teens = ['عشرة','أحد عشر','اثنا عشر','ثلاثة عشر','أربعة عشر','خمسة عشر','ستة عشر','سبعة عشر','ثمانية عشر','تسعة عشر'];
+  const tens = ['','','عشرون','ثلاثون','أربعون','خمسون','ستون','سبعون','ثمانون','تسعون'];
+  const hundreds = ['','مئة','مئتان','ثلاثمئة','أربعمئة','خمسمئة','ستمئة','سبعمئة','ثمانمئة','تسعمئة'];
+  function threeDigits(n){
+    const parts = []; const h = Math.floor(n/100), r = n%100;
+    if(h) parts.push(hundreds[h]);
+    if(r){
+      if(r < 10) parts.push(ones[r]);
+      else if(r < 20) parts.push(teens[r-10]);
+      else { const t = Math.floor(r/10), o = r%10; parts.push(o ? (ones[o] + ' و' + tens[t]) : tens[t]); }
+    }
+    return parts.join(' و');
+  }
+  const million = Math.floor(num / 1000000);
+  const thousand = Math.floor((num % 1000000) / 1000);
+  const rest = num % 1000;
+  const segments = [];
+  if(million){
+    segments.push(million===1 ? 'مليون' : million===2 ? 'مليونان' : million<=10 ? (threeDigits(million)+' ملايين') : (threeDigits(million)+' مليون'));
+  }
+  if(thousand){
+    segments.push(thousand===1 ? 'ألف' : thousand===2 ? 'ألفان' : thousand<=10 ? (threeDigits(thousand)+' آلاف') : (threeDigits(thousand)+' ألف'));
+  }
+  if(rest) segments.push(threeDigits(rest));
+  return segments.join(' و');
+}
+function amountInWordsJOD(amount){
+  const dinars = Math.floor(amount+1e-9);
+  const fils = Math.round((amount - dinars) * 1000);
+  return `فقط ${numToArWords(dinars)} دينار و${String(fils).padStart(3,'0')} فلس لا غير`;
+}
+
 function defaultCompany(){
   return {
     name:'مركز الكيلاني للأغذية', city:'عمان - الاردن',
@@ -377,6 +415,38 @@ function render(){
 }
 
 /* ---------------- بيانات الأصناف ---------------- */
+/* كويري SAP موثّقة ومؤكدة (تم التحقق حياً من بيئة SAP الفعلية لمركز الكيلاني):
+   - الوزن والوحدة: من OITM حسب "وحدة البيع" (SalUnitMsr / SWeight1) — مطابقة مؤكدة لكشف تالف فعلي.
+   - الكلفة: من OITW.AvgPrice بمستودع 100 تحديداً (كلفة الباتش الحالي بمستودع التوالف).
+   - الضريبة: OITM.VatGourpSa مربوطة بـ OVTG.Rate (كود ضريبي مباشر، مش مجموعة ضريبية).
+   - المستودع/التصنيف الحراري: حقول OITM.QryGroup1..4 (الاسم الظاهر بالواجهة "Properties"
+     لكن الاسم التقني الحقيقي بقاعدة البيانات QryGroup — تم تأكيده حياً، Property1=حلويات،
+     Property2=مبرد، Property3=مجمد، Property4=نواشف).
+   مفلترة على الأصناف الموجودة فعلياً بمستودع 100 (OnHand<>0) فقط. */
+const SAP_ITEM_QUERY = `SELECT
+  T0."ItemCode",
+  T0."ItemName",
+  T0."SalUnitMsr" AS "UoM",
+  T0."SWeight1" AS "UnitWeight",
+  T2."AvgPrice" AS "UnitCost",
+  CASE
+    WHEN T0."QryGroup1" = 'Y' THEN 'حلويات'
+    WHEN T0."QryGroup2" = 'Y' THEN 'مبرد'
+    WHEN T0."QryGroup3" = 'Y' THEN 'مجمد'
+    WHEN T0."QryGroup4" = 'Y' THEN 'نواشف'
+    ELSE ''
+  END AS "Storage",
+  T3."Rate" AS "TaxPct"
+FROM OITM T0
+INNER JOIN OITW T2 ON T0."ItemCode" = T2."ItemCode" AND T2."WhsCode" = '100' AND T2."OnHand" <> 0
+LEFT JOIN OVTG T3 ON T0."VatGourpSa" = T3."Code"
+ORDER BY T0."ItemCode"`;
+function copySapQuery(){
+  const el = document.getElementById('sapQueryBox');
+  const done = ()=>{ MSG_ITEMS = 'تم نسخ الكويري — نفّذها بـ Query Generator بالسAP والصق نتيجتها بمربع اللصق أعلاه.'; render(); };
+  if(navigator.clipboard && navigator.clipboard.writeText){ navigator.clipboard.writeText(SAP_ITEM_QUERY).then(done).catch(()=>{ el.select(); document.execCommand('copy'); done(); }); }
+  else { el.select(); document.execCommand('copy'); done(); }
+}
 function parseItemMasterPaste(text){
   const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
   const rows = []; let start = 0;
@@ -426,6 +496,12 @@ function renderItemsView(){
     <p class="sub">تُستخدم تلقائياً عند إنشاء كشف تالف — يكفي لصق كود الصنف والكمية بشاشة الكشف، والباقي (الوزن، الكلفة، المستودع، الضريبة) يُستكمل من هنا.</p>
     <p class="hint">أعمدة اللصق بالترتيب (Tab أو فاصلة): كود الصنف، اسم الصنف، الوحدة، وزن الوحدة (كغم)، كلفة الوحدة (كلفة الباتش الحالي بمستودع 100)، الخاصية (Sweet/Chilled/Frozen/Dry أو حلويات/مبرد/مجمد/نواشف)، نسبة الضريبة %.</p>
     <textarea id="imPasteArea" rows="4" placeholder="CHS00002	جبنة حلوم ميماس	Piece	0.4	1.227	Chilled	5"></textarea>
+    <details style="margin-top:12px">
+      <summary style="cursor:pointer;font-weight:700;font-size:12.5px;color:var(--ink2)">🗄️ كويري SAP جاهزة (تعبئة تلقائية لكل أصناف مستودع 100 الحالية)</summary>
+      <p class="hint" style="margin-top:8px">نفّذ هذا الكويري بـ Query Generator بالـSAP، وانسخ كامل النتيجة والصقها بمربع اللصق أعلاه مباشرة (الأعمدة مطابقة بالترتيب). تم التحقق من كل حقل حياً على بيئة SAP الفعلية لمركز الكيلاني.</p>
+      <textarea id="sapQueryBox" rows="16" readonly style="font-size:11px">${esc(SAP_ITEM_QUERY)}</textarea>
+      <div class="row" style="margin-top:8px"><button class="btn ghost sm" onclick="copySapQuery()">📋 نسخ الكويري</button></div>
+    </details>
     <div class="row" style="margin-top:10px">
       <button class="btn sm" onclick="parseItemsPreview()">تحليل ومعاينة</button>
       ${IM_DRAFT.length && CAN_EDIT ? `<button class="btn sm" onclick="saveItemsDraft()">💾 حفظ/تحديث (${IM_DRAFT.length})</button>` : ''}
@@ -503,16 +579,21 @@ async function parseDamageAndMerge(){
   catch(e){ MSG_DAMAGE = 'تعذّر الاتصال بقاعدة الأصناف: ' + e.message; render(); return; }
   const merged = parsed.map(r=>{
     const m = master[r.itemCode];
+    const incomplete = !!m && (!(+m.unit_weight>0) || !(+m.unit_cost>0) || !m.storage);
     return {
       itemCode:r.itemCode, itemName:r.itemName || (m?m.item_name:'') || '', qty:r.qty,
       uom:r.uom || (m?m.uom:'') || '',
       unitWeight:m?+m.unit_weight:0, unitCost:m?+m.unit_cost:0, taxPct:m?+m.tax_pct:0, storage:m?(m.storage||''):'',
-      unmatched:!m,
+      unmatched:!m, incomplete,
     };
   });
   DAMAGE_DRAFT = DAMAGE_DRAFT.concat(merged);
   const missing = merged.filter(r=>r.unmatched).length;
-  MSG_DAMAGE = missing ? `تنبيه: ${missing} صنف غير موجود بقاعدة الأصناف — عبّئ بياناته يدوياً بالجدول أو أضفه بشاشة "بيانات الأصناف".` : '';
+  const incompleteCount = merged.filter(r=>r.incomplete).length;
+  const parts = [];
+  if(missing) parts.push(`${missing} صنف غير موجود بقاعدة الأصناف`);
+  if(incompleteCount) parts.push(`${incompleteCount} صنف ناقص بيانات (وزن الوحدة أو الكلفة أو المستودع)`);
+  MSG_DAMAGE = parts.length ? `تنبيه: ${parts.join(' — ')} — عبّئ الناقص يدوياً بالجدول، أو حدّثه بشاشة "بيانات الأصناف".` : '';
   render();
 }
 function addDamageRow(){ DAMAGE_DRAFT.push({itemCode:'',itemName:'',qty:0,uom:'',unitWeight:0,unitCost:0,taxPct:0,storage:''}); render(); }
@@ -554,7 +635,7 @@ async function saveDamageBatch(){
 function renderDamageDraftRows(){
   return DAMAGE_DRAFT.map((r,idx)=>{
     const rw = (r.qty||0)*(r.unitWeight||0), rc=(r.qty||0)*(r.unitCost||0), rt=(rc*(r.taxPct||0))/100;
-    return `<tr class="${r.unmatched?'unmatched':''}">
+    return `<tr class="${r.unmatched?'unmatched':(r.incomplete?'incomplete':'')}">
       <td>${idx+1}</td>
       <td><input class="cell-input" value="${esc(r.itemCode)}" oninput="updateDamageField(${idx},'itemCode',this.value)" style="width:82px"></td>
       <td><input class="cell-input name" value="${esc(r.itemName)}" oninput="updateDamageField(${idx},'itemName',this.value)" style="width:200px"></td>
@@ -681,10 +762,12 @@ function buildStatementHtml(b, company){
         <td class="num">${fmtN(r.taxPct,0)}%</td><td class="num">${fmtN(rt,3)}</td></tr>`;
     }).join('');
     const totalsRow = pi===pages.length-1 ? `<tr class="p-total"><td colspan="6">الإجمالي</td><td class="num">${fmtN(t.tw,3)}</td><td></td><td class="num">${fmtN(t.tc,3)}</td><td colspan="2"></td><td></td><td class="num">${fmtN(t.tt,3)}</td></tr>` : '';
+    const wordsLine = pi===pages.length-1 ? `<div style="margin-top:10px;font-weight:800;font-size:11px;text-align:center">${esc(amountInWordsJOD(t.tc))}</div>` : '';
     return `<div class="p-page">
       <div class="p-head"><h1>${esc(company.name)}</h1><div class="pn">Page ${pi+1} of ${pages.length}</div></div>
       <div class="p-title">كشف تالف</div>
       <table class="p-table">${head}${rows}${totalsRow}</table>
+      ${wordsLine}
     </div>`;
   }).join('');
 }
@@ -700,7 +783,7 @@ function buildLetterHtml(b, company){
     <div class="lto">${esc(company.attn)}<br>${esc(company.city)}</div>
     <div class="lsubject">الموضوع / طلب إتلاف مواد غذائية</div>
     <p>تحية طيبة وبعد ،،</p>
-    <p>نرجوا التكرم بتحديد موعد لعملية إتلاف كمية من المواد الغذائية وزن (${fmtN(t.tw,3)}) كغم وبقيمة (${fmtN(t.tc,3)}) دينار أردني، وانتداب مندوب من دائرتكم الموقّرة لحضور عملية الإتلاف. رقم ضريبة المبيعات (${esc(company.salesTaxNo)}) رقم ضريبة الدخل (${esc(company.incomeTaxNo)}).</p>
+    <p>نرجوا التكرم بتحديد موعد لعملية إتلاف كمية من المواد الغذائية وزن (${fmtN(t.tw,3)}) كغم وبقيمة (${fmtN(t.tc,3)}) ${esc(amountInWordsJOD(t.tc))} وانتداب مندوب من دائرتكم الموقّرة لحضور عملية الإتلاف. رقم ضريبة المبيعات (${esc(company.salesTaxNo)}) رقم ضريبة الدخل (${esc(company.incomeTaxNo)}).</p>
     <p>مرفق كشف مكون من ( ${pageCount} صفحات ).</p>
     <p>شاكرين لكم حسن تعاونكم ...</p>
     <p>وتفضلوا بقبول فائق الإحترام ....</p>
