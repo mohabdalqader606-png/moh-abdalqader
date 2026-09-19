@@ -106,7 +106,9 @@ tr.incomplete td{background:var(--accent-soft)}
   body > .shell{display:none}
   body.printing-statement #printStatement,
   body.printing-letter #printLetter{display:block !important}
+  .p-page{page:statement}
 }
+@page statement{size:landscape}
 #printStatement, #printLetter{background:#fff;color:#111;font-family:"Tajawal","Cairo",sans-serif}
 .p-page{padding:10mm;page-break-after:always}
 .p-page:last-child{page-break-after:auto}
@@ -516,6 +518,22 @@ function exportItemsBackup(){
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   URL.revokeObjectURL(url);
 }
+function exportItemsCsv(){
+  const headers = ['كود الصنف','اسم الصنف','الوحدة','وزن الوحدة','كلفة الوحدة','المستودع','الضريبة %'];
+  const rows = ITEMS_CACHE.map(r=>[r.itemCode, r.itemName||'', r.uom||'', r.unitWeight||0, r.unitCost||0, r.storage||'', r.taxPct||0]);
+  downloadCsv(`item_master_${isoToday()}.csv`, headers, rows);
+}
+function printItemsList(){
+  const head = '<tr><th>#</th><th>كود الصنف</th><th>الصنف</th><th>الوحدة</th><th>وزن الوحدة</th><th>كلفة الوحدة</th><th>المستودع</th><th>الضريبة %</th></tr>';
+  const rows = ITEMS_CACHE.map((r,i)=>`<tr><td>${i+1}</td><td>${esc(r.itemCode)}</td><td style="text-align:right">${esc(r.itemName||'')}</td><td>${esc(r.uom||'')}</td><td class="num">${fmtN(r.unitWeight,3)}</td><td class="num">${fmtN(r.unitCost,3)}</td><td>${esc(r.storage||'')}</td><td class="num">${fmtN(r.taxPct,0)}%</td></tr>`).join('');
+  document.getElementById('printStatement').innerHTML = `<div class="p-page">
+    <div class="p-head"><h1>${esc(loadCompany().name)}</h1><div class="pn">${isoToday()}</div></div>
+    <div class="p-title">قاعدة بيانات الأصناف</div>
+    <table class="p-table">${head}${rows}</table>
+  </div>`;
+  document.body.classList.add('printing-statement');
+  window.print();
+}
 function toggleImSelectAll(checked){
   document.querySelectorAll('#imListWrap .im-row-check').forEach(cb=>{
     cb.checked = checked;
@@ -572,10 +590,12 @@ function renderItemsView(){
   </div>`;
 }
 function renderItemsListTable(list){
-  const actionsBar = CAN_EDIT ? `<div class="row" style="margin-bottom:10px">
-    <button class="btn ghost sm" onclick="exportItemsBackup()">⬇️ تصدير نسخة احتياطية</button>
-    ${IM_SELECTED.size ? `<button class="btn danger sm" onclick="deleteSelectedItems()">🗑️ حذف المحدد (${IM_SELECTED.size})</button>` : ''}
-  </div>` : '';
+  const actionsBar = `<div class="row" style="margin-bottom:10px">
+    <button class="btn ghost sm" onclick="exportItemsCsv()">📊 تصدير Excel</button>
+    <button class="btn ghost sm" onclick="printItemsList()">🖨️ طباعة</button>
+    ${CAN_EDIT ? `<button class="btn ghost sm" onclick="exportItemsBackup()">⬇️ تصدير نسخة احتياطية</button>` : ''}
+    ${CAN_EDIT && IM_SELECTED.size ? `<button class="btn danger sm" onclick="deleteSelectedItems()">🗑️ حذف المحدد (${IM_SELECTED.size})</button>` : ''}
+  </div>`;
   if(!list.length) return actionsBar + '<div class="empty">لا توجد أصناف محفوظة بعد.</div>';
   const allChecked = list.every(it=>IM_SELECTED.has(it.itemCode));
   return `${actionsBar}<div class="tablewrap"><table>
@@ -620,7 +640,7 @@ function parseDamagePaste(text){
   return rows;
 }
 function newDamageBatch(){
-  DAMAGE_MODE='new'; DAMAGE_EDIT_ID=null; DAMAGE_DRAFT=[]; MSG_DAMAGE='';
+  DAMAGE_MODE='new'; DAMAGE_EDIT_ID=null; DAMAGE_DRAFT=[]; MSG_DAMAGE=''; DAMAGE_DRAFT_SORT={key:null,dir:1};
   DAMAGE_HEADER = { batchDate:isoToday(), transferDocNum:'', notes:'' };
   render();
 }
@@ -629,7 +649,7 @@ function editDamageBatch(id){
   if(!b) return;
   DAMAGE_HEADER = { batchDate:b.batchDate, transferDocNum:b.transferDocNum||'', notes:b.notes||'' };
   DAMAGE_DRAFT = b.items.map(it=>({...it}));
-  DAMAGE_EDIT_ID = id; DAMAGE_MODE='new'; MSG_DAMAGE='';
+  DAMAGE_EDIT_ID = id; DAMAGE_MODE='new'; MSG_DAMAGE=''; DAMAGE_DRAFT_SORT={key:null,dir:1};
   render();
 }
 function viewDamageBatch(id){ DAMAGE_MODE='view'; DAMAGE_DETAIL_ID=id; DAMAGE_DETAIL_SORT={key:null,dir:1}; render(); }
@@ -664,7 +684,23 @@ function sortedDamageItems(items){
 function damageSortHeader(label, key, cls){
   const active = DAMAGE_DETAIL_SORT.key===key;
   const arrow = active ? (DAMAGE_DETAIL_SORT.dir===1?' ▲':' ▼') : '';
-  return `<th${cls?` class="${cls}"`:''} style="cursor:pointer;user-select:none" onclick="sortDamageDetail('${key}')">${esc(label)}${arrow}</th>`;
+  return `<th${cls?` class="${cls}"`:''} title="دبل كليك للترتيب" style="cursor:pointer;user-select:none" ondblclick="sortDamageDetail('${key}')">${esc(label)}${arrow}</th>`;
+}
+function downloadCsv(filename, headers, rows){
+  const cell = v => { const s = String(v==null?'':v); return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
+  const lines = [headers.map(cell).join(','), ...rows.map(r=>r.map(cell).join(','))];
+  const blob = new Blob(['﻿' + lines.join('\r\n')], {type:'text/csv;charset=utf-8'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+function exportDamageDetailCsv(id){
+  const b = BATCHES_CACHE.find(x=>x.id===id); if(!b) return;
+  const headers = ['#','كود الصنف','اسم الصنف','الكمية','الوحدة','وزن الوحدة','اجمالي الوزن','كلفة الوحدة','اجمالي الكلفة','الضريبة %','المستودع','مبلغ الضريبة'];
+  const rows = sortedDamageItems(b.items).map((r,i)=>[i+1, r.itemCode, r.itemName||'', r.qty, r.uom||'', r.unitWeight, r.qty*r.unitWeight, r.unitCost, r.qty*r.unitCost, r.taxPct, r.storage||'', (r.qty*r.unitCost*r.taxPct)/100]);
+  downloadCsv(`كشف_تالف_${b.batchDate}.csv`, headers, rows);
 }
 async function deleteDamageBatch(id){
   if(!confirm('حذف هذا الكشف نهائياً؟')) return;
@@ -737,11 +773,34 @@ async function saveDamageBatch(){
   }catch(e){ MSG_DAMAGE = 'فشل الحفظ: ' + e.message; }
   render();
 }
+let DAMAGE_DRAFT_SORT = { key:null, dir:1 };
+function sortDamageDraft(key){
+  if(DAMAGE_DRAFT_SORT.key === key){ DAMAGE_DRAFT_SORT.dir *= -1; }
+  else { DAMAGE_DRAFT_SORT.key = key; DAMAGE_DRAFT_SORT.dir = 1; }
+  render();
+}
+function damageDraftSortHeader(label, key, cls){
+  const active = DAMAGE_DRAFT_SORT.key===key;
+  const arrow = active ? (DAMAGE_DRAFT_SORT.dir===1?' ▲':' ▼') : '';
+  return `<th${cls?` class="${cls}"`:''} title="دبل كليك للترتيب" style="cursor:pointer;user-select:none" ondblclick="sortDamageDraft('${key}')">${esc(label)}${arrow}</th>`;
+}
+function sortedDamageDraftIndices(){
+  const idxs = DAMAGE_DRAFT.map((_,i)=>i);
+  const { key, dir } = DAMAGE_DRAFT_SORT;
+  if(!key) return idxs;
+  const getVal = DAMAGE_SORT_COLUMNS[key];
+  return idxs.slice().sort((ia,ib)=>{
+    const va = getVal(DAMAGE_DRAFT[ia]), vb = getVal(DAMAGE_DRAFT[ib]);
+    if(typeof va === 'string' || typeof vb === 'string') return String(va).localeCompare(String(vb), 'ar') * dir;
+    return (va - vb) * dir;
+  });
+}
 function renderDamageDraftRows(){
-  return DAMAGE_DRAFT.map((r,idx)=>{
+  return sortedDamageDraftIndices().map((idx,pos)=>{
+    const r = DAMAGE_DRAFT[idx];
     const rw = (r.qty||0)*(r.unitWeight||0), rc=(r.qty||0)*(r.unitCost||0), rt=(rc*(r.taxPct||0))/100;
     return `<tr class="${r.unmatched?'unmatched':(r.incomplete?'incomplete':'')}">
-      <td>${idx+1}</td>
+      <td>${pos+1}</td>
       <td><input class="cell-input" value="${esc(r.itemCode)}" oninput="updateDamageField(${idx},'itemCode',this.value)" style="width:82px"></td>
       <td><input class="cell-input name" value="${esc(r.itemName)}" oninput="updateDamageField(${idx},'itemName',this.value)" style="width:200px"></td>
       <td><input class="cell-input" type="number" step="any" value="${r.qty}" oninput="updateDamageField(${idx},'qty',this.value)" style="width:64px"></td>
@@ -787,7 +846,7 @@ function renderDamageForm(){
     <h2>الأصناف <span class="badge teal">${DAMAGE_DRAFT.length}</span></h2>
     <datalist id="storageList"><option value="حلويات"><option value="مبرد"><option value="مجمد"><option value="نواشف"></datalist>
     <div class="tablewrap"><table>
-      <thead><tr><th>#</th><th>كود الصنف</th><th class="name">اسم الصنف</th><th>الكمية</th><th>الوحدة</th><th>وزن الوحدة</th><th>اجمالي الوزن</th><th>كلفة الوحدة</th><th>اجمالي الكلفة</th><th>الضريبة %</th><th>المستودع</th><th>مبلغ الضريبة</th><th></th></tr></thead>
+      <thead><tr><th>#</th>${damageDraftSortHeader('كود الصنف','itemCode')}${damageDraftSortHeader('اسم الصنف','itemName','name')}${damageDraftSortHeader('الكمية','qty')}${damageDraftSortHeader('الوحدة','uom')}${damageDraftSortHeader('وزن الوحدة','unitWeight')}${damageDraftSortHeader('اجمالي الوزن','totalWeight')}${damageDraftSortHeader('كلفة الوحدة','unitCost')}${damageDraftSortHeader('اجمالي الكلفة','totalCost')}${damageDraftSortHeader('الضريبة %','taxPct')}${damageDraftSortHeader('المستودع','storage')}${damageDraftSortHeader('مبلغ الضريبة','taxAmount')}<th></th></tr></thead>
       <tbody>${DAMAGE_DRAFT.length ? renderDamageDraftRows() : '<tr><td colspan="13" class="empty">لا توجد أصناف — الصق البيانات أعلاه أو أضف سطراً يدوياً</td></tr>'}</tbody>
     </table></div>
     <p class="hint" id="dmgFooterTotals" style="font-weight:700;margin-top:10px">${damageTotalsText(DAMAGE_DRAFT)}</p>
@@ -829,6 +888,7 @@ function renderDamageDetail(){
       <div class="actions">
         <button class="btn sm" onclick="printStatement(${b.id})">🖨️ طباعة كشف التالف</button>
         <button class="btn sm" onclick="printLetter(${b.id})">🖨️ طباعة طلب الإتلاف</button>
+        <button class="btn ghost sm" onclick="exportDamageDetailCsv(${b.id})">📊 تصدير Excel</button>
         ${CAN_EDIT ? `<button class="btn ghost sm" onclick="editDamageBatch(${b.id})">تعديل</button>` : ''}
         ${CAN_EDIT ? `<button class="btn danger sm" onclick="deleteDamageBatch(${b.id})">حذف</button>` : ''}
         <button class="btn ghost sm" onclick="DAMAGE_MODE='list';render()">⬅ رجوع</button>
