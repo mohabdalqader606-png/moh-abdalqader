@@ -935,7 +935,7 @@ LEFT JOIN OITB T1 ON T0."ItmsGrpCod" = T1."ItmsGrpCod"`,
     ],
     sql: `SELECT DISTINCT T1."ItemCode" AS "رمز الصنف", T0."CardCode" AS "رمز المورد"
 FROM OPCH T0 INNER JOIN PCH1 T1 ON T0."DocEntry"=T1."DocEntry"`,
-    sqlNote: 'اختياري بالكامل — النظام يشتق ربط الصنف بالمورد أساساً من فواتير المشتريات الفعلية (قسم 12)، وهذا المصدر يُستخدم فقط كتفضيل يدوي إضافي أو MOQ/مضاعف طلب معروفين مسبقاً.',
+    sqlNote: 'اختياري بالكامل — النظام يشتق ربط الصنف بالمورد أساساً من فواتير المشتريات الفعلية (قسم 12)، وهذا المصدر يُستخدم كـ"شبكة أمان" ثانية فقط للأصناف التي ما إلها فاتورة شراء مسجَّلة بالفترة المرفوعة (مثلاً أصناف قديمة أو مشتراة قبل بداية الأساس التاريخي). عمود "مفضّل؟" اختياري — إذا رُفع سطر واحد بالضبط "Y" لصنف معيّن يُعتمد هو، وإلا تُعتمد أول صلة مورد متوفرة لهذا الصنف بدل ترك الصنف "بدون مورد محدد" بلا داعٍ.',
   },
 };
 
@@ -1499,7 +1499,8 @@ function resolveSupplierForItem(itemCode){
     const nameRow = rows.find(r=>r.SupplierCode===best);
     return {code:best, name: (nameRow&&nameRow.SupplierName) || supplierName(best) || best};
   }
-  const map = IDX.rows('itemSupplierMap','ItemCode',itemCode).find(r=>String(r.IsPreferred||'').toUpperCase()==='Y');
+  const mapRows = IDX.rows('itemSupplierMap','ItemCode',itemCode);
+  const map = mapRows.find(r=>String(r.IsPreferred||'').toUpperCase()==='Y') || mapRows[0];
   if(map) return {code:map.SupplierCode, name: supplierName(map.SupplierCode) || map.SupplierCode};
   return {code:null, name:'—'};
 }
