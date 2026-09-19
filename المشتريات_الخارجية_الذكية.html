@@ -2556,7 +2556,7 @@ function renderPlan(){
 function renderPlanTabs(){
   document.getElementById('planTabs').innerHTML = `<div class="seg">${PLAN_TABS.map(s=>`<button class="${STATE.planTab===s?'active':''}" onclick="STATE.planTab='${s}';TABLES.plan()">${RECO_LABELS[s]} <span style="font-family:var(--mono);font-size:10.5px;opacity:.8">${countBy(s)}</span></button>`).join('')}</div>`;
 }
-function updatePlanSelCount(){ const el=document.getElementById('planSelCount'); if(el) el.textContent = `${STATE.planSelection.size} صنف محدد`; }
+function updatePlanSelCount(){ const el=document.getElementById('planSelCount'); if(el) el.textContent = `${getRecos().filter(r=>STATE.planSelection.has(r.ItemCode)).length} صنف محدد ضمن الفلترة الحالية`; }
 function planToggle(code, on){ if(on) STATE.planSelection.add(code); else STATE.planSelection.delete(code); updatePlanSelCount(); }
 function planSelectVisible(on){
   getRecos().filter(r=>r.status===STATE.planTab).forEach(r=>{ if(on) STATE.planSelection.add(r.ItemCode); else STATE.planSelection.delete(r.ItemCode); });
@@ -2565,9 +2565,11 @@ function planSelectVisible(on){
 function planSetQty(code, val){ if(!requirePermission('input', 'تعديل كمية الخطة')) return; setPlanOverride(code, {qty:Number(val)}).then(()=>{ if(STATE.planBuilt) buildSupplierPlan(true); }); }
 function planSetNote(code, val){ if(!requirePermission('input', 'تعديل ملاحظة الخطة')) return; setPlanOverride(code, {note:val}); }
 
-/** تجميع الأصناف المختارة حسب المورد (نفس منطق التجميع بالمحرك: المورد الغالب لكل صنف + مدة توريده) */
+/** تجميع الأصناف المختارة حسب المورد (نفس منطق التجميع بالمحرك: المورد الغالب لكل صنف + مدة توريده)
+    يستخدم getRecos() (المفلترة) لا getRecosAll() — حتى تحترم خطة الشراء الفلاتر الفعّالة (مورد/صنف/...)
+    ولو كان الصنف محدداً مسبقاً بتبويب/فلتر مختلف: إذا ما عاد يطابق الفلتر الحالي، يُستبعد من الخطة تلقائياً. */
 function selectedPlanGroups(){
-  const items = getRecosAll().filter(r=>STATE.planSelection.has(r.ItemCode) && effectiveQty(r)>0);
+  const items = getRecos().filter(r=>STATE.planSelection.has(r.ItemCode) && effectiveQty(r)>0);
   const by = new Map();
   items.forEach(r=>{
     const key = r.supplier.code || '__NONE__';
