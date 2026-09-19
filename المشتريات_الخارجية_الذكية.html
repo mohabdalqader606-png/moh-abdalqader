@@ -2900,6 +2900,7 @@ async function confirmInTransit(key, itemCode, dateStr){
    13) DATA CENTER (نفس منطق الرفع/التحقق/الاستيراد/التراجع — عرض مُحسَّن)
    ------------------------------------------------------------------------------------------ */
 let _dcPendingImport = null;
+let _dcFileRawText = null; // نص ملف كبير محمَّل بالذاكرة فقط (بدون كتابته بالـ textarea — تفادي تعليق المتصفح، انظر handleImportFile)
 const DC_ORDER = ['salesInvoices','salesReturns','physicalReturns','purchaseInvoices','purchaseOrders','goodsReceipts','inventory','salesOrders','salesQuotations','suppliers','itemSupplierMap','batches','items','landedCost'];
 /* تصنيف كل مصدر حسب دورية التحديث الواقعية — بيانات (لا يغيّر منطق الاستيراد/الحساب، تنظيم عرض فقط بمركز البيانات) */
 const DC_CADENCE = {
@@ -3090,14 +3091,16 @@ async function refreshSourceStats(key){
 function copySql(btn, key){
   navigator.clipboard.writeText(DATA_SOURCES[key].sql).then(()=>{ const o=btn.textContent; btn.textContent='تم النسخ'; setTimeout(()=>btn.textContent=o,1400); }).catch(()=>U.toast('تعذّر النسخ — انسخ يدوياً','err'));
 }
+const DC_BIG_FILE_CHARS = 300000; // فوق هالحجم، النص ما بينكتب بالـ textarea إطلاقاً (تفادي تعليق المتصفح على ملفات كبيرة)
 function openImportModal(sourceKey){
   const src = DATA_SOURCES[sourceKey];
   _dcPendingImport = null;
+  _dcFileRawText = null;
   document.getElementById('modalBox').innerHTML = `
     <div class="drawer-head"><div><h3>رفع بيانات</h3><div class="sub" style="font-family:var(--disp)">${U.esc(src.label)}</div></div><button class="btn-ghost btn-sm" onclick="closeModal()">إغلاق</button></div>
     <div class="drawer-body">
-      <div class="status-msg" style="margin-bottom:8px">الصق نتيجة الكويري (مع سطر العناوين) أو ارفع ملف txt/csv/tsv. الأعمدة الإلزامية: ${src.columns.filter(c=>c.required).map(c=>U.esc(c.label)).join('، ')}</div>
-      <textarea class="pastebox" id="importPasteArea" placeholder="الصق البيانات هنا…"></textarea>
+      <div class="status-msg" style="margin-bottom:8px">الصق نتيجة الكويري (مع سطر العناوين) أو ارفع ملف txt/csv/tsv (أي حجم — الملفات الكبيرة تُعالَج مباشرة بدون عرضها بالمربع). الأعمدة الإلزامية: ${src.columns.filter(c=>c.required).map(c=>U.esc(c.label)).join('، ')}</div>
+      <textarea class="pastebox" id="importPasteArea" placeholder="الصق البيانات هنا…" oninput="_dcFileRawText=null"></textarea>
       <div class="drawer-actions" style="margin-top:8px;align-items:center">
         <input type="file" id="importFileInput" accept=".txt,.csv,.tsv" style="display:none" onchange="handleImportFile(event)">
         <button class="btn-ghost btn-sm" type="button" onclick="document.getElementById('importFileInput').click()">رفع ملف</button>
@@ -3111,14 +3114,33 @@ function openImportModal(sourceKey){
 function handleImportFile(ev){
   const f = ev.target.files[0]; if(!f) return;
   const reader = new FileReader();
-  reader.onload = ()=>{ document.getElementById('importPasteArea').value = reader.result; U.toast('تم تحميل الملف — اضغط «تحقق ومعاينة»'); };
+  reader.onload = ()=>{
+    const text = String(reader.result||'');
+    const area = document.getElementById('importPasteArea');
+    if(text.length > DC_BIG_FILE_CHARS){
+      // ملف كبير: نُبقي النص بالذاكرة فقط ولا نكتبه بالـ textarea — كتابة نص بحجم ميجابايتات بعنصر DOM
+      // هي السبب الرئيسي لتعليق المتصفح على ملفات المستندات الكبيرة (فواتير مبيعات/مشتريات بملايين الأسطر).
+      _dcFileRawText = text;
+      area.value = '';
+      const approxLines = U.num((text.match(/\n/g)||[]).length + 1);
+      area.placeholder = `تم تحميل ملف كبير (${approxLines} سطر تقريباً) — لن يُعرض هنا لتفادي تعليق المتصفح. اضغط مباشرة «تحقق ومعاينة».`;
+      U.toast('تم تحميل الملف (ملف كبير) — اضغط «تحقق ومعاينة» مباشرة');
+    } else {
+      _dcFileRawText = null;
+      area.value = text;
+      U.toast('تم تحميل الملف — اضغط «تحقق ومعاينة»');
+    }
+  };
   reader.readAsText(f, 'utf-8');
 }
 async function runImportPreview(sourceKey){
-  const text = document.getElementById('importPasteArea').value;
+  const text = _dcFileRawText != null ? _dcFileRawText : document.getElementById('importPasteArea').value;
   const statusEl = document.getElementById('importStatusMsg');
   if(!text.trim()){ statusEl.textContent='لا يوجد بيانات'; statusEl.className='status-msg err'; return; }
-  statusEl.textContent='جارِ التحليل…'; statusEl.className='status-msg';
+  const big = text.length > DC_BIG_FILE_CHARS;
+  statusEl.textContent = big ? 'جارِ التحليل… قد يستغرق عدة ثوانٍ لملف بهذا الحجم' : 'جارِ التحليل…';
+  statusEl.className='status-msg';
+  await new Promise(r=>setTimeout(r, 30)); // يسمح برسم رسالة "جارِ التحليل" قبل بدء المعالجة الثقيلة (متزامنة)
   const {mapped, errors, unmatched, totalRows} = IMPORT.mapRows(sourceKey, text);
   if(unmatched.length){
     document.getElementById('importPreviewBox').innerHTML = `<div class="status-msg err">أعمدة إلزامية غير موجودة بالعناوين: ${unmatched.map(c=>U.esc(c.label)).join('، ')}</div>`;
@@ -3145,6 +3167,7 @@ async function confirmImport(){
   }
   const res = await IMPORT.commit(sourceKey, rows, {mode:'incremental', errorCount:errors.length});
   U.toast(`تم الاستيراد: ${res.added} جديد، ${res.updated} محدَّث`, 'ok');
+  _dcFileRawText = null;
   closeModal();
   await onDataChanged();
 }
