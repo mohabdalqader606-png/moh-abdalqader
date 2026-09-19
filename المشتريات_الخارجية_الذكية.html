@@ -155,6 +155,11 @@
   table.dt .freeze{position:sticky;right:0;z-index:1;background:#fff;box-shadow:-1px 0 0 var(--line) inset;}
   table.dt th.freeze{z-index:3;background:var(--surface-2);}
   table.dt tbody tr:hover td.freeze{background:#FAFBFC;}
+  /* عمود ثانٍ مجمَّد (اسم الصنف) — بجداول تحتاج فريز مزدوج؛ عرض ثابت مطلوب حتى يصير موضع freeze2 صحيح، باستثناء خلية الإجمالي (colspan) */
+  #demandTable table.dt td.freeze:not([colspan]), #demandTable table.dt th.freeze{width:100px;max-width:100px;overflow:hidden;text-overflow:ellipsis;}
+  #demandTable table.dt .freeze2{position:sticky;right:100px;z-index:1;background:#fff;width:190px;max-width:190px;overflow:hidden;text-overflow:ellipsis;box-shadow:-1px 0 0 var(--line) inset;}
+  #demandTable table.dt th.freeze2{z-index:3;background:var(--surface-2);}
+  #demandTable table.dt tbody tr:hover td.freeze2{background:#FAFBFC;}
   table.dt tfoot td{background:var(--surface-2);font-weight:700;border-top:1px solid var(--line-strong);}
   table.dt .link{color:var(--navy);font-weight:700;cursor:pointer;}
   table.dt .link:hover{text-decoration:underline;}
@@ -2625,9 +2630,15 @@ function exportPlanCSV(){
 STATE.reportMode = 'qty';
 function renderDemand(){
   const el = document.getElementById('view-demand');
+  const {from, to} = getActiveDateRange();
   el.innerHTML = `
     <div class="page-title"><div><h1>تحليل الطلب والمبيعات</h1><div class="sub" id="demandSub">صافي المبيعات الشهري (فواتير − مرتجعات) · اضغط أي كمية لتفصيل العملاء</div></div>
       <div class="actions">
+        <div class="fld" style="display:inline-flex;gap:6px;align-items:center;margin-inline-end:8px">
+          <label style="font-size:11px;color:var(--ink-3)">من</label><input type="date" id="demandDateFrom" value="${U.esc(STATE.filters.dateFrom||U.fmtDate(from))}" style="font-family:var(--mono);font-size:12px">
+          <label style="font-size:11px;color:var(--ink-3)">إلى</label><input type="date" id="demandDateTo" value="${U.esc(STATE.filters.dateTo||U.fmtDate(to))}" style="font-family:var(--mono);font-size:12px">
+          <button class="btn-ghost btn-sm" onclick="applyDemandDateRange()">تطبيق الفترة</button>
+        </div>
         <div class="seg" id="reportModeSeg"><button data-m="qty" class="${STATE.reportMode==='qty'?'active':''}">كمية</button><button data-m="amount" class="${STATE.reportMode==='amount'?'active':''}">مبلغ</button><button data-m="both" class="${STATE.reportMode==='both'?'active':''}">كمية + مبلغ</button></div>
         <button class="btn-ghost btn-sm" onclick="printCurrentView()">طباعة</button>
       </div></div>
@@ -2635,6 +2646,14 @@ function renderDemand(){
   document.querySelectorAll('#reportModeSeg button').forEach(b=>b.addEventListener('click', ()=>{ STATE.reportMode=b.getAttribute('data-m'); renderDemand(); }));
   TABLES.demand = renderDemandTable;
   renderDemandTable();
+}
+function applyDemandDateRange(){
+  const from = document.getElementById('demandDateFrom').value;
+  const to = document.getElementById('demandDateTo').value;
+  STATE.filters.dateFrom = from; STATE.filters.dateTo = to;
+  refreshComputed();
+  updateFilterCount();
+  rerenderActiveView();
 }
 function renderDemandTable(){
   const rep = getSalesReport();
@@ -2648,7 +2667,7 @@ function renderDemandTable(){
   });
   const mode = STATE.reportMode;
   const T=(c,l,x)=>thSort(key,c,l,x);
-  const head = `<tr>${T('ItemCode','رمز الصنف','freeze')}${T('ItemName','اسم الصنف')}${T('Supplier','المورد')}${rep.months.map(mk=>T('m:'+mk, monthLabel(mk))).join('')}${T('avg','المتوسط / شهر')}</tr>`;
+  const head = `<tr>${T('ItemCode','رمز الصنف','freeze')}${T('ItemName','اسم الصنف','freeze2')}${T('Supplier','المورد')}${rep.months.map(mk=>T('m:'+mk, monthLabel(mk))).join('')}${T('avg','المتوسط / شهر')}</tr>`;
   const cell = (r,mk)=>{
     const c = r.monthly.get(mk) || {qty:0, amount:0};
     const q = c.qty ? `<span class="qty-click" onclick="openCustomerDrilldown('${U.esc(r.ItemCode)}','${mk}')">${U.num(c.qty)}</span>` : '<span class="qty-zero">0</span>';
@@ -2657,7 +2676,7 @@ function renderDemandTable(){
     return `<td class="num">${q}<div style="font-size:10px;color:var(--ink-4)">${U.num(c.amount)}</div></td>`;
   };
   const rowHtml = r=>`<tr>
-    <td class="freeze"><span class="link num" onclick="openItemDetail('${U.esc(r.ItemCode)}')">${U.esc(r.ItemCode)}</span></td><td>${U.esc(r.ItemName)}</td><td>${U.esc(r.supplier.name)}</td>
+    <td class="freeze"><span class="link num" onclick="openItemDetail('${U.esc(r.ItemCode)}')">${U.esc(r.ItemCode)}</span></td><td class="freeze2" title="${U.esc(r.ItemName)}">${U.esc(r.ItemName)}</td><td>${U.esc(r.supplier.name)}</td>
     ${rep.months.map(mk=>cell(r,mk)).join('')}
     <td class="num strong">${mode==='amount'?U.num(r.rawAvgAmount,1):U.num(r.rawAvgQty,1)}${mode==='both'?`<div style="font-size:10px;color:var(--ink-4);font-weight:400">${U.num(r.rawAvgAmount,1)}</div>`:''}</td></tr>`;
   const tot = rep.months.map(mk=>rows.reduce((s,r)=>{const c=r.monthly.get(mk); return s+(c?(mode==='amount'?c.amount:c.qty):0);},0));
