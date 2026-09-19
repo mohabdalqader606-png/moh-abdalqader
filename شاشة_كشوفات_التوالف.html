@@ -421,18 +421,21 @@ function render(){
 /* ---------------- بيانات الأصناف ---------------- */
 /* كويري SAP موثّقة ومؤكدة (تم التحقق حياً من بيئة SAP الفعلية لمركز الكيلاني):
    - الوزن والوحدة: من OITM حسب "وحدة البيع" (SalUnitMsr / SWeight1) — مطابقة مؤكدة لكشف تالف فعلي.
-   - الكلفة: من OITW.AvgPrice بمستودع 100 تحديداً (كلفة الباتش الحالي بمستودع التوالف).
+   - الكلفة: مجموع أرصدة الباتشات (OBTN.Balance) ÷ مجموع كمياتها بمستودع 100 (OBTQ.Quantity)
+     — هذا هو المصدر المعتمد رسمياً حسب تأكيد المستخدم (وليس OITW.StockValue/OnHand ولا
+     OITW.AvgPrice، كلاهما تم تجربته وتبيّن أنه لا يطابق أرصدة الباتشات الفعلية). الربط
+     بين الجدولين عبر ItemCode + SysNumber (رقم الباتش الداخلي).
    - الضريبة: OITM.VatGourpSa مربوطة بـ OVTG.Rate (كود ضريبي مباشر، مش مجموعة ضريبية).
    - المستودع/التصنيف الحراري: حقول OITM.QryGroup1..4 (الاسم الظاهر بالواجهة "Properties"
      لكن الاسم التقني الحقيقي بقاعدة البيانات QryGroup — تم تأكيده حياً، Property1=حلويات،
      Property2=مبرد، Property3=مجمد، Property4=نواشف).
-   مفلترة على الأصناف الموجودة فعلياً بمستودع 100 (OnHand<>0) فقط. */
+   مفلترة على الأصناف الموجودة فعلياً بمستودع 100 (كميات باتشات <> صفر) فقط. */
 const SAP_ITEM_QUERY = `SELECT
   T0."ItemCode",
   T0."ItemName",
   T0."SalUnitMsr" AS "UoM",
   T0."SWeight1" AS "UnitWeight",
-  T2."AvgPrice" AS "UnitCost",
+  CASE WHEN SUM(T2."Quantity") <> 0 THEN SUM(T1."Balance") / SUM(T2."Quantity") ELSE 0 END AS "UnitCost",
   CASE
     WHEN T0."QryGroup1" = 'Y' THEN 'حلويات'
     WHEN T0."QryGroup2" = 'Y' THEN 'مبرد'
@@ -442,8 +445,10 @@ const SAP_ITEM_QUERY = `SELECT
   END AS "Storage",
   T3."Rate" AS "TaxPct"
 FROM OITM T0
-INNER JOIN OITW T2 ON T0."ItemCode" = T2."ItemCode" AND T2."WhsCode" = '100' AND T2."OnHand" <> 0
+INNER JOIN OBTQ T2 ON T0."ItemCode" = T2."ItemCode" AND T2."WhsCode" = '100' AND T2."Quantity" <> 0
+INNER JOIN OBTN T1 ON T2."ItemCode" = T1."ItemCode" AND T2."SysNumber" = T1."SysNumber"
 LEFT JOIN OVTG T3 ON T0."VatGourpSa" = T3."Code"
+GROUP BY T0."ItemCode", T0."ItemName", T0."SalUnitMsr", T0."SWeight1", T0."QryGroup1", T0."QryGroup2", T0."QryGroup3", T0."QryGroup4", T3."Rate"
 ORDER BY T0."ItemCode"`;
 function copySapQuery(){
   const el = document.getElementById('sapQueryBox');
