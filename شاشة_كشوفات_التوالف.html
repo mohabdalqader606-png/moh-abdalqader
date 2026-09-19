@@ -936,7 +936,7 @@ function buildStatementHtml(b, company){
       <td class="num">${fmtN(r.unitCost,3)}</td><td class="num">${fmtN(rc,3)}</td><td>${esc(r.uom||'')}</td><td>${esc(r.storage||'')}</td>
       <td class="num">${fmtN(r.taxPct,0)}%</td><td class="num">${fmtN(rt,3)}</td></tr>`;
   }).join('');
-  const totalsRow = `<tr class="p-total"><td colspan="6">الإجمالي</td><td class="num">${fmtN(t.tw,3)}</td><td></td><td class="num">${fmtN(t.tc,3)}</td><td colspan="2"></td><td></td><td class="num">${fmtN(t.tt,3)}</td></tr>`;
+  const totalsRow = (breakBefore) => `<tr class="p-total"${breakBefore?' style="break-before:page"':''}><td colspan="6">الإجمالي</td><td class="num">${fmtN(t.tw,3)}</td><td></td><td class="num">${fmtN(t.tc,3)}</td><td colspan="2"></td><td></td><td class="num">${fmtN(t.tt,3)}</td></tr>`;
   const sigCol = () => `<div style="text-align:center;flex:1">
       <div style="display:flex;align-items:flex-end;justify-content:center;gap:6px">
         <span>الاسم:</span><div style="flex:1;max-width:55%;border-top:1px solid #333"></div>
@@ -953,35 +953,54 @@ function buildStatementHtml(b, company){
       ${sigCol()}
     </div>
   </div>`;
-  return `<div class="p-page">
+  const build = (breakBeforeTotals) => `<div class="p-page">
     <div class="p-head"><h1>${esc(company.name)}</h1><div class="pn">${fmtDate(b.batchDate)}</div></div>
     <div class="p-title">كشف اتلاف</div>
-    <table class="p-table">${colgroup}<thead>${head}</thead><tbody>${rows}${totalsRow}</tbody></table>
+    <table class="p-table">${colgroup}<thead>${head}</thead><tbody>${rows}${totalsRow(breakBeforeTotals)}</tbody></table>
     ${footer}
   </div>`;
+  const fit = measureStatementFit(build(false));
+  return build(fit.breakBeforeTotals);
 }
-function estimateStatementPageCount(b, company){
+function statementPageContentHeightPx(){
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;visibility:hidden;height:190mm;width:1px;top:0;left:0;';
+  document.body.appendChild(probe);
+  const h = probe.getBoundingClientRect().height;
+  document.body.removeChild(probe);
+  return h;
+}
+function measureStatementFit(html){
   const holder = document.createElement('div');
-  holder.style.cssText = 'position:fixed;visibility:hidden;left:-9999px;top:0;width:1100px;';
-  holder.innerHTML = buildStatementHtml(b, company);
+  holder.style.cssText = 'position:fixed;visibility:hidden;left:-9999px;top:0;width:277mm;';
+  holder.innerHTML = html;
   document.body.appendChild(holder);
   const headBlock = holder.querySelector('.p-head');
   const titleBlock = holder.querySelector('.p-title');
   const thead = holder.querySelector('thead');
-  const rows = [...holder.querySelectorAll('tbody tr')];
-  const rowsHeight = rows.reduce((s,r)=>s+r.getBoundingClientRect().height,0);
-  const wordsEl = holder.querySelector('.p-page > div:last-child');
-  const wordsHeight = wordsEl && wordsEl.tagName!=='TABLE' ? wordsEl.getBoundingClientRect().height : 0;
+  const trs = [...holder.querySelectorAll('tbody tr')];
+  const itemRows = trs.slice(0, -1);
+  const totalsEl = trs[trs.length-1];
+  const footerEl = holder.querySelector('.p-page > div:last-child');
   const theadHeight = thead ? thead.getBoundingClientRect().height : 0;
-  const firstPageOverhead = (headBlock?headBlock.getBoundingClientRect().height:0)
-    + (titleBlock?titleBlock.getBoundingClientRect().height:0) + theadHeight + 76;
+  const pageHeight = statementPageContentHeightPx();
+  const firstBudget = pageHeight - ((headBlock?headBlock.getBoundingClientRect().height:0)
+    + (titleBlock?titleBlock.getBoundingClientRect().height:0) + theadHeight);
+  const laterBudget = pageHeight - theadHeight;
+  let remaining = firstBudget, pages = 1;
+  for(const r of itemRows){
+    const h = r.getBoundingClientRect().height;
+    if(remaining - h < 0){ remaining = laterBudget - h; pages++; }
+    else remaining -= h;
+  }
+  const totalsHeight = totalsEl ? totalsEl.getBoundingClientRect().height : 0;
+  const footerHeight = footerEl && footerEl.tagName!=='TABLE' ? footerEl.getBoundingClientRect().height : 0;
+  const breakBeforeTotals = remaining < totalsHeight + footerHeight;
   document.body.removeChild(holder);
-  const PAGE_BUDGET_PX = 750;
-  const contentHeight = rowsHeight + wordsHeight;
-  const firstBudget = Math.max(100, PAGE_BUDGET_PX - firstPageOverhead);
-  if(contentHeight <= firstBudget) return 1;
-  const laterBudget = Math.max(100, PAGE_BUDGET_PX - theadHeight - 76);
-  return 1 + Math.ceil((contentHeight - firstBudget) / laterBudget);
+  return { pages: breakBeforeTotals ? pages+1 : pages, breakBeforeTotals };
+}
+function estimateStatementPageCount(b, company){
+  return measureStatementFit(buildStatementHtml(b, company)).pages;
 }
 function buildLetterHtml(b, company){
   const t = damageTotals(b.items);
