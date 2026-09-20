@@ -3574,6 +3574,34 @@
     </div>
   </div>
 
+  <!-- MANUAL JOURNAL ENTRY TESTING VIEW -->
+  <div class="view" id="view-jetest">
+    <div id="jeListPanel">
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <div class="kt-layer"><span class="kd-en">Manual, entry-by-entry · resumable</span><b>فحص القيود اليدوي</b><p>افتح ملف تدقيق لكل دفعة فحص (فترة أو نطاق قيود)، وسجّل كل قيد تفحصه بحالته وملاحظته الخاصة به. أداة توثيق عمل المدقق فقط — لا قرار أو حكم تدقيقي آلي؛ الحالة والملاحظة يسجّلهما المدقق بنفسه لكل قيد.</p></div>
+        </div>
+        <button class="btn btn-primary" id="addJeFileBtn">+ ملف تدقيق جديد</button>
+      </div>
+      <div id="jeFilesListBox" class="kt-host"></div>
+    </div>
+
+    <div id="jeFilePanel" style="display:none;">
+      <div class="toolbar">
+        <div class="toolbar-left">
+          <button type="button" class="btn btn-ghost btn-sm" id="jeBackBtn">→ رجوع لقائمة الملفات</button>
+        </div>
+        <div style="display:flex;gap:8px;">
+          <button type="button" class="btn btn-ghost btn-sm" id="editJeFileBtn">✎ تعديل بيانات الملف</button>
+          <button type="button" class="btn btn-primary" id="addJeEntryBtn">+ تسجيل فحص قيد</button>
+        </div>
+      </div>
+      <div class="kd-panel" id="jeFileHead" style="padding:14px 18px;margin-bottom:14px;"></div>
+      <div class="stat-cards" id="jeStatCards"></div>
+      <div id="jeEntriesBox" class="kt-host"></div>
+    </div>
+  </div>
+
 </main>
 </div>
 
@@ -4645,6 +4673,60 @@
   </div>
 </div>
 
+<!-- JOURNAL ENTRY TESTING — FILE (ملف تدقيق) MODAL -->
+<div class="overlay" id="jeFileOverlay">
+  <div class="modal">
+    <h2 id="jeFileModalTitle">ملف تدقيق جديد</h2>
+    <input type="hidden" id="jeFileEditId">
+    <div class="field"><label>رقم الملف</label><input type="text" id="jeFFileNo" placeholder="مثال: JE-SALES-2026-01"></div>
+    <div class="field"><label>الفترة</label><input type="text" id="jeFPeriod" placeholder="مثال: 01-01-2026 إلى 31-08-2026"></div>
+    <div class="field"><label>أول رقم قيد</label><input type="text" id="jeFFirstEntry" placeholder="مثال: 100001"></div>
+    <div class="modal-actions">
+      <div style="display:flex;gap:8px;margin-right:auto;">
+        <button class="btn btn-ghost" id="cancelJeFileModal">إلغاء</button>
+        <button class="btn btn-primary" id="saveJeFileBtn">حفظ</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- JOURNAL ENTRY TESTING — ENTRY (قيد) MODAL -->
+<div class="overlay" id="jeEntryOverlay">
+  <div class="modal">
+    <h2 id="jeEntryModalTitle">تسجيل فحص قيد</h2>
+    <input type="hidden" id="jeEntryEditId">
+    <input type="hidden" id="jeEntryFileId">
+    <div class="row2">
+      <div class="field"><label>رقم القيد</label><input type="text" id="jeEEntryNo"></div>
+      <div class="field"><label>تاريخ القيد</label><input type="date" id="jeEEntryDate"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>الحساب</label><input type="text" id="jeEAccount"></div>
+      <div class="field"><label>المبلغ</label><input type="text" inputmode="decimal" id="jeEAmount"></div>
+    </div>
+    <div class="field"><label>حالة الفحص</label>
+      <select id="jeEStatus">
+        <option value="not_checked">لم يتم الفحص</option>
+        <option value="checked_ok">تم الفحص — سليم</option>
+        <option value="checked_note">تم الفحص — توجد ملاحظة</option>
+        <option value="follow_up">يحتاج متابعة</option>
+      </select>
+    </div>
+    <div class="field"><label>الملاحظة</label><textarea id="jeENote" placeholder="إلزامية عند «توجد ملاحظة» أو «يحتاج متابعة»"></textarea></div>
+    <div class="row2">
+      <div class="field"><label>المرجع/المستند</label><input type="text" id="jeERef"></div>
+      <div class="field"><label>اسم المدقق</label><input type="text" id="jeEAuditor"></div>
+    </div>
+    <div class="field"><label>تاريخ الفحص</label><input type="date" id="jeECheckDate"></div>
+    <div class="modal-actions">
+      <div style="display:flex;gap:8px;margin-right:auto;">
+        <button class="btn btn-ghost" id="cancelJeEntryModal">إلغاء</button>
+        <button class="btn btn-primary" id="saveJeEntryBtn">حفظ</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- AUTHORITY / SoD MODAL -->
 <div class="overlay" id="authorityOverlay">
   <div class="modal">
@@ -5396,7 +5478,16 @@ const DEFAULT_CATEGORIES = [
   {id:"fleet", name:"الأسطول والكاش فان", color:"#EA580C", hex:"#EA580C"},
   {id:"sapit", name:"SAP وIT", color:"#1E3A8A", hex:"#1E3A8A"},
   {id:"hr", name:"الموارد البشرية", color:"#C026D3", hex:"#C026D3"},
+  {id:"assets", name:"الأصول الثابتة والممتلكات", color:"#92400E", hex:"#92400E"},
   {id:"gov", name:"حوكمة وسياسات", color:"var(--gov)", hex:"#4F46E5"},
+  {id:"erm", name:"إدارة المخاطر المؤسسية", color:"#A16207", hex:"#A16207"},
+  {id:"compliance", name:"الالتزام النظامي والقانوني", color:"#0369A1", hex:"#0369A1"},
+  {id:"cyber", name:"أمن المعلومات والسيبراني", color:"#4C1D95", hex:"#4C1D95"},
+  {id:"bcp", name:"استمرارية الأعمال والتعافي من الكوارث", color:"#B45309", hex:"#B45309"},
+  {id:"hse", name:"الصحة والسلامة المهنية", color:"#15803D", hex:"#15803D"},
+  {id:"contracts", name:"العقود وإدارة الموردين", color:"#475569", hex:"#475569"},
+  {id:"efficiency", name:"الكفاءة التشغيلية", color:"#CA8A04", hex:"#CA8A04"},
+  {id:"fraud", name:"تقييم مخاطر الاحتيال", color:"#991B1B", hex:"#991B1B"},
   {id:"other", name:"أخرى", color:"var(--other)", hex:"#64748B"},
 ];
 /* الأقسام قابلة للتعديل من الإعدادات: الأقسام الثمانية الأصلية تبقى بمعرّفاتها (يمكن إعادة تسميتها/تلوينها/إخفاؤها)، وتُضاف أقسام مخصصة تُحفظ في DB.settings */
@@ -5406,14 +5497,24 @@ let CATEGORIES = DEFAULT_CATEGORIES.map(c=>({...c, builtin:true, hidden:false}))
    سلسلة الربط: Risk → Control → Policy → Process → Query → Exception → Finding → Corrective Action → Evidence → Verification.
    لا سجل جديد للـControls (تبقى داخل كل Risk كما هي)؛ هذه طبقة معرّفات وربط فوق الكيانات الموجودة فعلاً فقط. */
 const PROCESS_TAXONOMY = {
-  sales:      [["customer","العميل","Customer"],["pricing","التسعير","Pricing"],["order","الطلب","Order"],["delivery","التسليم","Delivery"],["invoice","الفوترة","Invoice"],["return","المرتجعات","Return"],["collect","التحصيل","Collection"],["commission","العمولات","Commission"]],
+  sales:      [["customer","العميل","Customer"],["pricing","التسعير","Pricing"],["order","الطلب","Order"],["delivery","التسليم","Delivery"],["invoice","الفوترة","Invoice"],["return","المرتجعات","Return"],["collect","التحصيل","Collection"],["institutionalCredit","إدارة ائتمان العملاء المؤسسيين","Institutional Customer Credit"],["commission","العمولات","Commission"]],
   purchasing: [["pr","طلب الشراء","Purchase Request"],["rfq","عروض الأسعار","RFQ"],["po","أمر الشراء","Purchase Order"],["grpo","إذن الاستلام","GRPO"],["apinv","فاتورة المورد","AP Invoice"],["landed","التكلفة المحملة","Landed Cost"],["payment","الدفع للمورد","Payment"]],
   stock:      [["receipt","الاستلام","Receipt"],["storage","التخزين","Storage"],["transfer","التحويل","Transfer"],["issue","الصرف","Issue"],["batch","الدفعات","Batch"],["count","الجرد","Count"],["variance","الفروقات","Variance"],["disposal","الإتلاف","Disposal"]],
   journal:    [["ar","الذمم المدينة","AR"],["ap","الذمم الدائنة","AP"],["cash","النقدية","Cash"],["banks","البنوك","Banks"],["checks","الشيكات","Checks"],["recon","المطابقات","Reconciliation"],["gl","الأستاذ العام","GL"],["closing","الإقفال","Closing"]],
   hr:         [["employee","الموظف","Employee"],["attendance","الدوام","Attendance"],["payroll","الرواتب","Payroll"],["leave","الإجازات","Leave"],["benefits","المزايا","Benefits"],["eos","نهاية الخدمة","End of Service"]],
+  assets:     [["acquisition","الاقتناء والإضافة","Acquisition"],["tagging","الترقيم والتوسيم","Tagging"],["depreciation","الإهلاك","Depreciation"],["transfer","النقل والتحويل بين الأقسام","Transfer"],["maintenance","الصيانة","Maintenance"],["count","الجرد الفعلي","Physical Count"],["insurance","التأمين","Insurance"],["disposal","الاستبعاد والبيع","Disposal"]],
   fleet:      [["vehicle","المركبة","Vehicle"],["fuel","الوقود","Fuel"],["maintenance","الصيانة","Maintenance"],["cashvan","الكاش فان","Cash Van"],["accident","الحوادث","Accident"],["custody","العهدة","Custody"]],
   sapit:      [["users","المستخدمون","Users"],["roles","الأدوار","Roles"],["permissions","الصلاحيات","Permissions"],["sod","فصل المهام","SoD"],["masterdata","البيانات الرئيسية","Master Data"],["sensitive","معاملات حساسة","Sensitive Transactions"],["audittrail","أثر التدقيق","Audit Trail"]],
-  quality:    [["batch","الدفعات","Batch"],["expiry","الصلاحية","Expiry"],["storage","التخزين","Storage"],["damaged","التالف","Damaged"],["returns","المرتجعات","Returns"],["disposal","الإتلاف","Disposal"]],
+  quality:    [["batch","الدفعات","Batch"],["expiry","الصلاحية","Expiry"],["storage","التخزين","Storage"],["coldChain","سلسلة التبريد (تبريد وتجميد)","Cold Chain"],["damaged","التالف","Damaged"],["returns","المرتجعات","Returns"],["disposal","الإتلاف","Disposal"]],
+  gov:        [["boardEffectiveness","فعالية مجلس الإدارة والإدارة العليا","Board Effectiveness"],["codeOfConduct","مدونة السلوك","Code of Conduct"],["whistleblower","الإبلاغ عن المخالفات","Whistleblower"],["conflictOfInterest","تضارب المصالح","Conflict of Interest"],["relatedParty","المعاملات مع أطراف ذات علاقة","Related Party Transactions"],["keyPersonRisk","مخاطر الشخص الرئيسي والتعاقب الوظيفي","Key Person Risk & Succession"],["orgStructure","الهيكل التنظيمي والصلاحيات","Org Structure"],["policyMgmt","إدارة السياسات والإجراءات","Policy Management"]],
+  erm:        [["framework","إطار إدارة المخاطر","Risk Framework"],["appetite","شهية المخاطر والحدود المقبولة","Risk Appetite"],["identification","تحديد المخاطر الدوري","Risk Identification"],["reporting","رفع تقارير المخاطر للإدارة","Risk Reporting"],["culture","ثقافة إدارة المخاطر","Risk Culture"],["emerging","المخاطر الناشئة","Emerging Risks"]],
+  compliance: [["labor","قانون العمل والضمان الاجتماعي","Labor Law"],["tax","الالتزام الضريبي","Tax Compliance"],["licenses","التراخيص والتصاريح","Licenses & Permits"],["environmental","الالتزامات البيئية","Environmental"],["foodReg","الأنظمة الغذائية والصحية","Food Regulations"],["legalClaims","القضايا والمطالبات القانونية","Legal Claims"]],
+  cyber:      [["access","إدارة الوصول وكلمات المرور","Access Management"],["backup","النسخ الاحتياطي واسترجاع البيانات","Backup & Recovery"],["dataPrivacy","حماية بيانات العملاء","Data Privacy"],["network","أمن الشبكة والأجهزة","Network Security"],["incident","الاستجابة للحوادث السيبرانية","Incident Response"],["patchMgmt","تحديث الأنظمة والحماية","Patch Management"]],
+  bcp:        [["bia","تحليل أثر انقطاع الأعمال","Business Impact Analysis"],["drplan","خطة التعافي من الكوارث","Disaster Recovery Plan"],["backupSite","موقع بديل / نسخ احتياطي بالخارج","Backup Site"],["testing","اختبار الخطة دورياً","Plan Testing"],["emergency","خطة الطوارئ والإخلاء","Emergency Plan"],["insurance","التأمين على الأصول والانقطاع","Business Interruption Insurance"]],
+  hse:        [["ppe","معدات الحماية الشخصية","PPE"],["incidents","إصابات العمل وحوادثه","Workplace Incidents"],["training","تدريب السلامة","Safety Training"],["warehouse","سلامة المستودعات","Warehouse Safety"],["driverSafety","سلامة السائقين والمركبات","Driver Safety"],["fireSafety","السلامة من الحريق","Fire Safety"]],
+  contracts:  [["vendorSelection","اختيار وتقييم الموردين","Vendor Selection"],["contractTerms","شروط العقود ومراجعتها","Contract Terms"],["coi","تضارب المصالح بالتعاقد","Contracting Conflict of Interest"],["renewal","التجديد والإنهاء","Renewal & Termination"],["vendorPerformance","تقييم أداء المورد","Vendor Performance"],["legalReview","المراجعة القانونية للعقود","Legal Review"]],
+  efficiency: [["costControl","ضبط التكاليف","Cost Control"],["budgetVsActual","الموازنة مقابل الفعلي","Budget vs Actual"],["processImprovement","تحسين العمليات","Process Improvement"],["assetUtilization","كفاءة استخدام الأصول والأسطول","Asset Utilization"],["wastage","الهدر والفاقد","Wastage"],["kpiMonitoring","متابعة مؤشرات الأداء","KPI Monitoring"]],
+  fraud:      [["fraudTriangle","عوامل الفرصة والضغط والتبرير","Fraud Triangle"],["redFlags","مؤشرات الاحتيال الشائعة","Red Flags"],["collusion","احتمالية التواطؤ","Collusion Risk"],["whistleblowerFraud","بلاغات مشبوهة سابقة","Prior Tips"],["investigations","تحقيقات سابقة ونتائجها","Prior Investigations"],["fraudControls","ضوابط مكافحة الاحتيال","Anti-Fraud Controls"]],
 };
 function processesFor(catId){ return PROCESS_TAXONOMY[catId] || []; }
 function processLabel(catId, procId){
@@ -9502,6 +9603,7 @@ function loadDB(){
       if(!db.oversight) db.oversight = [];   /* Phase 9 — سجلات المراجعة الإدارية (Management Oversight)، مجموعة معزولة تُنشأ فقط إن لم تكن موجودة */
       if(!db.cashCounts) db.cashCounts = [];   /* سجلات نموذج جرد الصندوق المعتمدة — مجموعة معزولة تُنشأ فقط إن لم تكن موجودة */
       if(!db.testWorkpapers) db.testWorkpapers = [];   /* Wave 1 — أوراق عمل الاختبار (Test Workpapers)، مجموعة معزولة تُنشأ فقط إن لم تكن موجودة */
+      if(!db.jeFiles) db.jeFiles = [];   /* ملفات فحص القيود اليدوي (Journal Entry Testing) — مجموعة معزولة تُنشأ فقط إن لم تكن موجودة */
       /* Traceability Core (Phase 1) — تهيئة دفاعية للحقول الجديدة على السجلات الموجودة فعلاً، بلا قيم مخترعة */
       db.queries.forEach(q=>{
         if(q.processId===undefined) q.processId = null;
@@ -9531,7 +9633,7 @@ function loadDB(){
       return db;
     }
   }catch(e){}
-  return {tasks:[], queries:[], recurring:[], findings:[], risks:[], universe:[], counters:{}, samplingMethods:[], quickNotes:[], policies:[], authority:[], kpis:[], meetings:[], improvements:[], emails:[], engagements:[], evidence:[], checklistTemplates:[], checklistExecutions:[], exceptions:[], oversight:[], cashCounts:[], testWorkpapers:[], settings: defaultSettings()};
+  return {tasks:[], queries:[], recurring:[], findings:[], risks:[], universe:[], counters:{}, samplingMethods:[], quickNotes:[], policies:[], authority:[], kpis:[], meetings:[], improvements:[], emails:[], engagements:[], evidence:[], checklistTemplates:[], checklistExecutions:[], exceptions:[], oversight:[], cashCounts:[], testWorkpapers:[], jeFiles:[], settings: defaultSettings()};
 }
 function saveDB(){
   dashCache = null;
@@ -9790,6 +9892,7 @@ function activateTab(viewName){
   if(viewName==="engagements") renderEngagements();
   if(viewName==="evidence") renderEvidenceCenter();
   if(viewName==="cashcount" && typeof ccRenderSavedList==="function") ccRenderSavedList();
+  if(viewName==="jetest" && typeof jeRenderList==="function") jeRenderList();
   if(viewName==="deptperf") renderDeptPerf();
   if(viewName==="timeanalysis") renderTimeAnalysis();
   if(viewName==="checklists"){ renderChecklistLibrary(); renderChecklistExecOverview(); }
@@ -11558,7 +11661,7 @@ document.getElementById("importFileInput").onchange = (e)=>{
         ["policies","سياسات"], ["authority","مصفوفة صلاحيات"], ["kpis","مؤشرات أداء"],
         ["meetings","اجتماعات"], ["improvements","تحسينات"], ["emails","مراسلات"],
         ["engagements","مهام تدقيق"], ["evidence","أدلة (Evidence)"], ["exceptions","استثناءات التدقيق المستمر"], ["oversight","سجلات المراجعة الإدارية (Oversight)"],
-        ["cashCounts","سجلات جرد الصندوق"], ["testWorkpapers","أوراق عمل الاختبار"],
+        ["cashCounts","سجلات جرد الصندوق"], ["testWorkpapers","أوراق عمل الاختبار"], ["jeFiles","ملفات فحص القيود"],
       ];
       const summary = [];
       collections.forEach(([key,label])=>{
@@ -16291,8 +16394,8 @@ renderDashboard();
 /* ===================== KAYLANI ENTERPRISE SHELL (P1) =====================
    Presentation only. Navigation stays activateTab(); this script never reads or writes storage. */
 (function(){
-  var LABELS = {"dashboard": "لوحة القيادة التنفيذية", "today": "اليوم", "period": "الفترة", "all": "كل المهام", "recurring": "متكررة", "engagements": "مهام التدقيق", "findings": "الملاحظات", "risks": "المخاطر", "universe": "الخطة السنوية", "checklists": "قوالب التدقيق", "policies": "السياسات", "authority": "الصلاحيات", "meetings": "اجتماعات المراجعة", "manual": "الدليل المؤسسي", "kpis": "مؤشرات الأداء", "deptperf": "أداء الأقسام", "timeanalysis": "تحليل الوقت", "improvements": "تحسين العمليات", "emails": "المراسلات", "qlibrary": "الكويريات", "exceptions": "الاستثناءات", "controlmap": "خريطة الرقابة", "reports": "مركز التقارير", "library": "دليل التدقيق", "evidence": "الأدلة (Evidence)", "stats": "الإحصائيات", "settings": "الإعدادات", "cashcount": "نموذج جرد الصندوق"};
-  var DESC = {"dashboard": "الملخص التنفيذي، مركز الإنذار، ودرجة صحة التدقيق", "today": "مهام اليوم وإنجازها وخطة اليوم للطباعة", "period": "مراجعة وتخطيط مهام فترة زمنية", "all": "البحث وإدارة كل المهام", "recurring": "قواعد المهام المتكررة وتوليدها", "engagements": "مهام التدقيق — خطة التدقيق وتنفيذها", "universe": "مجالات التدقيق — الخطة السنوية والتغطية", "findings": "سجل الملاحظات ودورة حياتها حتى الإغلاق", "risks": "سجل المخاطر والضوابط وفعاليتها", "checklists": "مكتبة قوالب تدقيق قابلة لإعادة الاستخدام", "policies": "السياسات واعتمادها ومواعيد مراجعتها", "authority": "مصفوفة الصلاحيات وفصل المهام (SoD)", "meetings": "اجتماعات المراجعة وقراراتها", "manual": "دليل التدقيق الداخلي والحوكمة والرقابة المؤسسية — مرجع كامل قابل للطباعة", "kpis": "مؤشرات الأداء مقابل المستهدف", "deptperf": "مقارنة أداء الأقسام", "timeanalysis": "الساعات المخططة مقابل الفعلية", "stats": "نظرة إحصائية عامة", "improvements": "مبادرات تحسين العمليات", "emails": "المراسلات والردود والمهل", "qlibrary": "مكتبة الكويريات وتوثيق تغييرها", "exceptions": "استثناءات التدقيق المستمر الناتجة عن كويريات المراقبة وقرار المدقق فيها", "controlmap": "عمليات الشركة الثمانية وما هو مرتبط بكل خطوة من مخاطر وضوابط وسياسات وكويريات وملاحظات", "reports": "لوحة مؤشرات الحوكمة و12 تقريراً جاهزاً للطباعة من بيانات النظام الفعلية", "library": "دليل التدقيق المرجعي", "evidence": "الأدلة وربطها بالملاحظات ومهام التدقيق", "settings": "النسخ الاحتياطي والحدود المادية وأوزان الدرجة وطرق العينة", "cashcount": "نموذج جرد الصندوق وعُهد الموظفين النقدية — تعبئة إلكترونية أو يدوية، طباعة، ثم اعتماد لحفظ السجل ومرفقاته محلياً بهذا الجهاز"};
+  var LABELS = {"dashboard": "لوحة القيادة التنفيذية", "today": "اليوم", "period": "الفترة", "all": "كل المهام", "recurring": "متكررة", "engagements": "مهام التدقيق", "findings": "الملاحظات", "risks": "المخاطر", "universe": "الخطة السنوية", "checklists": "قوالب التدقيق", "policies": "السياسات", "authority": "الصلاحيات", "meetings": "اجتماعات المراجعة", "manual": "الدليل المؤسسي", "kpis": "مؤشرات الأداء", "deptperf": "أداء الأقسام", "timeanalysis": "تحليل الوقت", "improvements": "تحسين العمليات", "emails": "المراسلات", "qlibrary": "الكويريات", "exceptions": "الاستثناءات", "controlmap": "خريطة الرقابة", "reports": "مركز التقارير", "library": "دليل التدقيق", "evidence": "الأدلة (Evidence)", "stats": "الإحصائيات", "settings": "الإعدادات", "cashcount": "نموذج جرد الصندوق", "jetest": "فحص القيود اليدوي"};
+  var DESC = {"dashboard": "الملخص التنفيذي، مركز الإنذار، ودرجة صحة التدقيق", "today": "مهام اليوم وإنجازها وخطة اليوم للطباعة", "period": "مراجعة وتخطيط مهام فترة زمنية", "all": "البحث وإدارة كل المهام", "recurring": "قواعد المهام المتكررة وتوليدها", "engagements": "مهام التدقيق — خطة التدقيق وتنفيذها", "universe": "مجالات التدقيق — الخطة السنوية والتغطية", "findings": "سجل الملاحظات ودورة حياتها حتى الإغلاق", "risks": "سجل المخاطر والضوابط وفعاليتها", "checklists": "مكتبة قوالب تدقيق قابلة لإعادة الاستخدام", "policies": "السياسات واعتمادها ومواعيد مراجعتها", "authority": "مصفوفة الصلاحيات وفصل المهام (SoD)", "meetings": "اجتماعات المراجعة وقراراتها", "manual": "دليل التدقيق الداخلي والحوكمة والرقابة المؤسسية — مرجع كامل قابل للطباعة", "kpis": "مؤشرات الأداء مقابل المستهدف", "deptperf": "مقارنة أداء الأقسام", "timeanalysis": "الساعات المخططة مقابل الفعلية", "stats": "نظرة إحصائية عامة", "improvements": "مبادرات تحسين العمليات", "emails": "المراسلات والردود والمهل", "qlibrary": "مكتبة الكويريات وتوثيق تغييرها", "exceptions": "استثناءات التدقيق المستمر الناتجة عن كويريات المراقبة وقرار المدقق فيها", "controlmap": "عمليات الشركة الثمانية وما هو مرتبط بكل خطوة من مخاطر وضوابط وسياسات وكويريات وملاحظات", "reports": "لوحة مؤشرات الحوكمة و12 تقريراً جاهزاً للطباعة من بيانات النظام الفعلية", "library": "دليل التدقيق المرجعي", "evidence": "الأدلة وربطها بالملاحظات ومهام التدقيق", "settings": "النسخ الاحتياطي والحدود المادية وأوزان الدرجة وطرق العينة", "cashcount": "نموذج جرد الصندوق وعُهد الموظفين النقدية — تعبئة إلكترونية أو يدوية، طباعة، ثم اعتماد لحفظ السجل ومرفقاته محلياً بهذا الجهاز", "jetest": "افتح ملف تدقيق لكل دفعة فحص وسجّل حالة وملاحظة كل قيد تفحصه على حدة — توثيق فقط، قابل للاستئناف من آخر قيد وصلت إليه، بلا أي حكم تدقيقي آلي"};
   var I = {
     dash:'<path d="M4 13h6V4H4zM14 20h6V4h-6zM4 20h6v-4H4z"/>', work:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
     audit:'<path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>', find:'<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
@@ -16317,6 +16420,7 @@ renderDashboard();
     {key:"ana", ar:"التحليلات والتقارير", en:"ANALYTICS & REPORTS", ic:I.ana, exec:true, items:[{v:"kpis",exec:true},{v:"deptperf",exec:true},{v:"timeanalysis"},{v:"stats"},{v:"reports",exec:true}]},
     {key:"manual", ar:"الدليل المؤسسي للتدقيق والحوكمة", en:"INSTITUTIONAL AUDIT & GOVERNANCE MANUAL", ic:I.gov, items:[{v:"manual"},{v:"library"}]},
     {key:"cashcount", ar:"نموذج جرد الصندوق", en:"PETTY CASH COUNT FORM", ic:I.tools, items:[{v:"cashcount"}]},
+    {key:"jetest", ar:"فحص القيود اليدوي", en:"MANUAL JOURNAL ENTRY TESTING", ic:I.tools, items:[{v:"jetest"}]},
     {key:"settings", ar:"الإعدادات والصلاحيات", en:"SETTINGS & ACCESS", ic:I.tools, items:[{v:"settings"},{v:"emails"}]}
   ];
   var cur = "dashboard", openKey = "overview", mode = "op";
@@ -16391,7 +16495,7 @@ renderDashboard();
     authorityOverlay:"cancelAuthorityModal", kpiOverlay:"cancelKpiModal", meetingOverlay:"cancelMeetingModal", impOverlay:"cancelImpModal",
     emailOverlay:"cancelEmailModal", samplingOverlay:"cancelSamplingModal", closeCheckOverlay:"cancelCloseCheck", linkOverlay:"closeLinkModal",
     engagementOverlay:"cancelEngagementModal", evidenceOverlay:"cancelEvidenceModal", oversightOverlay:"cancelOversightModal",
-    cashCountViewOverlay:"cancelCashCountView" };
+    cashCountViewOverlay:"cancelCashCountView", jeFileOverlay:"cancelJeFileModal", jeEntryOverlay:"cancelJeEntryModal" };
   var FOCUSABLE = 'a[href],button:not([disabled]),input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])';
   var stack = [];            /* open dialogs, bottom → top: {el, trigger} */
   var lastPointer = null;    /* last element the user interacted with (fallback trigger for non-focusable triggers such as cards) */
@@ -16711,6 +16815,266 @@ renderDashboard();
 
   ccRenderAttachList();
   ccRenderSavedList();
+})();
+</script>
+<script id="je-testing-js">
+/* ===================== MANUAL JOURNAL ENTRY TESTING (سجل فحص القيود) =====================
+   أداة توثيق فقط: تسجيل حالة وملاحظة كل قيد يفحصه المدقق يدوياً، ضمن "ملف تدقيق" قابل للاستئناف.
+   لا حكم أو استنتاج تدقيقي آلي — الحالة (سليم/ملاحظة/يحتاج متابعة) يختارها المدقق نفسه دائماً؛
+   النظام لا يقارن مبالغ ولا يقرر صحة أي قيد. مجموعة DB معزولة (jeFiles) لا تُعدّل أي كيان آخر. */
+(function(){
+  const JE_STATUS_META = {
+    not_checked: {label:"لم يتم الفحص", color:"#94A3B8"},
+    checked_ok:  {label:"تم الفحص — سليم", color:"#16A34A"},
+    checked_note:{label:"تم الفحص — توجد ملاحظة", color:"#F59E0B"},
+    follow_up:   {label:"يحتاج متابعة", color:"#DC2626"},
+  };
+  let currentJeFileId = null;
+
+  function jeFindFile(id){ return (DB.jeFiles||[]).find(f=>f.id===id); }
+  function jeStats(file){
+    const entries = file.entries||[];
+    const total = entries.length;
+    const checked = entries.filter(e=>e.status!=="not_checked");
+    const notes = entries.filter(e=>e.status==="checked_note"||e.status==="follow_up").length;
+    const lastChecked = [...checked].pop();
+    const lastReached = entries[entries.length-1];
+    return {
+      total, checkedCount: checked.length, notes,
+      lastCheckedNo: lastChecked ? lastChecked.entryNo : "—",
+      lastReachedNo: lastReached ? lastReached.entryNo : "—",
+      pct: total ? Math.round((checked.length/total)*100) : 0,
+    };
+  }
+  function jeSuggestNextEntryNo(file){
+    const entries = file.entries||[];
+    const last = entries[entries.length-1];
+    const base = last ? last.entryNo : file.firstEntryNo;
+    if(base && /^\d+$/.test(String(base).trim())){
+      return String(Number(base) + (last ? 1 : 0));
+    }
+    return "";
+  }
+  function jeLastAuditorName(file){
+    const entries = file.entries||[];
+    const last = entries[entries.length-1];
+    return last ? (last.auditorName||"") : "";
+  }
+
+  window.jeRenderList = function jeRenderList(){
+    const box = document.getElementById("jeFilesListBox");
+    if(!box) return;
+    const list = [...(DB.jeFiles||[])].sort((a,b)=> (b.updatedAt||"").localeCompare(a.updatedAt||""));
+    if(!list.length){
+      box.innerHTML = `<div class="empty"><h3>لا ملفات فحص بعد</h3><p>اضغط «+ ملف تدقيق جديد» لبدء ملف فحص قيود، ثم سجّل كل قيد تفحصه على حدة.</p></div>`;
+      return;
+    }
+    const tbody = ktTable(box, [
+      {l:"رقم الملف"}, {l:"الفترة",cls:"w wrap"}, {l:"أول قيد",cls:"w"},
+      {l:"إجمالي القيود",cls:"n",k:"tot"}, {l:"المفحوصة",cls:"n",k:"chk"}, {l:"عليها ملاحظات",cls:"n",k:"note"},
+      {l:"آخر قيد وصلت إليه",cls:"w",k:"last"}, {l:"نسبة الإنجاز",cls:"w",k:"pct"}, {l:"",cls:"w",k:"act"},
+    ], {ariaLabel:"ملفات فحص القيود", minWidth:1100});
+    list.forEach(file=>{
+      const s = jeStats(file);
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td><span class="ttl">${escapeHtml(file.fileNo||"—")}</span> <span class="ref">${escapeHtml(file.refCode)}</span></td>
+        <td class="w wrap">${escapeHtml(file.period||"—")}</td>
+        <td class="w">${escapeHtml(file.firstEntryNo||"—")}</td>
+        <td class="n">${s.total}</td>
+        <td class="n">${s.checkedCount}</td>
+        <td class="n">${s.notes}</td>
+        <td class="w">${escapeHtml(String(s.lastReachedNo))}</td>
+        <td class="w">${s.pct}%</td>
+        <td class="w"><button type="button" class="btn btn-ghost btn-sm je-open-btn kt-edit">فتح</button> <button type="button" class="btn btn-ghost btn-sm je-del-file-btn" title="حذف الملف">🗑</button></td>`;
+      tr.querySelector(".je-open-btn").onclick = ()=> jeOpenFile(file.id);
+      tr.querySelector(".je-del-file-btn").onclick = ()=>{
+        if(!confirm(`حذف ملف «${file.fileNo||file.refCode}» بكل قيوده المسجّلة (${s.total})؟ لا يمكن التراجع عن هذا.`)) return;
+        DB.jeFiles = DB.jeFiles.filter(f=>f.id!==file.id);
+        saveDB();
+        jeRenderList();
+      };
+      tbody.appendChild(tr);
+    });
+  };
+
+  function jeShowListPanel(){
+    currentJeFileId = null;
+    document.getElementById("jeFilePanel").style.display = "none";
+    document.getElementById("jeListPanel").style.display = "";
+    jeRenderList();
+  }
+  function jeOpenFile(id){
+    const file = jeFindFile(id);
+    if(!file) return;
+    currentJeFileId = id;
+    document.getElementById("jeListPanel").style.display = "none";
+    document.getElementById("jeFilePanel").style.display = "";
+    jeRenderFileDetail(file);
+  }
+  document.getElementById("jeBackBtn").addEventListener("click", jeShowListPanel);
+
+  function jeRenderFileDetail(file){
+    const s = jeStats(file);
+    document.getElementById("jeFileHead").innerHTML = `
+      <div style="display:flex;flex-wrap:wrap;gap:6px 22px;font-size:13px;">
+        <div><b>${escapeHtml(file.fileNo||"—")}</b> <span class="ref" style="color:var(--kd-muted);">${escapeHtml(file.refCode)}</span></div>
+        <div>الفترة: <b>${escapeHtml(file.period||"—")}</b></div>
+        <div>أول رقم قيد: <b>${escapeHtml(file.firstEntryNo||"—")}</b></div>
+      </div>`;
+    document.getElementById("jeStatCards").innerHTML = `
+      <div class="stat-card"><b>${s.total}</b><span>إجمالي القيود المسجَّلة</span></div>
+      <div class="stat-card"><b style="color:#16A34A">${s.checkedCount}</b><span>عدد القيود المفحوصة</span></div>
+      <div class="stat-card"><b style="color:#F59E0B">${s.notes}</b><span>قيود عليها ملاحظات</span></div>
+      <div class="stat-card"><b>${escapeHtml(String(s.lastCheckedNo))}</b><span>آخر رقم قيد تم فحصه</span></div>
+      <div class="stat-card"><b>${escapeHtml(String(s.lastReachedNo))}</b><span>آخر قيد وصلت إليه</span></div>
+      <div class="stat-card"><b>${s.pct}%</b><span>نسبة الإنجاز</span></div>
+    `;
+    jeRenderEntries(file);
+  }
+
+  function jeRenderEntries(file){
+    const box = document.getElementById("jeEntriesBox");
+    const entries = file.entries||[];
+    if(!entries.length){
+      box.innerHTML = `<div class="empty"><h3>لا قيود مُسجَّلة بعد</h3><p>اضغط «+ تسجيل فحص قيد» لبدء فحص القيود واحداً واحداً.</p></div>`;
+      return;
+    }
+    const tbody = ktTable(box, [
+      {l:"رقم الملف",cls:"w"}, {l:"رقم القيد",cls:"w"}, {l:"تاريخ القيد",cls:"w"}, {l:"الحساب"},
+      {l:"المبلغ",cls:"n",k:"amt"}, {l:"حالة الفحص",cls:"w",k:"st"}, {l:"الملاحظة"}, {l:"المرجع/المستند",cls:"w wrap"},
+      {l:"اسم المدقق",cls:"w"}, {l:"تاريخ الفحص",cls:"w"}, {l:"",cls:"w",k:"act"},
+    ], {ariaLabel:"سجل فحص القيود", minWidth:1300});
+    entries.forEach(entry=>{
+      const stMeta = JE_STATUS_META[entry.status] || JE_STATUS_META.not_checked;
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td class="w">${escapeHtml(file.fileNo||file.refCode)}</td>
+        <td class="w">${escapeHtml(entry.entryNo||"—")}</td>
+        <td class="w">${entry.entryDate? ktShortDate(entry.entryDate) : "—"}</td>
+        <td>${escapeHtml(entry.account||"—")}</td>
+        <td class="n">${escapeHtml(entry.amount||"—")}</td>
+        <td class="w"><span class="kd-chip" style="background:${stMeta.color}1a;color:${stMeta.color}"><i></i>${stMeta.label}</span></td>
+        <td>${entry.note? escapeHtml(entry.note) : "—"}</td>
+        <td class="w wrap">${escapeHtml(entry.refDoc||"—")}</td>
+        <td class="w">${escapeHtml(entry.auditorName||"—")}</td>
+        <td class="w">${entry.checkDate? ktShortDate(entry.checkDate) : "—"}</td>
+        <td class="w"><button type="button" class="btn btn-ghost btn-sm je-edit-entry-btn kt-edit">تعديل</button> <button type="button" class="btn btn-ghost btn-sm je-del-entry-btn" title="حذف القيد">🗑</button></td>`;
+      tr.querySelector(".je-edit-entry-btn").onclick = ()=> jeOpenEntryModal(file, entry);
+      tr.querySelector(".je-del-entry-btn").onclick = ()=>{
+        if(!confirm(`حذف تسجيل فحص القيد رقم «${entry.entryNo||""}»؟`)) return;
+        file.entries = file.entries.filter(e=>e.id!==entry.id);
+        file.updatedAt = new Date().toISOString();
+        saveDB();
+        jeRenderFileDetail(file);
+      };
+      tbody.appendChild(tr);
+    });
+  }
+
+  /* ---------- ملف تدقيق: إضافة / تعديل ---------- */
+  document.getElementById("addJeFileBtn").addEventListener("click", ()=> jeOpenFileModal(null));
+  document.getElementById("editJeFileBtn").addEventListener("click", ()=>{
+    const file = jeFindFile(currentJeFileId);
+    if(file) jeOpenFileModal(file);
+  });
+  function jeOpenFileModal(file){
+    document.getElementById("jeFileModalTitle").textContent = file ? `تعديل بيانات الملف — ${file.refCode}` : "ملف تدقيق جديد";
+    document.getElementById("jeFileEditId").value = file ? file.id : "";
+    document.getElementById("jeFFileNo").value = file ? (file.fileNo||"") : "";
+    document.getElementById("jeFPeriod").value = file ? (file.period||"") : "";
+    document.getElementById("jeFFirstEntry").value = file ? (file.firstEntryNo||"") : "";
+    document.getElementById("jeFileOverlay").classList.add("active");
+  }
+  document.getElementById("cancelJeFileModal").addEventListener("click", ()=> document.getElementById("jeFileOverlay").classList.remove("active"));
+  document.getElementById("saveJeFileBtn").addEventListener("click", ()=>{
+    const fileNo = document.getElementById("jeFFileNo").value.trim();
+    if(!fileNo){ alert("الرجاء إدخال رقم الملف."); return; }
+    const editId = document.getElementById("jeFileEditId").value;
+    const period = document.getElementById("jeFPeriod").value.trim();
+    const firstEntryNo = document.getElementById("jeFFirstEntry").value.trim();
+    const now = new Date().toISOString();
+    if(editId){
+      const file = jeFindFile(editId);
+      if(file){ file.fileNo = fileNo; file.period = period; file.firstEntryNo = firstEntryNo; file.updatedAt = now; }
+    } else {
+      const file = {
+        id: uid(),
+        refCode: nextRefCode("JE","jeFiles"),
+        fileNo, period, firstEntryNo,
+        entries: [],
+        createdAt: now, updatedAt: now,
+      };
+      DB.jeFiles.push(file);
+      currentJeFileId = file.id;
+    }
+    saveDB();
+    document.getElementById("jeFileOverlay").classList.remove("active");
+    const file = jeFindFile(currentJeFileId || editId);
+    if(file && document.getElementById("jeFilePanel").style.display !== "none"){ jeRenderFileDetail(file); }
+    else { jeRenderList(); }
+  });
+
+  /* ---------- قيد: إضافة / تعديل ---------- */
+  document.getElementById("addJeEntryBtn").addEventListener("click", ()=>{
+    const file = jeFindFile(currentJeFileId);
+    if(file) jeOpenEntryModal(file, null);
+  });
+  function jeOpenEntryModal(file, entry){
+    document.getElementById("jeEntryModalTitle").textContent = entry ? `تعديل تسجيل فحص — قيد ${entry.entryNo||""}` : "تسجيل فحص قيد";
+    document.getElementById("jeEntryEditId").value = entry ? entry.id : "";
+    document.getElementById("jeEntryFileId").value = file.id;
+    document.getElementById("jeEEntryNo").value = entry ? (entry.entryNo||"") : jeSuggestNextEntryNo(file);
+    document.getElementById("jeEEntryDate").value = entry ? (entry.entryDate||"") : "";
+    document.getElementById("jeEAccount").value = entry ? (entry.account||"") : "";
+    document.getElementById("jeEAmount").value = entry ? (entry.amount||"") : "";
+    document.getElementById("jeEStatus").value = entry ? (entry.status||"not_checked") : "checked_ok";
+    document.getElementById("jeENote").value = entry ? (entry.note||"") : "";
+    document.getElementById("jeERef").value = entry ? (entry.refDoc||"") : "";
+    document.getElementById("jeEAuditor").value = entry ? (entry.auditorName||"") : jeLastAuditorName(file);
+    document.getElementById("jeECheckDate").value = entry ? (entry.checkDate||"") : todayStr();
+    document.getElementById("jeEntryOverlay").classList.add("active");
+    document.getElementById("jeEEntryNo").focus();
+  }
+  document.getElementById("cancelJeEntryModal").addEventListener("click", ()=> document.getElementById("jeEntryOverlay").classList.remove("active"));
+  document.getElementById("saveJeEntryBtn").addEventListener("click", ()=>{
+    const fileId = document.getElementById("jeEntryFileId").value;
+    const file = jeFindFile(fileId);
+    if(!file) return;
+    const entryNo = document.getElementById("jeEEntryNo").value.trim();
+    if(!entryNo){ alert("الرجاء إدخال رقم القيد."); return; }
+    const status = document.getElementById("jeEStatus").value;
+    const note = document.getElementById("jeENote").value.trim();
+    if((status==="checked_note" || status==="follow_up") && !note){
+      alert("الرجاء كتابة الملاحظة — إلزامية عند اختيار «توجد ملاحظة» أو «يحتاج متابعة».");
+      return;
+    }
+    const fields = {
+      entryNo,
+      entryDate: document.getElementById("jeEEntryDate").value,
+      account: document.getElementById("jeEAccount").value.trim(),
+      amount: document.getElementById("jeEAmount").value.trim(),
+      status, note,
+      refDoc: document.getElementById("jeERef").value.trim(),
+      auditorName: document.getElementById("jeEAuditor").value.trim(),
+      checkDate: document.getElementById("jeECheckDate").value,
+    };
+    const editId = document.getElementById("jeEntryEditId").value;
+    const now = new Date().toISOString();
+    if(!file.entries) file.entries = [];
+    if(editId){
+      const entry = file.entries.find(e=>e.id===editId);
+      if(entry) Object.assign(entry, fields, {updatedAt: now});
+    } else {
+      file.entries.push(Object.assign({id: uid(), createdAt: now, updatedAt: now}, fields));
+    }
+    file.updatedAt = now;
+    saveDB();
+    document.getElementById("jeEntryOverlay").classList.remove("active");
+    jeRenderFileDetail(file);
+  });
+
+  jeRenderList();
 })();
 </script>
 </body>
