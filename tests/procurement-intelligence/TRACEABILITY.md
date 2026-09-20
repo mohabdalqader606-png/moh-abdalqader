@@ -3,12 +3,12 @@
 This maps every test *group* in this directory to the business rule it exercises and, where
 applicable, to the control ID from the Phase 1 Big-4 audit's control matrix (`audit_report.html
 §10`, control IDs C-01..C-10). It is a rule-level map (suite / scenario grain), not a
-per-assertion listing — for the full flat list of all 286 individual checks (their exact IDs,
+per-assertion listing — for the full flat list of all 294 individual checks (their exact IDs,
 names, pass/fail state and category), run `node run-all.js` and read `results/latest.json`, which
 is generated fresh on every run and is the authoritative, machine-readable source of truth. This
 file explains *why* each group exists; `results/latest.json` proves *whether it currently passes*.
 
-**P0-A vs P0-B vs P1-C vs P1-A**: the first 246 checks (business-logic/e2e/golden-dataset/data-validation/
+**P0-A vs P0-B vs P1-C vs P1-A vs P1-B**: the first 246 checks (business-logic/e2e/golden-dataset/data-validation/
 determinism) are the P0-A permanent regression foundation and must never change their pass count
 as a result of any later phase. The 18 `DE-*` checks are P0-B, testing the Decision Evidence layer
 (see `../المشتريات_الخارجية_الذكية.html`'s `EVIDENCE` module and `AUDIT_EVIDENCE_EXAMPLE.md`). The
@@ -19,7 +19,13 @@ independently reconstructable from stored evidence alone. The 16 `P1A-*` checks 
 second authorized item from P0-B's confirmed-gap list — see `p1a-auditor-access.spec.js`), adding
 an orthogonal `audit_access` capability (`myAuditAccess`/`hasAuditAccess()`) that grants
 Decision-Evidence-only access independent of the existing VIEW/INPUT/ADMIN tiers, without ever
-adding or removing any operational capability those tiers already grant. 246 + 18 + 6 + 16 = 286.
+adding or removing any operational capability those tiers already grant. The 8 `P1B-*` checks are
+P1-B (the third authorized item from P0-B's confirmed-gap list — see
+`p1b-override-reason.spec.js`), adding a mandatory override reason (`reasonCategory`, plus a
+mandatory `reasonComment` when `reasonCategory='OTHER'`) that `planSetQty()` now requires before
+it will save a quantity override at all — two pre-existing tests (`decision-evidence.spec.js`'s
+DE-12/DE-12b and `e2e.spec.js`'s check 15b) were updated to set a `reasonCategory` first as a
+precondition fix, not a result change; their assertions are unchanged. 246 + 18 + 6 + 16 + 8 = 294.
 
 ## Control matrix reference (from Phase 1 audit)
 
@@ -201,6 +207,27 @@ persisted with no valid operational permission — the realistic minimum-privile
 | P1A-12 | A decision evidence record seeded before any P1-A code runs remains byte-for-byte unchanged after a real ADMIN engine run — P1-A made zero writes to the evidence store | 1 | C-09, C-10 |
 | P1A-13 | INPUT + `audit_access=true` — `runEngine()` still works normally; `audit_access` never takes away capability an existing permission tier already grants | 1 | C-03, C-10 |
 | P1A-14 | `hasAuditAccess()` reflects `myAuditAccess` literally, independent of `myPermission` — confirms it is a genuinely orthogonal flag, not derived from `PERM_RANK` | 1 | C-03 |
+
+## p1b-override-reason.spec.js (`P1B-*`, 8 checks — new in P1-B)
+
+Tests the mandatory override reason added under the P1-B implementation contract: `planSetQty()`
+now requires `STATE.planOverrides[code].reasonCategory` to be one of `OVERRIDE_REASON_CATEGORIES`,
+and additionally requires a non-empty (post-trim) `reasonComment` when the category is `OTHER`,
+before it will save anything — neither the actual override quantity nor the `EVIDENCE.
+captureOverride()` audit record are written on rejection. All map to C-03 (access/action control —
+this gates a *save*, not a permission tier) and C-09 (auditability — every override now carries a
+documented reason).
+
+| ID | Test | Requirement (P1-B contract item) | Control |
+|---|---|---|---|
+| P1B-01 | No `reasonCategory` at all → save rejected: no quantity change, no audit record | 1, 3 | C-03 |
+| P1B-02 | `reasonCategory='OTHER'` with no `reasonComment` → save rejected | 2, 3 | C-03 |
+| P1B-02b | `reasonCategory='OTHER'` with a whitespace-only `reasonComment` → still treated as missing, save rejected | 2, 3 | C-03 |
+| P1B-03 | A standard (non-`OTHER`) `reasonCategory` → save succeeds; the audit record carries the exact category, `reasonComment=null` | 1 | C-03, C-09 |
+| P1B-04 | `reasonCategory='OTHER'` WITH a real `reasonComment` → save succeeds; both fields stored verbatim | 2 | C-03, C-09 |
+| P1B-05 | A pre-P1B-shaped `decisionOverrides` record (no `reasonCategory`/`reasonComment` keys) survives a new valid override on a different item completely unchanged — no retroactive field injection | 4 | C-09, C-10 |
+| P1B-06 | Full pre-P1B override guarantees (original decision fingerprint unchanged, override correctly linked) still hold under the new mandatory-reason precondition | 4, 8 | C-04, C-09, C-10 |
+| P1B-07 | A VIEW-tier user is still blocked by `requirePermission('input', …)` regardless of whether a reason was set — the reason gate sits strictly after the permission gate, never before it | 6 | C-03, C-10 |
 
 ## Coverage summary (from the most recent `run-all.js` run)
 

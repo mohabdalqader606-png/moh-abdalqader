@@ -11,7 +11,10 @@ confirmed-gap items to be authorized for implementation: one additive historical
 reproducibility), then extended again under "P1-A" (the second of P0-B's own confirmed-gap items:
 an orthogonal `audit_access` capability — `myAuditAccess`/`hasAuditAccess()` — granting
 Decision-Evidence-only access independent of the existing VIEW/INPUT/ADMIN tiers, with no change
-to those tiers' own behavior). See RECOVERY.md for exactly what P0-A's tests recovered from prior
+to those tiers' own behavior), then extended again under "P1-B" (the third of P0-B's own
+confirmed-gap items: a mandatory override reason — `reasonCategory`, plus a mandatory
+`reasonComment` when `reasonCategory='OTHER'` — required before `planSetQty()` will save a
+quantity override at all). See RECOVERY.md for exactly what P0-A's tests recovered from prior
 (uncommitted) work vs. newly authored, and TRACEABILITY.md for what each test group proves and
 how it maps to the Phase 1 audit's control matrix.
 
@@ -29,7 +32,8 @@ how it maps to the Phase 1 audit's control matrix.
 | `decision-evidence.spec.js` | 18 | **(P0-B)** The `EVIDENCE` module: decision identity, fingerprint determinism/sensitivity, actor capture, historical immutability against config changes, overrides, failure handling. |
 | `p1c-confidence-reproducibility.spec.js` | 6 | **(P1-C)** The `inputSnapshot.hasInventoryRecord` field: presence/absence, independent Confidence-label reconstruction, historical immutability, fingerprint sensitivity. |
 | `p1a-auditor-access.spec.js` | 16 | **(P1-A)** The `audit_access` capability (`myAuditAccess`/`hasAuditAccess()`): audit-only evidence access, operational denial (engine/quantities/tunables/historical lock), VIEW/INPUT/ADMIN regression, the schema-impossible `audit_access=true`+`permission=null` edge case, historical evidence immutability. |
-| `run-all.js` | — | Orchestrates all eight suites above, writes `results/run-<timestamp>.json` and `results/latest.json`. |
+| `p1b-override-reason.spec.js` | 8 | **(P1-B)** Mandatory override reason: missing reason rejected, `OTHER` without comment rejected (incl. whitespace-only), valid standard reason accepted, `OTHER` with comment accepted, historical override records unchanged, full override-flow regression, VIEW/INPUT/ADMIN authorization unaffected. |
+| `run-all.js` | — | Orchestrates all nine suites above, writes `results/run-<timestamp>.json` and `results/latest.json`. |
 | `results/` | — | Generated JSON reports (traceability + coverage-by-category). Not hand-edited. |
 | `TRACEABILITY.md` | — | Test ID → scenario → business rule → control-matrix mapping. |
 | `RECOVERY.md` | — | Honest accounting of recovered vs. newly-authored test code (P0-A). |
@@ -55,7 +59,7 @@ cd tests/procurement-intelligence
 NODE_PATH=/opt/node22/lib/node_modules node run-all.js
 ```
 
-Run a subset of suites by key (`bl`, `e2e`, `golden`, `dv`, `det`, `de`, `p1c`, `p1a`):
+Run a subset of suites by key (`bl`, `e2e`, `golden`, `dv`, `det`, `de`, `p1c`, `p1a`, `p1b`):
 
 ```bash
 NODE_PATH=/opt/node22/lib/node_modules node run-all.js bl,golden
@@ -74,6 +78,7 @@ NODE_PATH=/opt/node22/lib/node_modules node determinism.spec.js
 NODE_PATH=/opt/node22/lib/node_modules node decision-evidence.spec.js    # P0-B
 NODE_PATH=/opt/node22/lib/node_modules node p1c-confidence-reproducibility.spec.js  # P1-C
 NODE_PATH=/opt/node22/lib/node_modules node p1a-auditor-access.spec.js              # P1-A
+NODE_PATH=/opt/node22/lib/node_modules node p1b-override-reason.spec.js             # P1-B
 ```
 
 A full `run-all.js` pass currently takes well under a minute (business-logic and e2e each launch

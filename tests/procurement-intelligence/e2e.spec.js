@@ -193,6 +193,11 @@ async function main() {
   const planTxt = await page.$eval('#planGroups', e => e.innerText);
   check('15. Purchase plan grouped by supplier with totals', planTxt.includes('إجمالي أمر الشراء') && planTxt.includes('مورد تركي') && planTxt.includes('طن'), `selected=${selCount}`);
   const qtyInput = await page.$('#planTable input.cell-input');
+  // P1-B: a reasonCategory is now mandatory before an override-quantity edit is saved — select
+  // one in the same row first, otherwise the edit below is correctly rejected and this check
+  // would fail for the wrong reason (missing precondition, not a real regression).
+  const qtyRow = await qtyInput.evaluateHandle(el => el.closest('tr'));
+  await qtyRow.asElement().$eval('select.cell-reason', el => { el.value = 'DATA_CORRECTION'; el.dispatchEvent(new Event('change', { bubbles: true })); });
   await qtyInput.fill('750'); await qtyInput.dispatchEvent('change'); await page.waitForTimeout(200);
   check('15b. Edit qty reflected in plan', (await page.$eval('#planGroups', e => e.innerText)).includes('750'));
   await page.click('#view-plan button:has-text("إلغاء تحديد الكل")'); await page.waitForTimeout(80);

@@ -172,6 +172,8 @@
   .row-select{width:15px;height:15px;cursor:pointer;accent-color:var(--navy);}
   input.cell-input{width:92px;border:1px solid var(--line-strong);border-radius:4px;padding:3px 6px;font-family:var(--mono);font-size:12px;direction:ltr;text-align:left;}
   input.cell-note{width:170px;border:1px solid var(--line-strong);border-radius:4px;padding:3px 6px;font-size:11.5px;font-family:var(--disp);}
+  select.cell-reason{display:block;margin-top:4px;width:170px;border:1px solid var(--line-strong);border-radius:4px;padding:3px 6px;font-size:11px;font-family:var(--disp);}
+  input.cell-reason-comment{display:block;margin-top:4px;width:170px;border:1px solid var(--line-strong);border-radius:4px;padding:3px 6px;font-size:11px;font-family:var(--disp);}
   .empty-state{padding:36px 20px;text-align:center;color:var(--ink-4);font-size:12.5px;}
   .empty-state b{display:block;color:var(--ink-3);font-size:13px;margin-bottom:4px;}
 
@@ -2202,7 +2204,7 @@ const EVIDENCE = {
       (planSetQty) بلا أي ورشة اعتماد جديدة (قسم 12). لا يعدّل سجل الدليل الأصلي إطلاقاً؛
       لو ما في دليل سابق لهذا الصنف (المحرك ما شُغِّل منذ نشر P0-B) يُسجَّل ذلك صراحةً كـ
       NO_PRIOR_EVIDENCE بدل اختلاق دليل أصلي. */
-  async captureOverride(itemCode, newQty, reason){
+  async captureOverride(itemCode, newQty, reason, reasonCategory, reasonComment){
     try{
       const original = await this.latestForItem(itemCode);
       const actor = this.actorSnapshot();
@@ -2214,6 +2216,9 @@ const EVIDENCE = {
         originalQty: original ? original.outputSnapshot.recommendedQty : null,
         originalFingerprint: original ? original.fingerprint : null,
         overrideQty: newQty, reason: reason || null,
+        // P1-B — سبب التجاوز الإلزامي: إضافيان فقط، لا يمسّان أي حقل سابق (بما فيها reason
+        // أعلاه، التي تبقى كما كانت). سجلات ما قبل P1-B ما إلها هالحقلين إطلاقاً — بلا هجرة رجعية.
+        reasonCategory: reasonCategory || null, reasonComment: reasonComment || null,
       };
       await DB.putOne('decisionOverrides', rec);
       return rec;
@@ -2441,6 +2446,18 @@ function uomOf(itemCode){ const it = IDX.first('items','ItemCode',itemCode); ret
 function unitWeightOf(itemCode){ const it = IDX.first('items','ItemCode',itemCode); return it && Number(it.UnitWeight)>0 ? Number(it.UnitWeight) : null; }
 function effectiveQty(r){ const ov = STATE.planOverrides[r.ItemCode]; return (ov && ov.qty!=null && ov.qty!=='' && !isNaN(Number(ov.qty))) ? Number(ov.qty) : r.recommendedQty; }
 function planNote(r){ const ov = STATE.planOverrides[r.ItemCode]; return ov && ov.note ? ov.note : ''; }
+/** P1-B: سبب التجاوز الإلزامي — تصنيف واحد من قائمة ثابتة، بالإضافة لتوضيح حر إلزامي فقط
+    عند اختيار OTHER. مخزَّن ضمن نفس سجل planOverrides (مثل qty/note)، لا جدول جديد. */
+const OVERRIDE_REASON_CATEGORIES = {
+  DEMAND_SIGNAL: 'إشارة طلب فعلية (مبيعات/عميل)',
+  SUPPLIER_CONSTRAINT: 'قيد من المورد (كمية دنيا/توفر)',
+  BUDGET_CONSTRAINT: 'قيد ميزانية/تدفق نقدي',
+  DATA_CORRECTION: 'تصحيح بيانات (مخزون/مبيعات خاطئة)',
+  MANAGEMENT_DECISION: 'قرار إداري',
+  OTHER: 'غير ذلك — يتطلب توضيحاً',
+};
+function planReasonCategory(r){ const ov = STATE.planOverrides[r.ItemCode]; return ov && ov.reasonCategory ? ov.reasonCategory : ''; }
+function planReasonComment(r){ const ov = STATE.planOverrides[r.ItemCode]; return ov && ov.reasonComment ? ov.reasonComment : ''; }
 function expectedArrivalFor(r){
   if(r.status==='IN_TRANSIT' || (r.incoming>0 && r.recommendedQty<=0)){
     const dates = POTRACK.statusFor(r.ItemCode).map(l=>l.expectedArrival).filter(d=>d instanceof Date);
@@ -2606,7 +2623,12 @@ function renderNeedsOrderTable(hostId, tableKey, rows, opts){
     <td class="num ${r.openSO?'':'muted'}">${U.num(r.openSO)}</td>
     <td class="num ${r.incoming?'':'muted'}">${U.num(r.incoming)}${r.unconfirmedIncoming>0?`<div style="font-size:10px;color:var(--red);white-space:nowrap" title="بضاعة متوقعة غير مؤكدة — تحتاج تاريخ وصول">+${U.num(r.unconfirmedIncoming)} غير مؤكد</div>`:''}</td>
     <td class="num">${r.leadTime.days} <span class="muted" style="font-size:10px">يوم</span></td>
-    <td class="num strong">${opts.editable?`<input class="cell-input" type="number" min="0" value="${effectiveQty(r)}" onchange="planSetQty('${U.esc(r.ItemCode)}', this.value)">`:U.num(effectiveQty(r))}</td>
+    <td class="num strong">${opts.editable?`<input class="cell-input" type="number" min="0" value="${effectiveQty(r)}" onchange="planSetQty('${U.esc(r.ItemCode)}', this.value)">
+      <select class="cell-reason" onchange="planSetReasonCategory('${U.esc(r.ItemCode)}', this.value)">
+        <option value="">سبب التجاوز…</option>
+        ${Object.keys(OVERRIDE_REASON_CATEGORIES).map(k=>`<option value="${k}" ${planReasonCategory(r)===k?'selected':''}>${U.esc(OVERRIDE_REASON_CATEGORIES[k])}</option>`).join('')}
+      </select>
+      <input class="cell-reason-comment" placeholder="توضيح (إلزامي فقط لو 'غير ذلك')" value="${U.esc(planReasonComment(r))}" onchange="planSetReasonComment('${U.esc(r.ItemCode)}', this.value)">`:U.num(effectiveQty(r))}</td>
     <td class="muted">${U.esc(uomOf(r.ItemCode))}</td>
     <td>${fmtArrival(expectedArrivalFor(r))}</td>
     <td>${confidenceBadge(r.confidence)}</td>
@@ -2815,8 +2837,33 @@ function planSelectVisible(on){
   getRecos().filter(r=>r.status===STATE.planTab).forEach(r=>{ if(on) STATE.planSelection.add(r.ItemCode); else STATE.planSelection.delete(r.ItemCode); });
   TABLES.plan();
 }
-function planSetQty(code, val){ if(!requirePermission('input', 'تعديل كمية الخطة')) return; const newQty=Number(val); setPlanOverride(code, {qty:newQty}).then(()=>{ if(STATE.planBuilt) buildSupplierPlan(true); }); EVIDENCE.captureOverride(code, newQty, (STATE.planOverrides[code]||{}).note||null).catch(e=>console.warn('[EVIDENCE] فشل تسجيل حدث تجاوز الكمية — التجاوز نفسه محفوظ وسليم', e)); }
+/** P1-B: سبب التجاوز إلزامي قبل حفظ أي تعديل كمية (planSetQty) — تصنيف واحد على الأقل،
+    وتوضيح حر إلزامي إضافي فقط لو التصنيف OTHER. الرفض هنا يمنع setPlanOverride/captureOverride
+    كليهما (لا حفظ جزئي)، ويُعاد رسم الصف فوراً ليرجع حقل الكمية لقيمته الفعلية غير المتغيّرة. */
+function planSetQty(code, val){
+  if(!requirePermission('input', 'تعديل كمية الخطة')) return;
+  const newQty = Number(val);
+  const ov = STATE.planOverrides[code] || {};
+  const reasonCategory = ov.reasonCategory || '';
+  const reasonComment = (ov.reasonComment || '').trim();
+  if(!reasonCategory || !OVERRIDE_REASON_CATEGORIES.hasOwnProperty(reasonCategory)){
+    U.toast('لازم تختار سبب التجاوز (Reason) قبل تعديل الكمية', 'err');
+    rerenderActiveView();
+    return;
+  }
+  if(reasonCategory==='OTHER' && !reasonComment){
+    U.toast('اخترت "غير ذلك" — لازم تكتب توضيحاً قبل حفظ التجاوز', 'err');
+    rerenderActiveView();
+    return;
+  }
+  setPlanOverride(code, {qty:newQty}).then(()=>{ if(STATE.planBuilt) buildSupplierPlan(true); });
+  EVIDENCE.captureOverride(code, newQty, (STATE.planOverrides[code]||{}).note||null, reasonCategory, reasonCategory==='OTHER'?reasonComment:(reasonComment||null)).catch(e=>console.warn('[EVIDENCE] فشل تسجيل حدث تجاوز الكمية — التجاوز نفسه محفوظ وسليم', e));
+}
 function planSetNote(code, val){ if(!requirePermission('input', 'تعديل ملاحظة الخطة')) return; setPlanOverride(code, {note:val}); }
+/** P1-B: يسجّلان فقط اختيار المستخدم الحالي لسبب التجاوز — لا يشكّلان "حفظ تجاوز" بحد ذاتهما
+    (ما في تعديل كمية هون)، فلا بوابة تحقق عليهما — التحقق كله عند planSetQty نفسها فوق. */
+function planSetReasonCategory(code, val){ if(!requirePermission('input', 'تحديد سبب التجاوز')) return; setPlanOverride(code, {reasonCategory: val||null}); }
+function planSetReasonComment(code, val){ if(!requirePermission('input', 'توضيح سبب التجاوز')) return; setPlanOverride(code, {reasonComment: val||null}); }
 
 /** تجميع الأصناف المختارة حسب المورد (نفس منطق التجميع بالمحرك: المورد الغالب لكل صنف + مدة توريده)
     يستخدم getRecos() (المفلترة) لا getRecosAll() — حتى تحترم خطة الشراء الفلاتر الفعّالة (مورد/صنف/...)

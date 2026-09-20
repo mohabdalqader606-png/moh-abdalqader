@@ -181,6 +181,10 @@ async function main() {
     await importBaseline(page, 'DE12');
     await runEvidence(page);
     const original = await page.evaluate(() => EVIDENCE.latestForItem('DE12'));
+    // P1-B: planSetQty now requires a reasonCategory (mandatory override reason) before it will
+    // save anything — set one first so this test keeps exercising exactly what it always did
+    // (override capture / original-decision immutability), unaffected by the reason requirement itself.
+    await page.evaluate(() => { planSetReasonCategory('DE12', 'DATA_CORRECTION'); });
     await page.evaluate(() => { planSetQty('DE12', 777); });
     await page.waitForTimeout(100);
     const stillOriginal = await page.evaluate((id) => DB.getOne('decisionEvidence', id), original.decisionId);
@@ -194,6 +198,7 @@ async function main() {
   await withPage(browser, async (page) => {
     await page.imp('inventory', L([H.inventory, invRow('DE12B', 10)]));
     await page.refresh();
+    await page.evaluate(() => { planSetReasonCategory('DE12B', 'DATA_CORRECTION'); }); // P1-B precondition
     await page.evaluate(() => { planSetQty('DE12B', 55); }); // requires 'input' permission — freshPage() defaults to ADMIN, which satisfies it
     await page.waitForTimeout(100);
     const ov = await page.evaluate(() => EVIDENCE.overridesForDecision(null));
