@@ -2484,15 +2484,47 @@ function openWhyDrawer(itemCode){
 function renderRisks(){
   const el = document.getElementById('view-risks');
   el.innerHTML = `
-    <div class="page-title"><div><h1>المخاطر</h1><div class="sub">انقطاع المخزون · الصلاحية · الفائض</div></div>
+    <div class="page-title"><div><h1>المخاطر</h1><div class="sub">انقطاع المخزون · الصلاحية · الفائض · أوامر شراء بحاجة تأكيد وصول</div></div>
       <div class="actions"><button class="btn-ghost btn-sm" onclick="printCurrentView()">طباعة</button></div></div>
     <section class="panel"><div class="panel-head"><div><h2>خطر انقطاع المخزون</h2><div class="hint">أصناف منقطعة/حرجة الآن، أو لها سجل انقطاع مؤكد</div></div></div><div id="riskStockout"></div></section>
     <section class="panel"><div class="panel-head"><div><h2>مخاطر الصلاحية</h2><div class="hint">باتشات منتهية أو قريبة الانتهاء (من بيانات الباتشات)</div></div></div><div id="riskExpiry"></div></section>
-    <section class="panel"><div class="panel-head"><div><h2>فائض المخزون</h2><div class="hint">تغطية تتجاوز ${CONFIG.tunable.overstockCoverageMonths} أشهر من الطلب المعدَّل</div></div></div><div id="riskOverstock"></div></section>`;
+    <section class="panel"><div class="panel-head"><div><h2>فائض المخزون</h2><div class="hint">تغطية تتجاوز ${CONFIG.tunable.overstockCoverageMonths} أشهر من الطلب المعدَّل</div></div></div><div id="riskOverstock"></div></section>
+    <section class="panel"><div class="panel-head"><div><h2>أوامر الشراء المفتوحة — تأكيد تاريخ الوصول</h2><div class="hint">كل أوامر الشراء المفتوحة بكل الأصناف بمكان واحد — الأمر المتأخر عن تسليمه وبلا تاريخ وصول مؤكَّد (بالأعلى) لا يُحتسب "بالطريق" حتى تعبّي له تاريخاً حقيقياً</div></div></div><div id="riskPOArrival"></div></section>`;
   TABLES.riskStockout = ()=>renderNeedsOrderTable('riskStockout','riskStockout', getRecos().filter(r=>r.status==='CRITICAL'||r.status==='STOCKOUT_RISK'), {emptyHint:'لا أصناف معرّضة للانقطاع'});
   TABLES.riskOverstock = ()=>renderNeedsOrderTable('riskOverstock','riskOverstock', getRecos().filter(r=>r.status==='OVERSTOCK'), {emptyHint:'لا فائض مخزون'});
   TABLES.riskExpiry = renderExpiryTable;
-  TABLES.riskStockout(); TABLES.riskOverstock(); TABLES.riskExpiry();
+  TABLES.riskPOArrival = renderPOArrivalTable;
+  TABLES.riskStockout(); TABLES.riskOverstock(); TABLES.riskExpiry(); TABLES.riskPOArrival();
+}
+/** كل سطور أوامر الشراء المفتوحة بكل الأصناف — بغض النظر إن كان الصنف عنده توصية شراء أصلاً أو لأ */
+function allOpenPOLines(){
+  const codes = new Set((STATE.data.purchaseOrders||[]).map(r=>r.ItemCode).filter(Boolean));
+  const lines = [];
+  codes.forEach(code=>{ POTRACK.statusFor(code).forEach(l=>lines.push(Object.assign({}, l, {ItemName:itemDisplayName(code)}))); });
+  return lines;
+}
+function renderPOArrivalTable(){
+  const key='riskPOArrival';
+  const f = STATE.filters;
+  let rows = allOpenPOLines();
+  if(f.item){ const q=f.item.toLowerCase(); rows = rows.filter(l=>String(l.ItemCode||'').toLowerCase().includes(q) || String(l.ItemName||'').toLowerCase().includes(q)); }
+  if(f.supplier) rows = rows.filter(l=>l.SupplierCode===f.supplier);
+  // الأولوية بالعرض: أمر متأخر وبلا تاريخ مؤكَّد أولاً (الأكثر إلحاحاً)، بعده الباقي — كل مجموعة مرتّبة تنازلياً بالكمية المتبقية
+  rows = rows.slice().sort((a,b)=> (Number(b.needsUserDate)-Number(a.needsUserDate)) || (b.remaining-a.remaining));
+  const T=(c,l)=>thSort(key,c,l);
+  document.getElementById('riskPOArrival').innerHTML = rows.length ? `<div class="tbl-scroll"><table class="dt"><thead><tr>
+      <th>رمز الصنف</th><th>اسم الصنف</th><th>المورد</th><th>الأمر</th><th>المتبقي</th><th>تاريخ التسليم الأصلي</th><th>الحالة</th><th>تاريخ الوصول</th></tr></thead>
+    <tbody>${rows.map(l=>`<tr>
+      <td><span class="link num" onclick="openItemDetail('${U.esc(l.ItemCode)}')">${U.esc(l.ItemCode)}</span></td>
+      <td>${U.esc(l.ItemName)}</td>
+      <td>${U.esc(supplierName(l.SupplierCode)||l.SupplierCode||'—')}</td>
+      <td class="num">${U.esc(l.DocNum||l.DocEntry)}</td>
+      <td class="num strong">${U.num(l.remaining)}</td>
+      <td class="num">${U.fmtDate(l.dueDate)}</td>
+      <td>${l.pastDue?(l.needsUserDate?'<span class="badge red">متأخر — بلا تاريخ</span>':'<span class="badge orange">متأخر — بالطريق</span>'):'<span class="badge green">بالطريق</span>'}</td>
+      <td>${l.pastDue?`<input type="date" class="cell-input" style="width:130px" value="${l.expectedArrival?U.fmtDate(l.expectedArrival):''}" onchange="confirmInTransit('${U.esc(l.key)}','${U.esc(l.ItemCode)}', this.value)">`:`<span class="num">${U.fmtDate(l.expectedArrival)}</span>`}</td>
+    </tr>`).join('')}</tbody></table></div>`
+    : `<div class="empty-state"><b>لا أوامر شراء مفتوحة</b>${(STATE.data.purchaseOrders||[]).length?'لا أوامر شراء مفتوحة ضمن الفلاتر الحالية':'لم تُرفع بيانات أوامر الشراء المفتوحة بعد'}</div>`;
 }
 function expiryRows(){
   const f = STATE.filters;
