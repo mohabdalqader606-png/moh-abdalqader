@@ -8,7 +8,10 @@ scoped to additive, read-only-from-the-engine's-perspective evidence capture; se
 `AUDIT_EVIDENCE_EXAMPLE.md`), then extended again under "P1-C" (the first of P0-B's own
 confirmed-gap items to be authorized for implementation: one additive historical-evidence field,
 `inputSnapshot.hasInventoryRecord`, closing the one confirmed gap in Confidence-label
-reproducibility). See RECOVERY.md for exactly what P0-A's tests recovered from prior
+reproducibility), then extended again under "P1-A" (the second of P0-B's own confirmed-gap items:
+an orthogonal `audit_access` capability — `myAuditAccess`/`hasAuditAccess()` — granting
+Decision-Evidence-only access independent of the existing VIEW/INPUT/ADMIN tiers, with no change
+to those tiers' own behavior). See RECOVERY.md for exactly what P0-A's tests recovered from prior
 (uncommitted) work vs. newly authored, and TRACEABILITY.md for what each test group proves and
 how it maps to the Phase 1 audit's control matrix.
 
@@ -25,7 +28,8 @@ how it maps to the Phase 1 audit's control matrix.
 | `determinism.spec.js` | 3 | Same input run twice in independent contexts must produce byte-identical output. |
 | `decision-evidence.spec.js` | 18 | **(P0-B)** The `EVIDENCE` module: decision identity, fingerprint determinism/sensitivity, actor capture, historical immutability against config changes, overrides, failure handling. |
 | `p1c-confidence-reproducibility.spec.js` | 6 | **(P1-C)** The `inputSnapshot.hasInventoryRecord` field: presence/absence, independent Confidence-label reconstruction, historical immutability, fingerprint sensitivity. |
-| `run-all.js` | — | Orchestrates all seven suites above, writes `results/run-<timestamp>.json` and `results/latest.json`. |
+| `p1a-auditor-access.spec.js` | 16 | **(P1-A)** The `audit_access` capability (`myAuditAccess`/`hasAuditAccess()`): audit-only evidence access, operational denial (engine/quantities/tunables/historical lock), VIEW/INPUT/ADMIN regression, the schema-impossible `audit_access=true`+`permission=null` edge case, historical evidence immutability. |
+| `run-all.js` | — | Orchestrates all eight suites above, writes `results/run-<timestamp>.json` and `results/latest.json`. |
 | `results/` | — | Generated JSON reports (traceability + coverage-by-category). Not hand-edited. |
 | `TRACEABILITY.md` | — | Test ID → scenario → business rule → control-matrix mapping. |
 | `RECOVERY.md` | — | Honest accounting of recovered vs. newly-authored test code (P0-A). |
@@ -51,7 +55,7 @@ cd tests/procurement-intelligence
 NODE_PATH=/opt/node22/lib/node_modules node run-all.js
 ```
 
-Run a subset of suites by key (`bl`, `e2e`, `golden`, `dv`, `det`, `de`, `p1c`):
+Run a subset of suites by key (`bl`, `e2e`, `golden`, `dv`, `det`, `de`, `p1c`, `p1a`):
 
 ```bash
 NODE_PATH=/opt/node22/lib/node_modules node run-all.js bl,golden
@@ -69,6 +73,7 @@ NODE_PATH=/opt/node22/lib/node_modules node data-validation.spec.js
 NODE_PATH=/opt/node22/lib/node_modules node determinism.spec.js
 NODE_PATH=/opt/node22/lib/node_modules node decision-evidence.spec.js    # P0-B
 NODE_PATH=/opt/node22/lib/node_modules node p1c-confidence-reproducibility.spec.js  # P1-C
+NODE_PATH=/opt/node22/lib/node_modules node p1a-auditor-access.spec.js              # P1-A
 ```
 
 A full `run-all.js` pass currently takes well under a minute (business-logic and e2e each launch

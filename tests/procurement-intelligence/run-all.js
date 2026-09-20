@@ -1,7 +1,7 @@
 /* Orchestrator — runs every committed suite for the Foreign Procurement Intelligence screen
    (business-logic, e2e, golden-dataset, data-validation, determinism, decision-evidence,
-   p1c-confidence-reproducibility) and writes a traceability + coverage report to results/. This
-   is the single command a human or a CI gate runs before merging any change to
+   p1c-confidence-reproducibility, p1a-auditor-access) and writes a traceability + coverage report
+   to results/. This is the single command a human or a CI gate runs before merging any change to
    المشتريات_الخارجية_الذكية.html.
 
    Coverage here means TEST coverage by category (Functional/Decision/Edge/Data-Quality/
@@ -10,7 +10,7 @@
    formula; this report tracks whether the DECISIONS are tested, per TRACEABILITY.md.
 
    Usage: node run-all.js            → runs everything, writes results/run-<timestamp>.json
-          node run-all.js bl,e2e      → runs only the named suites (bl,e2e,golden,dv,det,de,p1c) */
+          node run-all.js bl,e2e      → runs only the named suites (bl,e2e,golden,dv,det,de,p1c,p1a) */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -23,6 +23,7 @@ const SUITES = [
   { key: 'det', label: 'determinism', file: './determinism.spec.js' },
   { key: 'de', label: 'decision-evidence', file: './decision-evidence.spec.js' },
   { key: 'p1c', label: 'p1c-confidence-reproducibility', file: './p1c-confidence-reproducibility.spec.js' },
+  { key: 'p1a', label: 'p1a-auditor-access', file: './p1a-auditor-access.spec.js' },
 ];
 
 /** Maps a suite's own category (business-logic.spec.js already tags each check via SUITE_META)
@@ -35,7 +36,7 @@ function categoryOf(suiteKey, result) {
   if (suiteKey === 'e2e') return 'Functional';
   if (suiteKey === 'golden') return 'Decision';
   if (suiteKey === 'det') return 'Regression';
-  if (suiteKey === 'de' || suiteKey === 'p1c') return 'Auditability';
+  if (suiteKey === 'de' || suiteKey === 'p1c' || suiteKey === 'p1a') return 'Auditability';
   if (suiteKey === 'dv') return (result.id === 'DV-10' || result.id === 'DV-12') ? 'Edge' : 'Data-Quality';
   return 'Functional';
 }

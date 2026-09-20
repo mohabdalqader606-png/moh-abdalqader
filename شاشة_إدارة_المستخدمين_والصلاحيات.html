@@ -75,6 +75,13 @@
   select.permsel.dirty{border-color:var(--gold);}
   select.permsel:disabled{opacity:.55; cursor:not-allowed;}
 
+  /* P1-A: صلاحية تدقيق (audit_access) — مستقلة تماماً عن select.permsel أعلاه، عمداً بشكل مختلف بصرياً */
+  label.auditchk{display:flex; align-items:center; justify-content:center; gap:4px; margin-top:5px; font-size:10px; color:var(--ink-soft); cursor:pointer; user-select:none;}
+  label.auditchk input[type=checkbox]{width:13px; height:13px; margin:0; cursor:pointer; accent-color:var(--crimson);}
+  label.auditchk input[type=checkbox]:disabled{cursor:not-allowed;}
+  label.auditchk:has(input:disabled){opacity:.4;}
+  label.auditchk.dirty{color:var(--gold); font-weight:700;}
+
   .empty{padding:50px 20px; text-align:center; color:var(--ink-soft); font-size:13.5px; line-height:1.9;}
   .empty .big{font-size:30px; display:block; margin-bottom:10px;}
 
@@ -258,8 +265,9 @@ const PERM_ORDER = ['NONE','VIEW','INPUT','ADMIN'];
 
 let ALL_USERS = [];       // من profiles
 let ALL_SCREENS = [];     // من screens حيث screen_type='business'
-let ORIGINAL_PERMS = {};  // key: `${user_id}:${screen_id}` -> {permission, updated_by, updated_at}
-let CHANGES = {};         // نفس المفتاح -> القيمة الجديدة (لم تُحفَظ بعد)
+let ORIGINAL_PERMS = {};  // key: `${user_id}:${screen_id}` -> {permission, audit_access, updated_by, updated_at}
+let CHANGES = {};         // نفس المفتاح -> قيمة permission الجديدة (لم تُحفَظ بعد)
+let AUDIT_CHANGES = {};   // نفس المفتاح -> قيمة audit_access الجديدة (P1-A، مستقلة عن CHANGES)
 let searchTerm = '';
 
 function permKey(userId, screenId){ return userId + ':' + screenId; }
@@ -272,7 +280,7 @@ async function loadMatrixData(){
   const [usersRes, screensRes, permsRes] = await Promise.all([
     sb.from('profiles').select('id, email, full_name, role').order('full_name', {ascending:true}),
     sb.from('screens').select('id, name, status').eq('screen_type','business').order('id', {ascending:true}),
-    sb.from('user_screen_permissions').select('user_id, screen_id, permission, updated_by, updated_at')
+    sb.from('user_screen_permissions').select('user_id, screen_id, permission, audit_access, updated_by, updated_at')
   ]);
   const loadErrors = [usersRes.error, screensRes.error, permsRes.error].filter(Boolean);
   if(loadErrors.length){
@@ -290,9 +298,10 @@ async function loadMatrixData(){
   ALL_SCREENS = screensRes.data || [];
   ORIGINAL_PERMS = {};
   (permsRes.data || []).forEach(r => {
-    ORIGINAL_PERMS[permKey(r.user_id, r.screen_id)] = {permission:r.permission, updated_by:r.updated_by, updated_at:r.updated_at};
+    ORIGINAL_PERMS[permKey(r.user_id, r.screen_id)] = {permission:r.permission, audit_access:!!r.audit_access, updated_by:r.updated_by, updated_at:r.updated_at};
   });
   CHANGES = {};
+  AUDIT_CHANGES = {};
   renderHeaderStats();
   renderMatrixHead();
   renderMatrixBody();
@@ -324,6 +333,15 @@ function currentPermFor(userId, screenId){
   return orig ? orig.permission : 'NONE';
 }
 
+/** P1-A: قيمة audit_access الحالية (المعلَّقة محلياً إن وُجدت، وإلا القيمة المخزَّنة). لا علاقة
+    لها بـ currentPermFor أعلاه — عمود مستقل تماماً بنفس السطر بجدول user_screen_permissions. */
+function currentAuditFor(userId, screenId){
+  const k = permKey(userId, screenId);
+  if(Object.prototype.hasOwnProperty.call(AUDIT_CHANGES, k)) return AUDIT_CHANGES[k];
+  const orig = ORIGINAL_PERMS[k];
+  return orig ? !!orig.audit_access : false;
+}
+
 function renderMatrixBody(){
   const body = document.getElementById('matrixBody');
   const term = searchTerm.trim().toLowerCase();
@@ -336,9 +354,12 @@ function renderMatrixBody(){
     const legacyBit = u.role ? `<span class="u-legacy">Legacy: ${escapeHtml(u.role)}</span>` : '';
     let cells = `<td class="usercell"><span class="u-name">${escapeHtml(userLabel(u))}</span><span class="u-email">${escapeHtml(u.email||'')}</span>${legacyBit}</td>`;
     ALL_SCREENS.forEach(s => {
+      const k = permKey(u.id, s.id);
       const val = currentPermFor(u.id, s.id);
-      const orig = ORIGINAL_PERMS[permKey(u.id, s.id)];
-      const dirty = Object.prototype.hasOwnProperty.call(CHANGES, permKey(u.id, s.id));
+      const auditVal = currentAuditFor(u.id, s.id);
+      const orig = ORIGINAL_PERMS[k];
+      const dirty = Object.prototype.hasOwnProperty.call(CHANGES, k);
+      const auditDirty = Object.prototype.hasOwnProperty.call(AUDIT_CHANGES, k);
       let title = '';
       if(orig && orig.updated_at){
         const byUser = ALL_USERS.find(x => x.id === orig.updated_by);
@@ -346,13 +367,20 @@ function renderMatrixBody(){
         title = `بواسطة ${byLabel} — ${new Date(orig.updated_at).toLocaleString('ar-EG',{dateStyle:'medium',timeStyle:'short'})}`;
       }
       const opts = PERM_ORDER.map(p => `<option value="${p}" ${p===val?'selected':''}>${PERM_LABELS[p]}</option>`).join('');
-      cells += `<td><select class="permsel p-${val}${dirty?' dirty':''}" title="${escapeHtml(title)}" data-user="${u.id}" data-screen="${s.id}">${opts}</select></td>`;
+      // audit_access (P1-A): عمود مستقل تماماً عن permission — لكن قيد قاعدة البيانات يمنع صفاً
+      // بلا صلاحية أساسية صالحة (permission NOT NULL)، فتُعطَّل الخانة تلقائياً عند NONE.
+      cells += `<td><select class="permsel p-${val}${dirty?' dirty':''}" title="${escapeHtml(title)}" data-user="${u.id}" data-screen="${s.id}">${opts}</select>`
+        + `<label class="auditchk${auditDirty?' dirty':''}" title="صلاحية تدقيق (Audit Access) — وصول لدليل القرار فقط، بدون تشغيل محرك أو تعديل">`
+        + `<input type="checkbox" class="auditcb" data-user="${u.id}" data-screen="${s.id}" ${auditVal?'checked':''} ${val==='NONE'?'disabled':''}>تدقيق</label></td>`;
     });
     return `<tr>${cells}</tr>`;
   }).join('');
 
   body.querySelectorAll('select.permsel').forEach(sel => {
     sel.addEventListener('change', onCellChange);
+  });
+  body.querySelectorAll('input.auditcb').forEach(cb => {
+    cb.addEventListener('change', onAuditChange);
   });
 }
 
@@ -365,18 +393,45 @@ function onCellChange(e){
   if(newVal === origVal){ delete CHANGES[k]; }
   else { CHANGES[k] = newVal; }
   sel.className = 'permsel p-' + newVal + (Object.prototype.hasOwnProperty.call(CHANGES,k) ? ' dirty' : '');
+  // P1-A: NONE يعني حذف الصف بالكامل — audit_access ما إله معنى بدون صلاحية أساسية صالحة
+  // (قيد قاعدة البيانات)، فتُلغى وتُعطَّل خانتها تلقائياً هون بدل ترك حالة غير قابلة للحفظ.
+  const auditCb = sel.closest('td') ? sel.closest('td').querySelector('input.auditcb') : null;
+  if(auditCb){
+    if(newVal === 'NONE'){
+      auditCb.checked = false;
+      auditCb.disabled = true;
+      const origAudit = ORIGINAL_PERMS[k] ? !!ORIGINAL_PERMS[k].audit_access : false;
+      if(origAudit){ AUDIT_CHANGES[k] = false; } else { delete AUDIT_CHANGES[k]; }
+    } else {
+      auditCb.disabled = false;
+    }
+    auditCb.closest('label').classList.toggle('dirty', Object.prototype.hasOwnProperty.call(AUDIT_CHANGES,k));
+  }
+  renderUnsavedBar();
+}
+
+function onAuditChange(e){
+  const cb = e.target;
+  const userId = cb.dataset.user, screenId = cb.dataset.screen;
+  const newVal = cb.checked;
+  const k = permKey(userId, screenId);
+  const origVal = ORIGINAL_PERMS[k] ? !!ORIGINAL_PERMS[k].audit_access : false;
+  if(newVal === origVal){ delete AUDIT_CHANGES[k]; }
+  else { AUDIT_CHANGES[k] = newVal; }
+  cb.closest('label').classList.toggle('dirty', Object.prototype.hasOwnProperty.call(AUDIT_CHANGES,k));
   renderUnsavedBar();
 }
 
 function renderUnsavedBar(){
   const bar = document.getElementById('unsavedBar');
-  const n = Object.keys(CHANGES).length;
+  const n = new Set([...Object.keys(CHANGES), ...Object.keys(AUDIT_CHANGES)]).size;
   bar.style.display = n ? 'flex' : 'none';
   document.getElementById('unsavedCount').textContent = n + (n===1 ? ' تغيير غير محفوظ' : ' تغييرات غير محفوظة');
 }
 
 document.getElementById('cancelBtn').addEventListener('click', () => {
   CHANGES = {};
+  AUDIT_CHANGES = {};
   renderMatrixBody();
   renderUnsavedBar();
 });
@@ -387,7 +442,7 @@ document.getElementById('searchUser').addEventListener('input', e => {
 });
 
 document.getElementById('saveBtn').addEventListener('click', () => {
-  const keys = Object.keys(CHANGES);
+  const keys = Array.from(new Set([...Object.keys(CHANGES), ...Object.keys(AUDIT_CHANGES)]));
   if(!keys.length) return;
   const affectedUsers = new Set(keys.map(k => k.split(':')[0]));
   document.getElementById('prevUsers').textContent = affectedUsers.size;
@@ -396,8 +451,11 @@ document.getElementById('saveBtn').addEventListener('click', () => {
   opsList.innerHTML = keys.map(k => {
     const [userId, screenId] = k.split(':');
     const u = ALL_USERS.find(x => x.id === userId);
-    const newVal = CHANGES[k];
-    const op = newVal === 'NONE' ? 'حذف الصلاحية (DELETE)' : 'تعيين ' + newVal + ' (UPSERT)';
+    const newPerm = currentPermFor(userId, screenId);
+    const newAudit = currentAuditFor(userId, screenId);
+    const op = newPerm === 'NONE'
+      ? 'حذف الصلاحية (DELETE)'
+      : 'تعيين ' + newPerm + (newAudit ? ' + تدقيق (Audit Access)' : '') + ' (UPSERT)';
     return `<div>${escapeHtml(userLabel(u))} — ${escapeHtml(screenId)}: ${op}</div>`;
   }).join('');
   document.getElementById('previewOverlay').classList.add('active');
@@ -410,19 +468,22 @@ document.getElementById('previewCancelBtn').addEventListener('click', () => {
 document.getElementById('previewConfirmBtn').addEventListener('click', async () => {
   const btn = document.getElementById('previewConfirmBtn');
   btn.disabled = true; btn.textContent = 'جارٍ الحفظ...';
-  const keys = Object.keys(CHANGES);
+  const keys = Array.from(new Set([...Object.keys(CHANGES), ...Object.keys(AUDIT_CHANGES)]));
   const failedKeys = [];
   const failedMessages = [];
   for(const k of keys){
     const [userId, screenId] = k.split(':');
-    const newVal = CHANGES[k];
+    const newPerm = currentPermFor(userId, screenId);
+    const newAudit = currentAuditFor(userId, screenId);
     try{
-      if(newVal === 'NONE'){
+      if(newPerm === 'NONE'){
         const {error} = await sb.from('user_screen_permissions').delete().eq('user_id', userId).eq('screen_id', screenId);
         if(error) throw error;
       }else{
+        // audit_access (P1-A) تُرسَل صراحةً بكل UPSERT — سواء تغيّرت هي أو permission فقط —
+        // حتى لا يبقى العمود بحالة ضمنية غير مقصودة.
         const {error} = await sb.from('user_screen_permissions').upsert({
-          user_id: userId, screen_id: screenId, permission: newVal,
+          user_id: userId, screen_id: screenId, permission: newPerm, audit_access: newAudit,
           updated_by: curUser.id, updated_at: new Date().toISOString()
         }, {onConflict:'user_id,screen_id'});
         if(error) throw error;
@@ -435,12 +496,15 @@ document.getElementById('previewConfirmBtn').addEventListener('click', async () 
   btn.disabled = false; btn.textContent = 'تأكيد الحفظ';
   document.getElementById('previewOverlay').classList.remove('active');
   const succeededCount = keys.length - failedKeys.length;
-  const pendingChanges = {};
-  failedKeys.forEach(k => { pendingChanges[k] = CHANGES[k]; });
-  await loadMatrixData(); // يعيد التحميل من القاعدة (يشمل كل التغييرات الناجحة) ويصفّر CHANGES
+  const pendingChanges = {}, pendingAuditChanges = {};
+  failedKeys.forEach(k => {
+    if(Object.prototype.hasOwnProperty.call(CHANGES, k)) pendingChanges[k] = CHANGES[k];
+    if(Object.prototype.hasOwnProperty.call(AUDIT_CHANGES, k)) pendingAuditChanges[k] = AUDIT_CHANGES[k];
+  });
+  await loadMatrixData(); // يعيد التحميل من القاعدة (يشمل كل التغييرات الناجحة) ويصفّر CHANGES/AUDIT_CHANGES
   const statusEl = document.getElementById('saveStatusMsg');
   if(failedKeys.length){
-    CHANGES = pendingChanges; // التغييرات التي فشلت فقط تبقى معلَّقة محلياً لإعادة المحاولة
+    CHANGES = pendingChanges; AUDIT_CHANGES = pendingAuditChanges; // فقط ما فشل يبقى معلَّقاً محلياً لإعادة المحاولة
     renderMatrixBody();
     renderUnsavedBar();
     statusEl.textContent = `✔ نجح ${succeededCount} من ${keys.length} — ⚠ فشل ${failedKeys.length}`;

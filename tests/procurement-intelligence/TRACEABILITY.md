@@ -3,19 +3,23 @@
 This maps every test *group* in this directory to the business rule it exercises and, where
 applicable, to the control ID from the Phase 1 Big-4 audit's control matrix (`audit_report.html
 §10`, control IDs C-01..C-10). It is a rule-level map (suite / scenario grain), not a
-per-assertion listing — for the full flat list of all 264 individual checks (their exact IDs,
+per-assertion listing — for the full flat list of all 286 individual checks (their exact IDs,
 names, pass/fail state and category), run `node run-all.js` and read `results/latest.json`, which
 is generated fresh on every run and is the authoritative, machine-readable source of truth. This
 file explains *why* each group exists; `results/latest.json` proves *whether it currently passes*.
 
-**P0-A vs P0-B vs P1-C**: the first 246 checks (business-logic/e2e/golden-dataset/data-validation/
+**P0-A vs P0-B vs P1-C vs P1-A**: the first 246 checks (business-logic/e2e/golden-dataset/data-validation/
 determinism) are the P0-A permanent regression foundation and must never change their pass count
 as a result of any later phase. The 18 `DE-*` checks are P0-B, testing the Decision Evidence layer
 (see `../المشتريات_الخارجية_الذكية.html`'s `EVIDENCE` module and `AUDIT_EVIDENCE_EXAMPLE.md`). The
 6 `P1C-*` checks are P1-C (the first authorized item from P0-B's own confirmed-gap list — see
 `p1c-confidence-reproducibility.spec.js`), adding one historical-evidence field
 (`inputSnapshot.hasInventoryRecord`) so all 5 inputs to `RECO.computeConfidence()` are
-independently reconstructable from stored evidence alone. 246 + 18 + 6 = 270.
+independently reconstructable from stored evidence alone. The 16 `P1A-*` checks are P1-A (the
+second authorized item from P0-B's confirmed-gap list — see `p1a-auditor-access.spec.js`), adding
+an orthogonal `audit_access` capability (`myAuditAccess`/`hasAuditAccess()`) that grants
+Decision-Evidence-only access independent of the existing VIEW/INPUT/ADMIN tiers, without ever
+adding or removing any operational capability those tiers already grant. 246 + 18 + 6 + 16 = 286.
 
 ## Control matrix reference (from Phase 1 audit)
 
@@ -166,6 +170,37 @@ Confidence is a decision-output field.
 | P1C-04 | A pre-change-shaped record (no `hasInventoryRecord`) is untouched — same `decisionId`, same `fingerprint`, same `inputSnapshot`, no field injected retroactively | 2 | C-09 |
 | P1C-05 | Two otherwise-identical new records differing only in `hasInventoryRecord` produce different fingerprints | 3 | C-09 |
 | P1C-06 | Historical integrity under a real new engine run: the old record survives a full run touching other items, fingerprint unchanged | 2 | C-09 |
+
+## p1a-auditor-access.spec.js (`P1A-*`, 16 checks — new in P1-A)
+
+Tests the orthogonal `audit_access` capability added under the P1-A implementation contract:
+`myAuditAccess`/`hasAuditAccess()`, the `onSignedIn()` query extension (`select('permission,
+audit_access')`), the `openDecisionEvidence()` gate (`hasAuditAccess() || requirePermission('admin',
+...)`), and the dedicated `runEngine()` guard (`myAuditAccess && !hasPermission('input')`). All map
+to C-03 (access control) and C-09 (auditability — this is what makes Decision Evidence reviewable
+by someone other than an ADMIN without also handing them ADMIN's operational power).
+
+Design note carried from the implementation report: the schema's `permission NOT NULL CHECK
+(VIEW/INPUT/ADMIN)` (see `sql/user_permissions_batch1.sql`) means `audit_access=true` can never be
+persisted with no valid operational permission — the realistic minimum-privilege grant is
+`permission='VIEW' + audit_access=true`, which is what most checks below exercise as "audit-only".
+
+| ID | Test | Requirement (P1-A contract item) | Control |
+|---|---|---|---|
+| P1A-01 | `myAuditAccess` defaults to `false` when the permission row carries no `audit_access` value | 1 | C-03 |
+| P1A-02 | VIEW + `audit_access=false` — Decision Evidence still denied exactly as before P1-A | 1 | C-03 |
+| P1A-03 | VIEW + `audit_access=true` — Decision Evidence gate is bypassed (reaches the "no evidence yet" state, not a denial) | 1 | C-03, C-09 |
+| P1A-04 | VIEW + `audit_access=true` — a real seeded evidence record renders in full (fingerprint, decision identity) | 1 | C-09 |
+| P1A-05 | VIEW + `audit_access=true` — `runEngine()` is blocked by the dedicated guard, no recomputation occurs | 1 | C-03 |
+| P1A-06 | VIEW + `audit_access=true` — `planSetQty()` (plan-quantity override) still denied, unaffected by `audit_access` | 1 | C-03 |
+| P1A-07 | VIEW + `audit_access=true` — `lockHistoricalToggle()` still ADMIN-only, unaffected by `audit_access` | 1 | C-03 |
+| P1A-08 | VIEW + `audit_access=true` — `updateTunable()` still ADMIN-only, unaffected by `audit_access` | 1 | C-03 |
+| P1A-09 | ADMIN + `audit_access=true` — both Decision Evidence and `runEngine()` keep working exactly as before (the new gate/guard is a no-op for ADMIN) | 1 | C-03, C-10 |
+| P1A-10a/b/c | VIEW/INPUT/ADMIN, `audit_access=false` — the exact pre-P1A `hasPermission()`/`isAdmin()` truth table is unchanged | 3 | C-03, C-10 |
+| P1A-11 | `audit_access=true` + `permission=null` (schema-impossible state) — the existing sign-out gate still fires, and `runEngine()`'s audit-only guard still denies defensively even with a stale in-memory `myAuditAccess=true` | 1 | C-03 |
+| P1A-12 | A decision evidence record seeded before any P1-A code runs remains byte-for-byte unchanged after a real ADMIN engine run — P1-A made zero writes to the evidence store | 1 | C-09, C-10 |
+| P1A-13 | INPUT + `audit_access=true` — `runEngine()` still works normally; `audit_access` never takes away capability an existing permission tier already grants | 1 | C-03, C-10 |
+| P1A-14 | `hasAuditAccess()` reflects `myAuditAccess` literally, independent of `myPermission` — confirms it is a genuinely orthogonal flag, not derived from `PERM_RANK` | 1 | C-03 |
 
 ## Coverage summary (from the most recent `run-all.js` run)
 
