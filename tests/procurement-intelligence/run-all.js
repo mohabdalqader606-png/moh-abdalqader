@@ -1,15 +1,15 @@
 /* Orchestrator — runs every committed suite for the Foreign Procurement Intelligence screen
-   (business-logic, e2e, golden-dataset, data-validation, determinism) and writes a
-   traceability + coverage report to results/. This is the single command a human or a CI gate
-   runs before merging any change to المشتريات_الخارجية_الذكية.html.
+   (business-logic, e2e, golden-dataset, data-validation, determinism, decision-evidence) and
+   writes a traceability + coverage report to results/. This is the single command a human or a
+   CI gate runs before merging any change to المشتريات_الخارجية_الذكية.html.
 
    Coverage here means TEST coverage by category (Functional/Decision/Edge/Data-Quality/
-   Regression) — how many documented business rules, decisions and edge cases are exercised —
-   not code-line coverage. A file can have 100% code coverage and still ship a wrong formula;
-   this report tracks whether the DECISIONS are tested, per TRACEABILITY.md.
+   Regression/Auditability) — how many documented business rules, decisions and edge cases are
+   exercised — not code-line coverage. A file can have 100% code coverage and still ship a wrong
+   formula; this report tracks whether the DECISIONS are tested, per TRACEABILITY.md.
 
    Usage: node run-all.js            → runs everything, writes results/run-<timestamp>.json
-          node run-all.js bl,e2e      → runs only the named suites (bl,e2e,golden,dv,det) */
+          node run-all.js bl,e2e      → runs only the named suites (bl,e2e,golden,dv,det,de) */
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -20,11 +20,12 @@ const SUITES = [
   { key: 'golden', label: 'golden-dataset', file: './golden-dataset.spec.js' },
   { key: 'dv', label: 'data-validation', file: './data-validation.spec.js' },
   { key: 'det', label: 'determinism', file: './determinism.spec.js' },
+  { key: 'de', label: 'decision-evidence', file: './decision-evidence.spec.js' },
 ];
 
 /** Maps a suite's own category (business-logic.spec.js already tags each check via SUITE_META)
     or a test-ID prefix (the other suites don't carry a category field, only id/name/ok/info) to
-    the 5-bucket coverage taxonomy used in this report and in TRACEABILITY.md. */
+    the 6-bucket coverage taxonomy used in this report and in TRACEABILITY.md. */
 function categoryOf(suiteKey, result) {
   if (result.category) {
     return { 'business-rule': 'Decision', integration: 'Functional', unit: 'Functional', regression: 'Regression', 'data-validation': 'Data-Quality' }[result.category] || 'Functional';
@@ -32,6 +33,7 @@ function categoryOf(suiteKey, result) {
   if (suiteKey === 'e2e') return 'Functional';
   if (suiteKey === 'golden') return 'Decision';
   if (suiteKey === 'det') return 'Regression';
+  if (suiteKey === 'de') return 'Auditability';
   if (suiteKey === 'dv') return (result.id === 'DV-10' || result.id === 'DV-12') ? 'Edge' : 'Data-Quality';
   return 'Functional';
 }

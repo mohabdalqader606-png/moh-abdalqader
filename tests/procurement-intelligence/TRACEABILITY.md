@@ -3,10 +3,16 @@
 This maps every test *group* in this directory to the business rule it exercises and, where
 applicable, to the control ID from the Phase 1 Big-4 audit's control matrix (`audit_report.html
 §10`, control IDs C-01..C-10). It is a rule-level map (suite / scenario grain), not a
-per-assertion listing — for the full flat list of all 246 individual checks (their exact IDs,
+per-assertion listing — for the full flat list of all 264 individual checks (their exact IDs,
 names, pass/fail state and category), run `node run-all.js` and read `results/latest.json`, which
 is generated fresh on every run and is the authoritative, machine-readable source of truth. This
 file explains *why* each group exists; `results/latest.json` proves *whether it currently passes*.
+
+**P0-A vs P0-B**: the first 246 checks (business-logic/e2e/golden-dataset/data-validation/
+determinism) are the P0-A permanent regression foundation and must never change their pass count
+as a result of P0-B. The 18 `DE-*` checks are new in P0-B, testing the Decision Evidence layer
+added in that phase (see `../المشتريات_الخارجية_الذكية.html`'s `EVIDENCE` module and
+`AUDIT_EVIDENCE_EXAMPLE.md`). 246 + 18 = 264.
 
 ## Control matrix reference (from Phase 1 audit)
 
@@ -114,9 +120,37 @@ list's order. Maps to C-10 (regression foundation): a bug that only shows up as 
 different output between runs" is invisible to every other suite in this directory, since they
 each run once.
 
+## decision-evidence.spec.js (`DE-*`, 18 checks — new in P0-B)
+
+Tests the `EVIDENCE` module added to المشتريات_الخارجية_الذكية.html in P0-B — a purely additive,
+read-only-from-the-engine's-perspective audit layer. All map to C-09 (auditability); C-04, C-06
+and C-08 also apply where noted, since the fingerprint's sensitivity tests double as proof that
+the corresponding input actually flows into the recorded evidence.
+
+| ID | Test | Requirement (P0-B item) | Control |
+|---|---|---|---|
+| DE-01 | Decision identity fields all present and well-formed | 1 | C-09 |
+| DE-02 | Same business data across two runs → identical fingerprint | 10, 16 | C-09 |
+| DE-03 | MOQ change between runs → fingerprint changes | 9, 16 | C-09 |
+| DE-04 | Order Multiple change between runs → fingerprint changes | 9, 16 | C-09 |
+| DE-05 | Demand change between runs → fingerprint changes | 16 | C-04, C-09 |
+| DE-06 | Supplier-resolution flip between runs → fingerprint changes | 16 | C-08, C-09 |
+| DE-07 | Recommended-quantity change between runs → fingerprint changes | 16 | C-04, C-09 |
+| DE-08 | Canonical serialization is key-order independent | 10 | C-09 |
+| DE-09 | Authenticated actor captured correctly | 3, 16 | C-09 |
+| DE-10 | Missing identity → `IDENTITY_UNAVAILABLE`, never fabricated | 3, 15 | C-09 |
+| DE-11 | Historical integrity: a later CONFIG.tunable change never alters a stored decision | 5, 11, 16, 19 | C-09 |
+| DE-12 | Override preserves the original decision untouched, links a new event | 12, 16 | C-09 |
+| DE-12b | Override with no prior evidence → `NO_PRIOR_EVIDENCE`, never fabricated | 3, 12, 15 | C-09 |
+| DE-13 | Stored evidence is sufficient to independently reconstruct the calculation | 7, 16 | C-04, C-09 |
+| DE-14 | Duplicate decisionId write is rejected, never silently overwrites | 11 | C-09 |
+| DE-15 | A NO_ORDER item gets no evidence record (materiality, not blind duplication) | 13 | C-09 |
+| DE-16 | Evidence generation never changes `RECO.computeForItem`'s actual output | 17 | C-04, C-10 |
+| DE-17 | One engine run groups all its decisions under one shared Run ID | 2 | C-09 |
+
 ## Coverage summary (from the most recent `run-all.js` run)
 
 See `results/latest.json` → `coverage` for the current pass/total count per category
-(Functional / Decision / Edge / Data-Quality / Regression). That file is regenerated on every
-`run-all.js` invocation and is intentionally not duplicated here to avoid the two going stale
-against each other.
+(Functional / Decision / Edge / Data-Quality / Regression / Auditability). That file is
+regenerated on every `run-all.js` invocation and is intentionally not duplicated here to avoid
+the two going stale against each other.

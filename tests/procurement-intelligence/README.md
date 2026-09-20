@@ -1,11 +1,13 @@
 # Permanent test foundation — شاشة المشتريات الخارجية الذكية
 
 This directory is the repository-committed, permanent regression foundation for
-`المشتريات_الخارجية_الذكية.html`, established under an explicit "P0-A" authorization: build a
-committed test suite; **do not** change any production business logic while doing it. The
-production file was not modified to build this — see RECOVERY.md for exactly what was recovered
-from prior (uncommitted) work vs. newly authored this phase, and TRACEABILITY.md for what each
-test group proves and how it maps to the Phase 1 audit's control matrix.
+`المشتريات_الخارجية_الذكية.html`. It was established under an explicit "P0-A" authorization
+(build a committed test suite, zero production changes), then extended under "P0-B" (a Decision
+Evidence / auditability layer — the first phase that DID authorize production changes, strictly
+scoped to additive, read-only-from-the-engine's-perspective evidence capture; see
+`AUDIT_EVIDENCE_EXAMPLE.md`). See RECOVERY.md for exactly what P0-A's tests recovered from prior
+(uncommitted) work vs. newly authored, and TRACEABILITY.md for what each test group proves and
+how it maps to the Phase 1 audit's control matrix.
 
 ## What's here
 
@@ -18,10 +20,12 @@ test group proves and how it maps to the Phase 1 audit's control matrix.
 | `golden-dataset.spec.js` | 91 | Executes the 20 golden-dataset scenarios against the live engine and asserts the hand-derived expected values. |
 | `data-validation.spec.js` | 14 | Negative/edge inputs: negative inventory, duplicate/empty/malformed imports, explicit-zero MOQ/lead-time, orphan supplier, extreme quantity, sparse items. |
 | `determinism.spec.js` | 3 | Same input run twice in independent contexts must produce byte-identical output. |
-| `run-all.js` | — | Orchestrates all five suites above, writes `results/run-<timestamp>.json` and `results/latest.json`. |
+| `decision-evidence.spec.js` | 18 | **(P0-B)** The `EVIDENCE` module: decision identity, fingerprint determinism/sensitivity, actor capture, historical immutability against config changes, overrides, failure handling. |
+| `run-all.js` | — | Orchestrates all six suites above, writes `results/run-<timestamp>.json` and `results/latest.json`. |
 | `results/` | — | Generated JSON reports (traceability + coverage-by-category). Not hand-edited. |
 | `TRACEABILITY.md` | — | Test ID → scenario → business rule → control-matrix mapping. |
-| `RECOVERY.md` | — | Honest accounting of recovered vs. newly-authored test code. |
+| `RECOVERY.md` | — | Honest accounting of recovered vs. newly-authored test code (P0-A). |
+| `AUDIT_EVIDENCE_EXAMPLE.md` | — | **(P0-B)** A concrete, real example of the Decision Evidence tree structure and an override event. |
 
 None of this is loaded by the application at runtime — it is test-only, run from a separate
 Node/Playwright process against the static HTML file via `file://`.
@@ -43,7 +47,7 @@ cd tests/procurement-intelligence
 NODE_PATH=/opt/node22/lib/node_modules node run-all.js
 ```
 
-Run a subset of suites by key (`bl`, `e2e`, `golden`, `dv`, `det`):
+Run a subset of suites by key (`bl`, `e2e`, `golden`, `dv`, `det`, `de`):
 
 ```bash
 NODE_PATH=/opt/node22/lib/node_modules node run-all.js bl,golden
@@ -59,6 +63,7 @@ NODE_PATH=/opt/node22/lib/node_modules node e2e.spec.js
 NODE_PATH=/opt/node22/lib/node_modules node golden-dataset.spec.js
 NODE_PATH=/opt/node22/lib/node_modules node data-validation.spec.js
 NODE_PATH=/opt/node22/lib/node_modules node determinism.spec.js
+NODE_PATH=/opt/node22/lib/node_modules node decision-evidence.spec.js    # P0-B
 ```
 
 A full `run-all.js` pass currently takes well under a minute (business-logic and e2e each launch

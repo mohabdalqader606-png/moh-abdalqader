@@ -381,7 +381,7 @@
    ========================================================================================== */
 const CONFIG = {
   dbName: 'kfc_foreign_procurement_v1',
-  dbVersion: 3, // v3: إضافة مخزن pilotReviews (سجل مراجعة الطيار — مراقبة فقط، لا علاقة بمحرك التوصيات)
+  dbVersion: 4, // v4: إضافة مخازن دليل القرار (decisionRuns/decisionEvidence/decisionOverrides — قسم 17.5، للتدقيق فقط، لا تُقرأ من محرك التوصيات إطلاقاً)
 
   // قواعد المستودعات الخاصة (ثابتة حسب طلب المستخدم — قسم 9)
   warehouseRules: {
@@ -414,7 +414,7 @@ const CONFIG = {
   historicalYears: [2022, 2023, 2024, 2025],
   currentYear: 2026,
 
-  version: '1.2.0-PILOT-REVIEW',
+  version: '1.3.0-DECISION-EVIDENCE',
   buildDate: '2026-09-14',
 };
 
@@ -1032,6 +1032,10 @@ const DB = {
         if(!db.objectStoreNames.contains('docOverrides')) db.createObjectStore('docOverrides', {keyPath:'_key'});
         if(!db.objectStoreNames.contains('pilotReviews')) db.createObjectStore('pilotReviews', {keyPath:'id'});
         if(!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', {keyPath:'k'});
+        // دليل القرار (P0-B) — append-only، لا تعديل ولا حذف إطلاقاً بعد الكتابة، منفصل تماماً عن حالة المحرك الحالية
+        if(!db.objectStoreNames.contains('decisionRuns')) db.createObjectStore('decisionRuns', {keyPath:'runId'});
+        if(!db.objectStoreNames.contains('decisionEvidence')) db.createObjectStore('decisionEvidence', {keyPath:'decisionId'});
+        if(!db.objectStoreNames.contains('decisionOverrides')) db.createObjectStore('decisionOverrides', {keyPath:'overrideId'});
       };
       req.onsuccess = ()=>resolve(req.result);
       req.onerror = ()=>reject(req.error);
@@ -1083,6 +1087,18 @@ const DB = {
   async setMeta(key, val){
     const t = await this.tx('meta','readwrite');
     return new Promise((res,rej)=>{ t.objectStore('meta').put({k:key, v:val}); t.oncomplete=()=>res(true); t.onerror=()=>rej(t.error); });
+  },
+  async putOne(store, rec){
+    const t = await this.tx(store, 'readwrite');
+    return new Promise((res,rej)=>{ t.objectStore(store).put(rec); t.oncomplete=()=>res(true); t.onerror=()=>rej(t.error); });
+  },
+  async getOne(store, key){
+    const t = await this.tx(store, 'readonly');
+    return new Promise((res)=>{
+      const r = t.objectStore(store).get(key);
+      r.onsuccess = ()=>res(r.result || null);
+      r.onerror = ()=>res(null);
+    });
   },
 };
 
@@ -2028,6 +2044,182 @@ const RECO = {
     return Array.from(bySupplier.values()).sort((a,b)=>b.totalQty-a.totalQty);
   },
 };
+/* ==========================================================================================
+   17.5) DECISION EVIDENCE (P0-B) — طبقة أدلة القرار للتدقيق: لقطة غير قابلة للتعديل لكل توصية
+   جوهرية وقت اتخاذها (فاعل، وقت، نسخة محرك، إعدادات فعلية، مدخلات، حسابات وسيطة، نتيجة، بصمة).
+   قاعدة أساسية: القراءة فقط من نتائج RECO.computeForItem/CONFIG الحالية — لا تُعدَّل ولا
+   تُستدعى من داخل أي صيغة بمحرك التوصية؛ فشل توليد الدليل لا يوقف ولا يغيّر أي توصية فعلية.
+   منفصلة تماماً عن "الحالة الحالية" (STATE/RECO) — أدلة تاريخية Append-only بثلاثة مخازن:
+   decisionRuns (تشغيل واحد للمحرك) → decisionEvidence (قرار واحد لكل صنف جوهري بذلك التشغيل)
+   → decisionOverrides (حدث تجاوز مرتبط بقرار أصلي، لا يعدّله). راجع tests/procurement-intelligence/
+   decision-evidence.spec.js وTRACEABILITY.md لمصفوفة الاختبارات والربط بمصفوفة الضبط. */
+const EVIDENCE = {
+  /** تمثيل قانوني ثابت الترتيب لأي كائن (فرز المفاتيح أبجدياً بكل مستوى) — يضمن نفس السلسلة
+      النصية لنفس المحتوى بغض النظر عن ترتيب إدخال الحقول، شرط أساسي لبصمة SHA-256 حتمية. */
+  canonicalStringify(value){
+    const sort = v=>{
+      if(Array.isArray(v)) return v.map(sort);
+      if(v && typeof v==='object' && !(v instanceof Date)){
+        const out = {};
+        Object.keys(v).sort().forEach(k=>{ out[k] = sort(v[k]); });
+        return out;
+      }
+      if(v instanceof Date) return v.toISOString();
+      return v;
+    };
+    return JSON.stringify(sort(value));
+  },
+  async sha256Hex(text){
+    const enc = new TextEncoder().encode(text);
+    const buf = await crypto.subtle.digest('SHA-256', enc);
+    return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  },
+  /** هوية الفاعل الموثَّق الحالي — لا تختلق هوية إطلاقاً؛ IDENTITY_UNAVAILABLE صراحةً لو غير متوفرة. */
+  actorSnapshot(){
+    if(typeof curUser!=='undefined' && curUser && curUser.id){
+      return { actorId: curUser.id, actorName: (typeof curProfile!=='undefined' && curProfile && curProfile.full_name) || curUser.email || 'IDENTITY_UNAVAILABLE' };
+    }
+    return { actorId: 'IDENTITY_UNAVAILABLE', actorName: 'IDENTITY_UNAVAILABLE' };
+  },
+  /** MOQ/مضاعف الطلب الرسميّان وقت القرار — نفس البحث الذي تجريه PURCHASE.roundToHistoricalMultiple
+      داخلياً (قراءة فقط، بلا أي تعديل على تلك الدالة نفسها) — يسدّ جزءاً من فجوة C-09 (قابلية التدقيق) بمصفوفة الضبط. */
+  moqSnapshot(itemCode, supplierCode){
+    const map = IDX.rows('itemSupplierMap','ItemCode',itemCode).find(r=>(!supplierCode || r.SupplierCode===supplierCode));
+    return {
+      moq: (map && Number(map.MOQ)>0) ? Number(map.MOQ) : null,
+      orderMultiple: (map && Number(map.OrderMultiple)>0) ? Number(map.OrderMultiple) : null,
+      orderMultipleSource: (map && Number(map.OrderMultiple)>0) ? 'official_item_supplier_map' : null,
+    };
+  },
+  /** إعادة اشتقاق القيم الوسيطة من نتيجة RECO.computeForItem الجاهزة فعلاً — بنفس الصيغ الحرفية
+      المقروءة من المحرك (قسم 17، لاين ~1932-1940)، بلا استدعاء أو تعديل لتلك الدالة. للعرض والتدقيق فقط. */
+  deriveIntermediate(rec){
+    const dailyDemand = rec.monthlyDemand / 30.4368;
+    const leadTimeDemand = dailyDemand * rec.leadTime.days;
+    const safetyStockDays = CONFIG.tunable.serviceBufferDays;
+    const safetyStockQty = dailyDemand * safetyStockDays;
+    const buyingHorizonDays = rec.leadTime.days + safetyStockDays;
+    const targetStockLevel = dailyDemand*buyingHorizonDays + rec.openSO + (rec.openQuotation*CONFIG.tunable.quotationWeight);
+    return {
+      dailyDemand, leadTimeDemand, safetyStockDays, safetyStockQty, buyingHorizonDays,
+      targetStockLevel, availablePosition: rec.available, effectiveOnOrder: rec.incoming,
+      netRequirement: rec.neededQtyRaw, finalRecommendedQty: rec.recommendedQty,
+      // هل اختلفت الكمية الموصى بها فعلياً عن الاحتياج الخام؟ (أي تدخّل من MOQ/مضاعف الطلب —
+      // الحقيقة الحاسوبية المباشرة، لا تخمين لأي آلية بالضبط تسبَّبت بذلك؛ التفاصيل بـinputSnapshot.moq/orderMultiple).
+      quantityRoundedFromNetRequirement: rec.recommendedQty>0 && rec.recommendedQty!==rec.neededQtyRaw,
+    };
+  },
+  /** يبني (بلا حفظ) لقطة الدليل الكاملة لصنف واحد ضمن تشغيل معيّن. لا يُعدِّل أي حالة بالمحرك.
+      actorId/actorName مُكرَّران هنا (منسوخان من سجل التشغيل) حتى يحمل سجل القرار نفسه هوية
+      الفاعل مباشرة دون الحاجة لربطه رجوعاً بـdecisionRuns — قسم 1 (Decision Identity). */
+  buildEvidenceForItem(itemCode, runId, engineVersion, actorId, actorName){
+    const rec = RECO.computeForItem(itemCode);
+    const moq = this.moqSnapshot(itemCode, rec.supplier.code);
+    const intermediate = this.deriveIntermediate(rec);
+    const ruleVersion = { tunable: Object.assign({}, CONFIG.tunable) };
+    const inputSnapshot = {
+      itemCode: rec.ItemCode, itemName: rec.ItemName, itemGroup: rec.ItemGroup,
+      supplier: { code: rec.supplier.code, name: rec.supplier.name },
+      salesHistoryReference: { series: rec.demand.series, excludedMonths: rec.demand.excludedMonths },
+      demandPeriod: { months: rec.demand.series.length, from: rec.demand.series[0] ? rec.demand.series[0].month : null, to: rec.demand.series.length ? rec.demand.series[rec.demand.series.length-1].month : null },
+      demandRaw: rec.demand.raw, demandAdjusted: rec.demand.adjusted, demandConfidence: rec.demand.confidence,
+      leadTime: { days: rec.leadTime.days, source: rec.leadTime.source, label: rec.leadTime.label },
+      onHandAvailable: rec.available, onHandPhysical: rec.physical,
+      effectiveOnOrder: rec.incoming, unconfirmedOnOrder: rec.unconfirmedIncoming,
+      openSalesOrders: rec.openSO, openQuotations: rec.openQuotation, quotationWeight: CONFIG.tunable.quotationWeight,
+      moq: moq.moq, orderMultiple: moq.orderMultiple, orderMultipleSource: moq.orderMultipleSource,
+      purchasePattern: rec.pattern ? { min: rec.pattern.min, max: rec.pattern.max, mostCommon: rec.pattern.mostCommon, count: rec.pattern.count } : null,
+    };
+    const outputSnapshot = {
+      status: rec.status, recommendedQty: rec.recommendedQty, priority: rec.priority,
+      confidence: rec.confidence, exceptionStatus: rec.stockStatus, supplier: rec.supplier.code,
+      reasons: rec.reasons, narrative: rec.narrative,
+    };
+    const fingerprintPayload = { engineVersion, ruleVersion, itemCode: rec.ItemCode, input: inputSnapshot, intermediate, output: outputSnapshot };
+    return {
+      decisionId: runId+'_'+itemCode, runId, itemCode: rec.ItemCode, decisionType: 'RECOMMENDATION',
+      decisionTimestamp: Date.now(), actorId, actorName, engineVersion, ruleVersion,
+      inputSnapshot, intermediateSnapshot: intermediate, outputSnapshot,
+      fingerprintPayload, // يُستبدَل بـfingerprint (السلسلة النصية) بعد الحساب في persistEvidence — actorId/actorName مستثنيان عمداً من البصمة (هوية الفاعل لا تغيّر "ماهية القرار" نفسه)
+    };
+  },
+  /** يحسب البصمة ويكتب السجل — كتابة واحدة فقط لكل decisionId (مفتاح فريد ضمن هذا التشغيل)،
+      لا تحديث ولا حذف لاحقاً إطلاقاً؛ لو المفتاح موجود مسبقاً (لا يجب أن يحدث) تُرفض الكتابة
+      صراحةً بدل الكتابة فوق دليل تاريخي — سلامة القسم 11 (Immutability). */
+  async persistEvidence(evidence){
+    const existing = await DB.getOne('decisionEvidence', evidence.decisionId);
+    if(existing) throw new Error('decisionId موجود مسبقاً — رُفضت الكتابة فوق دليل تاريخي: '+evidence.decisionId);
+    const fingerprint = await this.sha256Hex(this.canonicalStringify(evidence.fingerprintPayload));
+    const rec = Object.assign({}, evidence, { fingerprint });
+    delete rec.fingerprintPayload;
+    await DB.putOne('decisionEvidence', rec);
+    return rec;
+  },
+  async startRun(trigger){
+    const actor = this.actorSnapshot();
+    const run = {
+      runId: U.uid(), timestamp: Date.now(), trigger: trigger||'manual',
+      actorId: actor.actorId, actorName: actor.actorName,
+      engineVersion: (typeof CONFIG!=='undefined' && CONFIG.version) ? CONFIG.version : 'ENGINE_VERSION_UNAVAILABLE',
+    };
+    await DB.putOne('decisionRuns', run);
+    return run;
+  },
+  /** جوهرية = أي توصية تستحق انتباه المشتري (كل شي عدا NO_ORDER — لا حاجة لطلب، لا شيء يُفسَّر).
+      يبني ويحفظ دليلاً لكل صنف جوهري؛ فشل صنف واحد لا يوقف البقية ولا يغيّر أي توصية فعلية —
+      يُسجَّل بقائمة failures ويُعرَض للمستخدم (toast) بدل الإخفاء الصامت (قسم 15). */
+  async runForMaterialItems(trigger){
+    let run;
+    try{ run = await this.startRun(trigger); }
+    catch(e){ console.warn('[EVIDENCE] فشل بدء تشغيل جديد لدليل القرار — لن يُولَّد دليل لهذا التشغيل', e); return { run:null, materialCount:0, failures:['RUN_START_FAILED'] }; }
+    const items = getRecosAll().filter(r=>r.status!=='NO_ORDER');
+    const failures = [];
+    for(const r of items){
+      try{
+        const built = this.buildEvidenceForItem(r.ItemCode, run.runId, run.engineVersion, run.actorId, run.actorName);
+        await this.persistEvidence(built);
+      }catch(e){
+        console.warn('[EVIDENCE] فشل توليد/حفظ دليل القرار لصنف — التوصية نفسها غير متأثرة:', r.ItemCode, e);
+        failures.push(r.ItemCode);
+      }
+    }
+    return { run, materialCount: items.length, failures };
+  },
+  async latestForItem(itemCode){
+    const all = await DB.getAll('decisionEvidence');
+    const forItem = all.filter(r=>r.itemCode===itemCode).sort((a,b)=>b.decisionTimestamp-a.decisionTimestamp);
+    return forItem[0] || null;
+  },
+  async overridesForDecision(decisionId){
+    const all = await DB.getAll('decisionOverrides');
+    return all.filter(r=>r.decisionId===decisionId).sort((a,b)=>b.overrideTimestamp-a.overrideTimestamp);
+  },
+  /** يلتقط حدث تجاوز على الكمية الموصى بها — يُستدعى من نفس مسار التجاوز الموجود أصلاً
+      (planSetQty) بلا أي ورشة اعتماد جديدة (قسم 12). لا يعدّل سجل الدليل الأصلي إطلاقاً؛
+      لو ما في دليل سابق لهذا الصنف (المحرك ما شُغِّل منذ نشر P0-B) يُسجَّل ذلك صراحةً كـ
+      NO_PRIOR_EVIDENCE بدل اختلاق دليل أصلي. */
+  async captureOverride(itemCode, newQty, reason){
+    try{
+      const original = await this.latestForItem(itemCode);
+      const actor = this.actorSnapshot();
+      const rec = {
+        overrideId: U.uid(), decisionId: original ? original.decisionId : null,
+        itemCode, overrideTimestamp: Date.now(),
+        actorId: actor.actorId, actorName: actor.actorName,
+        originalStatus: original ? 'DECISION_FOUND' : 'NO_PRIOR_EVIDENCE',
+        originalQty: original ? original.outputSnapshot.recommendedQty : null,
+        originalFingerprint: original ? original.fingerprint : null,
+        overrideQty: newQty, reason: reason || null,
+      };
+      await DB.putOne('decisionOverrides', rec);
+      return rec;
+    }catch(e){
+      console.warn('[EVIDENCE] فشل تسجيل حدث تجاوز — التجاوز نفسه (الكمية بخطة الشراء) غير متأثر:', itemCode, e);
+      return null;
+    }
+  },
+};
+
 /* recomputeAll: بعد تغيير الفلاتر/الإعدادات — يعيد حساب نتائج المحرك فقط.
    invalidateData: بعد استيراد/تراجع — يعيد بناء الفهارس وخطوط المبيعات ثم نتائج المحرك. */
 window.recomputeAll = function(){
@@ -2473,9 +2665,34 @@ function openWhyDrawer(itemCode){
         <div class="tile"><div class="k">الوصول المتوقع</div><div class="v txt">${arr.date?U.fmtDate(arr.date):'—'}</div></div>
         <div class="tile"><div class="k">مستوى الثقة</div><div class="v txt">${CONF_LABELS[r.confidence]}</div></div>
       </div>
-      <div class="drawer-actions" style="margin-top:14px"><button class="btn-ghost btn-sm" onclick="closeModal();openItemDetail('${U.esc(itemCode)}')">كل تفاصيل الصنف</button><button class="btn-ghost btn-sm" onclick="openPilotLogModal('${U.esc(itemCode)}')">تسجيل قرار المشتري</button></div>
+      <div class="drawer-actions" style="margin-top:14px"><button class="btn-ghost btn-sm" onclick="closeModal();openItemDetail('${U.esc(itemCode)}')">كل تفاصيل الصنف</button><button class="btn-ghost btn-sm" onclick="openPilotLogModal('${U.esc(itemCode)}')">تسجيل قرار المشتري</button>${isAdmin() ? `<button class="btn-ghost btn-sm" onclick="openDecisionEvidence('${U.esc(itemCode)}')">دليل القرار (تدقيق)</button>` : ''}</div>
     </div>`;
   document.getElementById('modalOverlay').classList.add('open');
+}
+
+/** عرض دليل القرار للصنف (قراءة فقط) — إداري فقط (أقرب مستوى موجود لـ"تدقيق داخلي" ضمن
+    نظام الصلاحيات الحالي ثلاثي المستويات؛ الحماية الفعلية بمستوى الدالة كباقي الشاشة). */
+async function openDecisionEvidence(itemCode){
+  if(!requirePermission('admin', 'عرض دليل القرار')) return;
+  document.getElementById('modalBox').innerHTML = `<div class="drawer-head"><div><h3>دليل القرار</h3><div class="sub">${U.esc(itemCode)}</div></div><button class="btn-ghost btn-sm" onclick="closeModal()">إغلاق</button></div><div class="drawer-body"><div class="hint">جارٍ التحميل…</div></div>`;
+  const ev = await EVIDENCE.latestForItem(itemCode);
+  if(!ev){
+    document.getElementById('modalBox').querySelector('.drawer-body').innerHTML = `<div class="empty-state"><b>لا يوجد دليل قرار مسجَّل لهذا الصنف بعد</b>دليل القرار يُولَّد تلقائياً بكل ضغطة «تشغيل المحرك» بعد تفعيل هذه الميزة — شغّل المحرك ثم عد لهذا الصنف.</div>`;
+    return;
+  }
+  const overrides = await EVIDENCE.overridesForDecision(ev.decisionId);
+  const kv = (k,v)=>`<div class="k">${U.esc(k)}</div><div class="v txt">${U.esc(v==null?'—':v)}</div>`;
+  document.getElementById('modalBox').querySelector('.drawer-body').innerHTML = `
+    <div class="section-title">الهوية والتوقيت</div>
+    <div class="facts">${kv('معرّف القرار', ev.decisionId)}${kv('معرّف التشغيل', ev.runId)}${kv('الفاعل', ev.actorName)}${kv('وقت القرار', U.fmtDate(new Date(ev.decisionTimestamp))+' '+new Date(ev.decisionTimestamp).toLocaleTimeString('ar'))}${kv('نسخة المحرك', ev.engineVersion)}</div>
+    <div class="section-title">النتيجة المسجَّلة وقت القرار</div>
+    <div class="facts">${kv('الحالة', RECO_LABELS[ev.outputSnapshot.status]||ev.outputSnapshot.status)}${kv('الكمية الموصى بها', U.num(ev.outputSnapshot.recommendedQty))}${kv('الأولوية', ev.outputSnapshot.priority)}${kv('الثقة', CONF_LABELS[ev.outputSnapshot.confidence]||ev.outputSnapshot.confidence)}${kv('المورد', ev.outputSnapshot.supplier||'—')}</div>
+    <div class="section-title">مدخلات محفوظة وقت القرار (MOQ / مضاعف الطلب / مدة التوريد)</div>
+    <div class="facts">${kv('MOQ', ev.inputSnapshot.moq)}${kv('مضاعف الطلب', ev.inputSnapshot.orderMultiple)}${kv('مصدر مضاعف الطلب', ev.inputSnapshot.orderMultipleSource||'نمط الشراء التاريخي (بديل صامت)')}${kv('مدة التوريد', ev.inputSnapshot.leadTime.days+' يوم — '+ev.inputSnapshot.leadTime.label)}</div>
+    <div class="section-title">بصمة الدليل (Fingerprint)</div>
+    <div class="facts">${kv('SHA-256', ev.fingerprint)}</div>
+    ${overrides.length ? `<div class="section-title">أحداث التجاوز على هذا القرار (${overrides.length})</div><div class="facts">${overrides.map(o=>kv(U.fmtDate(new Date(o.overrideTimestamp)), `${o.actorName}: ${o.originalQty??'—'} ← ${o.overrideQty}`)).join('')}</div>` : ''}
+    <div class="hint" style="margin-top:12px">هذا الدليل لقطة تاريخية غير قابلة للتعديل — لا تتأثر بأي تغيير لاحق بإعدادات المحرك أو بيانات المورد.</div>`;
 }
 
 /* ------------------------------------------------------------------------------------------
@@ -2594,7 +2811,7 @@ function planSelectVisible(on){
   getRecos().filter(r=>r.status===STATE.planTab).forEach(r=>{ if(on) STATE.planSelection.add(r.ItemCode); else STATE.planSelection.delete(r.ItemCode); });
   TABLES.plan();
 }
-function planSetQty(code, val){ if(!requirePermission('input', 'تعديل كمية الخطة')) return; setPlanOverride(code, {qty:Number(val)}).then(()=>{ if(STATE.planBuilt) buildSupplierPlan(true); }); }
+function planSetQty(code, val){ if(!requirePermission('input', 'تعديل كمية الخطة')) return; const newQty=Number(val); setPlanOverride(code, {qty:newQty}).then(()=>{ if(STATE.planBuilt) buildSupplierPlan(true); }); EVIDENCE.captureOverride(code, newQty, (STATE.planOverrides[code]||{}).note||null).catch(e=>console.warn('[EVIDENCE] فشل تسجيل حدث تجاوز الكمية — التجاوز نفسه محفوظ وسليم', e)); }
 function planSetNote(code, val){ if(!requirePermission('input', 'تعديل ملاحظة الخطة')) return; setPlanOverride(code, {note:val}); }
 
 /** تجميع الأصناف المختارة حسب المورد (نفس منطق التجميع بالمحرك: المورد الغالب لكل صنف + مدة توريده)
@@ -3643,6 +3860,14 @@ async function runEngine(){
   rerenderActiveView();
   if(btn){ btn.disabled=false; btn.textContent='تشغيل المحرك'; }
   U.toast(`تم تشغيل المحرك: ${U.num(getRecosAll().length)} صنف خلال ${((performance.now()-t0)/1000).toFixed(1)} ث`, 'ok');
+  // دليل القرار (P0-B) — بعد إعلان التشغيل ناجحاً للمستخدم دائماً؛ فشل توليد الدليل (لأي سبب)
+  // لا يوقف ولا يؤخّر ولا يغيّر التوصية الفعلية إطلاقاً — فقط يُبلَّغ صراحةً لا يُخفى (قسم 15).
+  try{
+    const ev = await EVIDENCE.runForMaterialItems('manual_run_engine');
+    if(ev.failures && ev.failures.length){
+      U.toast(`تنبيه تدقيق: تعذّر حفظ دليل القرار لعدد ${ev.failures.length} من ${ev.materialCount} صنف — التوصيات نفسها سليمة`, 'err');
+    }
+  }catch(e){ console.warn('[EVIDENCE] فشل غير متوقَّع بتوليد دليل القرار لهذا التشغيل — التوصيات الفعلية غير متأثرة', e); }
 }
 async function onDataChanged(){
   STATE.importLog = await DB.getAll('importLog');
