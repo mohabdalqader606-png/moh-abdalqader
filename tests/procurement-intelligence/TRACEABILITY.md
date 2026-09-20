@@ -8,11 +8,14 @@ names, pass/fail state and category), run `node run-all.js` and read `results/la
 is generated fresh on every run and is the authoritative, machine-readable source of truth. This
 file explains *why* each group exists; `results/latest.json` proves *whether it currently passes*.
 
-**P0-A vs P0-B**: the first 246 checks (business-logic/e2e/golden-dataset/data-validation/
+**P0-A vs P0-B vs P1-C**: the first 246 checks (business-logic/e2e/golden-dataset/data-validation/
 determinism) are the P0-A permanent regression foundation and must never change their pass count
-as a result of P0-B. The 18 `DE-*` checks are new in P0-B, testing the Decision Evidence layer
-added in that phase (see `../المشتريات_الخارجية_الذكية.html`'s `EVIDENCE` module and
-`AUDIT_EVIDENCE_EXAMPLE.md`). 246 + 18 = 264.
+as a result of any later phase. The 18 `DE-*` checks are P0-B, testing the Decision Evidence layer
+(see `../المشتريات_الخارجية_الذكية.html`'s `EVIDENCE` module and `AUDIT_EVIDENCE_EXAMPLE.md`). The
+6 `P1C-*` checks are P1-C (the first authorized item from P0-B's own confirmed-gap list — see
+`p1c-confidence-reproducibility.spec.js`), adding one historical-evidence field
+(`inputSnapshot.hasInventoryRecord`) so all 5 inputs to `RECO.computeConfidence()` are
+independently reconstructable from stored evidence alone. 246 + 18 + 6 = 270.
 
 ## Control matrix reference (from Phase 1 audit)
 
@@ -147,6 +150,22 @@ the corresponding input actually flows into the recorded evidence.
 | DE-15 | A NO_ORDER item gets no evidence record (materiality, not blind duplication) | 13 | C-09 |
 | DE-16 | Evidence generation never changes `RECO.computeForItem`'s actual output | 17 | C-04, C-10 |
 | DE-17 | One engine run groups all its decisions under one shared Run ID | 2 | C-09 |
+
+## p1c-confidence-reproducibility.spec.js (`P1C-*`, 6 checks — new in P1-C)
+
+Tests the single field added under the P1-C implementation contract (P0-B.7 §A): `inputSnapshot.
+hasInventoryRecord`, captured from the exact expression `RECO.computeConfidence()` itself uses
+(`INV.rowsFor(itemCode).length>0`). All map to C-09 (auditability); C-04 also applies since
+Confidence is a decision-output field.
+
+| ID | Test | Requirement (P1-C contract item) | Control |
+|---|---|---|---|
+| P1C-01 | `hasInventoryRecord=true` when the item has ≥1 inventory row | 1 | C-09 |
+| P1C-02 | `hasInventoryRecord=false` when the item has 0 inventory rows | 1 | C-09 |
+| P1C-03 | All 5 `computeConfidence` inputs, reconstructed from a stored record and independently scored (never calling `RECO.computeConfidence`), match the stored `outputSnapshot.confidence` | 4 (acceptance test) | C-04, C-09 |
+| P1C-04 | A pre-change-shaped record (no `hasInventoryRecord`) is untouched — same `decisionId`, same `fingerprint`, same `inputSnapshot`, no field injected retroactively | 2 | C-09 |
+| P1C-05 | Two otherwise-identical new records differing only in `hasInventoryRecord` produce different fingerprints | 3 | C-09 |
+| P1C-06 | Historical integrity under a real new engine run: the old record survives a full run touching other items, fingerprint unchanged | 2 | C-09 |
 
 ## Coverage summary (from the most recent `run-all.js` run)
 
