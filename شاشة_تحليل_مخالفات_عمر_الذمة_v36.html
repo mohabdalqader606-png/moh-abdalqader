@@ -3105,6 +3105,9 @@ function exportInteractiveDailyReport(){
   const exportData = groups.map(g=>{
     const total = g.items.reduce((s,r)=>s+r.amount,0);
     const anyLate = g.items.some(r=>r.status==='late');
+    // "أيام التأخير" للترتيب: أسوأ تأخير فعلي بالتاريخ (متأخر أو غير مؤثر مادياً)، بعكس تلوين الصف الأحمر يلي مرتبط بـ"متأخر" فقط
+    const delayItems = g.items.filter(r=>r.status==='late'||r.status==='immaterial');
+    const lateDays = delayItems.length>0 ? Math.max(...delayItems.map(r=>r.delayDays||0)) : -1;
     const last = g.items.reduce((a,b)=>{
       const at = a.collectDate ? a.collectDate.getTime() : -Infinity;
       const bt = b.collectDate ? b.collectDate.getTime() : -Infinity;
@@ -3112,7 +3115,7 @@ function exportInteractiveDailyReport(){
     });
     return {
       cardCode: g.cardCode||'', cardName: g.cardName||'', slpName: g.slpName||'',
-      count: g.items.length, total,
+      count: g.items.length, total, lateDays,
       lastDate: last.collectDate ? fmtDate(last.collectDate) : '—',
       lastStatus: last.statusLabel||'', anyLate
     };
@@ -3130,12 +3133,12 @@ function exportInteractiveDailyReport(){
 function buildInteractiveDailyReportHtml(data, genDate, rowsCount, custCount){
   const innerScript = [
     'var DATA = ' + JSON.stringify(data).replace(/</g,'\\u003c') + ';',
-    'var sortKey = "count", sortDir = "desc";',
+    'var sortKey = "lateDays", sortDir = "desc";',
     'function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }',
     'function fmtNum(n){ return (n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }',
     'function sortBy(key){',
     '  if(sortKey===key){ sortDir = sortDir==="asc" ? "desc" : "asc"; }',
-    '  else { sortKey=key; sortDir = (key==="count"||key==="total") ? "desc" : "asc"; }',
+    '  else { sortKey=key; sortDir = (key==="count"||key==="total"||key==="lateDays") ? "desc" : "asc"; }',
     '  renderTbl();',
     '}',
     'function renderTbl(){',
@@ -3154,7 +3157,7 @@ function buildInteractiveDailyReportHtml(data, genDate, rowsCount, custCount){
     '  var cols = [',
     '    {key:"cardCode", label:"رمز العميل"}, {key:"cardName", label:"اسم العميل"}, {key:"slpName", label:"المندوب"},',
     '    {key:"count", label:"عدد التحصيلات", num:true}, {key:"lastDate", label:"آخر تحصيل"},',
-    '    {key:"total", label:"قيمته (المجموع)", num:true}, {key:"lastStatus", label:"الحالة"}',
+    '    {key:"total", label:"قيمته (المجموع)", num:true}, {key:"lateDays", label:"أيام التأخير", num:true}, {key:"lastStatus", label:"الحالة"}',
     '  ];',
     '  var html = "<table><thead><tr>";',
     '  cols.forEach(function(c){',
@@ -3168,10 +3171,10 @@ function buildInteractiveDailyReportHtml(data, genDate, rowsCount, custCount){
     '    html += "<tr class=\\"" + (r.anyLate?"late":"") + "\\">" +',
     '      "<td>" + esc(r.cardCode) + "</td><td>" + esc(r.cardName) + "</td><td>" + esc(r.slpName) + "</td>" +',
     '      "<td class=\\"num\\">" + r.count + "</td><td>" + esc(r.lastDate) + "</td>" +',
-    '      "<td class=\\"num\\">" + fmtNum(r.total) + "</td><td>" + esc(r.lastStatus) + "</td></tr>";',
+    '      "<td class=\\"num\\">" + fmtNum(r.total) + "</td><td class=\\"num\\">" + (r.lateDays>=0?r.lateDays:"—") + "</td><td>" + esc(r.lastStatus) + "</td></tr>";',
     '  });',
     '  html += "</tbody><tfoot><tr><td colspan=\\"3\\">الإجمالي (" + rows.length + " عميل)</td>" +',
-    '    "<td class=\\"num\\">" + totalCount + "</td><td></td><td class=\\"num\\">" + fmtNum(grandTotal) + "</td><td></td></tr></tfoot></table>";',
+    '    "<td class=\\"num\\">" + totalCount + "</td><td></td><td class=\\"num\\">" + fmtNum(grandTotal) + "</td><td></td><td></td></tr></tfoot></table>";',
     '  wrap.innerHTML = html;',
     '}',
     'renderTbl();'
