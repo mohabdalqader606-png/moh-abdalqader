@@ -3313,7 +3313,7 @@ function mrptDailyHtml(){
   if(rows.length===0){
     body = '<div style="padding:20px; color:var(--mrpt-muted); font-size:12px;">ما في بيانات تحصيل يومي مطابقة للفلتر الحالي.</div>';
   } else {
-    // تجميع حسب العميل — صف واحد لكل عميل: عدد التحصيلات + إجمالي المحصَّل + تفاصيل آخر تحصيل (الأحدث تاريخاً)
+    // تجميع حسب العميل — صف واحد لكل عميل: عدد التحصيلات + قيمته (مجموع كل تحصيلاته) + تاريخ وحالة آخر تحصيل (الأحدث تاريخاً)
     const groups = [];
     const byCard = new Map();
     rows.forEach(r=>{
@@ -3334,18 +3334,18 @@ function mrptDailyHtml(){
 
     const grandTotal = groups.reduce((s,g)=>s+g.total,0);
     body = `<table class="mrpt-tbl"><thead><tr>
-      <th>رمز العميل</th><th>اسم العميل</th><th>المندوب</th><th class="num">عدد التحصيلات</th><th class="num">إجمالي المحصَّل</th><th>آخر تحصيل</th><th class="num">قيمته</th><th>الحالة</th>
+      <th>رمز العميل</th><th>اسم العميل</th><th>المندوب</th><th class="num">عدد التحصيلات</th><th>آخر تحصيل</th><th class="num">قيمته (المجموع)</th><th>الحالة</th>
     </tr></thead><tbody>` + groups.map(g=>{
       const r = g.last;
       return `<tr class="${g.anyLate?'mrpt-risk-row':''}">
         <td>${mrptEsc(g.cardCode)}</td><td>${mrptEsc(g.cardName)}</td><td>${mrptEsc(g.slpName)}</td>
-        <td class="num">${g.items.length}</td><td class="num">${fmtNum(g.total)}</td>
-        <td>${r.collectDate?fmtDate(r.collectDate):'—'}</td><td class="num">${fmtNum(r.amount)}</td><td>${mrptEsc(r.statusLabel)}</td>
+        <td class="num">${g.items.length}</td>
+        <td>${r.collectDate?fmtDate(r.collectDate):'—'}</td><td class="num">${fmtNum(g.total)}</td><td>${mrptEsc(r.statusLabel)}</td>
       </tr>`;
     }).join('') + `<tr class="mrpt-total-row">
         <td colspan="3">الإجمالي (${groups.length} عميل)</td>
-        <td class="num">${rows.length}</td><td class="num">${fmtNum(grandTotal)}</td>
-        <td colspan="3"></td>
+        <td class="num">${rows.length}</td><td></td><td class="num">${fmtNum(grandTotal)}</td>
+        <td></td>
       </tr>` + '</tbody></table>';
   }
   const late = rows.filter(r=>r.status==='late').length;
