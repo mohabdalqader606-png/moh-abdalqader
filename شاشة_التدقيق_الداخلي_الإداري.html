@@ -3600,6 +3600,21 @@
       </div>
       <div class="kd-panel" id="jeFileHead" style="padding:14px 18px;margin-bottom:14px;"></div>
       <div class="stat-cards" id="jeStatCards"></div>
+      <div class="kd-panel" style="padding:12px 16px;margin-bottom:14px;display:flex;flex-wrap:wrap;gap:10px 16px;align-items:flex-end;">
+        <div class="field" style="margin-bottom:0;min-width:240px;flex:1;"><label>بحث حر (الحساب، الملاحظة، الشخص المسؤول، القسم، المرجع، المدقق، رقم القيد)</label><input type="text" id="jeFilterQ" placeholder="اكتب أي جزء من النص..."></div>
+        <div class="field" style="margin-bottom:0;"><label>حالة الفحص</label>
+          <select id="jeFilterStatus">
+            <option value="">الكل</option>
+            <option value="not_checked">لم يتم الفحص</option>
+            <option value="checked_ok">تم الفحص — سليم</option>
+            <option value="checked_note">تم الفحص — توجد ملاحظة</option>
+            <option value="follow_up">يحتاج متابعة</option>
+          </select>
+        </div>
+        <div class="field" style="margin-bottom:0;"><label>من تاريخ القيد</label><input type="date" id="jeFilterFrom"></div>
+        <div class="field" style="margin-bottom:0;"><label>إلى تاريخ القيد</label><input type="date" id="jeFilterTo"></div>
+        <button type="button" class="btn btn-ghost btn-sm" id="jeClearFilterBtn" style="white-space:nowrap;">مسح الفلتر</button>
+      </div>
       <div id="jeEntriesBox" class="kt-host"></div>
     </div>
   </div>
@@ -16836,6 +16851,30 @@ renderDashboard();
     follow_up:   {label:"يحتاج متابعة", color:"#DC2626"},
   };
   let currentJeFileId = null;
+  let jeEntryFilter = {q:"", status:"", from:"", to:""};
+  function jeFilteredEntries(file){
+    const entries = file.entries||[];
+    const q = jeEntryFilter.q.trim().toLowerCase();
+    return entries.filter(e=>{
+      if(jeEntryFilter.status && e.status!==jeEntryFilter.status) return false;
+      if(jeEntryFilter.from && e.entryDate && e.entryDate<jeEntryFilter.from) return false;
+      if(jeEntryFilter.to && e.entryDate && e.entryDate>jeEntryFilter.to) return false;
+      if(q){
+        const hay = [e.entryNo,e.account,e.note,e.responsiblePerson,e.department,e.refDoc,e.auditorName].map(v=>String(v||"").toLowerCase()).join(" | ");
+        if(!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }
+  function jeFilterActive(){ return !!(jeEntryFilter.q || jeEntryFilter.status || jeEntryFilter.from || jeEntryFilter.to); }
+  function jeFilterSummaryText(){
+    const parts = [];
+    if(jeEntryFilter.q) parts.push(`بحث: "${jeEntryFilter.q}"`);
+    if(jeEntryFilter.status) parts.push(`الحالة: ${(JE_STATUS_META[jeEntryFilter.status]||{}).label||jeEntryFilter.status}`);
+    if(jeEntryFilter.from) parts.push(`من ${jeEntryFilter.from}`);
+    if(jeEntryFilter.to) parts.push(`إلى ${jeEntryFilter.to}`);
+    return parts.join(" | ");
+  }
 
   function jeFindFile(id){ return (DB.jeFiles||[]).find(f=>f.id===id); }
   function jeStats(file){
@@ -16914,6 +16953,11 @@ renderDashboard();
     const file = jeFindFile(id);
     if(!file) return;
     currentJeFileId = id;
+    jeEntryFilter = {q:"", status:"", from:"", to:""};
+    document.getElementById("jeFilterQ").value = "";
+    document.getElementById("jeFilterStatus").value = "";
+    document.getElementById("jeFilterFrom").value = "";
+    document.getElementById("jeFilterTo").value = "";
     document.getElementById("jeListPanel").style.display = "none";
     document.getElementById("jeFilePanel").style.display = "";
     jeRenderFileDetail(file);
@@ -16941,9 +16985,14 @@ renderDashboard();
 
   function jeRenderEntries(file){
     const box = document.getElementById("jeEntriesBox");
-    const entries = file.entries||[];
-    if(!entries.length){
+    const all = file.entries||[];
+    const entries = jeFilteredEntries(file);
+    if(!all.length){
       box.innerHTML = `<div class="empty"><h3>لا قيود مُسجَّلة بعد</h3><p>اضغط «+ تسجيل فحص قيد» لبدء فحص القيود واحداً واحداً.</p></div>`;
+      return;
+    }
+    if(!entries.length){
+      box.innerHTML = `<div class="empty"><h3>لا نتائج مطابقة للفلتر</h3><p>${escapeHtml(jeFilterSummaryText())} — لا يوجد أي قيد يطابق هذه المعايير من أصل ${all.length} قيداً مسجَّلاً. اضغط «مسح الفلتر» لعرض الكل.</p></div>`;
       return;
     }
     const tbody = ktTable(box, [
@@ -16952,6 +17001,12 @@ renderDashboard();
       {l:"حالة الفحص",cls:"w",k:"st"}, {l:"الملاحظة"}, {l:"المرجع/المستند",cls:"w wrap",k:"ref"},
       {l:"اسم المدقق",cls:"w",k:"resp"}, {l:"تاريخ الفحص",cls:"w",k:"date"}, {l:"",cls:"w",k:"act"},
     ], {ariaLabel:"سجل فحص القيود", minWidth:1550});
+    if(jeFilterActive()){
+      const note = document.createElement("div");
+      note.style.cssText = "font-size:12.5px;color:var(--kd-muted);margin-bottom:8px;";
+      note.textContent = `يعرض ${entries.length} من أصل ${all.length} قيداً — الفلتر: ${jeFilterSummaryText()}`;
+      box.insertBefore(note, box.firstChild);
+    }
     entries.forEach(entry=>{
       const stMeta = JE_STATUS_META[entry.status] || JE_STATUS_META.not_checked;
       const tr = document.createElement("tr");
@@ -16980,6 +17035,24 @@ renderDashboard();
       tbody.appendChild(tr);
     });
   }
+
+  /* ---------- فلتر سجل القيود ---------- */
+  function jeReRenderEntriesFromFilter(){
+    const file = jeFindFile(currentJeFileId);
+    if(file) jeRenderEntries(file);
+  }
+  document.getElementById("jeFilterQ").addEventListener("input", ()=>{ jeEntryFilter.q = document.getElementById("jeFilterQ").value; jeReRenderEntriesFromFilter(); });
+  document.getElementById("jeFilterStatus").addEventListener("change", ()=>{ jeEntryFilter.status = document.getElementById("jeFilterStatus").value; jeReRenderEntriesFromFilter(); });
+  document.getElementById("jeFilterFrom").addEventListener("change", ()=>{ jeEntryFilter.from = document.getElementById("jeFilterFrom").value; jeReRenderEntriesFromFilter(); });
+  document.getElementById("jeFilterTo").addEventListener("change", ()=>{ jeEntryFilter.to = document.getElementById("jeFilterTo").value; jeReRenderEntriesFromFilter(); });
+  document.getElementById("jeClearFilterBtn").addEventListener("click", ()=>{
+    jeEntryFilter = {q:"", status:"", from:"", to:""};
+    document.getElementById("jeFilterQ").value = "";
+    document.getElementById("jeFilterStatus").value = "";
+    document.getElementById("jeFilterFrom").value = "";
+    document.getElementById("jeFilterTo").value = "";
+    jeReRenderEntriesFromFilter();
+  });
 
   /* ---------- ملف تدقيق: إضافة / تعديل ---------- */
   document.getElementById("addJeFileBtn").addEventListener("click", ()=> jeOpenFileModal(null));
@@ -17090,13 +17163,17 @@ renderDashboard();
   /* ---------- تقرير الملف (طباعة / تصدير CSV) ---------- */
   function jeBuildReportBody(file){
     const s = jeStats(file);
-    const entries = file.entries||[];
+    const entries = jeFilteredEntries(file);
+    const filterLine = jeFilterActive()
+      ? `<div class="sub" style="margin-top:4px;"><b>الفلتر المطبّق:</b> ${escapeHtml(jeFilterSummaryText())} — يعرض ${entries.length} من أصل ${(file.entries||[]).length} قيداً</div>`
+      : '';
     return `
       <div class="stat-row">
         <div><b>رقم الملف:</b> ${escapeHtml(file.fileNo||"—")} <span style="color:#6B7C8D;">(${escapeHtml(file.refCode)})</span></div>
         <div><b>الفترة:</b> ${escapeHtml(file.period||"—")}</div>
         <div><b>أول رقم قيد:</b> ${escapeHtml(file.firstEntryNo||"—")}</div>
       </div>
+      ${filterLine}
       <div class="stat-row">
         ${reportStatBox(s.total,'إجمالي القيود المسجَّلة')}
         ${reportStatBox(s.checkedCount,'عدد القيود المفحوصة','#16A34A')}
@@ -17105,7 +17182,7 @@ renderDashboard();
         ${reportStatBox(s.lastReachedNo,'آخر قيد وصلت إليه')}
         ${reportStatBox(s.pct+'%','نسبة الإنجاز')}
       </div>
-      <h2>سجل فحص القيود</h2>
+      <h2>سجل فحص القيود${jeFilterActive()? ' (بعد تطبيق الفلتر)' : ''}</h2>
       ${reportTable(
         ['رقم القيد','تاريخ القيد','الحساب','المبلغ','الشخص المسؤول','القسم','حالة الفحص','الملاحظة','المرجع/المستند','اسم المدقق','تاريخ الفحص'],
         entries.map(entry=>{
@@ -17141,7 +17218,8 @@ renderDashboard();
     const file = jeFindFile(currentJeFileId);
     if(!file) return;
     const headers = ['رقم الملف','رقم القيد','تاريخ القيد','الحساب','المبلغ','الشخص المسؤول','القسم','حالة الفحص','الملاحظة','المرجع/المستند','اسم المدقق','تاريخ الفحص'];
-    const rows = (file.entries||[]).map(entry=>{
+    const infoLines = jeFilterActive() ? [`فلتر مطبّق: ${jeFilterSummaryText()}`, ""] : [];
+    const rows = jeFilteredEntries(file).map(entry=>{
       const stMeta = JE_STATUS_META[entry.status] || JE_STATUS_META.not_checked;
       return [
         file.fileNo||file.refCode, entry.entryNo||"", entry.entryDate||"", entry.account||"",
@@ -17149,7 +17227,7 @@ renderDashboard();
         stMeta.label, entry.note||"", entry.refDoc||"", entry.auditorName||"", entry.checkDate||"",
       ].map(jeCsvCell).join(",");
     });
-    const csv = "﻿" + [headers.map(jeCsvCell).join(","), ...rows].join("\r\n");
+    const csv = "﻿" + [...infoLines, headers.map(jeCsvCell).join(","), ...rows].join("\r\n");
     const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
