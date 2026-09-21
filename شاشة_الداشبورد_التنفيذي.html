@@ -1,0 +1,1236 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>الداشبورد التنفيذي — مركز الكيلاني للأغذية</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Kufi+Arabic:wght@400;500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{
+  --navy:#0F2F4F; --bg:#F4F6F9; --card:#FFFFFF; --border:#E4E9F0;
+  --text:#1C2B3A; --muted:#6B7C8D; --radius:14px; --radius-sm:10px;
+  --shadow:0 2px 10px rgba(15,47,79,.06), 0 1px 2px rgba(15,47,79,.08);
+  --shadow-lg:0 8px 28px rgba(15,47,79,.10), 0 2px 6px rgba(15,47,79,.08);
+  --good:#16A34A; --good-bg:#EAF7EF; --warn:#B7791F; --warn-bg:#FDF3E1; --bad:#DC2626; --bad-bg:#FCEBEA;
+  --gold:#B8924E; --azure:#2F6BDB;
+  --font-head:"Noto Kufi Arabic","IBM Plex Sans Arabic",sans-serif;
+  --font-body:"IBM Plex Sans Arabic","Noto Kufi Arabic",sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,monospace;
+  --dur-fast:120ms; --dur-base:220ms; --dur-slow:360ms; --ease:cubic-bezier(.2,.8,.2,1);
+  --hdr-navy:#0B1220; --hdr-navy2:#111B2E; --hdr-ink:#EEF2F8; --hdr-muted:#98A4BB;
+}
+@media (prefers-reduced-motion: reduce){
+  *{animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important;}
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--text); font-family:var(--font-body);
+  font-size:14px; line-height:1.5; min-height:100vh;
+}
+.mono{font-family:var(--font-mono); direction:ltr; unicode-bidi:isolate;}
+.cur-suffix{font-family:var(--font-body); font-weight:600;}
+h1,h2,h3,h4{font-family:var(--font-head); margin:0; color:var(--text);}
+button{font-family:var(--font-body); cursor:pointer;}
+::selection{background:rgba(184,146,78,.25)}
+
+/* ===== Auth gate ===== */
+#authGate{position:fixed; inset:0; background:var(--hdr-navy); color:var(--hdr-ink); display:flex; align-items:center; justify-content:center; z-index:9999; flex-direction:column; gap:16px;}
+#authGate .box{background:var(--hdr-navy2); border:1px solid rgba(255,255,255,.08); border-radius:var(--radius); padding:32px 36px; width:min(360px,90vw); text-align:center;}
+#authGate input{width:100%; padding:11px 12px; margin-top:10px; border-radius:var(--radius-sm); border:1px solid rgba(255,255,255,.15); background:rgba(255,255,255,.05); color:var(--hdr-ink); font-family:var(--font-body); font-size:14px;}
+#authGate input::placeholder{color:var(--hdr-muted)}
+#authGate button.primary{margin-top:16px; width:100%; padding:11px; border:none; border-radius:var(--radius-sm); background:linear-gradient(145deg,#E2C48C,#B8924E); color:#231A0C; font-weight:700; font-size:14px;}
+#authGate .err{color:#EE8A8A; font-size:12.5px; min-height:16px; margin-top:8px;}
+#authGate .hint{color:var(--hdr-muted); font-size:12px; margin-top:14px;}
+#appRoot{display:none;}
+
+/* ===== Header ===== */
+.exec-hdr{
+  background:linear-gradient(180deg,var(--hdr-navy),var(--hdr-navy2));
+  color:var(--hdr-ink); padding:16px 28px; display:flex; align-items:center; justify-content:space-between; gap:20px; flex-wrap:wrap;
+}
+.exec-hdr .brand{display:flex; align-items:center; gap:12px;}
+.exec-hdr .mark{width:38px; height:38px; border-radius:10px; background:linear-gradient(145deg,#E2C48C,#B8924E); display:flex; align-items:center; justify-content:center; font-weight:800; color:#231A0C; font-family:var(--font-head); font-size:15px; flex:none;}
+.exec-hdr .titles h1{font-size:16.5px; color:var(--hdr-ink); font-weight:700;}
+.exec-hdr .titles .sub{font-size:11.5px; color:var(--hdr-muted); margin-top:2px;}
+.exec-hdr .meta{display:flex; align-items:center; gap:14px; font-size:12px; color:var(--hdr-muted);}
+.exec-hdr .meta b{color:var(--hdr-ink); font-weight:600;}
+.hdr-btn{background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12); color:var(--hdr-ink); border-radius:9px; padding:8px 14px; font-size:12.5px; display:flex; align-items:center; gap:6px; transition:background var(--dur-fast) var(--ease);}
+.hdr-btn:hover{background:rgba(255,255,255,.12)}
+.hdr-btn svg{width:14px; height:14px}
+
+/* ===== Filters bar ===== */
+.filters-bar{
+  background:var(--card); border-bottom:1px solid var(--border); padding:12px 28px; display:flex; align-items:center; gap:10px; flex-wrap:wrap; position:sticky; top:0; z-index:40;
+}
+.filters-bar .grp{display:flex; align-items:center; gap:6px;}
+.filters-bar label{font-size:12px; color:var(--muted); font-weight:600;}
+.filters-bar select, .filters-bar input[type=date]{
+  border:1px solid var(--border); border-radius:9px; padding:7px 10px; font-size:12.8px; background:#fff; color:var(--text); font-family:var(--font-body);
+}
+.filters-bar .seg{display:flex; background:var(--bg); border:1px solid var(--border); border-radius:9px; padding:3px; gap:2px;}
+.filters-bar .seg button{border:none; background:transparent; padding:6px 12px; border-radius:7px; font-size:12.5px; color:var(--muted); font-weight:600; transition:all var(--dur-fast) var(--ease);}
+.filters-bar .seg button.active{background:var(--navy); color:#fff;}
+.filters-bar .spacer{flex:1}
+.filters-bar .cmp-note{font-size:11.5px; color:var(--muted); background:var(--bg); border-radius:8px; padding:6px 10px;}
+
+/* ===== Layout ===== */
+.wrap{max-width:1400px; margin:0 auto; padding:22px 28px 60px;}
+.section{margin-top:28px;}
+.section-hd{display:flex; align-items:baseline; justify-content:space-between; margin-bottom:12px; gap:10px; flex-wrap:wrap;}
+.section-hd h2{font-size:15.5px; font-weight:700;}
+.section-hd .sub{font-size:12px; color:var(--muted); margin-top:2px;}
+.section-hd .ctl{display:flex; gap:6px; align-items:center;}
+.section-hd .ctl select, .section-hd .ctl button{font-size:12px; border:1px solid var(--border); background:#fff; border-radius:8px; padding:5px 10px; color:var(--text); font-family:var(--font-body);}
+.section-hd .ctl button.active{background:var(--navy); color:#fff; border-color:var(--navy);}
+
+.grid-kpi{display:grid; grid-template-columns:repeat(5,1fr); gap:14px;}
+.grid-2{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+@media(max-width:1180px){.grid-kpi{grid-template-columns:repeat(3,1fr)} .grid-2{grid-template-columns:1fr}}
+@media(max-width:720px){.grid-kpi{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:520px){.grid-kpi{grid-template-columns:1fr}}
+
+/* ===== Cards ===== */
+.card{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:18px 20px;}
+.card.pad-sm{padding:14px 16px}
+.kpi-card{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); padding:16px 18px; position:relative; overflow:hidden; transition:box-shadow var(--dur-base) var(--ease), transform var(--dur-base) var(--ease); cursor:pointer;}
+.kpi-card:hover{box-shadow:var(--shadow-lg); transform:translateY(-1px);}
+.kpi-card .lbl{font-size:11.5px; color:var(--muted); font-weight:700; letter-spacing:.02em; display:flex; align-items:center; justify-content:space-between;}
+.kpi-card .num{font-size:26px; font-weight:600; margin-top:8px; color:var(--text); text-align:right;}
+.kpi-card .num .mono{font-size:26px;}
+.kpi-card .num .cur-suffix{font-size:14px; color:var(--muted); margin-inline-start:2px;}
+.kpi-card .num.skeleton{color:transparent}
+.kpi-card .cur{font-size:12px; color:var(--muted); margin-inline-start:4px; font-family:var(--font-body);}
+.kpi-card .cmp-row{display:flex; align-items:center; gap:6px; margin-top:9px; font-size:12px;}
+.kpi-card .chg{display:inline-flex; align-items:center; gap:3px; font-weight:700; padding:2px 7px; border-radius:6px; font-family:var(--font-mono);}
+.kpi-card .chg.pos{color:var(--good); background:var(--good-bg)}
+.kpi-card .chg.neg{color:var(--bad); background:var(--bad-bg)}
+.kpi-card .chg.flat{color:var(--muted); background:var(--bg)}
+.kpi-card .cmp-lbl{color:var(--muted)}
+.kpi-card .unavail{color:var(--muted); font-size:12px; margin-top:10px;}
+.kpi-card .accent{position:absolute; top:0; right:0; width:4px; height:100%; background:var(--navy); opacity:.55}
+
+/* ===== Skeleton loading ===== */
+.sk{background:linear-gradient(90deg,#EEF1F5 25%,#F7F9FB 37%,#EEF1F5 63%); background-size:400% 100%; animation:sk 1.4s ease infinite; border-radius:8px;}
+@keyframes sk{0%{background-position:100% 50%}100%{background-position:0 50%}}
+
+/* ===== Rank lists ===== */
+.rank-list{display:flex; flex-direction:column; gap:2px;}
+.rank-row{display:grid; grid-template-columns:26px 1fr auto; gap:10px; align-items:center; padding:9px 4px; border-bottom:1px solid var(--border); cursor:pointer; transition:background var(--dur-fast) var(--ease);}
+.rank-row:last-child{border-bottom:none}
+.rank-row:hover{background:var(--bg)}
+.rank-row .idx{font-family:var(--font-mono); font-size:11.5px; color:var(--muted); text-align:center;}
+.rank-row .info .name{font-size:13px; font-weight:600; color:var(--text);}
+.rank-row .info .bar-wrap{background:var(--border); border-radius:4px; height:5px; margin-top:6px; overflow:hidden;}
+.rank-row .info .bar{height:100%; background:var(--navy); border-radius:4px; transition:width var(--dur-slow) var(--ease);}
+.rank-row .vals{text-align:left; font-family:var(--font-mono); font-size:13px; font-weight:600;}
+.rank-row .vals .pct{font-family:var(--font-body); font-size:11px; color:var(--muted); font-weight:500; margin-top:2px;}
+.rank-row .vals .chg{font-family:var(--font-mono); font-size:11px; margin-top:2px;}
+.rank-row .vals .chg.pos{color:var(--good)} .rank-row .vals .chg.neg{color:var(--bad)}
+
+/* ===== Alerts ===== */
+.alert-row{display:flex; align-items:flex-start; gap:10px; padding:11px 4px; border-bottom:1px solid var(--border);}
+.alert-row:last-child{border-bottom:none}
+.alert-row .dot{width:8px; height:8px; border-radius:50%; margin-top:5px; flex:none;}
+.alert-row .dot.bad{background:var(--bad)} .alert-row .dot.warn{background:var(--warn)} .alert-row .dot.good{background:var(--good)}
+.alert-row .txt .t1{font-size:13px; font-weight:600; color:var(--text);}
+.alert-row .txt .t2{font-size:12px; color:var(--muted); margin-top:2px;}
+.alert-empty{color:var(--muted); font-size:12.5px; padding:8px 4px;}
+
+/* ===== Chart ===== */
+.chart-tip{position:absolute; background:var(--hdr-navy); color:#fff; font-size:11.5px; padding:7px 10px; border-radius:8px; pointer-events:none; opacity:0; transition:opacity var(--dur-fast) var(--ease); z-index:20; white-space:nowrap;}
+.chart-tip .mono{color:#fff;}
+.legend{display:flex; gap:16px; font-size:12px; color:var(--muted); align-items:center;}
+.legend .sw{display:inline-flex; align-items:center; gap:5px;}
+.legend .sw i{width:14px; height:3px; border-radius:2px; display:inline-block;}
+.breadcrumb{display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted); margin-bottom:8px;}
+.breadcrumb a{color:var(--azure); cursor:pointer; font-weight:600;}
+.breadcrumb a:hover{text-decoration:underline}
+
+/* ===== Empty / error ===== */
+.empty-state{text-align:center; padding:40px 20px; color:var(--muted); font-size:13px;}
+.empty-state svg{width:34px; height:34px; margin-bottom:10px; opacity:.5}
+.data-badge{font-size:10.5px; padding:2px 8px; border-radius:6px; font-weight:700;}
+.data-badge.est{background:var(--warn-bg); color:var(--warn);}
+.data-badge.actual{background:var(--good-bg); color:var(--good);}
+
+/* ===== Import modal ===== */
+.modal-overlay{position:fixed; inset:0; background:rgba(11,18,32,.55); z-index:500; display:none; align-items:flex-start; justify-content:center; padding:40px 16px; overflow:auto;}
+.modal-overlay.open{display:flex;}
+.modal-box{background:#fff; border-radius:var(--radius); width:min(920px,100%); box-shadow:var(--shadow-lg); max-height:90vh; display:flex; flex-direction:column;}
+.modal-hd{padding:16px 22px; border-bottom:1px solid var(--border); display:flex; align-items:center; justify-content:space-between;}
+.modal-hd h3{font-size:15px}
+.modal-hd button{background:none; border:none; font-size:20px; color:var(--muted); line-height:1;}
+.modal-body{padding:18px 22px; overflow:auto;}
+.import-src{border:1px solid var(--border); border-radius:var(--radius-sm); margin-bottom:14px;}
+.import-src summary{padding:11px 14px; font-size:13px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:space-between; list-style:none;}
+.import-src summary::-webkit-details-marker{display:none}
+.import-src .body{padding:0 14px 14px;}
+.import-src textarea{width:100%; min-height:90px; font-family:var(--font-mono); font-size:11.5px; direction:ltr; border:1px solid var(--border); border-radius:8px; padding:8px; resize:vertical;}
+.import-src pre{background:#0E1524; color:#B9D2FF; font-size:10.8px; padding:10px 12px; border-radius:8px; overflow:auto; direction:ltr; text-align:left; margin:8px 0;}
+.import-src .status{font-size:11.5px; margin-top:6px; color:var(--muted);}
+.import-src .status.ok{color:var(--good)}
+.modal-ft{padding:14px 22px; border-top:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; gap:10px;}
+.btn{border:1px solid var(--border); background:#fff; border-radius:9px; padding:9px 16px; font-size:13px; font-weight:600; color:var(--text);}
+.btn.primary{background:var(--navy); color:#fff; border-color:var(--navy);}
+.btn.gold{background:linear-gradient(145deg,#E2C48C,#B8924E); color:#231A0C; border:none;}
+
+@media print{ .filters-bar,.exec-hdr,.hdr-btn{display:none} }
+</style>
+</head>
+<body>
+
+<div id="authGate">
+  <div class="box">
+    <div style="font-family:var(--font-head);font-weight:800;font-size:17px;margin-bottom:4px;">الداشبورد التنفيذي</div>
+    <div style="color:var(--hdr-muted);font-size:12px;margin-bottom:4px;">مركز الكيلاني للأغذية</div>
+    <input type="email" id="authEmail" placeholder="البريد الإلكتروني" autocomplete="username">
+    <input type="password" id="authPass" placeholder="كلمة المرور" autocomplete="current-password">
+    <button class="primary" id="authBtn" onclick="doSignIn()">تسجيل الدخول</button>
+    <div class="err" id="authErr"></div>
+    <div class="hint">وصول مخصّص للإدارة العليا فقط</div>
+  </div>
+</div>
+
+<div id="appRoot">
+  <header class="exec-hdr">
+    <div class="brand">
+      <div class="mark">KFC</div>
+      <div class="titles">
+        <h1>الداشبورد التنفيذي</h1>
+        <div class="sub">Executive Dashboard — مركز الكيلاني للأغذية</div>
+      </div>
+    </div>
+    <div class="meta">
+      <span>آخر تحديث: <b id="lastUpdated">—</b></span>
+      <span id="curUserBadge"></span>
+      <button class="hdr-btn" onclick="openImportModal()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>
+        استيراد بيانات SAP
+      </button>
+      <button class="hdr-btn" onclick="refreshAll()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4v6h6M20 20v-6h-6M4.5 15a8 8 0 0014.5 3.5M19.5 9A8 8 0 005 5.5"/></svg>
+        تحديث
+      </button>
+      <button class="hdr-btn" onclick="doSignOut()">خروج</button>
+    </div>
+  </header>
+
+  <div class="filters-bar">
+    <div class="grp seg" id="periodSeg">
+      <button data-p="year" class="active">السنة</button>
+      <button data-p="ytd">YTD</button>
+      <button data-p="month">الشهر</button>
+      <button data-p="day">اليوم</button>
+      <button data-p="custom">نطاق مخصص</button>
+    </div>
+    <div class="grp" id="periodExtra"></div>
+    <div class="grp" id="deptFilterGrp" style="display:none">
+      <label>القسم</label>
+      <select id="deptFilter" onchange="onFiltersChanged()"><option value="">الكل</option></select>
+    </div>
+    <div class="spacer"></div>
+    <div class="cmp-note" id="cmpNote">المقارنة: —</div>
+  </div>
+
+  <div class="wrap" id="dashRoot">
+    <!-- KPI ROW -->
+    <div class="section">
+      <div class="grid-kpi" id="kpiRow"></div>
+    </div>
+
+    <!-- MAIN SALES CHART -->
+    <div class="section">
+      <div class="card">
+        <div class="section-hd">
+          <div>
+            <h2>أداء المبيعات — Sales Performance</h2>
+            <div class="sub" id="chartSub">السنة الحالية مقابل السنة السابقة</div>
+          </div>
+          <div class="legend" id="chartLegend"></div>
+        </div>
+        <div class="breadcrumb" id="chartBreadcrumb" style="display:none"></div>
+        <div id="salesChartHost" style="position:relative"></div>
+      </div>
+    </div>
+
+    <!-- SALES COMPOSITION -->
+    <div class="section">
+      <div class="card" id="compositionCard"></div>
+    </div>
+
+    <!-- SECONDARY ANALYSIS: Top Customers | Top Products -->
+    <div class="section grid-2">
+      <div class="card">
+        <div class="section-hd">
+          <div><h2>أهم العملاء</h2><div class="sub">Top Customers</div></div>
+          <div class="ctl" id="custMetricCtl"></div>
+        </div>
+        <div class="rank-list" id="topCustomers"></div>
+      </div>
+      <div class="card">
+        <div class="section-hd">
+          <div><h2>أهم الأصناف</h2><div class="sub">Top Products</div></div>
+          <div class="ctl" id="prodMetricCtl"></div>
+        </div>
+        <div class="rank-list" id="topProducts"></div>
+      </div>
+    </div>
+
+    <!-- Top Suppliers | Collections -->
+    <div class="section grid-2">
+      <div class="card">
+        <div class="section-hd">
+          <div><h2>أهم الموردين</h2><div class="sub">Top Suppliers</div></div>
+        </div>
+        <div class="rank-list" id="topSuppliers"></div>
+      </div>
+      <div class="card" id="collectionsCard">
+        <div class="section-hd">
+          <div><h2>التحصيل</h2><div class="sub">Collections</div></div>
+        </div>
+        <div id="collectionsBody"></div>
+      </div>
+    </div>
+
+    <!-- Purchases | AR -->
+    <div class="section grid-2">
+      <div class="card" id="purchasesCard">
+        <div class="section-hd"><div><h2>المشتريات</h2><div class="sub">Purchases &amp; Receipts</div></div></div>
+        <div id="purchasesBody"></div>
+      </div>
+      <div class="card" id="arCard">
+        <div class="section-hd"><div><h2>الذمم المدينة</h2><div class="sub">Accounts Receivable</div></div></div>
+        <div id="arBody"></div>
+      </div>
+    </div>
+
+    <!-- Executive Alerts -->
+    <div class="section">
+      <div class="card">
+        <div class="section-hd"><div><h2>التنبيهات التنفيذية</h2><div class="sub">Executive Alerts — مبنية على بيانات فعلية فقط</div></div></div>
+        <div id="alertsBody"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Import Modal -->
+<div class="modal-overlay" id="importModal">
+  <div class="modal-box">
+    <div class="modal-hd">
+      <h3>استيراد بيانات SAP</h3>
+      <button onclick="closeImportModal()">×</button>
+    </div>
+    <div class="modal-body" id="importBody"></div>
+    <div class="modal-ft">
+      <span class="sub" style="font-size:11.5px;color:var(--muted)" id="importFooterNote">الصق نتائج الكويريز ثم اضغط احتساب</span>
+      <div style="display:flex;gap:8px">
+        <button class="btn" onclick="closeImportModal()">إغلاق</button>
+        <button class="btn primary" onclick="parseAllAndCompute()">احتساب وتحديث الداشبورد</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="chart-tip" id="chartTip"></div>
+
+<script>
+/* ========================================================================
+   الداشبورد التنفيذي — Kilani Food Center
+   ======================================================================== */
+const SUPABASE_URL = 'https://fxjdmqqmcgccocfbgopm.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_NGtGX9SN8hXSoq-JRidGcQ_NfAyYCP5';
+const APP_ID = 'exec-dashboard';
+let sb = null, curUser = null, roleEdit = false, isAdmin = false;
+
+/* ---------- Safe formatters (no NaN/undefined/Infinity ever reach the DOM) ---------- */
+function fmt(v,d){
+  if(v==null || typeof v!=='number' || !isFinite(v)) return '—';
+  const dd = d==null?0:d;
+  const a = Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:dd, maximumFractionDigits:dd});
+  return v<0 ? '−'+a : a;
+}
+function sf(v){
+  if(v==null || typeof v!=='number' || !isFinite(v)) return '—';
+  const a = Math.abs(v);
+  const s = (a>=1e6?(a/1e6).toFixed(2)+'M':a>=1e3?(a/1e3).toFixed(1)+'K':a.toFixed(0));
+  return (v<0?'−':'')+s;
+}
+function fmtCur(v,short){ const s = short? sf(v) : fmt(v); return s==='—'?'—':s+' د.أ'; }
+/* نسخة HTML: الرقم بخط mono معزول الاتجاه، ووحدة العملة بخط عادي بجانبه — يمنع انعكاس حروف "د.أ" داخل سياق LTR */
+function fmtCurHTML(v,short){
+  const s = short? sf(v) : fmt(v);
+  if(s==='—') return '<span class="mono">—</span>';
+  return '<span class="mono">'+s+'</span><span class="cur-suffix"> د.أ</span>';
+}
+function pct(v,d){ if(v==null||typeof v!=='number'||!isFinite(v)) return '—'; return (v>=0?'+':'')+ (v*100).toFixed(d==null?1:d)+'%'; }
+function safeDiv(a,b){ if(!b) return null; const r=a/b; return isFinite(r)?r:null; }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function pad2(n){ return String(n).padStart(2,'0'); }
+function dstr(d){ return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate()); }
+function parseDateSafe(s){
+  if(!s) return null;
+  s = String(s).trim();
+  let m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if(m) return new Date(+m[1], +m[2]-1, +m[3]);
+  m = s.match(/^(\d{1,2})[\/.](\d{1,2})[\/.](\d{4})/);
+  if(m) return new Date(+m[3], +m[2]-1, +m[1]);
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d;
+}
+function parseNumSafe(s){
+  if(s==null || s==='') return 0;
+  if(typeof s==='number') return isFinite(s)?s:0;
+  let t = String(s).trim().replace(/,/g,'');
+  let neg = false;
+  if(/^\(.*\)$/.test(t)){ neg=true; t=t.slice(1,-1); }
+  t = t.replace(/[^\d.\-]/g,'');
+  const n = parseFloat(t);
+  if(!isFinite(n)) return 0;
+  return neg ? -Math.abs(n) : n;
+}
+function monthKey(d){ return d.getFullYear()+'-'+pad2(d.getMonth()+1); }
+
+/* ---------- Auth boot (same pattern as other screens: profiles.allowed_apps + user_screen_permissions) ---------- */
+async function bootAuth(){
+  if(!window.supabase){ document.getElementById('authErr').textContent='تعذّر تحميل مكتبة الاتصال. تحقق من الإنترنت.'; return; }
+  sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  const {data:{session}} = await sb.auth.getSession();
+  if(session && session.user) await onSignedIn(session.user);
+}
+async function doSignIn(){
+  const email = document.getElementById('authEmail').value.trim();
+  const pass = document.getElementById('authPass').value;
+  const errEl = document.getElementById('authErr');
+  errEl.textContent='';
+  if(!email || !pass){ errEl.textContent='الرجاء إدخال البريد الإلكتروني وكلمة المرور'; return; }
+  const {data, error} = await sb.auth.signInWithPassword({email, password:pass});
+  if(error){ errEl.textContent='بيانات الدخول غير صحيحة'; return; }
+  await onSignedIn(data.user);
+}
+async function onSignedIn(user){
+  curUser = user;
+  let allowed = false;
+  try{
+    const {data:prof} = await sb.from('profiles').select('allowed_apps').eq('id', user.id).maybeSingle();
+    if(prof && Array.isArray(prof.allowed_apps) && prof.allowed_apps.includes(APP_ID)) allowed = true;
+  }catch(e){}
+  let permission = null;
+  try{
+    const {data:perm} = await sb.from('user_screen_permissions').select('permission').eq('user_id', user.id).eq('screen_id', APP_ID).maybeSingle();
+    if(perm) permission = perm.permission;
+  }catch(e){}
+  if(permission){ allowed = true; roleEdit = (permission==='INPUT'||permission==='ADMIN'); isAdmin = permission==='ADMIN'; }
+  if(!allowed){
+    document.getElementById('authErr').textContent='لا تملك صلاحية الوصول لهذه الشاشة. تواصل مع مدير النظام.';
+    await sb.auth.signOut();
+    return;
+  }
+  document.getElementById('authGate').style.display='none';
+  document.getElementById('appRoot').style.display='block';
+  document.getElementById('curUserBadge').textContent = user.email || '';
+  initApp();
+}
+async function doSignOut(){ await sb.auth.signOut(); location.reload(); }
+
+/* ========================================================================
+   البيانات الخام (تُملأ من لصق كويريز SAP عبر لوحة الاستيراد)
+   ======================================================================== */
+const RAW = {
+  sales: [],       // {date:Date, itemCode, itemName, custCode, custName, dept, qty:Number, net:Number}
+  collections: [],  // {date:Date, custCode, custName, amount:Number}
+  purchases: [],    // {date:Date, supCode, supName, itemCode, itemName, amount:Number}
+  ar: [],           // {custCode, custName, asOf:Date, dueDate:Date, balance:Number}
+  whs011: [],       // {monthKey:'YYYY-MM', itemCode, itemName, qty:Number}
+  milPrice: []      // {itemCode, itemName, price:Number}
+};
+let milPriceMap = new Map();
+let lastImportAt = null;
+
+/* ========================================================================
+   الفترة الزمنية + المقارنة التلقائية مع نفس الفترة من السنة السابقة
+   ======================================================================== */
+let PERIOD = { mode:'year', year:new Date().getFullYear(), month:new Date().getMonth()+1, day:dstr(new Date()), from:null, to:null, customFrom:null, customTo:null };
+
+function computeRange(){
+  const today = new Date(); today.setHours(0,0,0,0);
+  let from, to;
+  if(PERIOD.mode==='year'){
+    from = new Date(PERIOD.year,0,1);
+    to = (PERIOD.year===today.getFullYear()) ? today : new Date(PERIOD.year,11,31);
+  } else if(PERIOD.mode==='ytd'){
+    from = new Date(today.getFullYear(),0,1);
+    to = today;
+  } else if(PERIOD.mode==='month'){
+    from = new Date(PERIOD.year, PERIOD.month-1, 1);
+    const monthEnd = new Date(PERIOD.year, PERIOD.month, 0);
+    to = (from.getFullYear()===today.getFullYear() && from.getMonth()===today.getMonth()) ? today : monthEnd;
+  } else if(PERIOD.mode==='day'){
+    from = parseDateSafe(PERIOD.day) || today;
+    to = from;
+  } else { // custom
+    from = parseDateSafe(PERIOD.customFrom) || new Date(today.getFullYear(),0,1);
+    to = parseDateSafe(PERIOD.customTo) || today;
+    if(to>today) to = today;
+  }
+  from.setHours(0,0,0,0); to.setHours(0,0,0,0);
+  // المقارنة: نفس التواريخ التقويمية قبل سنة بالضبط (وليس السنة كاملة)
+  const cmpFrom = new Date(from.getFullYear()-1, from.getMonth(), from.getDate());
+  const cmpTo = new Date(to.getFullYear()-1, to.getMonth(), to.getDate());
+  return {from, to, cmpFrom, cmpTo};
+}
+
+function fmtRangeLabel(f,t){
+  const s=d=>dstr(d);
+  return f.getTime()===t.getTime() ? s(f) : (s(f)+' → '+s(t));
+}
+
+function renderPeriodExtra(){
+  const el = document.getElementById('periodExtra');
+  const years = []; const curY = new Date().getFullYear();
+  for(let y=curY; y>=curY-6; y--) years.push(y);
+  if(PERIOD.mode==='year'){
+    el.innerHTML = `<select id="pYear" onchange="PERIOD.year=+this.value;onFiltersChanged()">${years.map(y=>`<option value="${y}" ${y===PERIOD.year?'selected':''}>${y}</option>`).join('')}</select>`;
+  } else if(PERIOD.mode==='month'){
+    const months = ['كانون الثاني','شباط','آذار','نيسان','أيار','حزيران','تموز','آب','أيلول','تشرين الأول','تشرين الثاني','كانون الأول'];
+    el.innerHTML = `<select id="pYear" onchange="PERIOD.year=+this.value;onFiltersChanged()">${years.map(y=>`<option value="${y}" ${y===PERIOD.year?'selected':''}>${y}</option>`).join('')}</select>
+      <select id="pMonth" onchange="PERIOD.month=+this.value;onFiltersChanged()">${months.map((m,i)=>`<option value="${i+1}" ${i+1===PERIOD.month?'selected':''}>${m}</option>`).join('')}</select>`;
+  } else if(PERIOD.mode==='day'){
+    el.innerHTML = `<input type="date" id="pDay" value="${PERIOD.day}" onchange="PERIOD.day=this.value;onFiltersChanged()">`;
+  } else if(PERIOD.mode==='custom'){
+    const r = computeRange();
+    el.innerHTML = `<input type="date" id="pFrom" value="${PERIOD.customFrom||dstr(r.from)}" onchange="PERIOD.customFrom=this.value;onFiltersChanged()">
+      <span style="color:var(--muted);font-size:12px">إلى</span>
+      <input type="date" id="pTo" value="${PERIOD.customTo||dstr(r.to)}" onchange="PERIOD.customTo=this.value;onFiltersChanged()">`;
+  } else {
+    el.innerHTML = '';
+  }
+}
+
+document.getElementById('periodSeg').addEventListener('click', e=>{
+  const btn = e.target.closest('button[data-p]');
+  if(!btn) return;
+  PERIOD.mode = btn.dataset.p;
+  [...document.querySelectorAll('#periodSeg button')].forEach(b=>b.classList.toggle('active', b===btn));
+  renderPeriodExtra();
+  onFiltersChanged();
+});
+
+function onFiltersChanged(){
+  const r = computeRange();
+  document.getElementById('cmpNote').textContent = 'المقارنة: ' + fmtRangeLabel(r.cmpFrom, r.cmpTo);
+  renderAll();
+}
+
+/* ========================================================================
+   لوحة استيراد SAP — لصق نتائج الكويريز وتحويلها لبيانات محسوبة
+   ======================================================================== */
+function parseTSV(text){
+  const lines = String(text||'').replace(/\r/g,'').split('\n').map(l=>l.split('\t'));
+  const rows0 = lines.filter(l=>l.some(c=>String(c).trim()!==''));
+  if(!rows0.length) return {headers:[], rows:[]};
+  const headers = rows0[0].map(h=>h.trim());
+  const rows = rows0.slice(1);
+  return {headers, rows};
+}
+function findColIdx(headers, candidates){
+  for(const c of candidates){ const i = headers.findIndex(h=>h===c); if(i>=0) return i; }
+  for(const c of candidates){ const i = headers.findIndex(h=>h.includes(c)); if(i>=0) return i; }
+  return -1;
+}
+
+const IMPORT_SOURCES = [
+  { key:'sales', title:'1) فواتير المبيعات (A/R) — Actual SAP Sales', required:true,
+    sql:`SELECT
+  T0."DocDate" AS "تاريخ الفاتورة",
+  T1."ItemCode" AS "رمز الصنف",
+  T1."Dscription" AS "اسم الصنف",
+  T0."CardCode" AS "رمز العميل",
+  T0."CardName" AS "اسم العميل",
+  T5."BPLName" AS "الفرع",
+  T1."Quantity" AS "الكمية",
+  (T1."LineTotal" * (1 - ISNULL(T0."DiscPrcnt",0)/100)) AS "صافي المبيعات"
+FROM OINV T0
+INNER JOIN INV1 T1 ON T1."DocEntry"=T0."DocEntry"
+LEFT JOIN OBPL T5 ON T5."BPLId"=T0."BPLId"
+WHERE T0."DocDate" >= '[من]' AND T0."DocDate" <= '[إلى]' AND T0."CANCELED"='N'
+ORDER BY T0."DocDate"`,
+    note:'الصق فترة تغطي السنة الحالية والسابقة معاً (مثلاً من 01-01 السنة الماضية) ليعمل الاتجاه الشهري والمقارنة والتنقيب اليومي بلا كويري إضافي.',
+    parse(text){
+      const {headers, rows} = parseTSV(text);
+      const iDate=findColIdx(headers,['تاريخ الفاتورة','التاريخ']), iItemCode=findColIdx(headers,['رمز الصنف']),
+            iItemName=findColIdx(headers,['اسم الصنف']), iCustCode=findColIdx(headers,['رمز العميل']),
+            iCustName=findColIdx(headers,['اسم العميل']), iDept=findColIdx(headers,['الفرع','القسم']),
+            iQty=findColIdx(headers,['الكمية']), iNet=findColIdx(headers,['صافي المبيعات']);
+      if(iDate<0||iNet<0) throw new Error('لم يتم التعرف على أعمدة "تاريخ الفاتورة" أو "صافي المبيعات". الصق النتيجة مع سطر العناوين كما هو.');
+      const out=[];
+      for(const r of rows){ const d=parseDateSafe(r[iDate]); if(!d) continue;
+        out.push({date:d, itemCode:iItemCode>=0?(r[iItemCode]||'').trim():'', itemName:iItemName>=0?(r[iItemName]||'').trim():'',
+          custCode:iCustCode>=0?(r[iCustCode]||'').trim():'', custName:iCustName>=0?(r[iCustName]||'').trim():'',
+          dept:iDept>=0?(r[iDept]||'').trim():'', qty:iQty>=0?parseNumSafe(r[iQty]):0, net:parseNumSafe(r[iNet])}); }
+      return out;
+    }},
+  { key:'collections', title:'2) التحصيل (قبض من العملاء)', required:false,
+    sql:`SELECT
+  T0."DocDate" AS "تاريخ التحصيل",
+  T0."CardCode" AS "رمز العميل",
+  T0."CardName" AS "اسم العميل",
+  T0."DocTotal" AS "المبلغ المحصل"
+FROM ORCT T0
+WHERE T0."DocDate" >= '[من]' AND T0."DocDate" <= '[إلى]' AND T0."CANCELED"='N'
+ORDER BY T0."DocDate"`,
+    note:'',
+    parse(text){
+      const {headers, rows} = parseTSV(text);
+      const iDate=findColIdx(headers,['تاريخ التحصيل','التاريخ']), iCustCode=findColIdx(headers,['رمز العميل']),
+            iCustName=findColIdx(headers,['اسم العميل']), iAmt=findColIdx(headers,['المبلغ المحصل','المبلغ']);
+      if(iDate<0||iAmt<0) throw new Error('لم يتم التعرف على أعمدة "تاريخ التحصيل" أو "المبلغ المحصل".');
+      const out=[];
+      for(const r of rows){ const d=parseDateSafe(r[iDate]); if(!d) continue;
+        out.push({date:d, custCode:iCustCode>=0?(r[iCustCode]||'').trim():'', custName:iCustName>=0?(r[iCustName]||'').trim():'', amount:parseNumSafe(r[iAmt])}); }
+      return out;
+    }},
+  { key:'purchases', title:'3) فواتير المشتريات (A/P Invoices)', required:false,
+    sql:`SELECT
+  T0."DocDate" AS "تاريخ الفاتورة",
+  T0."CardCode" AS "رمز المورد",
+  T0."CardName" AS "اسم المورد",
+  T1."ItemCode" AS "رمز الصنف",
+  T1."Dscription" AS "اسم الصنف",
+  T1."LineTotal" AS "قيمة الشراء"
+FROM OPCH T0
+INNER JOIN PCH1 T1 ON T1."DocEntry"=T0."DocEntry"
+WHERE T0."DocDate" >= '[من]' AND T0."DocDate" <= '[إلى]' AND T0."CANCELED"='N'
+ORDER BY T0."DocDate"`,
+    note:'المؤشر الافتراضي للمشتريات هنا هو فواتير الموردين (A/P) — الأكثر تمثيلاً مالياً للمشتريات الفعلية. لا يوجد فصل PO/GR في هذه اللوحة حالياً.',
+    parse(text){
+      const {headers, rows} = parseTSV(text);
+      const iDate=findColIdx(headers,['تاريخ الفاتورة','التاريخ']), iSupCode=findColIdx(headers,['رمز المورد']),
+            iSupName=findColIdx(headers,['اسم المورد']), iItemCode=findColIdx(headers,['رمز الصنف']),
+            iItemName=findColIdx(headers,['اسم الصنف']), iAmt=findColIdx(headers,['قيمة الشراء']);
+      if(iDate<0||iAmt<0) throw new Error('لم يتم التعرف على أعمدة "تاريخ الفاتورة" أو "قيمة الشراء".');
+      const out=[];
+      for(const r of rows){ const d=parseDateSafe(r[iDate]); if(!d) continue;
+        out.push({date:d, supCode:iSupCode>=0?(r[iSupCode]||'').trim():'', supName:iSupName>=0?(r[iSupName]||'').trim():'',
+          itemCode:iItemCode>=0?(r[iItemCode]||'').trim():'', itemName:iItemName>=0?(r[iItemName]||'').trim():'', amount:parseNumSafe(r[iAmt])}); }
+      return out;
+    }},
+  { key:'ar', title:'4) الذمم المدينة المفتوحة (AR Aging)', required:false,
+    sql:`SELECT
+  T0."CardCode" AS "رمز العميل",
+  T0."CardName" AS "اسم العميل",
+  T0."DocDate" AS "تاريخ الفاتورة",
+  T0."DocDueDate" AS "تاريخ الاستحقاق",
+  (T0."DocTotal" - T0."PaidToDate") AS "الرصيد المستحق"
+FROM OINV T0
+WHERE (T0."DocTotal" - T0."PaidToDate") > 0.01
+ORDER BY T0."DocDueDate"`,
+    note:'كشف أرصدة مفتوحة كما بتاريخ اللصق (Snapshot) — يُعرض "كما في تاريخ آخر استيراد" وليس مرتبطاً بفلتر الفترة أعلاه.',
+    parse(text){
+      const {headers, rows} = parseTSV(text);
+      const iCustCode=findColIdx(headers,['رمز العميل']), iCustName=findColIdx(headers,['اسم العميل']),
+            iDue=findColIdx(headers,['تاريخ الاستحقاق']), iBal=findColIdx(headers,['الرصيد المستحق','الرصيد']);
+      if(iBal<0) throw new Error('لم يتم التعرف على عمود "الرصيد المستحق".');
+      const out=[];
+      for(const r of rows){ const due=iDue>=0?parseDateSafe(r[iDue]):null;
+        out.push({custCode:iCustCode>=0?(r[iCustCode]||'').trim():'', custName:iCustName>=0?(r[iCustName]||'').trim():'', dueDate:due, balance:parseNumSafe(r[iBal])}); }
+      return out;
+    }},
+  { key:'whs011', title:'5) رصيد مستودع 011 آخر كل شهر (تاريخياً)', required:false,
+    sql:`;WITH M AS (
+  SELECT T0."ItemCode",
+         T0."CreateDate" AS "TDate",
+         SUM(T0."InQty"-T0."OutQty") OVER (PARTITION BY T0."ItemCode" ORDER BY T0."CreateDate", T0."TransId" ROWS UNBOUNDED PRECEDING) AS "RunQty"
+  FROM OINM T0
+  WHERE T0."Warehouse"='011'
+)
+SELECT ItemCode AS "رمز الصنف",
+       CONVERT(varchar(7), TDate, 120) AS "الشهر",
+       MAX(RunQty) AS "الرصيد آخر الشهر"
+FROM (
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY ItemCode, CONVERT(varchar(7),TDate,120) ORDER BY TDate DESC) AS rn
+  FROM M
+) X WHERE rn=1
+GROUP BY ItemCode, CONVERT(varchar(7),TDate,120)
+ORDER BY "الشهر"`,
+    note:'رصيد آخر كل شهر لكل صنف بمستودع 011 — أساس احتساب مبيعات المؤسسة العسكرية شهرياً وتاريخياً (وليس الرصيد الحالي فقط). عدّل حسب مخطط SAP لديك إن اختلفت أسماء أعمدة OINM.',
+    parse(text){
+      const {headers, rows} = parseTSV(text);
+      const iItem=findColIdx(headers,['رمز الصنف']), iMonth=findColIdx(headers,['الشهر']), iQty=findColIdx(headers,['الرصيد آخر الشهر','الرصيد']);
+      if(iItem<0||iMonth<0||iQty<0) throw new Error('لم يتم التعرف على أعمدة "رمز الصنف" / "الشهر" / "الرصيد آخر الشهر".');
+      const out=[];
+      for(const r of rows){ const mk=(r[iMonth]||'').trim(); if(!/^\d{4}-\d{2}$/.test(mk)) continue;
+        out.push({itemCode:(r[iItem]||'').trim(), monthKey:mk, qty:parseNumSafe(r[iQty])}); }
+      return out;
+    }},
+  { key:'milPrice', title:'6) قائمة أسعار المؤسسة الاستهلاكية العسكرية', required:false,
+    sql:`-- استبدل <رقم قائمة السعر العسكرية> برقم القائمة الصحيح من OPLN لديك
+SELECT
+  T1."ItemCode" AS "رمز الصنف",
+  T0."ItemName" AS "اسم الصنف",
+  T1."Price" AS "السعر"
+FROM ITM1 T1
+INNER JOIN OITM T0 ON T0."ItemCode" = T1."ItemCode"
+WHERE T1."PriceList" = <رقم قائمة السعر العسكرية>`,
+    note:'بدون هذه القائمة + رصيد مستودع 011 معاً، سيُعرض مؤشر "مبيعات المؤسسة العسكرية" كـ Data unavailable بدل رقم وهمي.',
+    parse(text){
+      const {headers, rows} = parseTSV(text);
+      const iItem=findColIdx(headers,['رمز الصنف']), iName=findColIdx(headers,['اسم الصنف']), iPrice=findColIdx(headers,['السعر']);
+      if(iItem<0||iPrice<0) throw new Error('لم يتم التعرف على أعمدة "رمز الصنف" / "السعر".');
+      const out=[];
+      for(const r of rows){ out.push({itemCode:(r[iItem]||'').trim(), itemName:iName>=0?(r[iName]||'').trim():'', price:parseNumSafe(r[iPrice])}); }
+      return out;
+    }}
+];
+
+function buildImportModal(){
+  const el = document.getElementById('importBody');
+  el.innerHTML = IMPORT_SOURCES.map(src=>`
+    <details class="import-src" open>
+      <summary>${esc(src.title)} <span class="status" id="impStatus_${src.key}">${RAW[src.key].length? RAW[src.key].length+' سطر محمّل':'لا بيانات بعد'}</span></summary>
+      <div class="body">
+        ${src.note?`<div class="sub" style="font-size:11.5px;color:var(--muted);margin-bottom:6px">${esc(src.note)}</div>`:''}
+        <pre>${esc(src.sql)}</pre>
+        <textarea id="imp_${src.key}" placeholder="الصق نتيجة الكويري هنا (Tab-separated مع سطر العناوين)"></textarea>
+      </div>
+    </details>`).join('');
+}
+function openImportModal(){ buildImportModal(); document.getElementById('importModal').classList.add('open'); }
+function closeImportModal(){ document.getElementById('importModal').classList.remove('open'); }
+
+function parseAllAndCompute(){
+  const errors = [];
+  for(const src of IMPORT_SOURCES){
+    const ta = document.getElementById('imp_'+src.key);
+    const statusEl = document.getElementById('impStatus_'+src.key);
+    const text = ta ? ta.value : '';
+    if(!text || !text.trim()){
+      if(!RAW[src.key].length && statusEl) statusEl.textContent = 'لا بيانات بعد';
+      continue;
+    }
+    try{
+      const parsed = src.parse(text);
+      RAW[src.key] = parsed;
+      if(statusEl){ statusEl.textContent = parsed.length+' سطر محمّل'; statusEl.classList.add('ok'); }
+    }catch(e){
+      errors.push(src.title+': '+e.message);
+      if(statusEl) statusEl.textContent = 'خطأ: '+e.message;
+    }
+  }
+  milPriceMap = new Map(RAW.milPrice.map(r=>[r.itemCode, r.price]));
+  rebuildIndexes();
+  lastImportAt = new Date();
+  document.getElementById('lastUpdated').textContent = lastImportAt.toLocaleString('ar-JO',{dateStyle:'medium',timeStyle:'short'});
+  persistState();
+  renderAll();
+  if(errors.length){ alert('تنبيه: بعض المصادر لم تُحتسب بسبب أخطاء بالأعمدة:\n\n'+errors.join('\n')); }
+  else { closeImportModal(); }
+}
+
+/* ---------- مزامنة الحالة عبر Supabase (مع نسخة احتياطية محلية) ---------- */
+function serializeState(){
+  return {
+    sales: RAW.sales.map(r=>({...r, date:dstr(r.date)})),
+    collections: RAW.collections.map(r=>({...r, date:dstr(r.date)})),
+    purchases: RAW.purchases.map(r=>({...r, date:dstr(r.date)})),
+    ar: RAW.ar.map(r=>({...r, dueDate:r.dueDate?dstr(r.dueDate):null})),
+    whs011: RAW.whs011,
+    milPrice: RAW.milPrice,
+    lastImportAt: lastImportAt ? lastImportAt.toISOString() : null
+  };
+}
+function deserializeState(data){
+  if(!data) return;
+  RAW.sales = (data.sales||[]).map(r=>({...r, date:parseDateSafe(r.date)})).filter(r=>r.date);
+  RAW.collections = (data.collections||[]).map(r=>({...r, date:parseDateSafe(r.date)})).filter(r=>r.date);
+  RAW.purchases = (data.purchases||[]).map(r=>({...r, date:parseDateSafe(r.date)})).filter(r=>r.date);
+  RAW.ar = (data.ar||[]).map(r=>({...r, dueDate:r.dueDate?parseDateSafe(r.dueDate):null}));
+  RAW.whs011 = data.whs011||[];
+  RAW.milPrice = data.milPrice||[];
+  milPriceMap = new Map(RAW.milPrice.map(r=>[r.itemCode, r.price]));
+  rebuildIndexes();
+  lastImportAt = data.lastImportAt ? new Date(data.lastImportAt) : null;
+  document.getElementById('lastUpdated').textContent = lastImportAt ? lastImportAt.toLocaleString('ar-JO',{dateStyle:'medium',timeStyle:'short'}) : '—';
+}
+async function persistState(){
+  const payload = serializeState();
+  try{ localStorage.setItem('exec_dashboard_state_v1', JSON.stringify(payload)); }catch(e){}
+  if(!sb || !curUser) return;
+  try{
+    await sb.from('exec_dashboard_state').upsert({id:'main', data:payload, updated_by:curUser.id, updated_at:new Date().toISOString()});
+  }catch(e){ /* الجدول قد لا يكون منشأً بعد — البيانات محفوظة محلياً على الأقل */ }
+}
+async function loadSyncedState(){
+  let loaded = false;
+  if(sb){
+    try{
+      const {data, error} = await sb.from('exec_dashboard_state').select('data, updated_at').eq('id','main').maybeSingle();
+      if(!error && data && data.data){ deserializeState(data.data); loaded = true; }
+    }catch(e){}
+  }
+  if(!loaded){
+    try{ const raw = localStorage.getItem('exec_dashboard_state_v1'); if(raw){ deserializeState(JSON.parse(raw)); loaded = true; } }catch(e){}
+  }
+  renderAll();
+}
+
+/* ========================================================================
+   فهارس مجمّعة (أداء: تجميع مرة واحدة بعد كل استيراد، لا كويريز ثقيلة عند كل ضغطة)
+   ======================================================================== */
+let IDX = { byDay:new Map(), byMonth:new Map() };
+function rebuildIndexes(){
+  IDX = { byDay:new Map(), byMonth:new Map() };
+  for(const r of RAW.sales){
+    const dk = dstr(r.date); IDX.byDay.set(dk, (IDX.byDay.get(dk)||0)+r.net);
+    const mk = monthKey(r.date); IDX.byMonth.set(mk, (IDX.byMonth.get(mk)||0)+r.net);
+  }
+}
+
+/* ========================================================================
+   محرك الحساب — KPIs، مبيعات المؤسسة العسكرية، الذمم، التحصيل، المشتريات
+   ======================================================================== */
+function inRange(d, from, to){ return d instanceof Date && d>=from && d<=to; }
+
+function computeSalesAgg(from, to){
+  let net=0, qty=0;
+  const byCust=new Map(), byItem=new Map();
+  for(const r of RAW.sales){
+    if(!inRange(r.date, from, to)) continue;
+    net += r.net; qty += r.qty;
+    if(r.custCode){ const c=byCust.get(r.custCode)||{code:r.custCode,name:r.custName||r.custCode,net:0}; c.net+=r.net; byCust.set(r.custCode,c); }
+    if(r.itemCode){ const it=byItem.get(r.itemCode)||{code:r.itemCode,name:r.itemName||r.itemCode,net:0,qty:0}; it.net+=r.net; it.qty+=r.qty; byItem.set(r.itemCode,it); }
+  }
+  return {net, qty, byCust, byItem};
+}
+
+function monthsBetween(from, to){
+  const out=[]; let d=new Date(from.getFullYear(), from.getMonth(), 1);
+  const end=new Date(to.getFullYear(), to.getMonth(), 1);
+  while(d<=end){ out.push(monthKey(d)); d=new Date(d.getFullYear(), d.getMonth()+1, 1); }
+  return out;
+}
+
+/* مبيعات المؤسسة الاستهلاكية العسكرية = رصيد مستودع 011 آخر كل شهر × قائمة الأسعار العسكرية — لكل شهر بالفترة (وليس الرصيد الحالي) */
+function militarySalesForMonths(monthKeys){
+  const monthsPresent = new Set(RAW.whs011.map(r=>r.monthKey));
+  let total=0, coveredMonths=0; const missingPriceItems=new Set();
+  for(const mk of monthKeys){
+    if(!monthsPresent.has(mk)) continue;
+    coveredMonths++;
+    for(const r of RAW.whs011){
+      if(r.monthKey!==mk) continue;
+      const price = milPriceMap.get(r.itemCode);
+      if(price==null){ missingPriceItems.add(r.itemCode); continue; }
+      total += r.qty*price;
+    }
+  }
+  return {total, coveredMonths, totalMonths:monthKeys.length, missingPriceItems};
+}
+
+function computeKPIs(){
+  const r = computeRange();
+  const cur = computeSalesAgg(r.from, r.to);
+  const cmp = computeSalesAgg(r.cmpFrom, r.cmpTo);
+  const milCur = militarySalesForMonths(monthsBetween(r.from, r.to));
+  const milCmp = militarySalesForMonths(monthsBetween(r.cmpFrom, r.cmpTo));
+  const milAvailable = RAW.whs011.length>0 && RAW.milPrice.length>0 && milCur.coveredMonths>0;
+
+  let colCur=0, colCmp=0; const colByCust=new Map();
+  for(const c of RAW.collections){
+    if(inRange(c.date, r.from, r.to)){ colCur+=c.amount;
+      if(c.custCode){ const x=colByCust.get(c.custCode)||{code:c.custCode,name:c.custName||c.custCode,amount:0}; x.amount+=c.amount; colByCust.set(c.custCode,x); } }
+    else if(inRange(c.date, r.cmpFrom, r.cmpTo)){ colCmp+=c.amount; }
+  }
+  const collectionsAvailable = RAW.collections.length>0;
+
+  let purCur=0, purCmp=0; const purBySup=new Map(), purBySupCmp=new Map();
+  for(const p of RAW.purchases){
+    if(inRange(p.date, r.from, r.to)){ purCur+=p.amount;
+      if(p.supCode){ const x=purBySup.get(p.supCode)||{code:p.supCode,name:p.supName||p.supCode,amount:0}; x.amount+=p.amount; purBySup.set(p.supCode,x); } }
+    else if(inRange(p.date, r.cmpFrom, r.cmpTo)){ purCmp+=p.amount;
+      if(p.supCode){ const x=purBySupCmp.get(p.supCode)||{amount:0}; x.amount+=p.amount; purBySupCmp.set(p.supCode,x); } }
+  }
+  const purchasesAvailable = RAW.purchases.length>0;
+
+  const arAvailable = RAW.ar.length>0;
+  const buckets={b0_30:0,b31_60:0,b61_90:0,b91_120:0,b120p:0,notdue:0};
+  let arTotal=0; const today=new Date(); today.setHours(0,0,0,0);
+  for(const a of RAW.ar){
+    arTotal += a.balance;
+    if(!a.dueDate){ buckets.notdue+=a.balance; continue; }
+    const days = Math.floor((today-a.dueDate)/86400000);
+    if(days<0) buckets.notdue+=a.balance;
+    else if(days<=30) buckets.b0_30+=a.balance;
+    else if(days<=60) buckets.b31_60+=a.balance;
+    else if(days<=90) buckets.b61_90+=a.balance;
+    else if(days<=120) buckets.b91_120+=a.balance;
+    else buckets.b120p+=a.balance;
+  }
+  const overdue = arTotal-buckets.notdue;
+  const overduePct = safeDiv(overdue, arTotal);
+
+  const cmpByCust=new Map(); for(const [k,v] of cmp.byCust) cmpByCust.set(k, v.net);
+  const cmpByItem=new Map(); for(const [k,v] of cmp.byItem) cmpByItem.set(k, v.net);
+
+  return {range:r, cur, cmp, milCur, milCmp, milAvailable,
+    colCur, colCmp, colByCust, collectionsAvailable,
+    purCur, purCmp, purBySup, purBySupCmp, purchasesAvailable,
+    arAvailable, arTotal, buckets, overdue, overduePct,
+    cmpByCust, cmpByItem};
+}
+
+/* ========================================================================
+   العرض — KPI Cards
+   ======================================================================== */
+function scrollToSection(id){ const el=document.getElementById(id); if(el) el.scrollIntoView({behavior:'smooth', block:'start'}); }
+
+function kpiCard(opts){
+  if(!opts.available){
+    return `<div class="kpi-card" ${opts.onclick?`onclick="${opts.onclick}"`:''}>
+      <div class="accent" style="background:var(--border)"></div>
+      <div class="lbl">${esc(opts.label)}</div>
+      <div class="unavail">${esc(opts.unavailReason||'Data unavailable')}</div>
+    </div>`;
+  }
+  let cmpHtml;
+  if(opts.noCompare){
+    cmpHtml = `<div class="cmp-row"><span class="cmp-lbl">${esc(opts.asOf||'')}</span></div>`;
+  } else {
+    const chg = safeDiv(opts.value-opts.cmpValue, Math.abs(opts.cmpValue||0));
+    const chgCls = chg==null?'flat':(chg>0.0001?'pos':(chg<-0.0001?'neg':'flat'));
+    const arrow = chg==null?'':(chg>0.0001?'↑':(chg<-0.0001?'↓':'—'));
+    cmpHtml = `<div class="cmp-row"><span class="chg ${chgCls}">${arrow} ${chg==null?'—':pct(chg)}</span><span class="cmp-lbl">مقابل نفس الفترة العام الماضي</span></div>`;
+  }
+  return `<div class="kpi-card" ${opts.onclick?`onclick="${opts.onclick}"`:''}>
+    <div class="accent"></div>
+    <div class="lbl">${esc(opts.label)}</div>
+    <div class="num">${opts.currency?fmtCurHTML(opts.value,true):'<span class="mono">'+fmt(opts.value)+'</span>'}</div>
+    ${cmpHtml}
+    ${opts.footNote?`<div class="unavail" style="margin-top:6px">${esc(opts.footNote)}</div>`:''}
+  </div>`;
+}
+function renderKPIRow(K){
+  const el = document.getElementById('kpiRow');
+  el.innerHTML = [
+    kpiCard({label:'المبيعات — Sales', value:K.cur.net, cmpValue:K.cmp.net, currency:true, available:RAW.sales.length>0, unavailReason:'الصق كويري فواتير المبيعات من لوحة الاستيراد', onclick:"scrollToSection('salesChartHost')"}),
+    kpiCard({label:'التحصيل — Collections', value:K.colCur, cmpValue:K.colCmp, currency:true, available:K.collectionsAvailable, onclick:"scrollToSection('collectionsCard')"}),
+    kpiCard({label:'المشتريات — Purchases', value:K.purCur, cmpValue:K.purCmp, currency:true, available:K.purchasesAvailable, onclick:"scrollToSection('purchasesCard')"}),
+    kpiCard({label:'الذمم المدينة — AR', value:K.arTotal, currency:true, available:K.arAvailable, noCompare:true, asOf:'كما في آخر استيراد'+(K.arAvailable&&K.overduePct!=null?' · متأخر '+(K.overduePct*100).toFixed(0)+'%':''), onclick:"scrollToSection('arCard')"}),
+    kpiCard({label:'قيمة المخزون — Inventory', available:false, unavailReason:'Data unavailable'})
+  ].join('');
+}
+
+/* ========================================================================
+   الرسم البياني الرئيسي — شهري (سنة حالية/سابقة) مع تنقيب يومي
+   ======================================================================== */
+let chartState = {mode:'month', year:null, monthIndex:null};
+const MONTH_LABELS_SHORT = ['ينا','فبر','مار','أبر','ماي','يون','يول','أغس','سبت','أكت','نوف','ديس'];
+const MONTH_LABELS_FULL = ['يناير','فبراير','مارس','أبريل','مايو','يونيو','يوليو','أغسطس','سبتمبر','أكتوبر','نوفمبر','ديسمبر'];
+
+function renderSalesChart(K){
+  if(chartState.year==null || chartState.year!==K.range.to.getFullYear()){ chartState = {mode:'month', year:K.range.to.getFullYear(), monthIndex:null}; }
+  renderSalesChartFromState();
+}
+function backToMonthly(){ chartState = {mode:'month', year:chartState.year, monthIndex:null}; renderSalesChartFromState(); }
+function drillIntoMonth(i){ chartState = {mode:'day', year:chartState.year, monthIndex:i}; renderSalesChartFromState(); }
+
+function renderSalesChartFromState(){
+  const legend = document.getElementById('chartLegend');
+  const bc = document.getElementById('chartBreadcrumb');
+  const host = document.getElementById('salesChartHost');
+  const sub = document.getElementById('chartSub');
+  legend.innerHTML = `<span class="sw"><i style="background:var(--navy)"></i>${chartState.year}</span><span class="sw"><i style="background:var(--gold)"></i>${chartState.year-1}</span>`;
+  if(!RAW.sales.length){
+    bc.style.display='none';
+    sub.textContent = 'السنة الحالية مقابل السنة السابقة';
+    host.innerHTML = '<div class="empty-state">No data available for selected period — الصق كويري المبيعات من لوحة الاستيراد</div>';
+    return;
+  }
+  const today = new Date(); today.setHours(0,0,0,0);
+  if(chartState.mode==='month'){
+    bc.style.display='none';
+    sub.textContent = chartState.year+' مقابل '+(chartState.year-1)+' — اضغط على أي شهر للتفصيل اليومي';
+    const cur=[], prev=[];
+    for(let m=0;m<12;m++){
+      const mEnd = new Date(chartState.year, m+1, 0);
+      const curKey = chartState.year+'-'+pad2(m+1);
+      cur.push(mEnd<=today ? (IDX.byMonth.get(curKey)||0) : null);
+      const prevKey = (chartState.year-1)+'-'+pad2(m+1);
+      prev.push(IDX.byMonth.has(prevKey) ? IDX.byMonth.get(prevKey) : 0);
+    }
+    host.innerHTML = lineChartSVG(MONTH_LABELS_SHORT, [{data:cur,color:'var(--navy)',solid:true},{data:prev,color:'var(--gold)',solid:false}], {onPointClick:drillIntoMonth});
+  } else {
+    const y=chartState.year, m=chartState.monthIndex, daysInMonth=new Date(y,m+1,0).getDate();
+    bc.style.display='flex';
+    bc.innerHTML = `<a onclick="backToMonthly()">${y}</a><span>›</span><span>${MONTH_LABELS_FULL[m]} ${y}</span>`;
+    sub.textContent = 'التفصيل اليومي مقابل نفس الأيام من '+(y-1);
+    const cur=[], prev=[], labels=[];
+    for(let d=1; d<=daysInMonth; d++){
+      labels.push(String(d));
+      const dd = new Date(y,m,d);
+      cur.push(dd<=today ? (IDX.byDay.get(dstr(dd))||0) : null);
+      const pd = new Date(y-1,m,d);
+      prev.push(IDX.byDay.has(dstr(pd)) ? IDX.byDay.get(dstr(pd)) : 0);
+    }
+    host.innerHTML = lineChartSVG(labels, [{data:cur,color:'var(--navy)',solid:true},{data:prev,color:'var(--gold)',solid:false}], {});
+  }
+}
+
+function lineChartSVG(labels, series, opts){
+  opts = opts||{};
+  const W=1000,H=300,padL=54,padR=16,padT=16,padB=28;
+  const innerW=W-padL-padR, innerH=H-padT-padB;
+  const allVals = series.flatMap(s=>s.data).filter(v=>v!=null && isFinite(v));
+  if(!allVals.length) return '<div class="empty-state">No data available for selected period</div>';
+  let maxV=Math.max(...allVals,0), minV=Math.min(0,...allVals);
+  if(maxV===minV) maxV=minV+1;
+  const n=labels.length;
+  const x = i => padL + (n<=1?0:(i/(n-1))*innerW);
+  const y = v => padT + innerH - ((v-minV)/(maxV-minV))*innerH;
+  let gridSvg='';
+  for(let g=0; g<=4; g++){
+    const v = minV + (maxV-minV)*g/4, yy=y(v);
+    gridSvg += `<line x1="${padL}" y1="${yy.toFixed(1)}" x2="${W-padR}" y2="${yy.toFixed(1)}" stroke="var(--border)" stroke-width="1"/>`;
+    gridSvg += `<text x="${padL-8}" y="${(yy+4).toFixed(1)}" font-size="10" fill="var(--muted)" text-anchor="end" font-family="var(--font-mono)">${sf(v)}</text>`;
+  }
+  const step = Math.ceil(n/16)||1;
+  let axisSvg = labels.map((l,i)=> (i%step===0)?`<text x="${x(i).toFixed(1)}" y="${H-8}" font-size="10" fill="var(--muted)" text-anchor="middle">${esc(l)}</text>`:'').join('');
+  let seriesSvg = series.map(s=>{
+    let d='', started=false;
+    s.data.forEach((v,i)=>{ if(v==null){ started=false; return; } d += (started?'L':'M')+x(i).toFixed(1)+','+y(v).toFixed(1)+' '; started=true; });
+    const dashArr = s.solid?'':'stroke-dasharray="5,4"';
+    const path = `<path d="${d}" fill="none" stroke="${s.color}" stroke-width="2.4" ${dashArr}/>`;
+    const dots = s.data.map((v,i)=> v==null?'':`<circle cx="${x(i).toFixed(1)}" cy="${y(v).toFixed(1)}" r="3.5" fill="${s.color}" style="cursor:${opts.onPointClick?'pointer':'default'}" data-idx="${i}" data-label="${esc(labels[i])}" data-val="${esc(fmtCur(v,true))}" onmouseenter="showChartTip(event,this)" onmouseleave="hideChartTip()"></circle>`).join('');
+    return path+dots;
+  }).join('');
+  window._chartClickHandler = opts.onPointClick || null;
+  const clickAttr = opts.onPointClick ? `onclick="handleChartClick(event)"` : '';
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:300px" ${clickAttr}>${gridSvg}${axisSvg}${seriesSvg}</svg>`;
+}
+function handleChartClick(ev){ const c=ev.target.closest('circle'); if(!c||!window._chartClickHandler) return; window._chartClickHandler(+c.dataset.idx); }
+function showChartTip(ev, el){
+  const tip = document.getElementById('chartTip');
+  tip.textContent = el.dataset.label+': '+el.dataset.val;
+  tip.style.left = (ev.pageX+12)+'px'; tip.style.top=(ev.pageY-28)+'px'; tip.style.opacity=1;
+}
+function hideChartTip(){ document.getElementById('chartTip').style.opacity=0; }
+
+/* ========================================================================
+   تركيبة المبيعات
+   ======================================================================== */
+function renderComposition(K){
+  const el = document.getElementById('compositionCard');
+  let milBlock;
+  if(K.milAvailable){
+    milBlock = `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-top:1px solid var(--border)">
+      <div><b>مبيعات المؤسسة الاستهلاكية العسكرية</b><div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:2px">رصيد مستودع 011 آخر كل شهر × قائمة الأسعار العسكرية — مؤشر معزول (${K.milCur.coveredMonths}/${K.milCur.totalMonths} شهر مُغطّى بالبيانات)</div></div>
+      <div style="font-weight:700;font-size:16px">${fmtCurHTML(K.milCur.total,true)}</div>
+    </div>
+    <div class="unavail" style="margin-top:2px">لا تُضاف هذه القيمة لإجمالي المبيعات الرسمي تفادياً لاحتمال ازدواجية العد — لا توجد آلية مؤكدة حالياً لمنع التكرار مع فواتير SAP.</div>`;
+  } else {
+    milBlock = `<div style="padding:12px 0;border-top:1px solid var(--border)"><b>مبيعات المؤسسة الاستهلاكية العسكرية</b>
+      <div class="unavail">Data unavailable — الصق كويري «رصيد مستودع 011» و«قائمة الأسعار العسكرية» من لوحة الاستيراد</div></div>`;
+  }
+  el.innerHTML = `
+    <div class="section-hd"><div><h2>تركيبة المبيعات</h2><div class="sub">Sales Composition</div></div></div>
+    <div style="display:flex;align-items:center;justify-content:space-between">
+      <div><b>إجمالي المبيعات الفعلية (SAP)</b><div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:2px">Actual SAP Sales</div></div>
+      <div style="font-weight:700;font-size:19px">${fmtCurHTML(K.cur.net,true)}</div>
+    </div>
+    ${milBlock}`;
+}
+
+/* ========================================================================
+   القوائم المرتّبة — Top Customers / Products / Suppliers
+   ======================================================================== */
+function rankListHTML(items, opts){
+  opts = opts||{}; const formatter = opts.formatter || (v=>fmtCurHTML(v,true));
+  if(!items.length) return `<div class="empty-state">لا توجد بيانات كافية لهذه الفترة</div>`;
+  const max = Math.max(...items.map(i=>i.value||0), 1);
+  return items.map((it,i)=>`
+    <div class="rank-row">
+      <div class="idx">${i+1}</div>
+      <div class="info">
+        <div class="name">${esc(it.name)}</div>
+        <div class="bar-wrap"><div class="bar" style="width:${Math.max(2,(it.value/max)*100)}%"></div></div>
+      </div>
+      <div class="vals">
+        <div>${formatter(it.value)}</div>
+        ${it.pctOfTotal!=null?`<div class="pct">${(it.pctOfTotal*100).toFixed(0)}% من الإجمالي</div>`:''}
+        ${it.change!=null?`<div class="chg ${it.change>=0?'pos':'neg'}">${pct(it.change)} مقابل الماضي</div>`:''}
+      </div>
+    </div>`).join('');
+}
+
+let custMetric='sales', custTopN=10;
+function renderTopCustomers(K){
+  const ctl = document.getElementById('custMetricCtl');
+  const metrics=[['sales','المبيعات'],['collection','التحصيل'],['outstanding','الرصيد المستحق']];
+  ctl.innerHTML = metrics.map(([k,l])=>`<button class="${custMetric===k?'active':''}" onclick="custMetric='${k}';renderTopCustomers(window._K)">${l}</button>`).join('');
+  const host = document.getElementById('topCustomers');
+  let items=[];
+  if(custMetric==='sales'){
+    if(!K.cur.byCust.size){ host.innerHTML='<div class="empty-state">لا توجد بيانات مبيعات لهذه الفترة</div>'; return; }
+    const total=K.cur.net||1;
+    items=[...K.cur.byCust.values()].map(c=>{ const p=K.cmpByCust.get(c.code); return {code:c.code,name:c.name,value:c.net,pctOfTotal:safeDiv(c.net,total),change:p?safeDiv(c.net-p,Math.abs(p)):null}; });
+  } else if(custMetric==='collection'){
+    if(!K.collectionsAvailable){ host.innerHTML='<div class="empty-state">Data unavailable — لم يتم لصق كويري التحصيل</div>'; return; }
+    const total=K.colCur||1;
+    items=[...K.colByCust.values()].map(c=>({code:c.code,name:c.name,value:c.amount,pctOfTotal:safeDiv(c.amount,total),change:null}));
+  } else {
+    if(!K.arAvailable){ host.innerHTML='<div class="empty-state">Data unavailable — لم يتم لصق كويري الذمم المدينة</div>'; return; }
+    const total=K.arTotal||1; const byCustAR=new Map();
+    for(const a of RAW.ar){ if(!a.custCode) continue; const c=byCustAR.get(a.custCode)||{code:a.custCode,name:a.custName||a.custCode,value:0}; c.value+=a.balance; byCustAR.set(a.custCode,c); }
+    items=[...byCustAR.values()].map(c=>({...c, pctOfTotal:safeDiv(c.value,total), change:null}));
+  }
+  items.sort((a,b)=>b.value-a.value);
+  host.innerHTML = rankListHTML(items.slice(0,custTopN));
+}
+
+let prodMetric='value';
+function renderTopProducts(K){
+  const ctl = document.getElementById('prodMetricCtl');
+  const metrics=[['value','قيمة المبيعات'],['qty','الكمية']];
+  ctl.innerHTML = metrics.map(([k,l])=>`<button class="${prodMetric===k?'active':''}" onclick="prodMetric='${k}';renderTopProducts(window._K)">${l}</button>`).join('');
+  const host = document.getElementById('topProducts');
+  if(!K.cur.byItem.size){ host.innerHTML='<div class="empty-state">لا توجد بيانات مبيعات لهذه الفترة</div>'; return; }
+  const totalVal = K.cur.net||1;
+  const totalQty = [...K.cur.byItem.values()].reduce((a,b)=>a+b.qty,0)||1;
+  let items = [...K.cur.byItem.values()].map(it=>{
+    const val = prodMetric==='value'?it.net:it.qty;
+    const total = prodMetric==='value'?totalVal:totalQty;
+    const p = K.cmpByItem.get(it.code);
+    const change = (prodMetric==='value' && p!=null) ? safeDiv(it.net-p, Math.abs(p)) : null;
+    return {code:it.code, name:it.name, value:val, pctOfTotal:safeDiv(val,total), change};
+  });
+  items.sort((a,b)=>b.value-a.value);
+  host.innerHTML = rankListHTML(items.slice(0,12), {formatter: prodMetric==='qty'? (v=>'<span class="mono">'+fmt(v)+'</span>') : undefined});
+}
+
+function renderTopSuppliers(K){
+  const host = document.getElementById('topSuppliers');
+  if(!K.purchasesAvailable || !K.purBySup.size){ host.innerHTML='<div class="empty-state">Data unavailable — لم يتم لصق كويري المشتريات</div>'; return; }
+  const total = K.purCur||1;
+  let items = [...K.purBySup.values()].map(s=>{
+    const p = K.purBySupCmp.get(s.code);
+    return {code:s.code, name:s.name, value:s.amount, pctOfTotal:safeDiv(s.amount,total), change:p?safeDiv(s.amount-p.amount,Math.abs(p.amount)):null};
+  });
+  items.sort((a,b)=>b.value-a.value);
+  host.innerHTML = rankListHTML(items.slice(0,10));
+}
+
+/* ========================================================================
+   التحصيل / المشتريات / الذمم المدينة — تفاصيل الأقسام
+   ======================================================================== */
+function renderCollections(K){
+  const el = document.getElementById('collectionsBody');
+  if(!K.collectionsAvailable){ el.innerHTML='<div class="empty-state">Data unavailable — لم يتم لصق كويري التحصيل</div>'; return; }
+  const chg = safeDiv(K.colCur-K.colCmp, Math.abs(K.colCmp));
+  const totalCol = K.colCur||1;
+  const items=[...K.colByCust.values()].sort((a,b)=>b.amount-a.amount).slice(0,8).map(c=>({code:c.code,name:c.name,value:c.amount,pctOfTotal:safeDiv(c.amount,totalCol),change:null}));
+  el.innerHTML = `
+    <div style="display:flex;gap:28px;flex-wrap:wrap;margin-bottom:14px">
+      <div><div class="sub" style="font-size:11.5px;color:var(--muted)">إجمالي التحصيل</div><div style="font-size:20px;font-weight:700">${fmtCurHTML(K.colCur,true)}</div></div>
+      <div><div class="sub" style="font-size:11.5px;color:var(--muted)">نفس الفترة العام الماضي</div><div style="font-size:20px;font-weight:700;color:var(--muted)">${fmtCurHTML(K.colCmp,true)}</div></div>
+      <div><div class="sub" style="font-size:11.5px;color:var(--muted)">التغير</div><div class="chg ${chg!=null&&chg>=0?'pos':'neg'}" style="font-size:16px;display:inline-block">${chg==null?'—':pct(chg)}</div></div>
+    </div>
+    <div class="sub" style="font-size:11.5px;color:var(--muted);margin-bottom:6px">أهم العملاء تحصيلاً بالفترة</div>
+    <div class="rank-list">${rankListHTML(items)}</div>`;
+}
+function renderPurchases(K){
+  const el = document.getElementById('purchasesBody');
+  if(!K.purchasesAvailable){ el.innerHTML='<div class="empty-state">Data unavailable — لم يتم لصق كويري المشتريات (A/P)</div>'; return; }
+  const chg = safeDiv(K.purCur-K.purCmp, Math.abs(K.purCmp));
+  el.innerHTML = `
+    <div class="sub" style="font-size:11.5px;color:var(--muted);margin-bottom:10px">المؤشر المعتمد: فواتير الموردين (A/P Invoices) — الأكثر تمثيلاً للمشتريات الفعلية من البيانات المتاحة حالياً. لا يوجد فصل PO/GR/AP.</div>
+    <div style="display:flex;gap:28px;flex-wrap:wrap">
+      <div><div class="sub" style="font-size:11.5px;color:var(--muted)">إجمالي المشتريات</div><div style="font-size:20px;font-weight:700">${fmtCurHTML(K.purCur,true)}</div></div>
+      <div><div class="sub" style="font-size:11.5px;color:var(--muted)">نفس الفترة العام الماضي</div><div style="font-size:20px;font-weight:700;color:var(--muted)">${fmtCurHTML(K.purCmp,true)}</div></div>
+      <div><div class="sub" style="font-size:11.5px;color:var(--muted)">التغير</div><div class="chg ${chg!=null&&chg>=0?'pos':'neg'}" style="font-size:16px;display:inline-block">${chg==null?'—':pct(chg)}</div></div>
+    </div>`;
+}
+function renderAR(K){
+  const el = document.getElementById('arBody');
+  if(!K.arAvailable){ el.innerHTML='<div class="empty-state">Data unavailable — لم يتم لصق كويري الذمم المدينة</div>'; return; }
+  const b=K.buckets;
+  const rows=[['0–30','b0_30'],['31–60','b31_60'],['61–90','b61_90'],['91–120','b91_120'],['120+','b120p']];
+  const maxB = Math.max(...rows.map(([,k])=>b[k]),1);
+  el.innerHTML = `
+    <div style="display:flex;gap:28px;flex-wrap:wrap;margin-bottom:14px">
+      <div><div class="sub" style="font-size:11.5px;color:var(--muted)">إجمالي الذمم (كما في آخر استيراد)</div><div style="font-size:20px;font-weight:700">${fmtCurHTML(K.arTotal,true)}</div></div>
+      <div><div class="sub" style="font-size:11.5px;color:var(--muted)">المتأخر</div><div style="font-size:20px;font-weight:700;color:var(--bad)">${fmtCurHTML(K.overdue,true)}</div></div>
+      <div><div class="sub" style="font-size:11.5px;color:var(--muted)">نسبة التأخر</div><div class="mono" style="font-size:20px;font-weight:700">${K.overduePct==null?'—':(K.overduePct*100).toFixed(0)+'%'}</div></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:9px">
+      ${rows.map(([lbl,k])=>`<div style="display:flex;align-items:center;gap:10px">
+        <div style="width:48px;font-size:11.5px;color:var(--muted)">${lbl}</div>
+        <div style="flex:1;background:var(--bg);border-radius:5px;height:10px;overflow:hidden"><div style="width:${Math.max(2,b[k]/maxB*100)}%;height:100%;background:${k==='b120p'?'var(--bad)':(k==='b91_120'?'var(--warn)':'var(--navy)')}"></div></div>
+        <div style="font-size:12px;width:96px;text-align:left">${fmtCurHTML(b[k],true)}</div>
+      </div>`).join('')}
+    </div>`;
+}
+
+/* ========================================================================
+   التنبيهات التنفيذية — Facts only، لا استنتاجات
+   ======================================================================== */
+function renderAlerts(K){
+  const el = document.getElementById('alertsBody');
+  const alerts=[]; const THRESH=0.05;
+  function addChangeAlert(label, cur, cmpV){
+    const chg = safeDiv(cur-cmpV, Math.abs(cmpV));
+    if(chg==null || Math.abs(chg)<THRESH) return;
+    alerts.push({sev: chg<0?'bad':'good', t1: label+' '+(chg<0?'أقل من':'أعلى من')+' نفس الفترة من السنة السابقة بنسبة '+(Math.abs(chg)*100).toFixed(1)+'%', t2: fmtCur(cur,true)+' مقابل '+fmtCur(cmpV,true)});
+  }
+  addChangeAlert('المبيعات', K.cur.net, K.cmp.net);
+  if(K.collectionsAvailable) addChangeAlert('التحصيل', K.colCur, K.colCmp);
+  if(K.purchasesAvailable) addChangeAlert('المشتريات', K.purCur, K.purCmp);
+  if(K.arAvailable){
+    const byCust=new Map(); const today=new Date(); today.setHours(0,0,0,0);
+    for(const a of RAW.ar){ if(!a.custCode) continue;
+      const days = a.dueDate ? Math.floor((today-a.dueDate)/86400000) : -1;
+      if(days>90){ const c=byCust.get(a.custCode)||{name:a.custName||a.custCode, overdue:0}; c.overdue+=a.balance; byCust.set(a.custCode,c); } }
+    const majors=[...byCust.values()].filter(c=>c.overdue>0).sort((a,b)=>b.overdue-a.overdue).slice(0,3);
+    for(const m of majors) alerts.push({sev:'warn', t1:'رصيد متأخر لدى '+m.name+' منذ أكثر من 90 يوماً', t2: fmtCur(m.overdue,true)});
+  }
+  if(!alerts.length){ el.innerHTML='<div class="alert-empty">لا توجد تنبيهات جوهرية بالفترة المحددة</div>'; return; }
+  el.innerHTML = alerts.map(a=>`<div class="alert-row"><div class="dot ${a.sev}"></div><div class="txt"><div class="t1">${esc(a.t1)}</div><div class="t2">${esc(a.t2)}</div></div></div>`).join('');
+}
+
+/* ========================================================================
+   منسّق العرض العام
+   ======================================================================== */
+function renderAll(){
+  const K = computeKPIs();
+  window._K = K;
+  renderKPIRow(K);
+  renderSalesChart(K);
+  renderComposition(K);
+  renderTopCustomers(K);
+  renderTopProducts(K);
+  renderTopSuppliers(K);
+  renderCollections(K);
+  renderPurchases(K);
+  renderAR(K);
+  renderAlerts(K);
+}
+function refreshAll(){ renderAll(); }
+
+/* ---------- تشغيل التطبيق ---------- */
+function initApp(){
+  renderPeriodExtra();
+  onFiltersChanged();
+  loadSyncedState();
+}
+
+/* boot */
+(function(){
+  document.getElementById('authPass').addEventListener('keydown', e=>{ if(e.key==='Enter') doSignIn(); });
+  bootAuth();
+})();
+</script>
+</body>
+</html>
