@@ -866,6 +866,7 @@ ORDER BY T0."ShortName", T0."RefDate"</code>
         <button class="print-btn" style="border-color:var(--teal); color:var(--teal);" onclick="printFilteredDaily('onTime','التحصيلات ضمن الفترة')">🖨️ ضمن الفترة</button>
       </div>
       <button class="btn-ghost btn-sm" onclick="exportDailyCsv()">تصدير CSV</button>
+      <button class="btn-ghost btn-sm" onclick="exportInteractiveDailyReport()">📤 تصدير كشاشة تفاعلية</button>
     </div>
     <div id="dailyPrintHeader" class="print-report-header" style="display:none;"></div>
     <div class="table-wrap" id="dailyTableWrap">
@@ -3086,6 +3087,139 @@ function exportDailyCsv(){
   });
   const blob = new Blob(['\uFEFF'+lines.join('\n')], {type:'text/csv;charset=utf-8;'});
   const a = document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='التحصيل_اليومي.csv'; a.click();
+}
+
+// ملف HTML مستقل قابل للإرسال لحاله (إيميل/واتساب) — بيانات التحصيل اليومي المفلترة حالياً بالشاشة،
+// مجمّعة حسب العميل، بدون تسجيل دخول أو وصول لباقي بيانات/تبويبات الشاشة الأصلية
+function exportInteractiveDailyReport(){
+  const rows = mrptFilteredDaily();
+  if(rows.length===0){ alert('ما في بيانات تحصيل يومي مطابقة للفلتر الحالي للتصدير.'); return; }
+
+  const groups = [];
+  const byCard = new Map();
+  rows.forEach(r=>{
+    let g = byCard.get(r.cardCode);
+    if(!g){ g = { cardCode:r.cardCode, cardName:r.cardName, slpName:r.slpName, items:[] }; byCard.set(r.cardCode, g); groups.push(g); }
+    g.items.push(r);
+  });
+  const exportData = groups.map(g=>{
+    const total = g.items.reduce((s,r)=>s+r.amount,0);
+    const anyLate = g.items.some(r=>r.status==='late');
+    const last = g.items.reduce((a,b)=>{
+      const at = a.collectDate ? a.collectDate.getTime() : -Infinity;
+      const bt = b.collectDate ? b.collectDate.getTime() : -Infinity;
+      return bt>=at ? b : a;
+    });
+    return {
+      cardCode: g.cardCode||'', cardName: g.cardName||'', slpName: g.slpName||'',
+      count: g.items.length, total,
+      lastDate: last.collectDate ? fmtDate(last.collectDate) : '—',
+      lastStatus: last.statusLabel||'', anyLate
+    };
+  });
+
+  const genDate = fmtDate(new Date());
+  const html = buildInteractiveDailyReportHtml(exportData, genDate, rows.length, groups.length);
+  const blob = new Blob([html], {type:'text/html;charset=utf-8;'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'التحصيل_اليومي_تفاعلي_' + genDate.replace(/\./g,'-') + '.html';
+  a.click();
+}
+
+function buildInteractiveDailyReportHtml(data, genDate, rowsCount, custCount){
+  const innerScript = [
+    'var DATA = ' + JSON.stringify(data).replace(/</g,'\\u003c') + ';',
+    'var sortKey = "count", sortDir = "desc";',
+    'function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }',
+    'function fmtNum(n){ return (n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }',
+    'function sortBy(key){',
+    '  if(sortKey===key){ sortDir = sortDir==="asc" ? "desc" : "asc"; }',
+    '  else { sortKey=key; sortDir = (key==="count"||key==="total") ? "desc" : "asc"; }',
+    '  renderTbl();',
+    '}',
+    'function renderTbl(){',
+    '  var q = (document.getElementById("q").value||"").trim().toLowerCase();',
+    '  var rows = DATA.filter(function(r){',
+    '    return !q || r.cardCode.toLowerCase().indexOf(q)>-1 || r.cardName.toLowerCase().indexOf(q)>-1 || r.slpName.toLowerCase().indexOf(q)>-1;',
+    '  });',
+    '  rows.sort(function(a,b){',
+    '    var av=a[sortKey], bv=b[sortKey];',
+    '    var dir = sortDir==="asc" ? 1 : -1;',
+    '    if(typeof av==="string" || typeof bv==="string") return String(av||"").localeCompare(String(bv||""),"ar") * dir;',
+    '    return ((av||0)-(bv||0)) * dir;',
+    '  });',
+    '  var wrap = document.getElementById("wrap");',
+    '  if(rows.length===0){ wrap.innerHTML = "<div class=\\"empty\\">ما في نتائج مطابقة</div>"; return; }',
+    '  var cols = [',
+    '    {key:"cardCode", label:"رمز العميل"}, {key:"cardName", label:"اسم العميل"}, {key:"slpName", label:"المندوب"},',
+    '    {key:"count", label:"عدد التحصيلات", num:true}, {key:"lastDate", label:"آخر تحصيل"},',
+    '    {key:"total", label:"قيمته (المجموع)", num:true}, {key:"lastStatus", label:"الحالة"}',
+    '  ];',
+    '  var html = "<table><thead><tr>";',
+    '  cols.forEach(function(c){',
+    '    var arrow = sortKey===c.key ? (sortDir==="asc" ? " ▲" : " ▼") : "";',
+    '    html += "<th class=\\"" + (c.num?"num":"") + "\\" onclick=\\"sortBy(\'" + c.key + "\')\\">" + c.label + arrow + "</th>";',
+    '  });',
+    '  html += "</tr></thead><tbody>";',
+    '  var totalCount=0, grandTotal=0;',
+    '  rows.forEach(function(r){',
+    '    totalCount += r.count; grandTotal += r.total;',
+    '    html += "<tr class=\\"" + (r.anyLate?"late":"") + "\\">" +',
+    '      "<td>" + esc(r.cardCode) + "</td><td>" + esc(r.cardName) + "</td><td>" + esc(r.slpName) + "</td>" +',
+    '      "<td class=\\"num\\">" + r.count + "</td><td>" + esc(r.lastDate) + "</td>" +',
+    '      "<td class=\\"num\\">" + fmtNum(r.total) + "</td><td>" + esc(r.lastStatus) + "</td></tr>";',
+    '  });',
+    '  html += "</tbody><tfoot><tr><td colspan=\\"3\\">الإجمالي (" + rows.length + " عميل)</td>" +',
+    '    "<td class=\\"num\\">" + totalCount + "</td><td></td><td class=\\"num\\">" + fmtNum(grandTotal) + "</td><td></td></tr></tfoot></table>";',
+    '  wrap.innerHTML = html;',
+    '}',
+    'renderTbl();'
+  ].join('\n');
+
+  return `<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>تقرير التحصيل اليومي التفاعلي</title>
+<style>
+  :root{--navy:#0F2F4F; --navy-deep:#0A2038; --gold:#B08D57; --border:#E5E0D6; --muted:#6B7280; --risk:#B42318; --risk-bg:#FDF1EF;}
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:'Segoe UI',Tahoma,sans-serif; background:#FBF9F5; color:#20242B;}
+  header{background:linear-gradient(135deg,var(--navy-deep),var(--navy)); color:#fff; padding:18px 24px;}
+  header h1{margin:0 0 4px; font-size:19px;}
+  header .sub{font-size:12.5px; color:#C9D6E4;}
+  .toolbar{display:flex; gap:10px; align-items:center; padding:14px 24px; flex-wrap:wrap;}
+  .toolbar input[type=text]{flex:1; min-width:220px; max-width:360px; border:1.5px solid var(--border); border-radius:8px; padding:8px 12px; font-size:13.5px; font-family:inherit;}
+  .toolbar button{border:1.5px solid var(--navy); background:#fff; color:var(--navy); border-radius:8px; padding:8px 14px; font-weight:700; font-size:12.5px; cursor:pointer; font-family:inherit;}
+  .toolbar button:hover{background:var(--navy); color:#fff;}
+  .wrap{padding:0 24px 30px; overflow-x:auto;}
+  table{width:100%; border-collapse:collapse; font-size:13px; background:#fff;}
+  thead th{background:#F3F1EA; text-align:right; padding:9px 10px; border-bottom:2px solid var(--gold); font-weight:700; cursor:pointer; user-select:none; white-space:nowrap;}
+  tbody td{padding:7px 10px; border-bottom:1px solid var(--border);}
+  tbody tr.late{background:var(--risk-bg);}
+  td.num, th.num{font-family:Consolas,monospace; direction:ltr; text-align:left;}
+  tfoot td{font-weight:800; background:#F3F1EA; border-top:2px solid var(--gold); padding:9px 10px;}
+  .empty{padding:30px; text-align:center; color:var(--muted);}
+  @media print{ .toolbar{display:none;} }
+</style>
+</head>
+<body>
+<header>
+  <h1>مركز الكيلاني للأغذية — التحصيل اليومي</h1>
+  <div class="sub">تقرير تفاعلي مُصدَّر بتاريخ ${genDate} — ${rowsCount} تحصيل لـ${custCount} عميل</div>
+</header>
+<div class="toolbar">
+  <input type="text" id="q" placeholder="🔍 بحث برمز/اسم العميل أو المندوب..." oninput="renderTbl()">
+  <button onclick="window.print()">🖨️ طباعة / تصدير PDF</button>
+</div>
+<div class="wrap" id="wrap"></div>
+<script>
+${innerScript}
+<\/script>
+</body>
+</html>`;
 }
 
 /* ================= تقرير شامل احترافي (غلاف + فهرس جانبي) ================= */
