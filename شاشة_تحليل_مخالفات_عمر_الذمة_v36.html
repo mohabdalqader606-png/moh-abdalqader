@@ -984,7 +984,10 @@ ORDER BY T0."ShortName", T0."RefDate"</code>
   .mrpt-section-print{flex:0 0 auto; background:#fff; color:var(--mrpt-navy-deep); border:1.5px solid var(--mrpt-navy-light); border-radius:8px; padding:6px 12px; font-size:11px; font-weight:700; cursor:pointer; font-family:inherit;}
   .mrpt-section-print:hover{background:var(--mrpt-navy-light); color:#fff;}
   .mrpt-chapter .mrpt-sub{font-size:13.5px; color:var(--mrpt-muted); margin-bottom:10px;}
-  .mrpt-filter-row{margin-bottom:14px;}
+  .mrpt-filter-row{margin-bottom:14px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;}
+  .mrpt-view-toggle{display:flex; gap:6px; margin-inline-start:auto;}
+  .mrpt-view-toggle button{border:1.5px solid var(--mrpt-navy-light); background:#fff; color:var(--mrpt-navy-deep); border-radius:8px; padding:6px 14px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit;}
+  .mrpt-view-toggle button.active{background:var(--mrpt-navy-light); color:#fff;}
   .mrpt-filter-box{width:100%; max-width:340px; border:1.5px solid var(--mrpt-border); border-radius:8px; padding:7px 10px; font-size:13.5px; font-family:inherit;}
   table.mrpt-tbl tr.mrpt-reason-row td{padding:2px 8px 9px; font-size:12.5px; color:var(--mrpt-risk); font-weight:400; white-space:normal; line-height:1.5;}
   table.mrpt-tbl tr:has(+ tr.mrpt-reason-row) td{border-bottom:none;}
@@ -3090,39 +3093,25 @@ function exportDailyCsv(){
 }
 
 // ملف HTML مستقل قابل للإرسال لحاله (إيميل/واتساب) — بيانات التحصيل اليومي المفلترة حالياً بالشاشة،
-// مجمّعة حسب العميل، بدون تسجيل دخول أو وصول لباقي بيانات/تبويبات الشاشة الأصلية
+// كل تحصيل بسطره لحاله افتراضياً (نفس العميل ممكن يتكرر)، مع خيار "تجميعي" اختياري داخل الملف —
+// بدون تسجيل دخول أو وصول لباقي بيانات/تبويبات الشاشة الأصلية
 function exportInteractiveDailyReport(){
   const rows = mrptFilteredDaily();
   if(rows.length===0){ alert('ما في بيانات تحصيل يومي مطابقة للفلتر الحالي للتصدير.'); return; }
 
-  const groups = [];
-  const byCard = new Map();
-  rows.forEach(r=>{
-    let g = byCard.get(r.cardCode);
-    if(!g){ g = { cardCode:r.cardCode, cardName:r.cardName, slpName:r.slpName, items:[] }; byCard.set(r.cardCode, g); groups.push(g); }
-    g.items.push(r);
-  });
-  const exportData = groups.map(g=>{
-    const total = g.items.reduce((s,r)=>s+r.amount,0);
-    const anyLate = g.items.some(r=>r.status==='late');
-    // "أيام التأخير" للترتيب: أسوأ تأخير فعلي بالتاريخ (متأخر أو غير مؤثر مادياً)، بعكس تلوين الصف الأحمر يلي مرتبط بـ"متأخر" فقط
-    const delayItems = g.items.filter(r=>r.status==='late'||r.status==='immaterial');
-    const lateDays = delayItems.length>0 ? Math.max(...delayItems.map(r=>r.delayDays||0)) : -1;
-    const last = g.items.reduce((a,b)=>{
-      const at = a.collectDate ? a.collectDate.getTime() : -Infinity;
-      const bt = b.collectDate ? b.collectDate.getTime() : -Infinity;
-      return bt>=at ? b : a;
-    });
+  const exportData = rows.map(r=>{
+    const lateRank = (r.status==='late'||r.status==='immaterial') ? (r.delayDays||0) : -1;
     return {
-      cardCode: g.cardCode||'', cardName: g.cardName||'', slpName: g.slpName||'',
-      count: g.items.length, total, lateDays,
-      lastDate: last.collectDate ? fmtDate(last.collectDate) : '—',
-      lastStatus: last.statusLabel||'', anyLate
+      cardCode: r.cardCode||'', cardName: r.cardName||'', slpName: r.slpName||'',
+      collectDate: r.collectDate ? fmtDate(r.collectDate) : '—',
+      collectTs: r.collectDate ? r.collectDate.getTime() : null,
+      amount: r.amount||0, status: r.status, statusLabel: r.statusLabel||'', lateRank
     };
   });
+  const custCount = new Set(rows.map(r=>r.cardCode)).size;
 
   const genDate = fmtDate(new Date());
-  const html = buildInteractiveDailyReportHtml(exportData, genDate, rows.length, groups.length);
+  const html = buildInteractiveDailyReportHtml(exportData, genDate, rows.length, custCount);
   const blob = new Blob([html], {type:'text/html;charset=utf-8;'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -3133,27 +3122,86 @@ function exportInteractiveDailyReport(){
 function buildInteractiveDailyReportHtml(data, genDate, rowsCount, custCount){
   const innerScript = [
     'var DATA = ' + JSON.stringify(data).replace(/</g,'\\u003c') + ';',
-    'var sortKey = "lateDays", sortDir = "desc";',
+    'var mode = "detail";',
+    'var sortState = { detail: {key:"lateRank", dir:"desc"}, grouped: {key:"lateDays", dir:"desc"} };',
     'function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }',
     'function fmtNum(n){ return (n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }',
-    'function sortBy(key){',
-    '  if(sortKey===key){ sortDir = sortDir==="asc" ? "desc" : "asc"; }',
-    '  else { sortKey=key; sortDir = (key==="count"||key==="total"||key==="lateDays") ? "desc" : "asc"; }',
+    'function setMode(m){',
+    '  mode = m;',
+    '  document.querySelectorAll(".mview button").forEach(function(b){ b.classList.toggle("active", b.dataset.mode===m); });',
     '  renderTbl();',
+    '}',
+    'function sortBy(key){',
+    '  var st = sortState[mode];',
+    '  if(st.key===key){ st.dir = st.dir==="asc" ? "desc" : "asc"; }',
+    '  else { st.key=key; st.dir = (key==="count"||key==="total"||key==="amount"||key==="lateDays"||key==="lateRank") ? "desc" : "asc"; }',
+    '  renderTbl();',
+    '}',
+    'function groupData(rows){',
+    '  var map = {}, groups = [];',
+    '  rows.forEach(function(r){',
+    '    var g = map[r.cardCode];',
+    '    if(!g){ g = {cardCode:r.cardCode, cardName:r.cardName, slpName:r.slpName, items:[]}; map[r.cardCode]=g; groups.push(g); }',
+    '    g.items.push(r);',
+    '  });',
+    '  return groups.map(function(g){',
+    '    var total=0, lateDays=-1, lastTs=-Infinity, lastDate="—", lastStatus="", anyLate=false;',
+    '    g.items.forEach(function(r){',
+    '      total += r.amount;',
+    '      if(r.lateRank>lateDays) lateDays = r.lateRank;',
+    '      if(r.status==="late") anyLate = true;',
+    '      var ts = r.collectTs==null ? -Infinity : r.collectTs;',
+    '      if(ts>=lastTs){ lastTs=ts; lastDate=r.collectDate; lastStatus=r.statusLabel; }',
+    '    });',
+    '    return {cardCode:g.cardCode, cardName:g.cardName, slpName:g.slpName, count:g.items.length, total:total, lateDays:lateDays, lastDate:lastDate, lastStatus:lastStatus, anyLate:anyLate};',
+    '  });',
     '}',
     'function renderTbl(){',
     '  var q = (document.getElementById("q").value||"").trim().toLowerCase();',
-    '  var rows = DATA.filter(function(r){',
+    '  var filtered = DATA.filter(function(r){',
     '    return !q || r.cardCode.toLowerCase().indexOf(q)>-1 || r.cardName.toLowerCase().indexOf(q)>-1 || r.slpName.toLowerCase().indexOf(q)>-1;',
     '  });',
-    '  rows.sort(function(a,b){',
-    '    var av=a[sortKey], bv=b[sortKey];',
-    '    var dir = sortDir==="asc" ? 1 : -1;',
+    '  var wrap = document.getElementById("wrap");',
+    '  if(filtered.length===0){ wrap.innerHTML = "<div class=\\"empty\\">ما في نتائج مطابقة</div>"; return; }',
+    '  if(mode==="grouped") renderGrouped(filtered); else renderDetail(filtered);',
+    '}',
+    'function renderDetail(filtered){',
+    '  var st = sortState.detail;',
+    '  var rows = filtered.slice().sort(function(a,b){',
+    '    var av=a[st.key], bv=b[st.key], dir = st.dir==="asc" ? 1 : -1;',
     '    if(typeof av==="string" || typeof bv==="string") return String(av||"").localeCompare(String(bv||""),"ar") * dir;',
     '    return ((av||0)-(bv||0)) * dir;',
     '  });',
-    '  var wrap = document.getElementById("wrap");',
-    '  if(rows.length===0){ wrap.innerHTML = "<div class=\\"empty\\">ما في نتائج مطابقة</div>"; return; }',
+    '  var cols = [',
+    '    {key:"cardCode", label:"رمز العميل"}, {key:"cardName", label:"اسم العميل"}, {key:"slpName", label:"المندوب"},',
+    '    {key:"collectTs", label:"تاريخ التحصيل"}, {key:"amount", label:"القيمة", num:true},',
+    '    {key:"lateRank", label:"أيام التأخير", num:true}, {key:"statusLabel", label:"الحالة"}',
+    '  ];',
+    '  var html = "<table><thead><tr>";',
+    '  cols.forEach(function(c){',
+    '    var arrow = sortState.detail.key===c.key ? (sortState.detail.dir==="asc" ? " ▲" : " ▼") : "";',
+    '    html += "<th class=\\"" + (c.num?"num":"") + "\\" onclick=\\"sortBy(\'" + c.key + "\')\\">" + c.label + arrow + "</th>";',
+    '  });',
+    '  html += "</tr></thead><tbody>";',
+    '  var totalAmount=0;',
+    '  rows.forEach(function(r){',
+    '    totalAmount += r.amount;',
+    '    html += "<tr class=\\"" + (r.status==="late"?"late":"") + "\\">" +',
+    '      "<td>" + esc(r.cardCode) + "</td><td>" + esc(r.cardName) + "</td><td>" + esc(r.slpName) + "</td>" +',
+    '      "<td>" + esc(r.collectDate) + "</td><td class=\\"num\\">" + fmtNum(r.amount) + "</td>" +',
+    '      "<td class=\\"num\\">" + (r.lateRank>=0?r.lateRank:"—") + "</td><td>" + esc(r.statusLabel) + "</td></tr>";',
+    '  });',
+    '  html += "</tbody><tfoot><tr><td colspan=\\"4\\">الإجمالي (" + rows.length + " تحصيل)</td>" +',
+    '    "<td class=\\"num\\">" + fmtNum(totalAmount) + "</td><td></td><td></td></tr></tfoot></table>";',
+    '  document.getElementById("wrap").innerHTML = html;',
+    '}',
+    'function renderGrouped(filtered){',
+    '  var st = sortState.grouped;',
+    '  var rows = groupData(filtered).sort(function(a,b){',
+    '    var av=a[st.key], bv=b[st.key], dir = st.dir==="asc" ? 1 : -1;',
+    '    if(typeof av==="string" || typeof bv==="string") return String(av||"").localeCompare(String(bv||""),"ar") * dir;',
+    '    return ((av||0)-(bv||0)) * dir;',
+    '  });',
     '  var cols = [',
     '    {key:"cardCode", label:"رمز العميل"}, {key:"cardName", label:"اسم العميل"}, {key:"slpName", label:"المندوب"},',
     '    {key:"count", label:"عدد التحصيلات", num:true}, {key:"lastDate", label:"آخر تحصيل"},',
@@ -3161,7 +3209,7 @@ function buildInteractiveDailyReportHtml(data, genDate, rowsCount, custCount){
     '  ];',
     '  var html = "<table><thead><tr>";',
     '  cols.forEach(function(c){',
-    '    var arrow = sortKey===c.key ? (sortDir==="asc" ? " ▲" : " ▼") : "";',
+    '    var arrow = sortState.grouped.key===c.key ? (sortState.grouped.dir==="asc" ? " ▲" : " ▼") : "";',
     '    html += "<th class=\\"" + (c.num?"num":"") + "\\" onclick=\\"sortBy(\'" + c.key + "\')\\">" + c.label + arrow + "</th>";',
     '  });',
     '  html += "</tr></thead><tbody>";',
@@ -3175,7 +3223,7 @@ function buildInteractiveDailyReportHtml(data, genDate, rowsCount, custCount){
     '  });',
     '  html += "</tbody><tfoot><tr><td colspan=\\"3\\">الإجمالي (" + rows.length + " عميل)</td>" +',
     '    "<td class=\\"num\\">" + totalCount + "</td><td></td><td class=\\"num\\">" + fmtNum(grandTotal) + "</td><td></td><td></td></tr></tfoot></table>";',
-    '  wrap.innerHTML = html;',
+    '  document.getElementById("wrap").innerHTML = html;',
     '}',
     'renderTbl();'
   ].join('\n');
@@ -3197,6 +3245,8 @@ function buildInteractiveDailyReportHtml(data, genDate, rowsCount, custCount){
   .toolbar input[type=text]{flex:1; min-width:220px; max-width:360px; border:1.5px solid var(--border); border-radius:8px; padding:8px 12px; font-size:13.5px; font-family:inherit;}
   .toolbar button{border:1.5px solid var(--navy); background:#fff; color:var(--navy); border-radius:8px; padding:8px 14px; font-weight:700; font-size:12.5px; cursor:pointer; font-family:inherit;}
   .toolbar button:hover{background:var(--navy); color:#fff;}
+  .mview{display:flex; gap:6px; margin-inline-start:auto;}
+  .mview button.active{background:var(--navy); color:#fff;}
   .wrap{padding:0 24px 30px; overflow-x:auto;}
   table{width:100%; border-collapse:collapse; font-size:13px; background:#fff;}
   thead th{background:#F3F1EA; text-align:right; padding:9px 10px; border-bottom:2px solid var(--gold); font-weight:700; cursor:pointer; user-select:none; white-space:nowrap;}
@@ -3215,6 +3265,10 @@ function buildInteractiveDailyReportHtml(data, genDate, rowsCount, custCount){
 </header>
 <div class="toolbar">
   <input type="text" id="q" placeholder="🔍 بحث برمز/اسم العميل أو المندوب..." oninput="renderTbl()">
+  <div class="mview">
+    <button class="active" data-mode="detail" onclick="setMode('detail')">تفصيلي</button>
+    <button data-mode="grouped" onclick="setMode('grouped')">تجميعي</button>
+  </div>
   <button onclick="window.print()">🖨️ طباعة / تصدير PDF</button>
 </div>
 <div class="wrap" id="wrap"></div>
@@ -3456,53 +3510,93 @@ function mrptAgingHtml(){
   </section>`;
 }
 
+let mrptDailyViewMode = 'detail'; // 'detail' = كل تحصيل بسطره لحاله (افتراضي) | 'grouped' = مجمّع حسب العميل
+
+function mrptDailyGroupedBody(rows){
+  // تجميع حسب العميل — صف واحد لكل عميل: عدد التحصيلات + قيمته (مجموع كل تحصيلاته) + تاريخ وحالة آخر تحصيل (الأحدث تاريخاً)
+  const groups = [];
+  const byCard = new Map();
+  rows.forEach(r=>{
+    let g = byCard.get(r.cardCode);
+    if(!g){ g = { cardCode:r.cardCode, cardName:r.cardName, slpName:r.slpName, items:[] }; byCard.set(r.cardCode, g); groups.push(g); }
+    g.items.push(r);
+  });
+  groups.forEach(g=>{
+    g.total = g.items.reduce((s,r)=>s+r.amount,0);
+    g.anyLate = g.items.some(r=>r.status==='late');
+    const delayItems = g.items.filter(r=>r.status==='late'||r.status==='immaterial');
+    g.lateDays = delayItems.length>0 ? Math.max(...delayItems.map(r=>r.delayDays||0)) : -1;
+    g.last = g.items.reduce((a,b)=>{
+      const at = a.collectDate ? a.collectDate.getTime() : -Infinity;
+      const bt = b.collectDate ? b.collectDate.getTime() : -Infinity;
+      return bt>=at ? b : a;
+    });
+  });
+  groups.sort((a,b)=> b.lateDays - a.lateDays);
+
+  const grandTotal = groups.reduce((s,g)=>s+g.total,0);
+  return `<table class="mrpt-tbl"><thead><tr>
+    <th>رمز العميل</th><th>اسم العميل</th><th>المندوب</th><th class="num">عدد التحصيلات</th><th>آخر تحصيل</th><th class="num">قيمته (المجموع)</th><th class="num">أيام التأخير</th><th>الحالة</th>
+  </tr></thead><tbody>` + groups.map(g=>{
+    const r = g.last;
+    return `<tr class="${g.anyLate?'mrpt-risk-row':''}">
+      <td>${mrptEsc(g.cardCode)}</td><td>${mrptEsc(g.cardName)}</td><td>${mrptEsc(g.slpName)}</td>
+      <td class="num">${g.items.length}</td>
+      <td>${r.collectDate?fmtDate(r.collectDate):'—'}</td><td class="num">${fmtNum(g.total)}</td>
+      <td class="num">${g.lateDays>=0?g.lateDays:'—'}</td><td>${mrptEsc(r.statusLabel)}</td>
+    </tr>`;
+  }).join('') + `<tr class="mrpt-total-row">
+      <td colspan="3">الإجمالي (${groups.length} عميل)</td>
+      <td class="num">${rows.length}</td><td></td><td class="num">${fmtNum(grandTotal)}</td>
+      <td></td><td></td>
+    </tr>` + '</tbody></table>';
+}
+
+function mrptDailyDetailBody(rows){
+  // صف مستقل لكل تحصيل (نفس العميل ممكن يتكرر بعدة أسطر) — مرتّب حسب الأكثر تأخراً بالأعلى
+  const sorted = rows.slice().sort((a,b)=>{
+    const da = (a.status==='late'||a.status==='immaterial') ? (a.delayDays||0) : -1;
+    const db = (b.status==='late'||b.status==='immaterial') ? (b.delayDays||0) : -1;
+    return db - da;
+  });
+  return `<table class="mrpt-tbl"><thead><tr>
+    <th>رمز العميل</th><th>اسم العميل</th><th>المندوب</th><th>تاريخ التحصيل</th><th class="num">القيمة</th><th>الحالة</th>
+  </tr></thead><tbody>` + sorted.map(r=>`<tr class="${r.status==='late'?'mrpt-risk-row':''}">
+    <td>${mrptEsc(r.cardCode)}</td><td>${mrptEsc(r.cardName)}</td><td>${mrptEsc(r.slpName)}</td>
+    <td>${r.collectDate?fmtDate(r.collectDate):'—'}</td><td class="num">${fmtNum(r.amount)}</td><td>${mrptEsc(r.statusLabel)}</td>
+  </tr>`).join('') + '</tbody></table>';
+}
+
+function mrptDailyBodyHtml(rows, mode){
+  if(rows.length===0) return '<div style="padding:20px; color:var(--mrpt-muted); font-size:13.5px;">ما في بيانات تحصيل يومي مطابقة للفلتر الحالي.</div>';
+  return mode==='grouped' ? mrptDailyGroupedBody(rows) : mrptDailyDetailBody(rows);
+}
+
+function setMrptDailyView(mode){
+  mrptDailyViewMode = mode;
+  const section = document.getElementById('mrpt-daily');
+  if(!section) return;
+  section.querySelectorAll('.mrpt-view-toggle button').forEach(b=>b.classList.toggle('active', b.dataset.view===mode));
+  const body = document.getElementById('mrptDailyBody');
+  if(body) body.innerHTML = mrptDailyBodyHtml(mrptFilteredDaily(), mode);
+  const searchInput = section.querySelector('.mrpt-filter-box');
+  if(searchInput && searchInput.value) mrptFilterRows(searchInput);
+}
+
 function mrptDailyHtml(){
   const rows = mrptFilteredDaily();
-  let body;
-  if(rows.length===0){
-    body = '<div style="padding:20px; color:var(--mrpt-muted); font-size:13.5px;">ما في بيانات تحصيل يومي مطابقة للفلتر الحالي.</div>';
-  } else {
-    // تجميع حسب العميل — صف واحد لكل عميل: عدد التحصيلات + قيمته (مجموع كل تحصيلاته) + تاريخ وحالة آخر تحصيل (الأحدث تاريخاً)
-    const groups = [];
-    const byCard = new Map();
-    rows.forEach(r=>{
-      let g = byCard.get(r.cardCode);
-      if(!g){ g = { cardCode:r.cardCode, cardName:r.cardName, slpName:r.slpName, items:[] }; byCard.set(r.cardCode, g); groups.push(g); }
-      g.items.push(r);
-    });
-    groups.forEach(g=>{
-      g.total = g.items.reduce((s,r)=>s+r.amount,0);
-      g.anyLate = g.items.some(r=>r.status==='late');
-      g.last = g.items.reduce((a,b)=>{
-        const at = a.collectDate ? a.collectDate.getTime() : -Infinity;
-        const bt = b.collectDate ? b.collectDate.getTime() : -Infinity;
-        return bt>=at ? b : a;
-      });
-    });
-    groups.sort((a,b)=> b.items.length - a.items.length);
-
-    const grandTotal = groups.reduce((s,g)=>s+g.total,0);
-    body = `<table class="mrpt-tbl"><thead><tr>
-      <th>رمز العميل</th><th>اسم العميل</th><th>المندوب</th><th class="num">عدد التحصيلات</th><th>آخر تحصيل</th><th class="num">قيمته (المجموع)</th><th>الحالة</th>
-    </tr></thead><tbody>` + groups.map(g=>{
-      const r = g.last;
-      return `<tr class="${g.anyLate?'mrpt-risk-row':''}">
-        <td>${mrptEsc(g.cardCode)}</td><td>${mrptEsc(g.cardName)}</td><td>${mrptEsc(g.slpName)}</td>
-        <td class="num">${g.items.length}</td>
-        <td>${r.collectDate?fmtDate(r.collectDate):'—'}</td><td class="num">${fmtNum(g.total)}</td><td>${mrptEsc(r.statusLabel)}</td>
-      </tr>`;
-    }).join('') + `<tr class="mrpt-total-row">
-        <td colspan="3">الإجمالي (${groups.length} عميل)</td>
-        <td class="num">${rows.length}</td><td></td><td class="num">${fmtNum(grandTotal)}</td>
-        <td></td>
-      </tr>` + '</tbody></table>';
-  }
   const late = rows.filter(r=>r.status==='late').length;
   return `<section id="mrpt-daily" class="mrpt-page mrpt-chapter" data-toc="التحصيل اليومي">
     <div class="mrpt-chapter-head"><h1>التحصيل اليومي</h1><button class="mrpt-section-print" onclick="printMrptSection('mrpt-daily')">🖨️ طباعة هذا الجزء فقط</button></div>
     <div class="mrpt-sub">${rows.length} تحصيل لـ${new Set(rows.map(r=>r.cardCode)).size} عميل، منهم ${late} تحصيل متأخر${(dailyFilter!=='all'||dailyRepFilter.size>0||dailyManagerFilter.size>0)?' (بحسب الفلتر النشط)':''}</div>
-    <div class="mrpt-filter-row"><input type="text" class="mrpt-filter-box" placeholder="🔍 فلترة برمز/اسم العميل داخل هذا الجزء..." oninput="mrptFilterRows(this)"></div>
-    ${body}
+    <div class="mrpt-filter-row">
+      <input type="text" class="mrpt-filter-box" placeholder="🔍 فلترة برمز/اسم العميل داخل هذا الجزء..." oninput="mrptFilterRows(this)">
+      <div class="mrpt-view-toggle">
+        <button class="${mrptDailyViewMode==='detail'?'active':''}" data-view="detail" onclick="setMrptDailyView('detail')">تفصيلي</button>
+        <button class="${mrptDailyViewMode==='grouped'?'active':''}" data-view="grouped" onclick="setMrptDailyView('grouped')">تجميعي</button>
+      </div>
+    </div>
+    <div id="mrptDailyBody">${mrptDailyBodyHtml(rows, mrptDailyViewMode)}</div>
     <div class="mrpt-page-footer"><span>مركز الكيلاني للأغذية</span><span>${fmtDate(new Date())}</span></div>
   </section>`;
 }
