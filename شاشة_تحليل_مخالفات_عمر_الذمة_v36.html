@@ -1005,6 +1005,12 @@ ORDER BY T0."ShortName", T0."RefDate"</code>
     #mrptBook{max-width:100% !important; margin:0 !important;}
     .mrpt-page{page-break-after:always;}
     .mrpt-section-print, .mrpt-filter-row{display:none !important;}
+    /* الجدول العام لباقي الشاشة عنده font-size:8.5px !important بوقت الطباعة —
+       لازم نعيد فرضها هون بخصوصية أعلى وإلا التقرير الشامل بيطلع بخط صغير بالـPDF رغم تكبيره على الشاشة */
+    table.mrpt-tbl{font-size:13px !important;}
+    table.mrpt-tbl thead th{font-size:13px !important; padding:8px 9px !important;}
+    table.mrpt-tbl tbody td{font-size:13px !important; padding:6px 9px !important;}
+    table.mrpt-tbl tr.mrpt-reason-row td{font-size:12.5px !important;}
     @page{ size:A4 landscape; margin:10mm; }
   }
 </style>
@@ -3284,10 +3290,16 @@ function mrptAgingHtml(){
   if(rows.length===0){
     body = '<div style="padding:20px; color:var(--mrpt-muted); font-size:13.5px;">ما في بيانات عمر ذمة مطابقة للفلتر الحالي.</div>';
   } else {
+    // ترتيب حسب التأخير: الأكثر تأخراً (أكبر عدد أيام تجاوز الاستحقاق) بالأعلى، ثم غير المتأخرين بالأسفل كما هم
+    const sortedRows = rows.slice().sort((a,b)=>{
+      const da = (a.status==='overdue'||a.status==='immaterial') ? a.daysDiff : -1;
+      const db = (b.status==='overdue'||b.status==='immaterial') ? b.daysDiff : -1;
+      return db - da;
+    });
     body = `<table class="mrpt-tbl"><thead><tr>
       <th>رمز العميل</th><th>اسم العميل</th><th>المندوب</th><th class="num">السقف الائتماني</th><th class="num">الرصيد</th><th class="num">الشيكات المؤجلة</th><th class="num">التعرض الكلي</th><th>الاستحقاق المفروض</th><th>الحالة</th>
     </tr></thead><tbody>`;
-    rows.forEach(r=>{
+    sortedRows.forEach(r=>{
       body += `<tr class="${r.status==='overdue'?'mrpt-risk-row':''}">
         <td>${mrptEsc(r.cardCode)}</td><td>${mrptEsc(r.cardName)}</td><td>${mrptEsc(r.slpName)}</td>
         <td class="num">${r.creditLine?fmtNum(r.creditLine):'—'}</td>
