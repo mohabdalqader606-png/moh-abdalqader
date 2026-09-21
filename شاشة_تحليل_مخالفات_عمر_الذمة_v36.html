@@ -3312,22 +3312,40 @@ function mrptDailyHtml(){
   if(rows.length===0){
     body = '<div style="padding:20px; color:var(--mrpt-muted); font-size:12px;">ما في بيانات تحصيل يومي مطابقة للفلتر الحالي.</div>';
   } else {
-    body = `<table class="mrpt-tbl"><thead><tr>
-      <th>رمز العميل</th><th>اسم العميل</th><th>المندوب</th><th>تاريخ التحصيل</th><th class="num">القيمة</th><th>الاستحقاق المفروض</th><th>التاريخ الفعلي</th><th>الحالة</th>
-    </tr></thead><tbody>`;
+    // تجميع حسب العميل — صف واحد لكل عميل: عدد التحصيلات + إجمالي المحصَّل + تفاصيل آخر تحصيل (الأحدث تاريخاً)
+    const groups = [];
+    const byCard = new Map();
     rows.forEach(r=>{
-      body += `<tr class="${r.status==='late'?'mrpt-risk-row':''}">
-        <td>${mrptEsc(r.cardCode)}</td><td>${mrptEsc(r.cardName)}</td><td>${mrptEsc(r.slpName)}</td>
-        <td>${r.collectDate?fmtDate(r.collectDate):'—'}</td><td class="num">${fmtNum(r.amount)}</td>
-        <td>${r.reqDue?fmtDate(r.reqDue):'—'}</td><td>${r.actualDate?fmtDate(r.actualDate):'—'}</td><td>${mrptEsc(r.statusLabel)}</td>
-      </tr>`;
+      let g = byCard.get(r.cardCode);
+      if(!g){ g = { cardCode:r.cardCode, cardName:r.cardName, slpName:r.slpName, items:[] }; byCard.set(r.cardCode, g); groups.push(g); }
+      g.items.push(r);
     });
-    body += '</tbody></table>';
+    groups.forEach(g=>{
+      g.total = g.items.reduce((s,r)=>s+r.amount,0);
+      g.anyLate = g.items.some(r=>r.status==='late');
+      g.last = g.items.reduce((a,b)=>{
+        const at = a.collectDate ? a.collectDate.getTime() : -Infinity;
+        const bt = b.collectDate ? b.collectDate.getTime() : -Infinity;
+        return bt>=at ? b : a;
+      });
+    });
+    groups.sort((a,b)=> b.items.length - a.items.length);
+
+    body = `<table class="mrpt-tbl"><thead><tr>
+      <th>رمز العميل</th><th>اسم العميل</th><th>المندوب</th><th class="num">عدد التحصيلات</th><th class="num">إجمالي المحصَّل</th><th>آخر تحصيل</th><th class="num">قيمته</th><th>الحالة</th>
+    </tr></thead><tbody>` + groups.map(g=>{
+      const r = g.last;
+      return `<tr class="${g.anyLate?'mrpt-risk-row':''}">
+        <td>${mrptEsc(g.cardCode)}</td><td>${mrptEsc(g.cardName)}</td><td>${mrptEsc(g.slpName)}</td>
+        <td class="num">${g.items.length}</td><td class="num">${fmtNum(g.total)}</td>
+        <td>${r.collectDate?fmtDate(r.collectDate):'—'}</td><td class="num">${fmtNum(r.amount)}</td><td>${mrptEsc(r.statusLabel)}</td>
+      </tr>`;
+    }).join('') + '</tbody></table>';
   }
   const late = rows.filter(r=>r.status==='late').length;
   return `<section id="mrpt-daily" class="mrpt-page mrpt-chapter" data-toc="التحصيل اليومي">
     <div class="mrpt-chapter-head"><h1>التحصيل اليومي</h1><button class="mrpt-section-print" onclick="printMrptSection('mrpt-daily')">🖨️ طباعة هذا الجزء فقط</button></div>
-    <div class="mrpt-sub">${rows.length} تحصيل، منهم ${late} متأخر${(dailyFilter!=='all'||dailyRepFilter.size>0||dailyManagerFilter.size>0)?' (بحسب الفلتر النشط)':''}</div>
+    <div class="mrpt-sub">${rows.length} تحصيل لـ${new Set(rows.map(r=>r.cardCode)).size} عميل، منهم ${late} تحصيل متأخر${(dailyFilter!=='all'||dailyRepFilter.size>0||dailyManagerFilter.size>0)?' (بحسب الفلتر النشط)':''}</div>
     <div class="mrpt-filter-row"><input type="text" class="mrpt-filter-box" placeholder="🔍 فلترة برمز/اسم العميل داخل هذا الجزء..." oninput="mrptFilterRows(this)"></div>
     ${body}
     <div class="mrpt-page-footer"><span>مركز الكيلاني للأغذية</span><span>${fmtDate(new Date())}</span></div>
