@@ -15,6 +15,7 @@
   --shadow:0 2px 10px rgba(15,47,79,.06), 0 1px 2px rgba(15,47,79,.08);
   --shadow-lg:0 8px 28px rgba(15,47,79,.10), 0 2px 6px rgba(15,47,79,.08);
   --good:#16A34A; --good-bg:#EAF7EF; --warn:#B7791F; --warn-bg:#FDF3E1; --bad:#DC2626; --bad-bg:#FCEBEA;
+  --req:#C2540A; --req-bg:#FFF1E6; --nextc:#6B7C8D; --next-bg:#EEF0F4;
   --gold:#B8924E; --azure:#2F6BDB;
   --font-head:"Noto Kufi Arabic","IBM Plex Sans Arabic",sans-serif;
   --font-body:"IBM Plex Sans Arabic","Noto Kufi Arabic",sans-serif;
@@ -87,11 +88,21 @@ button{font-family:var(--font-body); cursor:pointer;}
 .section-hd .ctl select, .section-hd .ctl button{font-size:12px; border:1px solid var(--border); background:#fff; border-radius:8px; padding:5px 10px; color:var(--text); font-family:var(--font-body);}
 .section-hd .ctl button.active{background:var(--navy); color:#fff; border-color:var(--navy);}
 
-.grid-kpi{display:grid; grid-template-columns:repeat(5,1fr); gap:14px;}
+.grid-kpi{display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:14px;}
 .grid-2{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
-@media(max-width:1180px){.grid-kpi{grid-template-columns:repeat(3,1fr)} .grid-2{grid-template-columns:1fr}}
-@media(max-width:720px){.grid-kpi{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:1180px){.grid-2{grid-template-columns:1fr}}
 @media(max-width:520px){.grid-kpi{grid-template-columns:1fr}}
+
+/* ===== Data Status badges (نظام موحّد) ===== */
+.status-badge{display:inline-flex; align-items:center; gap:3px; font-size:9.5px; font-weight:700; padding:2px 6px; border-radius:6px; white-space:nowrap;}
+.status-badge.avail{background:var(--good-bg); color:var(--good);}
+.status-badge.cond{background:var(--warn-bg); color:var(--warn);}
+.status-badge.reqd{background:var(--req-bg); color:var(--req);}
+.status-badge.blocked{background:var(--bad-bg); color:var(--bad);}
+.status-badge.next{background:var(--next-bg); color:var(--nextc);}
+.kpi-card .lbl .status-badge{margin-inline-start:6px;}
+.kpi-card .link-out{display:inline-flex; align-items:center; gap:5px; margin-top:10px; font-size:12px; font-weight:600; color:var(--azure);}
+.kpi-card .link-out:hover{text-decoration:underline}
 
 /* ===== Cards ===== */
 .card{background:var(--card); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); padding:18px 20px;}
@@ -215,6 +226,10 @@ button{font-family:var(--font-body); cursor:pointer;}
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4v6h6M20 20v-6h-6M4.5 15a8 8 0 0014.5 3.5M19.5 9A8 8 0 005 5.5"/></svg>
         تحديث
       </button>
+      <button class="hdr-btn" onclick="window.open('شاشة_التدقيق_الداخلي_الإداري.html','_blank')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l7 3v6c0 4.5-3 8-7 9-4-1-7-4.5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
+        التدقيق الداخلي
+      </button>
       <button class="hdr-btn" onclick="doSignOut()">خروج</button>
     </div>
   </header>
@@ -285,6 +300,7 @@ button{font-family:var(--font-body); cursor:pointer;}
       <div class="card">
         <div class="section-hd">
           <div><h2>أهم الموردين</h2><div class="sub">Top Suppliers</div></div>
+          <div class="ctl" id="supMetricCtl"></div>
         </div>
         <div class="rank-list" id="topSuppliers"></div>
       </div>
@@ -305,6 +321,18 @@ button{font-family:var(--font-body); cursor:pointer;}
       <div class="card" id="arCard">
         <div class="section-hd"><div><h2>الذمم المدينة</h2><div class="sub">Accounts Receivable</div></div></div>
         <div id="arBody"></div>
+      </div>
+    </div>
+
+    <!-- AP | Sales Breakdown + Profit Bridge -->
+    <div class="section grid-2">
+      <div class="card" id="apCard">
+        <div class="section-hd"><div><h2>الذمم الدائنة</h2><div class="sub">Accounts Payable</div></div></div>
+        <div id="apBody"></div>
+      </div>
+      <div class="card" id="salesBreakdownCard">
+        <div class="section-hd"><div><h2>تفصيل المبيعات وجسر الربح</h2><div class="sub">Gross/Discounts/Returns · Partial Profit Bridge</div></div></div>
+        <div id="salesBreakdownBody"></div>
       </div>
     </div>
 
@@ -333,6 +361,17 @@ button{font-family:var(--font-body); cursor:pointer;}
         <button class="btn primary" onclick="parseAllAndCompute()">احتساب وتحديث الداشبورد</button>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- Customer 360 Modal -->
+<div class="modal-overlay" id="cust360Modal">
+  <div class="modal-box">
+    <div class="modal-hd">
+      <h3 id="cust360Title">تفاصيل العميل</h3>
+      <button onclick="closeCustomer360()">×</button>
+    </div>
+    <div class="modal-body" id="cust360Body"></div>
   </div>
 </div>
 
@@ -441,15 +480,21 @@ async function doSignOut(){ await sb.auth.signOut(); location.reload(); }
    البيانات الخام (تُملأ من لصق كويريز SAP عبر لوحة الاستيراد)
    ======================================================================== */
 const RAW = {
-  sales: [],       // {date:Date, itemCode, itemName, custCode, custName, dept, qty:Number, net:Number}
+  sales: [],       // {date:Date, docType:'فاتورة'|'مرتجع', itemCode, itemName, custCode, custName, dept, rep, qty:Number, gross:Number|null, disc:Number|null, net:Number}
   collections: [],  // {date:Date, custCode, custName, amount:Number}
   purchases: [],    // {date:Date, supCode, supName, itemCode, itemName, amount:Number}
-  ar: [],           // {custCode, custName, asOf:Date, dueDate:Date, balance:Number}
+  ar: [],           // {custCode, custName, asOf:Date, dueDate:Date, balance:Number, creditLimit:Number|null}
+  ap: [],           // {supCode, supName, dueDate:Date, balance:Number}
   whs011: [],       // {monthKey:'YYYY-MM', itemCode, itemName, qty:Number}
   milPrice: []      // {itemCode, itemName, price:Number}
 };
 let milPriceMap = new Map();
 let lastImportAt = null;
+/* Phase 1: بيانات محرك القوائم الختامية — Read-only، مستقلة تماماً، لا تعطّل باقي الشاشة إذا غابت */
+let FIN = { available:false, moves:null, accounts:null, map:null, budget:null, loadedAt:null };
+/* Phase 1: هل الأعمدة الموسّعة (نوع مستند/خصم/إجمالي قبل الخصم) موجودة بالبيانات المحمَّلة؟ — تُحدَّد ديناميكياً من محتوى RAW.sales، لا حاجة لتخزينها منفصلة (تبقى متوافقة تلقائياً مع بيانات قديمة بلا هذه الأعمدة) */
+function salesHasCol(field){ return RAW.sales.some(r=>r[field]!=null); }
+function salesHasReturns(){ return RAW.sales.some(r=>r.docType==='مرتجع'); }
 
 /* ========================================================================
    الفترة الزمنية + المقارنة التلقائية مع نفس الفترة من السنة السابقة
@@ -544,34 +589,49 @@ function findColIdx(headers, candidates){
 }
 
 const IMPORT_SOURCES = [
-  { key:'sales', title:'1) فواتير المبيعات (A/R) — Actual SAP Sales', required:true,
-    sql:`SELECT
-  T0."DocDate" AS "تاريخ الفاتورة",
-  T1."ItemCode" AS "رمز الصنف",
-  T1."Dscription" AS "اسم الصنف",
-  T0."CardCode" AS "رمز العميل",
-  T0."CardName" AS "اسم العميل",
-  T5."BPLName" AS "الفرع",
-  T1."Quantity" AS "الكمية",
-  (T1."LineTotal" * (1 - IFNULL(T0."DiscPrcnt",0)/100)) AS "صافي المبيعات"
-FROM OINV T0
-INNER JOIN INV1 T1 ON T1."DocEntry"=T0."DocEntry"
-LEFT JOIN OBPL T5 ON T5."BPLId"=T0."BPLId"
-WHERE T0."DocDate" BETWEEN [%0] AND [%1] AND T0."CANCELED"='N'
-ORDER BY T0."DocDate"`,
-    note:'الصق فترة تغطي السنة الحالية والسابقة معاً (مثلاً من 01-01 السنة الماضية) ليعمل الاتجاه الشهري والمقارنة والتنقيب اليومي بلا كويري إضافي.',
+  { key:'sales', title:'1) فواتير المبيعات + المرتجعات (A/R) — Actual SAP Sales', required:true,
+    sql:`SELECT "نوع المستند","تاريخ المستند","رمز الصنف","اسم الصنف","رمز العميل","اسم العميل","الفرع","المندوب","الكمية","إجمالي قبل الخصم","قيمة الخصم","صافي المبيعات" FROM (
+  SELECT 'فاتورة' AS "نوع المستند", T0."DocDate" AS "تاريخ المستند", T1."ItemCode" AS "رمز الصنف", T1."Dscription" AS "اسم الصنف",
+    T0."CardCode" AS "رمز العميل", T0."CardName" AS "اسم العميل", T5."BPLName" AS "الفرع", T6."SlpName" AS "المندوب",
+    T1."Quantity" AS "الكمية", T1."LineTotal" AS "إجمالي قبل الخصم",
+    (T1."LineTotal" * IFNULL(T0."DiscPrcnt",0)/100) AS "قيمة الخصم",
+    (T1."LineTotal" * (1 - IFNULL(T0."DiscPrcnt",0)/100)) AS "صافي المبيعات"
+  FROM OINV T0
+  INNER JOIN INV1 T1 ON T1."DocEntry"=T0."DocEntry"
+  LEFT JOIN OBPL T5 ON T5."BPLId"=T0."BPLId"
+  LEFT JOIN OSLP T6 ON T6."SlpCode"=T0."SlpCode"
+  WHERE T0."DocDate" BETWEEN [%0] AND [%1] AND T0."CANCELED"='N'
+  UNION ALL
+  SELECT 'مرتجع' AS "نوع المستند", T0."DocDate" AS "تاريخ المستند", T1."ItemCode" AS "رمز الصنف", T1."Dscription" AS "اسم الصنف",
+    T0."CardCode" AS "رمز العميل", T0."CardName" AS "اسم العميل", T5."BPLName" AS "الفرع", T6."SlpName" AS "المندوب",
+    -T1."Quantity" AS "الكمية", -T1."LineTotal" AS "إجمالي قبل الخصم",
+    -(T1."LineTotal" * IFNULL(T0."DiscPrcnt",0)/100) AS "قيمة الخصم",
+    -(T1."LineTotal" * (1 - IFNULL(T0."DiscPrcnt",0)/100)) AS "صافي المبيعات"
+  FROM ORIN T0
+  INNER JOIN RIN1 T1 ON T1."DocEntry"=T0."DocEntry"
+  LEFT JOIN OBPL T5 ON T5."BPLId"=T0."BPLId"
+  LEFT JOIN OSLP T6 ON T6."SlpCode"=T0."SlpCode"
+  WHERE T0."DocDate" BETWEEN [%0] AND [%1] AND T0."CANCELED"='N'
+) X
+ORDER BY "تاريخ المستند"`,
+    note:'الصق فترة تغطي السنة الحالية والسابقة معاً (مثلاً من 01-01 السنة الماضية) ليعمل الاتجاه الشهري والمقارنة والتنقيب اليومي بلا كويري إضافي. المرتجعات تُطرح تلقائياً (كمية وقيمة سالبة) فتبقى "صافي المبيعات" صحيحة بكل الحالات. بيانات ملصوقة بالتنسيق القديم (بدون هذه الأعمدة الإضافية) تبقى تعمل بشكل طبيعي — فقط أقسام "تركيبة المبيعات التفصيلية" و"جسر الربح" الجديدة تحتاج الأعمدة الجديدة.',
     parse(text){
       const {headers, rows} = parseTSV(text);
-      const iDate=findColIdx(headers,['تاريخ الفاتورة','التاريخ']), iItemCode=findColIdx(headers,['رمز الصنف']),
-            iItemName=findColIdx(headers,['اسم الصنف']), iCustCode=findColIdx(headers,['رمز العميل']),
-            iCustName=findColIdx(headers,['اسم العميل']), iDept=findColIdx(headers,['الفرع','القسم']),
-            iQty=findColIdx(headers,['الكمية']), iNet=findColIdx(headers,['صافي المبيعات']);
-      if(iDate<0||iNet<0) throw new Error('لم يتم التعرف على أعمدة "تاريخ الفاتورة" أو "صافي المبيعات". الصق النتيجة مع سطر العناوين كما هو.');
+      const iDocType=findColIdx(headers,['نوع المستند']), iDate=findColIdx(headers,['تاريخ المستند','تاريخ الفاتورة','التاريخ']),
+            iItemCode=findColIdx(headers,['رمز الصنف']), iItemName=findColIdx(headers,['اسم الصنف']),
+            iCustCode=findColIdx(headers,['رمز العميل']), iCustName=findColIdx(headers,['اسم العميل']),
+            iDept=findColIdx(headers,['الفرع','القسم']), iRep=findColIdx(headers,['المندوب']),
+            iQty=findColIdx(headers,['الكمية']), iGross=findColIdx(headers,['إجمالي قبل الخصم']),
+            iDisc=findColIdx(headers,['قيمة الخصم']), iNet=findColIdx(headers,['صافي المبيعات']);
+      if(iDate<0||iNet<0) throw new Error('لم يتم التعرف على أعمدة "تاريخ المستند" أو "صافي المبيعات". الصق النتيجة مع سطر العناوين كما هو.');
       const out=[];
       for(const r of rows){ const d=parseDateSafe(r[iDate]); if(!d) continue;
-        out.push({date:d, itemCode:iItemCode>=0?(r[iItemCode]||'').trim():'', itemName:iItemName>=0?(r[iItemName]||'').trim():'',
+        out.push({date:d, docType:iDocType>=0?((r[iDocType]||'').trim()||'فاتورة'):'فاتورة',
+          itemCode:iItemCode>=0?(r[iItemCode]||'').trim():'', itemName:iItemName>=0?(r[iItemName]||'').trim():'',
           custCode:iCustCode>=0?(r[iCustCode]||'').trim():'', custName:iCustName>=0?(r[iCustName]||'').trim():'',
-          dept:iDept>=0?(r[iDept]||'').trim():'', qty:iQty>=0?parseNumSafe(r[iQty]):0, net:parseNumSafe(r[iNet])}); }
+          dept:iDept>=0?(r[iDept]||'').trim():'', rep:iRep>=0?(r[iRep]||'').trim():'',
+          qty:iQty>=0?parseNumSafe(r[iQty]):0, gross:iGross>=0?parseNumSafe(r[iGross]):null,
+          disc:iDisc>=0?parseNumSafe(r[iDisc]):null, net:parseNumSafe(r[iNet])}); }
       return out;
     }},
   { key:'collections', title:'2) التحصيل (قبض من العملاء)', required:false,
@@ -625,22 +685,46 @@ ORDER BY T0."DocDate"`,
   T0."CardName" AS "اسم العميل",
   T0."DocDate" AS "تاريخ الفاتورة",
   T0."DocDueDate" AS "تاريخ الاستحقاق",
-  (T0."DocTotal" - T0."PaidToDate") AS "الرصيد المستحق"
+  (T0."DocTotal" - T0."PaidToDate") AS "الرصيد المستحق",
+  T2."CreditLine" AS "السقف الائتماني"
 FROM OINV T0
+LEFT JOIN OCRD T2 ON T2."CardCode"=T0."CardCode"
 WHERE (T0."DocTotal" - T0."PaidToDate") > 0.01
 ORDER BY T0."DocDueDate"`,
-    note:'كشف أرصدة مفتوحة كما بتاريخ اللصق (Snapshot) — يُعرض "كما في تاريخ آخر استيراد" وليس مرتبطاً بفلتر الفترة أعلاه.',
+    note:'كشف أرصدة مفتوحة كما بتاريخ اللصق (Snapshot) — يُعرض "كما في تاريخ آخر استيراد" وليس مرتبطاً بفلتر الفترة أعلاه. عمود "السقف الائتماني" اختياري — يُستخدم فقط لتنبيه تجاوز السقف إذا وُجد.',
     parse(text){
       const {headers, rows} = parseTSV(text);
       const iCustCode=findColIdx(headers,['رمز العميل']), iCustName=findColIdx(headers,['اسم العميل']),
+            iDue=findColIdx(headers,['تاريخ الاستحقاق']), iBal=findColIdx(headers,['الرصيد المستحق','الرصيد']),
+            iCredit=findColIdx(headers,['السقف الائتماني']);
+      if(iBal<0) throw new Error('لم يتم التعرف على عمود "الرصيد المستحق".');
+      const out=[];
+      for(const r of rows){ const due=iDue>=0?parseDateSafe(r[iDue]):null;
+        out.push({custCode:iCustCode>=0?(r[iCustCode]||'').trim():'', custName:iCustName>=0?(r[iCustName]||'').trim():'', dueDate:due, balance:parseNumSafe(r[iBal]),
+          creditLimit:iCredit>=0?parseNumSafe(r[iCredit]):null}); }
+      return out;
+    }},
+  { key:'ap', title:'5) الذمم الدائنة المفتوحة (AP Aging)', required:false,
+    sql:`SELECT
+  T0."CardCode" AS "رمز المورد",
+  T0."CardName" AS "اسم المورد",
+  T0."DocDueDate" AS "تاريخ الاستحقاق",
+  (T0."DocTotal" - T0."PaidToDate") AS "الرصيد المستحق"
+FROM OPCH T0
+WHERE (T0."DocTotal" - T0."PaidToDate") > 0.01
+ORDER BY T0."DocDueDate"`,
+    note:'نفس منطق تواريخ الذمم المدينة تماماً، بس لفواتير الموردين المفتوحة (Snapshot كما بتاريخ اللصق).',
+    parse(text){
+      const {headers, rows} = parseTSV(text);
+      const iSupCode=findColIdx(headers,['رمز المورد']), iSupName=findColIdx(headers,['اسم المورد']),
             iDue=findColIdx(headers,['تاريخ الاستحقاق']), iBal=findColIdx(headers,['الرصيد المستحق','الرصيد']);
       if(iBal<0) throw new Error('لم يتم التعرف على عمود "الرصيد المستحق".');
       const out=[];
       for(const r of rows){ const due=iDue>=0?parseDateSafe(r[iDue]):null;
-        out.push({custCode:iCustCode>=0?(r[iCustCode]||'').trim():'', custName:iCustName>=0?(r[iCustName]||'').trim():'', dueDate:due, balance:parseNumSafe(r[iBal])}); }
+        out.push({supCode:iSupCode>=0?(r[iSupCode]||'').trim():'', supName:iSupName>=0?(r[iSupName]||'').trim():'', dueDate:due, balance:parseNumSafe(r[iBal])}); }
       return out;
     }},
-  { key:'whs011', title:'5) رصيد مستودع 011 آخر كل شهر (تاريخياً)', required:false,
+  { key:'whs011', title:'6) رصيد مستودع 011 آخر كل شهر (تاريخياً)', required:false,
     sql:`WITH M AS (
   SELECT T0."ItemCode" AS "ItemCode",
          T0."CreateDate" AS "TDate",
@@ -667,7 +751,7 @@ ORDER BY "الشهر"`,
         out.push({itemCode:(r[iItem]||'').trim(), monthKey:mk, qty:parseNumSafe(r[iQty])}); }
       return out;
     }},
-  { key:'milPrice', title:'6) قائمة أسعار المؤسسة الاستهلاكية العسكرية', required:false,
+  { key:'milPrice', title:'7) قائمة أسعار المؤسسة الاستهلاكية العسكرية', required:false,
     sql:`-- استبدل <رقم قائمة السعر العسكرية> برقم القائمة الصحيح من OPLN لديك
 SELECT
   T1."ItemCode" AS "رمز الصنف",
@@ -738,6 +822,7 @@ function serializeState(){
     collections: RAW.collections.map(r=>({...r, date:dstr(r.date)})),
     purchases: RAW.purchases.map(r=>({...r, date:dstr(r.date)})),
     ar: RAW.ar.map(r=>({...r, dueDate:r.dueDate?dstr(r.dueDate):null})),
+    ap: RAW.ap.map(r=>({...r, dueDate:r.dueDate?dstr(r.dueDate):null})),
     whs011: RAW.whs011,
     milPrice: RAW.milPrice,
     lastImportAt: lastImportAt ? lastImportAt.toISOString() : null
@@ -749,6 +834,7 @@ function deserializeState(data){
   RAW.collections = (data.collections||[]).map(r=>({...r, date:parseDateSafe(r.date)})).filter(r=>r.date);
   RAW.purchases = (data.purchases||[]).map(r=>({...r, date:parseDateSafe(r.date)})).filter(r=>r.date);
   RAW.ar = (data.ar||[]).map(r=>({...r, dueDate:r.dueDate?parseDateSafe(r.dueDate):null}));
+  RAW.ap = (data.ap||[]).map(r=>({...r, dueDate:r.dueDate?parseDateSafe(r.dueDate):null}));
   RAW.whs011 = data.whs011||[];
   RAW.milPrice = data.milPrice||[];
   milPriceMap = new Map(RAW.milPrice.map(r=>[r.itemCode, r.price]));
@@ -831,10 +917,119 @@ function militarySalesForMonths(monthKeys){
   return {total, coveredMonths, totalMonths:monthKeys.length, missingPriceItems};
 }
 
+/* ---------- تركيبة المبيعات التفصيلية: إجمالي/خصم/مرتجعات/صافي (Phase 1) ----------
+   ملاحظة حساب: صفوف "مرتجع" قيمها سالبة أصلاً (من كويري UNION)، فبمجرد جمعها مع صفوف
+   "فاتورة" تكون محتسبة ضمن الإجمالي والخصم أصلاً — لازم نفصلها لعمودين مستقلين حتى
+   تبقى المعادلة صحيحة: إجمالي الفواتير − خصم الفواتير − صافي المرتجعات = صافي المبيعات. */
+function computeSalesBreakdown(from, to){
+  const avail = salesHasCol('gross') && salesHasCol('disc');
+  if(!avail) return {available:false};
+  let grossInv=0, discInv=0, grossRet=0, discRet=0, net=0;
+  for(const r of RAW.sales){
+    if(!inRange(r.date, from, to)) continue;
+    net += r.net;
+    if(r.docType==='مرتجع'){ grossRet += -(r.gross||0); discRet += -(r.disc||0); }
+    else { grossInv += r.gross||0; discInv += r.disc||0; }
+  }
+  return {available:true, gross:grossInv, disc:discInv, returns:grossRet-discRet, net};
+}
+
+/* ---------- Profit Bridge جزئي: أثر الكمية وأثر السعر فقط (من بيانات المبيعات الحالية، بلا مصدر إضافي) ---------- */
+function computeProfitBridgePartial(cur, cmp){
+  let volumeEffect=0, priceEffect=0;
+  const codes = new Set([...cur.byItem.keys(), ...cmp.byItem.keys()]);
+  for(const code of codes){
+    const c = cur.byItem.get(code), p = cmp.byItem.get(code);
+    const qtyNow = c?c.qty:0, netNow = c?c.net:0, qtyPrior = p?p.qty:0, netPrior = p?p.net:0;
+    const pricePrior = qtyPrior ? netPrior/qtyPrior : (qtyNow?netNow/qtyNow:0);
+    const priceNow = qtyNow ? netNow/qtyNow : pricePrior;
+    volumeEffect += (qtyNow-qtyPrior) * pricePrior;
+    priceEffect += (priceNow-pricePrior) * qtyNow;
+  }
+  return {volumeEffect, priceEffect};
+}
+
+/* ---------- AP Aging (نفس منطق AR بالضبط، معكوس للموردين) ---------- */
+function computeAP(){
+  const apAvailable = RAW.ap.length>0;
+  const buckets={current:0,b1_30:0,b31_60:0,b61_90:0,b91_120:0,b120p:0};
+  let apTotal=0; const today=new Date(); today.setHours(0,0,0,0);
+  const apBySup=new Map();
+  for(const a of RAW.ap){
+    apTotal += a.balance;
+    if(a.supCode){ const x=apBySup.get(a.supCode)||{code:a.supCode,name:a.supName||a.supCode,value:0}; x.value+=a.balance; apBySup.set(a.supCode,x); }
+    if(!a.dueDate){ buckets.current+=a.balance; continue; }
+    const days = Math.floor((today-a.dueDate)/86400000);
+    if(days<0) buckets.current+=a.balance;
+    else if(days<=30) buckets.b1_30+=a.balance;
+    else if(days<=60) buckets.b31_60+=a.balance;
+    else if(days<=90) buckets.b61_90+=a.balance;
+    else if(days<=120) buckets.b91_120+=a.balance;
+    else buckets.b120p+=a.balance;
+  }
+  const overdue = apTotal-buckets.current;
+  return {apAvailable, apTotal, buckets, overdue, overduePct:safeDiv(overdue,apTotal), apBySup};
+}
+
+/* ---------- Gross Profit/COGS — GL-level شهري، Read-only من financials_app_state (Conditional) ---------- */
+function finEffLine(code){
+  let c=code, guard=0;
+  while(c && guard++<10){
+    const a = FIN.accounts[c];
+    if(!a) break;
+    if(FIN.map['_o'+c]) return FIN.map['_o'+c];
+    c = a.father;
+  }
+  return FIN.map[code] || 'UNMAP';
+}
+function finMoveNet(monthMoves, lineCode){
+  if(!monthMoves) return 0;
+  let sum=0;
+  for(const code of Object.keys(monthMoves)){
+    if(finEffLine(code)!==lineCode) continue;
+    const v = monthMoves[code];
+    const d = Array.isArray(v)?v[0]:(v&&v.d)||0, c = Array.isArray(v)?v[1]:(v&&v.c)||0;
+    sum += (d-c);
+  }
+  return sum;
+}
+function finGLForMonths(monthKeys){
+  if(!FIN.available) return {available:false};
+  let netSales=0, cogs=0, covered=0;
+  for(const mk of monthKeys){
+    const mv = FIN.moves[mk];
+    if(!mv){ continue; }
+    covered++;
+    const sales = -finMoveNet(mv,'SALES');
+    const salesRet = finMoveNet(mv,'SALES_RET');
+    netSales += sales-salesRet;
+    cogs += finMoveNet(mv,'COGS');
+  }
+  if(!covered) return {available:false};
+  const gp = netSales-cogs;
+  return {available:true, netSales, cogs, gp, margin:safeDiv(gp,netSales), covered, total:monthKeys.length};
+}
+function finBudgetForMonths(monthKeys, lineCodes){
+  if(!FIN.available || !FIN.budget) return null;
+  let sum=0, covered=0;
+  for(const mk of monthKeys){
+    const b = FIN.budget[mk]; if(!b) continue;
+    for(const lc of lineCodes){ if(b[lc]!=null){ sum += b[lc]; covered++; break; } }
+  }
+  return covered? sum : null;
+}
+
 function computeKPIs(){
   const r = computeRange();
   const cur = computeSalesAgg(r.from, r.to);
   const cmp = computeSalesAgg(r.cmpFrom, r.cmpTo);
+  const salesBreakdown = computeSalesBreakdown(r.from, r.to);
+  const profitBridge = computeProfitBridgePartial(cur, cmp);
+  const ap = computeAP();
+  const curMonths = monthsBetween(r.from, r.to), cmpMonthsArr = monthsBetween(r.cmpFrom, r.cmpTo);
+  const gl = finGLForMonths(curMonths);
+  const glCmp = finGLForMonths(cmpMonthsArr);
+  const salesTarget = finBudgetForMonths(curMonths, ['NETSALES','SALES']);
   const milCur = militarySalesForMonths(monthsBetween(r.from, r.to));
   const milCmp = militarySalesForMonths(monthsBetween(r.cmpFrom, r.cmpTo));
   const milAvailable = RAW.whs011.length>0 && RAW.milPrice.length>0 && milCur.coveredMonths>0;
@@ -876,11 +1071,23 @@ function computeKPIs(){
   const cmpByCust=new Map(); for(const [k,v] of cmp.byCust) cmpByCust.set(k, v.net);
   const cmpByItem=new Map(); for(const [k,v] of cmp.byItem) cmpByItem.set(k, v.net);
 
+  // تجاوز السقف الائتماني — فقط لو عمود السقف موجود فعلياً بالبيانات
+  const creditAvailable = RAW.ar.some(a=>a.creditLimit!=null && a.creditLimit>0);
+  const overLimitCustomers = [];
+  if(creditAvailable){
+    const bal = new Map();
+    for(const a of RAW.ar){ if(!a.custCode) continue; const x=bal.get(a.custCode)||{name:a.custName||a.custCode, balance:0, creditLimit:a.creditLimit}; x.balance+=a.balance; if(a.creditLimit!=null) x.creditLimit=a.creditLimit; bal.set(a.custCode,x); }
+    for(const [code,v] of bal) if(v.creditLimit>0 && v.balance>v.creditLimit) overLimitCustomers.push({code, name:v.name, balance:v.balance, creditLimit:v.creditLimit, excess:v.balance-v.creditLimit});
+    overLimitCustomers.sort((a,b)=>b.excess-a.excess);
+  }
+
   return {range:r, cur, cmp, milCur, milCmp, milAvailable,
     colCur, colCmp, colByCust, collectionsAvailable,
     purCur, purCmp, purBySup, purBySupCmp, purchasesAvailable,
     arAvailable, arTotal, buckets, overdue, overduePct,
-    cmpByCust, cmpByItem};
+    cmpByCust, cmpByItem,
+    salesBreakdown, profitBridge, ap, gl, glCmp, salesTarget,
+    creditAvailable, overLimitCustomers};
 }
 
 /* ========================================================================
@@ -888,11 +1095,30 @@ function computeKPIs(){
    ======================================================================== */
 function scrollToSection(id){ const el=document.getElementById(id); if(el) el.scrollIntoView({behavior:'smooth', block:'start'}); }
 
+/* ---------- نظام حالة البيانات الموحّد: 🟢 Available · 🟡 Conditional · 🟠 Data Required · 🔴 Blocked · ⚪ Coming Next ---------- */
+const DATA_STATUS = {
+  avail:{icon:'🟢', label:'Available'},
+  cond:{icon:'🟡', label:'Conditional'},
+  reqd:{icon:'🟠', label:'Data Required'},
+  blocked:{icon:'🔴', label:'Blocked'},
+  next:{icon:'⚪', label:'Coming Next'}
+};
+function statusBadge(key){ const s=DATA_STATUS[key]; if(!s) return ''; return `<span class="status-badge ${key}" title="${s.label}">${s.icon} ${s.label}</span>`; }
+
 function kpiCard(opts){
+  const badge = opts.status ? statusBadge(opts.status) : '';
+  if(opts.linkOut){
+    return `<div class="kpi-card" onclick="${opts.onclick}">
+      <div class="accent" style="background:var(--border)"></div>
+      <div class="lbl"><span>${esc(opts.label)}</span>${badge}</div>
+      <div class="unavail" style="margin-top:8px">${esc(opts.note||'')}</div>
+      <div class="link-out">${esc(opts.linkLabel||'فتح')} ←</div>
+    </div>`;
+  }
   if(!opts.available){
     return `<div class="kpi-card" ${opts.onclick?`onclick="${opts.onclick}"`:''}>
       <div class="accent" style="background:var(--border)"></div>
-      <div class="lbl">${esc(opts.label)}</div>
+      <div class="lbl"><span>${esc(opts.label)}</span>${badge}</div>
       <div class="unavail">${esc(opts.unavailReason||'Data unavailable')}</div>
     </div>`;
   }
@@ -907,20 +1133,25 @@ function kpiCard(opts){
   }
   return `<div class="kpi-card" ${opts.onclick?`onclick="${opts.onclick}"`:''}>
     <div class="accent"></div>
-    <div class="lbl">${esc(opts.label)}</div>
-    <div class="num">${opts.currency?fmtCurHTML(opts.value,true):'<span class="mono">'+fmt(opts.value)+'</span>'}</div>
+    <div class="lbl"><span>${esc(opts.label)}</span>${badge}</div>
+    <div class="num">${opts.currency?fmtCurHTML(opts.value,true):(opts.raw!=null?opts.raw:'<span class="mono">'+fmt(opts.value)+'</span>')}</div>
     ${cmpHtml}
     ${opts.footNote?`<div class="unavail" style="margin-top:6px">${esc(opts.footNote)}</div>`:''}
   </div>`;
 }
 function renderKPIRow(K){
   const el = document.getElementById('kpiRow');
+  const targetNote = K.salesTarget!=null ? ('الهدف: '+fmt(K.salesTarget)+' د.أ (الفارق عن الهدف: '+(K.salesTarget?pct(safeDiv(K.cur.net-K.salesTarget,Math.abs(K.salesTarget))):'—')+')') : 'الهدف — Data unavailable (بدون موازنة محمَّلة بمحرك القوائم الختامية)';
   el.innerHTML = [
-    kpiCard({label:'المبيعات — Sales', value:K.cur.net, cmpValue:K.cmp.net, currency:true, available:RAW.sales.length>0, unavailReason:'الصق كويري فواتير المبيعات من لوحة الاستيراد', onclick:"scrollToSection('salesChartHost')"}),
-    kpiCard({label:'التحصيل — Collections', value:K.colCur, cmpValue:K.colCmp, currency:true, available:K.collectionsAvailable, onclick:"scrollToSection('collectionsCard')"}),
-    kpiCard({label:'المشتريات — Purchases', value:K.purCur, cmpValue:K.purCmp, currency:true, available:K.purchasesAvailable, onclick:"scrollToSection('purchasesCard')"}),
-    kpiCard({label:'الذمم المدينة — AR', value:K.arTotal, currency:true, available:K.arAvailable, noCompare:true, asOf:'كما في آخر استيراد'+(K.arAvailable&&K.overduePct!=null?' · متأخر '+(K.overduePct*100).toFixed(0)+'%':''), onclick:"scrollToSection('arCard')"}),
-    kpiCard({label:'قيمة المخزون — Inventory', available:false, unavailReason:'Data unavailable'})
+    kpiCard({label:'المبيعات — Sales', value:K.cur.net, cmpValue:K.cmp.net, currency:true, available:RAW.sales.length>0, unavailReason:'الصق كويري فواتير المبيعات من لوحة الاستيراد', status: RAW.sales.length>0?'avail':'reqd', footNote:RAW.sales.length>0?targetNote:null, onclick:"scrollToSection('salesChartHost')"}),
+    kpiCard({label:'الربح الإجمالي — Gross Profit', value:K.gl.available?K.gl.gp:null, cmpValue:K.glCmp.available?K.glCmp.gp:null, currency:true, available:K.gl.available, status:K.gl.available?'cond':'reqd', unavailReason:'GL-level — يحتاج بيانات moves/accounts/map محمَّلة بمحرك القوائم الختامية', footNote:K.gl.available?('إجمالي شهري (GL-level) · '+K.gl.covered+'/'+K.gl.total+' شهر مُغطّى'):null, onclick:"scrollToSection('kpiRow')"}),
+    kpiCard({label:'هامش الربح الإجمالي — Margin %', value:K.gl.available&&K.gl.margin!=null?K.gl.margin*100:null, cmpValue:K.glCmp.available&&K.glCmp.margin!=null?K.glCmp.margin*100:null, currency:false, available:K.gl.available&&K.gl.margin!=null, status:K.gl.available&&K.gl.margin!=null?'cond':'reqd', unavailReason:'GL-level — نفس شرط الربح الإجمالي', raw:K.gl.available&&K.gl.margin!=null?('<span class="mono">'+(K.gl.margin*100).toFixed(1)+'%</span>'):null}),
+    kpiCard({label:'التحصيل — Collections', value:K.colCur, cmpValue:K.colCmp, currency:true, available:K.collectionsAvailable, status:K.collectionsAvailable?'avail':'reqd', onclick:"scrollToSection('collectionsCard')"}),
+    kpiCard({label:'الذمم المدينة — AR', value:K.arTotal, currency:true, available:K.arAvailable, status:K.arAvailable?'avail':'reqd', noCompare:true, asOf:'كما في آخر استيراد'+(K.arAvailable&&K.overduePct!=null?' · متأخر '+(K.overduePct*100).toFixed(0)+'%':''), onclick:"scrollToSection('arCard')"}),
+    kpiCard({label:'الذمم الدائنة — AP', value:K.ap.apTotal, currency:true, available:K.ap.apAvailable, status:K.ap.apAvailable?'avail':'reqd', noCompare:true, asOf:'كما في آخر استيراد'+(K.ap.apAvailable&&K.ap.overduePct!=null?' · متأخر '+(K.ap.overduePct*100).toFixed(0)+'%':''), onclick:"scrollToSection('apCard')"}),
+    kpiCard({label:'رأس المال العامل — Working Capital', available:false, status:'reqd', unavailReason:'يحتاج أيام المخزون (غير متوفرة) لاحتساب دورة التحويل النقدي الكاملة'}),
+    kpiCard({label:'قيمة المخزون — Inventory', available:false, status:'next', unavailReason:'لا يوجد مصدر بيانات بأي مكان بالنظام حالياً'}),
+    kpiCard({label:'المشتريات — Procurement', status:'blocked', note:'لا تكامل مباشر حالياً (راجع Phase 0) — رابط مباشر للشاشة', linkOut:true, linkLabel:'فتح ذكاء المشتريات الخارجية', onclick:"window.open('المشتريات_الخارجية_الذكية.html','_blank')"})
   ].join('');
 }
 
@@ -1027,12 +1258,12 @@ function renderComposition(K){
   let milBlock;
   if(K.milAvailable){
     milBlock = `<div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-top:1px solid var(--border)">
-      <div><b>مبيعات المؤسسة الاستهلاكية العسكرية</b><div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:2px">رصيد مستودع 011 آخر كل شهر × قائمة الأسعار العسكرية — مؤشر معزول (${K.milCur.coveredMonths}/${K.milCur.totalMonths} شهر مُغطّى بالبيانات)</div></div>
+      <div><b>مبيعات المؤسسة الاستهلاكية العسكرية</b> ${statusBadge('cond')}<div class="sub" style="font-size:11.5px;color:var(--muted);margin-top:2px">رصيد مستودع 011 آخر كل شهر × قائمة الأسعار العسكرية — مؤشر معزول (${K.milCur.coveredMonths}/${K.milCur.totalMonths} شهر مُغطّى بالبيانات)</div></div>
       <div style="font-weight:700;font-size:16px">${fmtCurHTML(K.milCur.total,true)}</div>
     </div>
     <div class="unavail" style="margin-top:2px">لا تُضاف هذه القيمة لإجمالي المبيعات الرسمي تفادياً لاحتمال ازدواجية العد — لا توجد آلية مؤكدة حالياً لمنع التكرار مع فواتير SAP.</div>`;
   } else {
-    milBlock = `<div style="padding:12px 0;border-top:1px solid var(--border)"><b>مبيعات المؤسسة الاستهلاكية العسكرية</b>
+    milBlock = `<div style="padding:12px 0;border-top:1px solid var(--border)"><b>مبيعات المؤسسة الاستهلاكية العسكرية</b> ${statusBadge('reqd')}
       <div class="unavail">Data unavailable — الصق كويري «رصيد مستودع 011» و«قائمة الأسعار العسكرية» من لوحة الاستيراد</div></div>`;
   }
   el.innerHTML = `
@@ -1052,7 +1283,7 @@ function rankListHTML(items, opts){
   if(!items.length) return `<div class="empty-state">لا توجد بيانات كافية لهذه الفترة</div>`;
   const max = Math.max(...items.map(i=>i.value||0), 1);
   return items.map((it,i)=>`
-    <div class="rank-row">
+    <div class="rank-row" ${opts.onClickCode?`onclick="${opts.onClickCode}('${esc(String(it.code).replace(/'/g,"\\'"))}')"`:''}>
       <div class="idx">${i+1}</div>
       <div class="info">
         <div class="name">${esc(it.name)}</div>
@@ -1088,7 +1319,7 @@ function renderTopCustomers(K){
     items=[...byCustAR.values()].map(c=>({...c, pctOfTotal:safeDiv(c.value,total), change:null}));
   }
   items.sort((a,b)=>b.value-a.value);
-  host.innerHTML = rankListHTML(items.slice(0,custTopN));
+  host.innerHTML = rankListHTML(items.slice(0,custTopN), {onClickCode:'openCustomer360'});
 }
 
 let prodMetric='value';
@@ -1111,16 +1342,105 @@ function renderTopProducts(K){
   host.innerHTML = rankListHTML(items.slice(0,12), {formatter: prodMetric==='qty'? (v=>'<span class="mono">'+fmt(v)+'</span>') : undefined});
 }
 
+let supMetric='value';
 function renderTopSuppliers(K){
+  const ctl = document.getElementById('supMetricCtl');
+  const metrics=[['value','قيمة المشتريات'],['outstanding','الرصيد المستحق']];
+  ctl.innerHTML = metrics.map(([k,l])=>`<button class="${supMetric===k?'active':''}" onclick="supMetric='${k}';renderTopSuppliers(window._K)">${l}</button>`).join('');
   const host = document.getElementById('topSuppliers');
-  if(!K.purchasesAvailable || !K.purBySup.size){ host.innerHTML='<div class="empty-state">Data unavailable — لم يتم لصق كويري المشتريات</div>'; return; }
-  const total = K.purCur||1;
-  let items = [...K.purBySup.values()].map(s=>{
-    const p = K.purBySupCmp.get(s.code);
-    return {code:s.code, name:s.name, value:s.amount, pctOfTotal:safeDiv(s.amount,total), change:p?safeDiv(s.amount-p.amount,Math.abs(p.amount)):null};
-  });
+  let items;
+  if(supMetric==='outstanding'){
+    if(!K.ap.apAvailable || !K.ap.apBySup.size){ host.innerHTML='<div class="empty-state">Data unavailable — لم يتم لصق كويري الذمم الدائنة (AP)</div>'; return; }
+    const total = K.ap.apTotal||1;
+    items = [...K.ap.apBySup.values()].map(s=>({code:s.code, name:s.name, value:s.value, pctOfTotal:safeDiv(s.value,total), change:null}));
+  } else {
+    if(!K.purchasesAvailable || !K.purBySup.size){ host.innerHTML='<div class="empty-state">Data unavailable — لم يتم لصق كويري المشتريات</div>'; return; }
+    const total = K.purCur||1;
+    items = [...K.purBySup.values()].map(s=>{
+      const p = K.purBySupCmp.get(s.code);
+      return {code:s.code, name:s.name, value:s.amount, pctOfTotal:safeDiv(s.amount,total), change:p?safeDiv(s.amount-p.amount,Math.abs(p.amount)):null};
+    });
+  }
   items.sort((a,b)=>b.value-a.value);
   host.innerHTML = rankListHTML(items.slice(0,10));
+}
+
+/* ========================================================================
+   Customer 360 — مبني بالكامل على بيانات موجودة أصلاً؛ بدون Margin (راجع Phase 0)
+   ======================================================================== */
+function closeCustomer360(){ document.getElementById('cust360Modal').classList.remove('open'); }
+function openCustomer360(code){
+  const K = window._K; if(!K) return;
+  const r = K.range;
+  let name = code;
+  for(const rec of RAW.sales) if(rec.custCode===code && rec.custName){ name=rec.custName; break; }
+  if(name===code) for(const rec of RAW.ar) if(rec.custCode===code && rec.custName){ name=rec.custName; break; }
+
+  let salesCur=0, salesCmp=0;
+  for(const s of RAW.sales){
+    if(s.custCode!==code) continue;
+    if(inRange(s.date, r.from, r.to)) salesCur += s.net;
+    else if(inRange(s.date, r.cmpFrom, r.cmpTo)) salesCmp += s.net;
+  }
+  let colCur=0;
+  for(const c of RAW.collections){ if(c.custCode===code && inRange(c.date, r.from, r.to)) colCur += c.amount; }
+
+  const buckets={notdue:0,b0_30:0,b31_60:0,b61_90:0,b91_120:0,b120p:0};
+  let arTotal=0, creditLimit=null; const today=new Date(); today.setHours(0,0,0,0);
+  for(const a of RAW.ar){
+    if(a.custCode!==code) continue;
+    arTotal += a.balance;
+    if(a.creditLimit!=null) creditLimit=a.creditLimit;
+    if(!a.dueDate){ buckets.notdue+=a.balance; continue; }
+    const days=Math.floor((today-a.dueDate)/86400000);
+    if(days<0) buckets.notdue+=a.balance;
+    else if(days<=30) buckets.b0_30+=a.balance;
+    else if(days<=60) buckets.b31_60+=a.balance;
+    else if(days<=90) buckets.b61_90+=a.balance;
+    else if(days<=120) buckets.b91_120+=a.balance;
+    else buckets.b120p+=a.balance;
+  }
+
+  const year = r.to.getFullYear();
+  const trend = new Array(12).fill(0);
+  for(const s of RAW.sales){ if(s.custCode!==code || s.date.getFullYear()!==year) continue; trend[s.date.getMonth()] += s.net; }
+
+  const extAvail = salesHasCol('gross') && salesHasCol('disc');
+  let disc=0, grossRet=0, discRet=0;
+  if(extAvail){ for(const s of RAW.sales){ if(s.custCode!==code || !inRange(s.date, r.from, r.to)) continue;
+    if(s.docType==='مرتجع'){ grossRet += -(s.gross||0); discRet += -(s.disc||0); } else { disc += s.disc||0; } } }
+  const returns = grossRet-discRet;
+
+  const chg = safeDiv(salesCur-salesCmp, Math.abs(salesCmp));
+  const overLimit = creditLimit!=null && creditLimit>0 && arTotal>creditLimit;
+  const maxTrend = Math.max(...trend, 1);
+
+  document.getElementById('cust360Title').textContent = name + ' — Customer 360';
+  document.getElementById('cust360Body').innerHTML = `
+    <div class="grid-2" style="gap:14px">
+      <div class="card pad-sm"><div class="sub" style="font-size:11px;color:var(--muted)">المبيعات (الفترة)</div><div style="font-size:18px;font-weight:700">${fmtCurHTML(salesCur,true)}</div><div class="chg ${chg!=null&&chg>=0?'pos':'neg'}" style="font-size:11.5px;display:inline-block;margin-top:4px">${chg==null?'—':pct(chg)} مقابل الماضي</div></div>
+      <div class="card pad-sm"><div class="sub" style="font-size:11px;color:var(--muted)">التحصيل (الفترة)</div><div style="font-size:18px;font-weight:700">${K.collectionsAvailable?fmtCurHTML(colCur,true):statusBadge('reqd')}</div></div>
+      <div class="card pad-sm"><div class="sub" style="font-size:11px;color:var(--muted)">إجمالي الذمم</div><div style="font-size:18px;font-weight:700">${K.arAvailable?fmtCurHTML(arTotal,true):statusBadge('reqd')}</div></div>
+      <div class="card pad-sm"><div class="sub" style="font-size:11px;color:var(--muted)">السقف الائتماني</div><div style="font-size:18px;font-weight:700">${creditLimit!=null?fmtCurHTML(creditLimit,true):statusBadge('reqd')}</div>${overLimit?`<div class="unavail" style="color:var(--bad);margin-top:4px">تجاوز السقف بمقدار ${fmt(arTotal-creditLimit)} د.أ</div>`:''}</div>
+    </div>
+    <div style="margin-top:16px">
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-bottom:8px">اتجاه المبيعات الشهري — ${year}</div>
+      <div style="display:flex;align-items:flex-end;gap:4px;height:80px">
+        ${trend.map((v,i)=>`<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px"><div style="width:100%;background:var(--navy);border-radius:3px 3px 0 0;height:${Math.max(2,(v/maxTrend)*64)}px" title="${MONTH_LABELS_SHORT[i]}: ${fmt(v)}"></div><div style="font-size:9px;color:var(--muted)">${MONTH_LABELS_SHORT[i]}</div></div>`).join('')}
+      </div>
+    </div>
+    ${K.arAvailable ? `<div style="margin-top:16px">
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-bottom:8px">أعمار الذمم</div>
+      <div style="display:flex;flex-direction:column;gap:7px">
+        ${[['غير مستحق','notdue'],['0–30','b0_30'],['31–60','b31_60'],['61–90','b61_90'],['91–120','b91_120'],['120+','b120p']].map(([lbl,k])=>`<div style="display:flex;align-items:center;gap:10px"><div style="width:64px;font-size:11px;color:var(--muted)">${lbl}</div><div style="font-size:12px">${fmtCurHTML(buckets[k],true)}</div></div>`).join('')}
+      </div>
+    </div>` : ''}
+    <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-bottom:6px">مرتجعات وخصومات (الفترة)</div>
+      ${extAvail ? `<div style="display:flex;gap:20px"><div><span style="font-size:11px;color:var(--muted)">الخصومات: </span>${fmtCurHTML(disc,true)}</div><div><span style="font-size:11px;color:var(--muted)">المرتجعات: </span>${fmtCurHTML(returns,true)}</div></div>` : statusBadge('reqd')}
+    </div>
+    <div class="unavail" style="margin-top:14px">لا يُعرض هامش الربح لهذا العميل — غير متوفر بالبيانات الحالية (راجع Phase 0).</div>`;
+  document.getElementById('cust360Modal').classList.add('open');
 }
 
 /* ========================================================================
@@ -1157,7 +1477,7 @@ function renderAR(K){
   const el = document.getElementById('arBody');
   if(!K.arAvailable){ el.innerHTML='<div class="empty-state">Data unavailable — لم يتم لصق كويري الذمم المدينة</div>'; return; }
   const b=K.buckets;
-  const rows=[['0–30','b0_30'],['31–60','b31_60'],['61–90','b61_90'],['91–120','b91_120'],['120+','b120p']];
+  const rows=[['غير مستحق','notdue'],['0–30','b0_30'],['31–60','b31_60'],['61–90','b61_90'],['91–120','b91_120'],['120+','b120p']];
   const maxB = Math.max(...rows.map(([,k])=>b[k]),1);
   el.innerHTML = `
     <div style="display:flex;gap:28px;flex-wrap:wrap;margin-bottom:14px">
@@ -1173,31 +1493,127 @@ function renderAR(K){
       </div>`).join('')}
     </div>`;
 }
+function renderAP(K){
+  const el = document.getElementById('apBody');
+  if(!K.ap.apAvailable){ el.innerHTML='<div class="empty-state">Data unavailable — لم يتم لصق كويري الذمم الدائنة (AP)</div>'; return; }
+  const b=K.ap.buckets;
+  const rows=[['غير مستحق','current'],['1–30','b1_30'],['31–60','b31_60'],['61–90','b61_90'],['91–120','b91_120'],['120+','b120p']];
+  const maxB = Math.max(...rows.map(([,k])=>b[k]),1);
+  el.innerHTML = `
+    <div style="display:flex;gap:28px;flex-wrap:wrap;margin-bottom:14px">
+      <div><div class="sub" style="font-size:11.5px;color:var(--muted)">إجمالي الذمم الدائنة (كما في آخر استيراد)</div><div style="font-size:20px;font-weight:700">${fmtCurHTML(K.ap.apTotal,true)}</div></div>
+      <div><div class="sub" style="font-size:11.5px;color:var(--muted)">المتأخر</div><div style="font-size:20px;font-weight:700;color:var(--bad)">${fmtCurHTML(K.ap.overdue,true)}</div></div>
+      <div><div class="sub" style="font-size:11.5px;color:var(--muted)">نسبة التأخر</div><div class="mono" style="font-size:20px;font-weight:700">${K.ap.overduePct==null?'—':(K.ap.overduePct*100).toFixed(0)+'%'}</div></div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:9px">
+      ${rows.map(([lbl,k])=>`<div style="display:flex;align-items:center;gap:10px">
+        <div style="width:64px;font-size:11.5px;color:var(--muted)">${lbl}</div>
+        <div style="flex:1;background:var(--bg);border-radius:5px;height:10px;overflow:hidden"><div style="width:${Math.max(2,b[k]/maxB*100)}%;height:100%;background:${k==='b120p'?'var(--bad)':(k==='b91_120'?'var(--warn)':'var(--navy)')}"></div></div>
+        <div style="font-size:12px;width:96px;text-align:left">${fmtCurHTML(b[k],true)}</div>
+      </div>`).join('')}
+    </div>`;
+}
+function renderSalesBreakdown(K){
+  const el = document.getElementById('salesBreakdownBody');
+  const sb = K.salesBreakdown;
+  let breakdownHtml;
+  if(!sb.available){
+    breakdownHtml = `<div class="empty-state">Data unavailable — أعد لصق كويري المبيعات المحدَّث (فيه عمودا "إجمالي قبل الخصم" و"قيمة الخصم") لعرض هذا التفصيل</div>`;
+  } else {
+    const rows = [
+      ['إجمالي المبيعات (قبل الخصم)', sb.gross, ''],
+      ['(−) الخصومات', -sb.disc, 'neg'],
+      ['(−) المرتجعات', -sb.returns, 'neg'],
+      ['= صافي المبيعات', sb.net, 'tot']
+    ];
+    breakdownHtml = rows.map(([lbl,v,cls])=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;${cls==='tot'?'border-top:1px solid var(--border);margin-top:4px;font-weight:700':''}">
+      <div style="font-size:12.5px;${cls==='tot'?'':'color:var(--muted)'}">${lbl}</div>
+      <div style="font-size:13px">${fmtCurHTML(v,true)}</div>
+    </div>`).join('');
+  }
+  const pb = K.profitBridge;
+  const bridgeRows = [
+    ['أثر الكمية (Volume Effect)', pb.volumeEffect, true],
+    ['أثر السعر (Price Effect)', pb.priceEffect, true],
+    ['أثر الكلفة (Cost Effect)', null, false],
+    ['أثر الخصم (Discount Effect)', null, false],
+    ['أثر المرتجعات (Returns Effect)', null, false]
+  ];
+  const bridgeHtml = bridgeRows.map(([lbl,v,avail])=>`<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 0">
+    <div style="font-size:12px;color:var(--muted)">${lbl}</div>
+    <div style="font-size:12.5px">${avail?fmtCurHTML(v,true):statusBadge('reqd')}</div>
+  </div>`).join('');
+  el.innerHTML = `
+    <div style="margin-bottom:14px">${breakdownHtml}</div>
+    <div style="border-top:1px solid var(--border);padding-top:10px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px"><b style="font-size:12.5px">Partial Profit Bridge</b>${statusBadge('cond')}</div>
+      ${bridgeHtml}
+    </div>`;
+}
 
 /* ========================================================================
-   التنبيهات التنفيذية — Facts only، لا استنتاجات
+   Management Attention Center — سجلات منظّمة، مبنية على بيانات فعلية فقط
+   كل سجل: Issue/Category/Severity/Impact/Owner/Age/DueDate/Action/Source/Drilldown
+   عتبات الخطورة موثّقة وثابتة (لا اعتباطية): تغيّر ≥15% = عالي، 5–15% = متوسط؛
+   تأخر ذمم/ذمم دائنة >120 يوم = عالي، 91–120 = متوسط؛ تجاوز سقف ائتماني >50% = عالي، غير ذلك متوسط.
    ======================================================================== */
-function renderAlerts(K){
-  const el = document.getElementById('alertsBody');
-  const alerts=[]; const THRESH=0.05;
-  function addChangeAlert(label, cur, cmpV){
+const ALERT_THRESH = 0.05;
+function sevFromPct(absChg){ return absChg>=0.15 ? 'عالي' : 'متوسط'; }
+function buildManagementAttention(K){
+  const alerts = [];
+  function addDelta(category, label, cur, cmpV, source, drill){
     const chg = safeDiv(cur-cmpV, Math.abs(cmpV));
-    if(chg==null || Math.abs(chg)<THRESH) return;
-    alerts.push({sev: chg<0?'bad':'good', t1: label+' '+(chg<0?'أقل من':'أعلى من')+' نفس الفترة من السنة السابقة بنسبة '+(Math.abs(chg)*100).toFixed(1)+'%', t2: fmtCur(cur,true)+' مقابل '+fmtCur(cmpV,true)});
+    if(chg==null || Math.abs(chg)<ALERT_THRESH) return;
+    const isBad = chg<0;
+    alerts.push({issue: label+' '+(isBad?'أقل من':'أعلى من')+' نفس الفترة من السنة السابقة بنسبة '+(Math.abs(chg)*100).toFixed(1)+'%',
+      category, severity: sevFromPct(Math.abs(chg)), sevDot: isBad?'bad':'good', impact: cur-cmpV, age:null,
+      action: isBad?'راجع سبب الانخفاض بهذا البند خلال الفترة':'راجع استدامة الارتفاع وأثره على باقي المؤشرات',
+      source, drilldown: drill});
   }
-  addChangeAlert('المبيعات', K.cur.net, K.cmp.net);
-  if(K.collectionsAvailable) addChangeAlert('التحصيل', K.colCur, K.colCmp);
-  if(K.purchasesAvailable) addChangeAlert('المشتريات', K.purCur, K.purCmp);
+  addDelta('المبيعات','المبيعات', K.cur.net, K.cmp.net, 'كويري فواتير المبيعات', 'salesChartHost');
+  if(K.collectionsAvailable) addDelta('التحصيل','التحصيل', K.colCur, K.colCmp, 'كويري التحصيل', 'collectionsCard');
+  if(K.purchasesAvailable) addDelta('المشتريات','المشتريات', K.purCur, K.purCmp, 'كويري فواتير المشتريات', 'purchasesCard');
+
   if(K.arAvailable){
     const byCust=new Map(); const today=new Date(); today.setHours(0,0,0,0);
     for(const a of RAW.ar){ if(!a.custCode) continue;
       const days = a.dueDate ? Math.floor((today-a.dueDate)/86400000) : -1;
-      if(days>90){ const c=byCust.get(a.custCode)||{name:a.custName||a.custCode, overdue:0}; c.overdue+=a.balance; byCust.set(a.custCode,c); } }
+      if(days>90){ const c=byCust.get(a.custCode)||{name:a.custName||a.custCode, overdue:0, maxDays:0}; c.overdue+=a.balance; c.maxDays=Math.max(c.maxDays,days); byCust.set(a.custCode,c); } }
     const majors=[...byCust.values()].filter(c=>c.overdue>0).sort((a,b)=>b.overdue-a.overdue).slice(0,3);
-    for(const m of majors) alerts.push({sev:'warn', t1:'رصيد متأخر لدى '+m.name+' منذ أكثر من 90 يوماً', t2: fmtCur(m.overdue,true)});
+    for(const m of majors) alerts.push({issue:'رصيد متأخر لدى '+m.name+' منذ أكثر من 90 يوماً', category:'الذمم المدينة',
+      severity: m.maxDays>120?'عالي':'متوسط', sevDot:'warn', impact:m.overdue, age:m.maxDays+' يوم',
+      action:'تابع التحصيل من العميل أو صعّد للإدارة', source:'كويري الذمم المدينة', drilldown:'arCard'});
   }
-  if(!alerts.length){ el.innerHTML='<div class="alert-empty">لا توجد تنبيهات جوهرية بالفترة المحددة</div>'; return; }
-  el.innerHTML = alerts.map(a=>`<div class="alert-row"><div class="dot ${a.sev}"></div><div class="txt"><div class="t1">${esc(a.t1)}</div><div class="t2">${esc(a.t2)}</div></div></div>`).join('');
+  if(K.creditAvailable){
+    for(const c of K.overLimitCustomers.slice(0,3)) alerts.push({issue:'تجاوز العميل '+c.name+' السقف الائتماني', category:'الائتمان',
+      severity: (c.excess/c.creditLimit)>0.5?'عالي':'متوسط', sevDot:'bad', impact:c.excess, age:null,
+      action:'راجع منح ائتمان إضافي لهذا العميل قبل أي فاتورة جديدة', source:'كويري الذمم المدينة (عمود السقف الائتماني)', drilldown:'arCard'});
+  }
+  if(K.ap.apAvailable){
+    const byS=new Map(); const today=new Date(); today.setHours(0,0,0,0);
+    for(const a of RAW.ap){ if(!a.supCode) continue;
+      const days=a.dueDate?Math.floor((today-a.dueDate)/86400000):-1;
+      if(days>90){ const s=byS.get(a.supCode)||{name:a.supName||a.supCode, overdue:0, maxDays:0}; s.overdue+=a.balance; s.maxDays=Math.max(s.maxDays,days); byS.set(a.supCode,s); } }
+    const majors=[...byS.values()].filter(s=>s.overdue>0).sort((a,b)=>b.overdue-a.overdue).slice(0,2);
+    for(const m of majors) alerts.push({issue:'رصيد متأخر لمورد '+m.name+' منذ أكثر من 90 يوماً', category:'الذمم الدائنة',
+      severity: m.maxDays>120?'عالي':'متوسط', sevDot:'warn', impact:m.overdue, age:m.maxDays+' يوم',
+      action:'راجع جدولة الدفع لهذا المورد', source:'كويري الذمم الدائنة', drilldown:'apCard'});
+  }
+  return alerts;
+}
+function renderAlerts(K){
+  const el = document.getElementById('alertsBody');
+  const alerts = buildManagementAttention(K);
+  if(!alerts.length){ el.innerHTML='<div class="alert-empty">لا توجد استثناءات تستحق انتباه الإدارة بالفترة المحددة</div>'; return; }
+  el.innerHTML = alerts.map(a=>`
+    <div class="alert-row" ${a.drilldown?`onclick="scrollToSection('${a.drilldown}')" style="cursor:pointer"`:''}>
+      <div class="dot ${a.sevDot}"></div>
+      <div class="txt" style="flex:1">
+        <div class="t1">${esc(a.issue)}</div>
+        <div class="t2">${esc(a.category)} · الخطورة: ${esc(a.severity)} · الأثر المالي: ${fmtCur(a.impact,true)}${a.age?(' · العمر: '+esc(a.age)):''}</div>
+        <div class="t2" style="margin-top:2px">الإجراء المقترح: ${esc(a.action)} — المصدر: ${esc(a.source)}</div>
+      </div>
+    </div>`).join('');
 }
 
 /* ========================================================================
@@ -1215,15 +1631,32 @@ function renderAll(){
   renderCollections(K);
   renderPurchases(K);
   renderAR(K);
+  renderAP(K);
+  renderSalesBreakdown(K);
   renderAlerts(K);
 }
 function refreshAll(){ renderAll(); }
+
+/* ---------- قراءة Read-only مستقلة لبيانات محرك القوائم الختامية (لا تعطّل بقية الشاشة إن غابت أو تأخرت) ---------- */
+async function loadFinancialsState(){
+  if(!sb) return;
+  try{
+    const {data, error} = await sb.from('financials_app_state').select('data, updated_at').eq('id','main').maybeSingle();
+    if(error || !data || !data.data) return;
+    const d = data.data;
+    if(d.moves && d.accounts && d.map){
+      FIN = {available:true, moves:d.moves, accounts:d.accounts, map:d.map, budget:d.budget||null, loadedAt:data.updated_at};
+      renderAll();
+    }
+  }catch(e){ /* الجدول قد لا يكون متاحاً — تبقى بقية الشاشة تعمل بشكل طبيعي */ }
+}
 
 /* ---------- تشغيل التطبيق ---------- */
 function initApp(){
   renderPeriodExtra();
   onFiltersChanged();
   loadSyncedState();
+  loadFinancialsState();
 }
 
 /* boot */
