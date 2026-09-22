@@ -553,7 +553,7 @@ const IMPORT_SOURCES = [
   T0."CardName" AS "اسم العميل",
   T5."BPLName" AS "الفرع",
   T1."Quantity" AS "الكمية",
-  (T1."LineTotal" * (1 - ISNULL(T0."DiscPrcnt",0)/100)) AS "صافي المبيعات"
+  (T1."LineTotal" * (1 - IFNULL(T0."DiscPrcnt",0)/100)) AS "صافي المبيعات"
 FROM OINV T0
 INNER JOIN INV1 T1 ON T1."DocEntry"=T0."DocEntry"
 LEFT JOIN OBPL T5 ON T5."BPLId"=T0."BPLId"
@@ -641,21 +641,21 @@ ORDER BY T0."DocDueDate"`,
       return out;
     }},
   { key:'whs011', title:'5) رصيد مستودع 011 آخر كل شهر (تاريخياً)', required:false,
-    sql:`;WITH M AS (
-  SELECT T0."ItemCode",
+    sql:`WITH M AS (
+  SELECT T0."ItemCode" AS "ItemCode",
          T0."CreateDate" AS "TDate",
-         SUM(T0."InQty"-T0."OutQty") OVER (PARTITION BY T0."ItemCode" ORDER BY T0."CreateDate", T0."TransId" ROWS UNBOUNDED PRECEDING) AS "RunQty"
+         SUM(T0."InQty"-T0."OutQty") OVER (PARTITION BY T0."ItemCode" ORDER BY T0."CreateDate", T0."TransId" ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS "RunQty"
   FROM OINM T0
   WHERE T0."Warehouse"='011'
 )
-SELECT ItemCode AS "رمز الصنف",
-       CONVERT(varchar(7), TDate, 120) AS "الشهر",
-       MAX(RunQty) AS "الرصيد آخر الشهر"
+SELECT "ItemCode" AS "رمز الصنف",
+       TO_VARCHAR("TDate", 'YYYY-MM') AS "الشهر",
+       MAX("RunQty") AS "الرصيد آخر الشهر"
 FROM (
-  SELECT *, ROW_NUMBER() OVER (PARTITION BY ItemCode, CONVERT(varchar(7),TDate,120) ORDER BY TDate DESC) AS rn
+  SELECT *, ROW_NUMBER() OVER (PARTITION BY "ItemCode", TO_VARCHAR("TDate",'YYYY-MM') ORDER BY "TDate" DESC) AS "rn"
   FROM M
-) X WHERE rn=1
-GROUP BY ItemCode, CONVERT(varchar(7),TDate,120)
+) X WHERE "rn"=1
+GROUP BY "ItemCode", TO_VARCHAR("TDate",'YYYY-MM')
 ORDER BY "الشهر"`,
     note:'رصيد آخر كل شهر لكل صنف بمستودع 011 — أساس احتساب مبيعات المؤسسة العسكرية شهرياً وتاريخياً (وليس الرصيد الحالي فقط). عدّل حسب مخطط SAP لديك إن اختلفت أسماء أعمدة OINM.',
     parse(text){
