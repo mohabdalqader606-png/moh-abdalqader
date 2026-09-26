@@ -483,8 +483,8 @@ const RAW = {
   sales: [],       // {date:Date, docType:'فاتورة'|'مرتجع', itemCode, itemName, custCode, custName, dept, rep, qty:Number, gross:Number|null, disc:Number|null, net:Number}
   collections: [],  // {date:Date, custCode, custName, amount:Number}
   purchases: [],    // {date:Date, supCode, supName, itemCode, itemName, amount:Number}
-  ar: [],           // {custCode, custName, asOf:Date, dueDate:Date, balance:Number, creditLimit:Number|null}
-  ap: [],           // {supCode, supName, dueDate:Date, balance:Number}
+  ar: [],           // {custCode, custName, balance:Number /* صافٍ حقيقي من JDT1، كل الحركات بصرف النظر عن التسكير */, creditLimit:Number|null, ageBuckets:{m0..m11,m12plus}:Number} — راجع قرار "الذمم المدينة من القيود" بالمحادثة
+  ap: [],           // {supCode, supName, balance:Number} — صافي الحركات غير المسكَّرة (Closed='N') فقط لكل مورد؛ بدون أعمار (قرار: رقم موثوق واحد بدل تصنيف مضلِّل)
   whs011: [],       // {monthKey:'YYYY-MM', itemCode, itemName, qty:Number}
   milPrice: [],     // {itemCode, itemName, price:Number}
   batchCost: []     // {date, docType, custCode, custName, itemCode, itemName, qty, net, cost, gp, delivered:Boolean} — كلفة الباتش الحالية (الآن، وليس وقت البيع — قرار صريح، راجع GM_Command_Center_v2_LIVE_COST_RECONCILIATION.md)
@@ -680,49 +680,133 @@ ORDER BY T0."DocDate"`,
           itemCode:iItemCode>=0?(r[iItemCode]||'').trim():'', itemName:iItemName>=0?(r[iItemName]||'').trim():'', amount:parseNumSafe(r[iAmt])}); }
       return out;
     }},
-  { key:'ar', title:'4) الذمم المدينة المفتوحة (AR Aging)', required:false,
+  { key:'ar', title:'4) الذمم المدينة — رصيد حقيقي من القيود (JDT1) + عمر شهري', required:false,
     sql:`SELECT
-  T0."CardCode" AS "رمز العميل",
-  T0."CardName" AS "اسم العميل",
-  T0."DocDate" AS "تاريخ الفاتورة",
-  T0."DocDueDate" AS "تاريخ الاستحقاق",
-  (T0."DocTotal" - T0."PaidToDate") AS "الرصيد المستحق",
-  T2."CreditLine" AS "السقف الائتماني"
-FROM OINV T0
-LEFT JOIN OCRD T2 ON T2."CardCode"=T0."CardCode"
-WHERE (T0."DocTotal" - T0."PaidToDate") > 0.01
-ORDER BY T0."DocDueDate"`,
-    note:'كشف أرصدة مفتوحة كما بتاريخ اللصق (Snapshot) — يُعرض "كما في تاريخ آخر استيراد" وليس مرتبطاً بفلتر الفترة أعلاه. عمود "السقف الائتماني" اختياري — يُستخدم فقط لتنبيه تجاوز السقف إذا وُجد.',
+    T0."ShortName"                      AS "رمز العميل",
+    C."CardName"                        AS "اسم العميل",
+    SUM(T0."Debit" - T0."Credit")       AS "الرصيد الحالي",
+    C."CreditLine"                      AS "السقف الائتماني",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(CURRENT_DATE)*12+MONTH(CURRENT_DATE)-0
+    ), 0)                                AS "M0",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(CURRENT_DATE)*12+MONTH(CURRENT_DATE)-1
+    ), 0)                                AS "M1",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(CURRENT_DATE)*12+MONTH(CURRENT_DATE)-2
+    ), 0)                                AS "M2",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(CURRENT_DATE)*12+MONTH(CURRENT_DATE)-3
+    ), 0)                                AS "M3",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(CURRENT_DATE)*12+MONTH(CURRENT_DATE)-4
+    ), 0)                                AS "M4",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(CURRENT_DATE)*12+MONTH(CURRENT_DATE)-5
+    ), 0)                                AS "M5",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(CURRENT_DATE)*12+MONTH(CURRENT_DATE)-6
+    ), 0)                                AS "M6",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(CURRENT_DATE)*12+MONTH(CURRENT_DATE)-7
+    ), 0)                                AS "M7",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(CURRENT_DATE)*12+MONTH(CURRENT_DATE)-8
+    ), 0)                                AS "M8",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(CURRENT_DATE)*12+MONTH(CURRENT_DATE)-9
+    ), 0)                                AS "M9",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(CURRENT_DATE)*12+MONTH(CURRENT_DATE)-10
+    ), 0)                                AS "M10",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(CURRENT_DATE)*12+MONTH(CURRENT_DATE)-11
+    ), 0)                                AS "M11",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=T0."ShortName"
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") <= YEAR(CURRENT_DATE)*12+MONTH(CURRENT_DATE)-12
+    ), 0)                                AS "M12plus"
+FROM "JDT1" T0
+INNER JOIN "OCRD" C ON T0."ShortName" = C."CardCode" AND C."CardType"='C'
+WHERE T0."ShortName" <> T0."Account"
+GROUP BY T0."ShortName", C."CardName", C."CreditLine"
+HAVING SUM(T0."Debit" - T0."Credit") <> 0
+ORDER BY SUM(T0."Debit" - T0."Credit") DESC`,
+    note:'قرار مسجَّل: الرصيد الحقيقي يُبنى من كل قيود JDT1 لكل عميل — بصرف النظر عن حالة "مسكّر/غير مسكّر" (Closed) لأنها غير موثوقة هون بالاتجاهين. رقم واحد لكل عميل "الآن" (وليس Snapshot لكل سطر تاريخي)، بالإضافة لتوزيع عمر الذمة على 13 شهراً (M0 = الشهر الحالي حتى M12plus = أقدم من سنة) — نفس منطق كويري "تحليل مخالفات عمر الذمة" لكن محسوب لحظة اللصق بدل لحظة كل تحصيل تاريخي. عمود "السقف الائتماني" اختياري.',
     parse(text){
       const {headers, rows} = parseTSV(text);
       const iCustCode=findColIdx(headers,['رمز العميل']), iCustName=findColIdx(headers,['اسم العميل']),
-            iDue=findColIdx(headers,['تاريخ الاستحقاق']), iBal=findColIdx(headers,['الرصيد المستحق','الرصيد']),
+            iBal=findColIdx(headers,['الرصيد الحالي','الرصيد المستحق','الرصيد']),
             iCredit=findColIdx(headers,['السقف الائتماني']);
-      if(iBal<0) throw new Error('لم يتم التعرف على عمود "الرصيد المستحق".');
+      const mIdx = {}; for(let m=0;m<=11;m++) mIdx['m'+m]=findColIdx(headers,['M'+m]);
+      mIdx.m12plus = findColIdx(headers,['M12plus']);
+      if(iBal<0) throw new Error('لم يتم التعرف على عمود "الرصيد الحالي".');
       const out=[];
-      for(const r of rows){ const due=iDue>=0?parseDateSafe(r[iDue]):null;
-        out.push({custCode:iCustCode>=0?(r[iCustCode]||'').trim():'', custName:iCustName>=0?(r[iCustName]||'').trim():'', dueDate:due, balance:parseNumSafe(r[iBal]),
-          creditLimit:iCredit>=0?parseNumSafe(r[iCredit]):null}); }
+      for(const r of rows){
+        const ageBuckets = {};
+        for(const k of Object.keys(mIdx)) ageBuckets[k] = mIdx[k]>=0?parseNumSafe(r[mIdx[k]]):0;
+        out.push({custCode:iCustCode>=0?(r[iCustCode]||'').trim():'', custName:iCustName>=0?(r[iCustName]||'').trim():'', balance:parseNumSafe(r[iBal]),
+          creditLimit:iCredit>=0?parseNumSafe(r[iCredit]):null, ageBuckets}); }
       return out;
     }},
-  { key:'ap', title:'5) الذمم الدائنة المفتوحة (AP Aging)', required:false,
+  { key:'ap', title:'5) الذمم الدائنة — صافي غير المسكَّر فقط (JDT1، بدون أعمار)', required:false,
     sql:`SELECT
-  T0."CardCode" AS "رمز المورد",
-  T0."CardName" AS "اسم المورد",
-  T0."DocDueDate" AS "تاريخ الاستحقاق",
-  (T0."DocTotal" - T0."PaidToDate") AS "الرصيد المستحق"
-FROM OPCH T0
-WHERE (T0."DocTotal" - T0."PaidToDate") > 0.01
-ORDER BY T0."DocDueDate"`,
-    note:'نفس منطق تواريخ الذمم المدينة تماماً، بس لفواتير الموردين المفتوحة (Snapshot كما بتاريخ اللصق).',
+  T0."ShortName"                      AS "رمز المورد",
+  C."CardName"                        AS "اسم المورد",
+  SUM(T0."Credit" - T0."Debit")       AS "الرصيد المستحق"
+FROM "JDT1" T0
+INNER JOIN "OCRD" C ON T0."ShortName" = C."CardCode" AND C."CardType"='S'
+WHERE T0."Closed"='N' AND T0."ShortName" <> T0."Account"
+GROUP BY T0."ShortName", C."CardName"
+HAVING SUM(T0."Credit" - T0."Debit") <> 0
+ORDER BY ABS(SUM(T0."Credit" - T0."Debit")) DESC`,
+    note:'قرار مسجَّل: عكس الذمم المدينة تماماً — هون حالة "مسكّر" (Closed) موثوقة لما تقول "تم"، فالمنطق: صافي كل الحركات غير المسكَّرة (Closed=\'N\') فقط لكل مورد. تأكَّد من بيانات حقيقية أن فواتير ودفعات متقابلة كثيرة تُصفّي بعضها لصفر تقريباً حتى لو ظلّت غير مطابَقة رسمياً بالنظام — لذلك رقم إجمالي واحد موثوق بدون تصنيف أعمار (تصنيف الأعمار سطراً بسطر مضلِّل هون: فاتورة 2018 قد تبدو "متأخرة جداً" رغم إن صافي رصيد المورد صفر فعلياً).',
     parse(text){
       const {headers, rows} = parseTSV(text);
       const iSupCode=findColIdx(headers,['رمز المورد']), iSupName=findColIdx(headers,['اسم المورد']),
-            iDue=findColIdx(headers,['تاريخ الاستحقاق']), iBal=findColIdx(headers,['الرصيد المستحق','الرصيد']);
+            iBal=findColIdx(headers,['الرصيد المستحق','الرصيد']);
       if(iBal<0) throw new Error('لم يتم التعرف على عمود "الرصيد المستحق".');
       const out=[];
-      for(const r of rows){ const due=iDue>=0?parseDateSafe(r[iDue]):null;
-        out.push({supCode:iSupCode>=0?(r[iSupCode]||'').trim():'', supName:iSupName>=0?(r[iSupName]||'').trim():'', dueDate:due, balance:parseNumSafe(r[iBal])}); }
+      for(const r of rows){
+        out.push({supCode:iSupCode>=0?(r[iSupCode]||'').trim():'', supName:iSupName>=0?(r[iSupName]||'').trim():'', balance:parseNumSafe(r[iBal])}); }
       return out;
     }},
   { key:'whs011', title:'6) رصيد مستودع 011 آخر كل شهر (تاريخياً)', required:false,
@@ -1005,8 +1089,8 @@ function serializeState(){
     sales: RAW.sales.map(r=>({...r, date:dstr(r.date)})),
     collections: RAW.collections.map(r=>({...r, date:dstr(r.date)})),
     purchases: RAW.purchases.map(r=>({...r, date:dstr(r.date)})),
-    ar: RAW.ar.map(r=>({...r, dueDate:r.dueDate?dstr(r.dueDate):null})),
-    ap: RAW.ap.map(r=>({...r, dueDate:r.dueDate?dstr(r.dueDate):null})),
+    ar: RAW.ar,
+    ap: RAW.ap,
     whs011: RAW.whs011,
     milPrice: RAW.milPrice,
     batchCost: RAW.batchCost.map(r=>({...r, date:dstr(r.date)})),
@@ -1018,8 +1102,8 @@ function deserializeState(data){
   RAW.sales = (data.sales||[]).map(r=>({...r, date:parseDateSafe(r.date)})).filter(r=>r.date);
   RAW.collections = (data.collections||[]).map(r=>({...r, date:parseDateSafe(r.date)})).filter(r=>r.date);
   RAW.purchases = (data.purchases||[]).map(r=>({...r, date:parseDateSafe(r.date)})).filter(r=>r.date);
-  RAW.ar = (data.ar||[]).map(r=>({...r, dueDate:r.dueDate?parseDateSafe(r.dueDate):null}));
-  RAW.ap = (data.ap||[]).map(r=>({...r, dueDate:r.dueDate?parseDateSafe(r.dueDate):null}));
+  RAW.ar = data.ar||[];
+  RAW.ap = data.ap||[];
   RAW.whs011 = data.whs011||[];
   RAW.milPrice = data.milPrice||[];
   RAW.batchCost = (data.batchCost||[]).map(r=>({...r, date:parseDateSafe(r.date)})).filter(r=>r.date);
@@ -1135,26 +1219,16 @@ function computeProfitBridgePartial(cur, cmp){
   return {volumeEffect, priceEffect};
 }
 
-/* ---------- AP Aging (نفس منطق AR بالضبط، معكوس للموردين) ---------- */
+/* ---------- الذمم الدائنة — صافي الحركات غير المسكَّرة (Closed='N') فقط لكل مورد، بدون تصنيف أعمار (قرار: تصنيف الأعمار سطراً بسطر مضلِّل هون؛ راجع note كويري AP) ---------- */
 function computeAP(){
   const apAvailable = RAW.ap.length>0;
-  const buckets={current:0,b1_30:0,b31_60:0,b61_90:0,b91_120:0,b120p:0};
-  let apTotal=0; const today=new Date(); today.setHours(0,0,0,0);
+  let apTotal=0;
   const apBySup=new Map();
   for(const a of RAW.ap){
     apTotal += a.balance;
     if(a.supCode){ const x=apBySup.get(a.supCode)||{code:a.supCode,name:a.supName||a.supCode,value:0}; x.value+=a.balance; apBySup.set(a.supCode,x); }
-    if(!a.dueDate){ buckets.current+=a.balance; continue; }
-    const days = Math.floor((today-a.dueDate)/86400000);
-    if(days<0) buckets.current+=a.balance;
-    else if(days<=30) buckets.b1_30+=a.balance;
-    else if(days<=60) buckets.b31_60+=a.balance;
-    else if(days<=90) buckets.b61_90+=a.balance;
-    else if(days<=120) buckets.b91_120+=a.balance;
-    else buckets.b120p+=a.balance;
   }
-  const overdue = apTotal-buckets.current;
-  return {apAvailable, apTotal, buckets, overdue, overduePct:safeDiv(overdue,apTotal), apBySup};
+  return {apAvailable, apTotal, apBySup};
 }
 
 /* ---------- Gross Profit/COGS — GL-level شهري، Read-only من financials_app_state (Conditional) ---------- */
@@ -1257,20 +1331,19 @@ function computeKPIs(){
   const purchasesAvailable = RAW.purchases.length>0;
 
   const arAvailable = RAW.ar.length>0;
-  const buckets={b0_30:0,b31_60:0,b61_90:0,b91_120:0,b120p:0,notdue:0};
-  let arTotal=0; const today=new Date(); today.setHours(0,0,0,0);
+  const buckets={m0:0,m1_2:0,m3_5:0,m6_8:0,m9_11:0,m12p:0};
+  let arTotal=0;
   for(const a of RAW.ar){
     arTotal += a.balance;
-    if(!a.dueDate){ buckets.notdue+=a.balance; continue; }
-    const days = Math.floor((today-a.dueDate)/86400000);
-    if(days<0) buckets.notdue+=a.balance;
-    else if(days<=30) buckets.b0_30+=a.balance;
-    else if(days<=60) buckets.b31_60+=a.balance;
-    else if(days<=90) buckets.b61_90+=a.balance;
-    else if(days<=120) buckets.b91_120+=a.balance;
-    else buckets.b120p+=a.balance;
+    const g = a.ageBuckets||{};
+    buckets.m0 += g.m0||0;
+    buckets.m1_2 += (g.m1||0)+(g.m2||0);
+    buckets.m3_5 += (g.m3||0)+(g.m4||0)+(g.m5||0);
+    buckets.m6_8 += (g.m6||0)+(g.m7||0)+(g.m8||0);
+    buckets.m9_11 += (g.m9||0)+(g.m10||0)+(g.m11||0);
+    buckets.m12p += g.m12plus||0;
   }
-  const overdue = arTotal-buckets.notdue;
+  const overdue = arTotal-buckets.m0;
   const overduePct = safeDiv(overdue, arTotal);
 
   const cmpByCust=new Map(); for(const [k,v] of cmp.byCust) cmpByCust.set(k, v.net);
@@ -1353,8 +1426,8 @@ function renderKPIRow(K){
     kpiCard({label:'هامش الربح الإجمالي — Margin %', value:K.gl.available&&K.gl.margin!=null?K.gl.margin*100:null, cmpValue:K.glCmp.available&&K.glCmp.margin!=null?K.glCmp.margin*100:null, currency:false, available:K.gl.available&&K.gl.margin!=null, status:K.gl.available&&K.gl.margin!=null?'cond':'reqd', unavailReason:'GL-level — نفس شرط الربح الإجمالي', raw:K.gl.available&&K.gl.margin!=null?('<span class="mono">'+(K.gl.margin*100).toFixed(1)+'%</span>'):null}),
     kpiCard({label:'هامش الربح (كلفة الباتش الحالية) — Live Margin', value:K.batchMargin.available?K.batchMargin.gp:null, currency:true, available:K.batchMargin.available, status:K.batchMargin.available?'cond':'reqd', unavailReason:'يحتاج لصق كويري "هامش الربح — كلفة الباتش الحالية" من لوحة الاستيراد', noCompare:true, asOf:K.batchMargin.available?('هامش '+(K.batchMargin.margin!=null?(K.batchMargin.margin*100).toFixed(1)+'%':'—')+' · تغطية '+(K.batchMargin.coverage!=null?(K.batchMargin.coverage*100).toFixed(0)+'%':'0%')+' من المبيعات · كلفة الآن وليس وقت البيع'):null, onclick:"scrollToSection('kpiRow')"}),
     kpiCard({label:'التحصيل — Collections', value:K.colCur, cmpValue:K.colCmp, currency:true, available:K.collectionsAvailable, status:K.collectionsAvailable?'avail':'reqd', onclick:"scrollToSection('collectionsCard')"}),
-    kpiCard({label:'الذمم المدينة — AR', value:K.arTotal, currency:true, available:K.arAvailable, status:K.arAvailable?'avail':'reqd', noCompare:true, asOf:'كما في آخر استيراد'+(K.arAvailable&&K.overduePct!=null?' · متأخر '+(K.overduePct*100).toFixed(0)+'%':''), onclick:"scrollToSection('arCard')"}),
-    kpiCard({label:'الذمم الدائنة — AP', value:K.ap.apTotal, currency:true, available:K.ap.apAvailable, status:K.ap.apAvailable?'avail':'reqd', noCompare:true, asOf:'كما في آخر استيراد'+(K.ap.apAvailable&&K.ap.overduePct!=null?' · متأخر '+(K.ap.overduePct*100).toFixed(0)+'%':''), onclick:"scrollToSection('apCard')"}),
+    kpiCard({label:'الذمم المدينة — AR', value:K.arTotal, currency:true, available:K.arAvailable, status:K.arAvailable?'avail':'reqd', noCompare:true, asOf:'رصيد حقيقي من القيود (JDT1)'+(K.arAvailable&&K.overduePct!=null?' · خارج الشهر الحالي '+(K.overduePct*100).toFixed(0)+'%':''), onclick:"scrollToSection('arCard')"}),
+    kpiCard({label:'الذمم الدائنة — AP', value:K.ap.apTotal, currency:true, available:K.ap.apAvailable, status:K.ap.apAvailable?'avail':'reqd', noCompare:true, asOf:'صافي غير المسكَّر (Closed=N) — بدون تصنيف أعمار', onclick:"scrollToSection('apCard')"}),
     kpiCard({label:'رأس المال العامل — Working Capital', available:false, status:'reqd', unavailReason:'يحتاج أيام المخزون (غير متوفرة) لاحتساب دورة التحويل النقدي الكاملة'}),
     kpiCard({label:'قيمة المخزون — Inventory', available:false, status:'next', unavailReason:'لا يوجد مصدر بيانات بأي مكان بالنظام حالياً'}),
     kpiCard({label:'المشتريات — Procurement', status:'blocked', note:'لا تكامل مباشر حالياً (راجع Phase 0) — رابط مباشر للشاشة', linkOut:true, linkLabel:'فتح ذكاء المشتريات الخارجية', onclick:"window.open('المشتريات_الخارجية_الذكية.html','_blank')"})
@@ -1602,20 +1675,19 @@ function openCustomer360(code){
   let colCur=0;
   for(const c of RAW.collections){ if(c.custCode===code && inRange(c.date, r.from, r.to)) colCur += c.amount; }
 
-  const buckets={notdue:0,b0_30:0,b31_60:0,b61_90:0,b91_120:0,b120p:0};
-  let arTotal=0, creditLimit=null; const today=new Date(); today.setHours(0,0,0,0);
+  const buckets={m0:0,m1_2:0,m3_5:0,m6_8:0,m9_11:0,m12p:0};
+  let arTotal=0, creditLimit=null;
   for(const a of RAW.ar){
     if(a.custCode!==code) continue;
     arTotal += a.balance;
     if(a.creditLimit!=null) creditLimit=a.creditLimit;
-    if(!a.dueDate){ buckets.notdue+=a.balance; continue; }
-    const days=Math.floor((today-a.dueDate)/86400000);
-    if(days<0) buckets.notdue+=a.balance;
-    else if(days<=30) buckets.b0_30+=a.balance;
-    else if(days<=60) buckets.b31_60+=a.balance;
-    else if(days<=90) buckets.b61_90+=a.balance;
-    else if(days<=120) buckets.b91_120+=a.balance;
-    else buckets.b120p+=a.balance;
+    const g = a.ageBuckets||{};
+    buckets.m0 += g.m0||0;
+    buckets.m1_2 += (g.m1||0)+(g.m2||0);
+    buckets.m3_5 += (g.m3||0)+(g.m4||0)+(g.m5||0);
+    buckets.m6_8 += (g.m6||0)+(g.m7||0)+(g.m8||0);
+    buckets.m9_11 += (g.m9||0)+(g.m10||0)+(g.m11||0);
+    buckets.m12p += g.m12plus||0;
   }
 
   const year = r.to.getFullYear();
@@ -1654,9 +1726,9 @@ function openCustomer360(code){
       </div>
     </div>
     ${K.arAvailable ? `<div style="margin-top:16px">
-      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-bottom:8px">أعمار الذمم</div>
+      <div class="sub" style="font-size:11.5px;color:var(--muted);margin-bottom:8px">أعمار الذمم (من القيود — شهري)</div>
       <div style="display:flex;flex-direction:column;gap:7px">
-        ${[['غير مستحق','notdue'],['0–30','b0_30'],['31–60','b31_60'],['61–90','b61_90'],['91–120','b91_120'],['120+','b120p']].map(([lbl,k])=>`<div style="display:flex;align-items:center;gap:10px"><div style="width:64px;font-size:11px;color:var(--muted)">${lbl}</div><div style="font-size:12px">${fmtCurHTML(buckets[k],true)}</div></div>`).join('')}
+        ${[['الشهر الحالي','m0'],['1–2 أشهر','m1_2'],['3–5 أشهر','m3_5'],['6–8 أشهر','m6_8'],['9–11 أشهر','m9_11'],['12+ شهر','m12p']].map(([lbl,k])=>`<div style="display:flex;align-items:center;gap:10px"><div style="width:64px;font-size:11px;color:var(--muted)">${lbl}</div><div style="font-size:12px">${fmtCurHTML(buckets[k],true)}</div></div>`).join('')}
       </div>
     </div>` : ''}
     <div style="margin-top:16px;border-top:1px solid var(--border);padding-top:12px">
@@ -1709,18 +1781,19 @@ function renderAR(K){
   const el = document.getElementById('arBody');
   if(!K.arAvailable){ el.innerHTML='<div class="empty-state">Data unavailable — لم يتم لصق كويري الذمم المدينة</div>'; return; }
   const b=K.buckets;
-  const rows=[['غير مستحق','notdue'],['0–30','b0_30'],['31–60','b31_60'],['61–90','b61_90'],['91–120','b91_120'],['120+','b120p']];
+  const rows=[['الشهر الحالي','m0'],['1–2 أشهر','m1_2'],['3–5 أشهر','m3_5'],['6–8 أشهر','m6_8'],['9–11 أشهر','m9_11'],['12+ شهر','m12p']];
   const maxB = Math.max(...rows.map(([,k])=>b[k]),1);
   el.innerHTML = `
     <div style="display:flex;gap:28px;flex-wrap:wrap;margin-bottom:14px">
-      <div><div class="sub" style="font-size:11.5px;color:var(--muted)">إجمالي الذمم (كما في آخر استيراد)</div><div style="font-size:20px;font-weight:700">${fmtCurHTML(K.arTotal,true)}</div></div>
-      <div><div class="sub" style="font-size:11.5px;color:var(--muted)">المتأخر</div><div style="font-size:20px;font-weight:700;color:var(--bad)">${fmtCurHTML(K.overdue,true)}</div></div>
-      <div><div class="sub" style="font-size:11.5px;color:var(--muted)">نسبة التأخر</div><div class="mono" style="font-size:20px;font-weight:700">${K.overduePct==null?'—':(K.overduePct*100).toFixed(0)+'%'}</div></div>
+      <div><div class="sub" style="font-size:11.5px;color:var(--muted)">إجمالي الذمم (رصيد حقيقي من القيود)</div><div style="font-size:20px;font-weight:700">${fmtCurHTML(K.arTotal,true)}</div></div>
+      <div><div class="sub" style="font-size:11.5px;color:var(--muted)">خارج الشهر الحالي</div><div style="font-size:20px;font-weight:700;color:var(--bad)">${fmtCurHTML(K.overdue,true)}</div></div>
+      <div><div class="sub" style="font-size:11.5px;color:var(--muted)">نسبته</div><div class="mono" style="font-size:20px;font-weight:700">${K.overduePct==null?'—':(K.overduePct*100).toFixed(0)+'%'}</div></div>
     </div>
+    <div class="unavail" style="margin-bottom:10px">الرصيد = صافي كل قيود JDT1 لكل عميل بصرف النظر عن حالة التسكير (غير موثوقة هون بالاتجاهين). الأعمار مبنية على شهر إصدار الفاتورة/المرتجع مقابل اليوم، وليست مطابَقة FIFO مع التحصيل.</div>
     <div style="display:flex;flex-direction:column;gap:9px">
       ${rows.map(([lbl,k])=>`<div style="display:flex;align-items:center;gap:10px">
-        <div style="width:48px;font-size:11.5px;color:var(--muted)">${lbl}</div>
-        <div style="flex:1;background:var(--bg);border-radius:5px;height:10px;overflow:hidden"><div style="width:${Math.max(2,b[k]/maxB*100)}%;height:100%;background:${k==='b120p'?'var(--bad)':(k==='b91_120'?'var(--warn)':'var(--navy)')}"></div></div>
+        <div style="width:64px;font-size:11.5px;color:var(--muted)">${lbl}</div>
+        <div style="flex:1;background:var(--bg);border-radius:5px;height:10px;overflow:hidden"><div style="width:${Math.max(2,b[k]/maxB*100)}%;height:100%;background:${k==='m12p'?'var(--bad)':(k==='m9_11'?'var(--warn)':'var(--navy)')}"></div></div>
         <div style="font-size:12px;width:96px;text-align:left">${fmtCurHTML(b[k],true)}</div>
       </div>`).join('')}
     </div>`;
@@ -1728,22 +1801,15 @@ function renderAR(K){
 function renderAP(K){
   const el = document.getElementById('apBody');
   if(!K.ap.apAvailable){ el.innerHTML='<div class="empty-state">Data unavailable — لم يتم لصق كويري الذمم الدائنة (AP)</div>'; return; }
-  const b=K.ap.buckets;
-  const rows=[['غير مستحق','current'],['1–30','b1_30'],['31–60','b31_60'],['61–90','b61_90'],['91–120','b91_120'],['120+','b120p']];
-  const maxB = Math.max(...rows.map(([,k])=>b[k]),1);
+  const top = [...K.ap.apBySup.values()].sort((a,b)=>Math.abs(b.value)-Math.abs(a.value)).slice(0,10);
+  const totalAbs = top.reduce((a,s)=>a+Math.abs(s.value),0)||1;
   el.innerHTML = `
-    <div style="display:flex;gap:28px;flex-wrap:wrap;margin-bottom:14px">
-      <div><div class="sub" style="font-size:11.5px;color:var(--muted)">إجمالي الذمم الدائنة (كما في آخر استيراد)</div><div style="font-size:20px;font-weight:700">${fmtCurHTML(K.ap.apTotal,true)}</div></div>
-      <div><div class="sub" style="font-size:11.5px;color:var(--muted)">المتأخر</div><div style="font-size:20px;font-weight:700;color:var(--bad)">${fmtCurHTML(K.ap.overdue,true)}</div></div>
-      <div><div class="sub" style="font-size:11.5px;color:var(--muted)">نسبة التأخر</div><div class="mono" style="font-size:20px;font-weight:700">${K.ap.overduePct==null?'—':(K.ap.overduePct*100).toFixed(0)+'%'}</div></div>
+    <div style="display:flex;gap:28px;flex-wrap:wrap;margin-bottom:10px">
+      <div><div class="sub" style="font-size:11.5px;color:var(--muted)">إجمالي الذمم الدائنة (صافٍ غير مسكَّر)</div><div style="font-size:20px;font-weight:700">${fmtCurHTML(K.ap.apTotal,true)}</div></div>
     </div>
-    <div style="display:flex;flex-direction:column;gap:9px">
-      ${rows.map(([lbl,k])=>`<div style="display:flex;align-items:center;gap:10px">
-        <div style="width:64px;font-size:11.5px;color:var(--muted)">${lbl}</div>
-        <div style="flex:1;background:var(--bg);border-radius:5px;height:10px;overflow:hidden"><div style="width:${Math.max(2,b[k]/maxB*100)}%;height:100%;background:${k==='b120p'?'var(--bad)':(k==='b91_120'?'var(--warn)':'var(--navy)')}"></div></div>
-        <div style="font-size:12px;width:96px;text-align:left">${fmtCurHTML(b[k],true)}</div>
-      </div>`).join('')}
-    </div>`;
+    <div class="unavail" style="margin-bottom:12px">الرقم = صافي كل حركات JDT1 غير المسكَّرة (Closed='N') لكل مورد. لا يوجد تصنيف أعمار هون بقرار صريح: عيّنة بيانات حقيقية أثبتت أن فواتير ودفعات متقابلة كثيرة تُصفّي بعضها لصفر تقريباً حتى لو ظلّت غير مطابَقة رسمياً بالنظام — فتصنيف أعمار سطراً بسطر بيكون مضلِّل (فاتورة 2018 تبان "متأخرة جداً" رغم إن صافي رصيد المورد صفر فعلياً).</div>
+    <div class="sub" style="font-size:11.5px;color:var(--muted);margin-bottom:6px">أعلى الموردين برصيد صافٍ (بالقيمة المطلقة)</div>
+    <div class="rank-list">${rankListHTML(top.map(s=>({code:s.code,name:s.name,value:Math.abs(s.value),pctOfTotal:safeDiv(Math.abs(s.value),totalAbs),change:null})))}</div>`;
 }
 function renderSalesBreakdown(K){
   const el = document.getElementById('salesBreakdownBody');
@@ -1807,29 +1873,21 @@ function buildManagementAttention(K){
   if(K.purchasesAvailable) addDelta('المشتريات','المشتريات', K.purCur, K.purCmp, 'كويري فواتير المشتريات', 'purchasesCard');
 
   if(K.arAvailable){
-    const byCust=new Map(); const today=new Date(); today.setHours(0,0,0,0);
-    for(const a of RAW.ar){ if(!a.custCode) continue;
-      const days = a.dueDate ? Math.floor((today-a.dueDate)/86400000) : -1;
-      if(days>90){ const c=byCust.get(a.custCode)||{name:a.custName||a.custCode, overdue:0, maxDays:0}; c.overdue+=a.balance; c.maxDays=Math.max(c.maxDays,days); byCust.set(a.custCode,c); } }
-    const majors=[...byCust.values()].filter(c=>c.overdue>0).sort((a,b)=>b.overdue-a.overdue).slice(0,3);
-    for(const m of majors) alerts.push({issue:'رصيد متأخر لدى '+m.name+' منذ أكثر من 90 يوماً', category:'الذمم المدينة',
-      severity: m.maxDays>120?'عالي':'متوسط', sevDot:'warn', impact:m.overdue, age:m.maxDays+' يوم',
-      action:'تابع التحصيل من العميل أو صعّد للإدارة', source:'كويري الذمم المدينة', drilldown:'arCard'});
+    const majors=[];
+    for(const a of RAW.ar){
+      const g = a.ageBuckets||{};
+      const old = (g.m6||0)+(g.m7||0)+(g.m8||0)+(g.m9||0)+(g.m10||0)+(g.m11||0)+(g.m12plus||0);
+      if(old>0) majors.push({name:a.custName||a.custCode, overdue:old, veryOld:g.m12plus||0});
+    }
+    majors.sort((a,b)=>b.overdue-a.overdue);
+    for(const m of majors.slice(0,3)) alerts.push({issue:'رصيد بعمر 6 أشهر فأكثر لدى '+m.name, category:'الذمم المدينة',
+      severity: m.veryOld>0?'عالي':'متوسط', sevDot:'warn', impact:m.overdue, age:null,
+      action:'تابع التحصيل من العميل أو صعّد للإدارة', source:'كويري الذمم المدينة (قيود JDT1)', drilldown:'arCard'});
   }
   if(K.creditAvailable){
     for(const c of K.overLimitCustomers.slice(0,3)) alerts.push({issue:'تجاوز العميل '+c.name+' السقف الائتماني', category:'الائتمان',
       severity: (c.excess/c.creditLimit)>0.5?'عالي':'متوسط', sevDot:'bad', impact:c.excess, age:null,
       action:'راجع منح ائتمان إضافي لهذا العميل قبل أي فاتورة جديدة', source:'كويري الذمم المدينة (عمود السقف الائتماني)', drilldown:'arCard'});
-  }
-  if(K.ap.apAvailable){
-    const byS=new Map(); const today=new Date(); today.setHours(0,0,0,0);
-    for(const a of RAW.ap){ if(!a.supCode) continue;
-      const days=a.dueDate?Math.floor((today-a.dueDate)/86400000):-1;
-      if(days>90){ const s=byS.get(a.supCode)||{name:a.supName||a.supCode, overdue:0, maxDays:0}; s.overdue+=a.balance; s.maxDays=Math.max(s.maxDays,days); byS.set(a.supCode,s); } }
-    const majors=[...byS.values()].filter(s=>s.overdue>0).sort((a,b)=>b.overdue-a.overdue).slice(0,2);
-    for(const m of majors) alerts.push({issue:'رصيد متأخر لمورد '+m.name+' منذ أكثر من 90 يوماً', category:'الذمم الدائنة',
-      severity: m.maxDays>120?'عالي':'متوسط', sevDot:'warn', impact:m.overdue, age:m.maxDays+' يوم',
-      action:'راجع جدولة الدفع لهذا المورد', source:'كويري الذمم الدائنة', drilldown:'apCard'});
   }
   return alerts;
 }
