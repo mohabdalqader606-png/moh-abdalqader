@@ -220,10 +220,7 @@
         <button class="btn-primary btn-sm" onclick="printNTClass('zero')">🖨️ مبيعات جهات صفرية</button>
         <button class="btn-primary btn-sm" onclick="printNTClass('exempt')">🖨️ مبيعات جهات معفاة</button>
         <button class="btn-teal btn-sm" onclick="printNTSummary()">🖨️ ملخص الجهات الثلاث</button>
-        <button class="btn-ghost btn-sm" onclick="xlsxFromPrintFn(()=>printNTClass('export'), expName('مبيعات_جهات_تصدير'))">📥 إكسل تصدير</button>
-        <button class="btn-ghost btn-sm" onclick="xlsxFromPrintFn(()=>printNTClass('zero'), expName('مبيعات_جهات_صفرية'))">📥 إكسل صفرية</button>
-        <button class="btn-ghost btn-sm" onclick="xlsxFromPrintFn(()=>printNTClass('exempt'), expName('مبيعات_جهات_معفاة'))">📥 إكسل معفاة</button>
-        <button class="btn-ghost btn-sm" onclick="xlsxFromPrintFn(()=>printNTSummary(), expName('ملخص_الجهات_الثلاث'))">📥 إكسل الملخص</button>
+        <button class="btn-teal btn-sm" onclick="xlsxNTModel()" title="ملف إكسل واحد: ورقة لكل جهة (تصدير/صفرية/معفاة) + ورقة تجميعية، بعناوين المركز والفترة">📥 إكسل الجهات — ورقة لكل جهة + تجميعي</button>
         <span class="hint">كل فئة تُطبع لوحدها: رمز الفاتورة (IN/CN) · العميل · الجهة · التاريخ · المبلغ + المجموع — الفواتير المستثناة لا تظهر إطلاقاً.</span>
       </div>
 
@@ -276,7 +273,7 @@
       <div class="toolrow">
         <input type="text" id="rowSearch" placeholder="بحث عام…" style="width:220px;" oninput="renderRowDetail()">
         <button class="btn-ghost btn-sm" onclick="printRows()">🖨️ طباعة النتيجة المفلترة</button>
-        <button class="btn-ghost btn-sm" onclick="xlsxFromPrintFn(()=>printRows(), expName('تحليل_المبيعات_تفصيلي'))">📥 إكسل النتيجة المفلترة</button>
+        <button class="btn-teal btn-sm" onclick="xlsxSalesModel()" title="النموذج الرسمي: رمز السند/العميل/الصنف/التاريخ + أعمدة كل شريحة (المبلغ والضريبة) مع صف المجموع">📥 إكسل نموذج تحليل المبيعات</button>
         <button class="btn-ghost btn-sm" onclick="exportRowsCSV()">⬇️ تنزيل الكل (Excel/CSV)</button>
         <button class="btn-ghost btn-sm" onclick="DFILT={}; DSORT={id:null,dir:-1}; renderRowDetail()">🧹 مسح الفلاتر</button>
         <span class="hint">اضغط رأس أي عمود للترتيب (تصاعدي/تنازلي) · سطر الفلاتر تحت الرؤوس: نص عادي، وللأرقام اكتب مثل <b dir="ltr">&gt;100</b> أو <b dir="ltr">=0</b> ثم Enter · المجاميع بالأسفل للأسطر المفلترة.</span>
@@ -347,6 +344,7 @@
         </select>
         <button class="btn-ghost btn-sm" onclick="trustBulk()">تصنيف كل الحركات المطابقة</button>
         <button class="btn-teal btn-sm" onclick="trustSeedRef()" title="يحفظ كل تصنيفات هذه الفترة كمرجع دائم يُطبق تلقائياً على الفترات القادمة">📤 اعتماد تصنيفات الفترة كمرجع دائم</button>
+        <button class="btn-teal btn-sm" onclick="xlsxTrustModel()" title="ملف إكسل واحد: الكشف الكامل (مع رصيد مدور والتصنيف) + ورقة لكل تصنيف">📥 إكسل الأمانات — كامل + حسب التصنيف</button>
         <label style="font-size:12px;"><input type="checkbox" id="trustOnlyUn" onchange="renderTrustRows()"> غير المصنفة فقط</label>
         <span class="status-msg" id="trustMsg"></span>
       </div>
@@ -409,7 +407,7 @@
 </main>
 
 <div id="printSheet"></div>
-<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 68</b></footer>
+<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 69</b></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -846,6 +844,134 @@ function xlsxFromEl(cid, name){ // تصدير جدول معروض على الش�
   XLSX.writeFile(wb, name+'.xlsx');
 }
 function expName(base){ return base+'_'+$('fYear').value+'_فترة'+$('fPeriod').value; }
+
+/* ================= نماذج الإكسل الرسمية (بنمط كشوفات المركز) ================= */
+const MDL_CO='مركز الكيلاني للأغذية';
+function mdlWs(subtitle, headRows, dataRows, groupMerges, intCols){
+  // headRows: صف أو صفان للرؤوس؛ groupMerges: دمجات الرؤوس بإحداثيات نسبية لصف الرأس الأول
+  const nCols=Math.max(...headRows.map(r=>r.length), ...(dataRows.length?[dataRows[0].length]:[1]));
+  const aoa=[[MDL_CO],['اقرار ضريبة المبيعات - '+subtitle], ...headRows, ...dataRows];
+  const ws=XLSX.utils.aoa_to_sheet(aoa);
+  const merges=[{s:{r:0,c:0},e:{r:0,c:nCols-1}},{s:{r:1,c:0},e:{r:1,c:nCols-1}}];
+  (groupMerges||[]).forEach(m=>merges.push({s:{r:m.s.r+2,c:m.s.c},e:{r:m.e.r+2,c:m.e.c}}));
+  ws['!merges']=merges;
+  const skip=new Set(intCols||[]);
+  const range=XLSX.utils.decode_range(ws['!ref']);
+  for(let R=2+headRows.length-1;R<=range.e.r;R++) for(let C=0;C<=range.e.c;C++){
+    const cell=ws[XLSX.utils.encode_cell({r:R,c:C})];
+    if(cell&&cell.t==='n'&&!skip.has(C)) cell.z='#,##0.000';
+  }
+  ws['!cols']=Array.from({length:nCols},(_,c)=>({wch:c<2?14:12}));
+  return ws;
+}
+function mdlSave(sheets, fname){ // sheets: [[اسم الورقة, ws], ...]
+  if(typeof XLSX==='undefined'){ alert('مكتبة الإكسل لم تُحمَّل — تحقق من الإنترنت وحدّث الصفحة'); return; }
+  const wb=XLSX.utils.book_new(); wb.Workbook={Views:[{RTL:true}]};
+  const seen={};
+  sheets.forEach(([n,ws])=>{ let nm=String(n).replace(/[\\\/\?\*\[\]:]/g,' ').slice(0,31)||'ورقة';
+    while(seen[nm]) nm=(nm+' ـ').slice(0,31); seen[nm]=1;
+    XLSX.utils.book_append_sheet(wb, ws, nm); });
+  XLSX.writeFile(wb, fname+'.xlsx');
+}
+/* ---- نموذج تحليل المبيعات ---- */
+function xlsxSalesModel(){
+  if(!DROWS.length){ alert('التفصيل السطري متاح بعد رفع ملف تحليل المبيعات في هذه الجلسة.'); return; }
+  const pr=periodRangeText();
+  const fixed=['رمز السند','اسم العميل','الصنف','التاريخ'];
+  const h1=[...fixed], h2=fixed.map(()=>''), gm=[];
+  fixed.forEach((_,c)=>gm.push({s:{r:0,c},e:{r:1,c}}));
+  let c=fixed.length;
+  for(const [k,l,ht] of DCOLS){
+    if(ht){ h1.push(l,''); h2.push('المبلغ','الضريبة'); gm.push({s:{r:0,c},e:{r:0,c:c+1}}); c+=2; }
+    else { h1.push(l); h2.push(''); gm.push({s:{r:0,c},e:{r:1,c}}); c+=1; }
+  }
+  const rows=effRows();
+  const data=rows.map(x=>{
+    const out=[rowCode(x), x.cust||'', x.item||'', x.date||''];
+    for(const [k,_,ht] of DCOLS){ const v=x.v[k]||[0,0]; out.push(r3(v[0]||0)); if(ht) out.push(r3(v[1]||0)); }
+    return out;
+  });
+  const tot=['المجموع','','','']; let ci=4;
+  for(const [k,_,ht] of DCOLS){ tot.push(r3(rows.reduce((s,x)=>s+((x.v[k]||[0,0])[0]||0),0)));
+    if(ht) tot.push(r3(rows.reduce((s,x)=>s+((x.v[k]||[0,0])[1]||0),0))); }
+  data.push(tot);
+  mdlSave([[ 'تحليل المبيعات', mdlWs(`تحليل المبيعات من ${pr.from} الى ${pr.to}`, [h1,h2], data, gm) ]],
+    expName('تحليل_المبيعات'));
+}
+/* ---- نموذج الجهات غير الخاضعة: ورقة لكل جهة + تجميعي ---- */
+function xlsxNTModel(){
+  if(!ST.nt){ alert('ارفع كشف الجهات غير الخاضعة أولاً.'); return; }
+  const pr=periodRangeText();
+  const isRet=d=>/return/i.test(d.type);
+  const srt=(a,b)=>{ if(isRet(a)!==isRet(b)) return isRet(a)?1:-1; return String(a.no).localeCompare(String(b.no)); };
+  const hdr=['رمز الفاتورة','العميل','الجهة','التاريخ','المبلغ'];
+  const row=d=>[(isRet(d)?'CN':'IN')+d.no, d.name||'', CLS_AR[effClass(d.code,d.prop)]||'', d2iso(d.date), r3(d.total)];
+  const sheets=[]; const allData=[]; let grand=0;
+  for(const [cls,nm] of [['export','تصدير'],['zero','صفرية'],['exempt','معفاة']]){
+    const list=[...ntApproved(cls)].sort(srt);
+    const t=r3(list.reduce((s,d)=>s+d.total,0)); grand=r3(grand+t);
+    const data=list.map(row); data.push(['المجموع','','','',t]);
+    sheets.push([nm, mdlWs(`مبيعات جهات ${nm} من ${pr.from} الى ${pr.to}`, [hdr], data, [])]);
+    allData.push(...list.map(row), ['مجموع جهات '+nm,'','','',t]);
+  }
+  allData.push(['المجموع الكلي','','','',grand]);
+  sheets.push(['تجميعي', mdlWs(`مبيعات الجهات غير الخاضعة من ${pr.from} الى ${pr.to}`, [hdr], allData, [])]);
+  mdlSave(sheets, expName('الجهات_غير_الخاضعة'));
+}
+/* ---- نموذج المشتريات المحلية ---- */
+function xlsxPurchModel(){
+  if(!PROWS.length){ alert('التفصيل السطري متاح بعد رفع ملف المشتريات في هذه الجلسة.'); return; }
+  const pr=periodRangeText();
+  const RL=purchRateList();
+  const groups=[['x0','X0'],...RL.map(rt=>['r'+rt, rt+'%']),['sum','المجموع']];
+  const gv=(x,g)=>g==='x0'?[0,0]:(x.r[g.slice(1)]||[0,0]);
+  const fixed=['رمز المورد','المورد','رمز الحركة','رمز الصنف','الصنف'];
+  const h1=[...fixed], h2=fixed.map(()=>''), gm=[];
+  fixed.forEach((_,c)=>gm.push({s:{r:0,c},e:{r:1,c}}));
+  let c=fixed.length;
+  for(const [g,l] of groups){ h1.push(l,'',''); h2.push('مبلغ','ضريبة','اجمالي'); gm.push({s:{r:0,c},e:{r:0,c:c+2}}); c+=3; }
+  const data=PROWS.map(x=>{
+    const out=[x.vcode||'', x.vname||'', x.trans||'', x.icode||'', x.iname||''];
+    let sb=0, st=0;
+    for(const [g] of groups){ if(g==='sum'){ out.push(r3(sb),r3(st),r3(sb+st)); }
+      else { const v=gv(x,g); sb+=v[0]; st+=v[1]; out.push(r3(v[0]),r3(v[1]),r3(v[0]+v[1])); } }
+    return out;
+  });
+  const tot=['المجموع','','','','']; 
+  { let gb=0, gt=0;
+    for(const [g] of groups){ if(g==='sum'){ tot.push(r3(gb),r3(gt),r3(gb+gt)); }
+      else { let b=0,t=0; for(const x of PROWS){ const v=gv(x,g); b+=v[0]; t+=v[1]; }
+        gb+=b; gt+=t; tot.push(r3(b),r3(t),r3(b+t)); } } }
+  data.push(tot);
+  mdlSave([[ 'مشتريات محلية', mdlWs(`مشتريات محلية من ${pr.from} الى ${pr.to}`, [h1,h2], data, gm) ]],
+    expName('المشتريات_المحلية'));
+}
+/* ---- نموذج أمانات ضريبة المبيعات: كشف كامل + حسب التصنيف ---- */
+function xlsxTrustModel(){
+  if(!ST.trust||!ST.trust.rows.length){ alert('ارفع كشف الأمانات أولاً.'); return; }
+  const pr=periodRangeText();
+  const typAr=o=>o==='JE'?'قيد':(o||'');
+  const mkData=(rows, withCls, withOB)=>{
+    const data=[]; let n=1, td=0, tc=0;
+    if(withOB){ const ob=ST.trust.ob||0;
+      data.push([n++,'', 'رصيد مدور','','', ...(withCls?['']:[]), r3(ob<0?-ob:0), r3(ob>=0?ob:0)]); }
+    for(const r of rows){ td+=r.debit||0; tc+=r.credit||0;
+      data.push([n++, r.date||'', r.details||'', r.onum||'', typAr(r.origin), ...(withCls?[TCLS_AR[r.cls]||'غير مصنف']:[]), r3(r.debit||0), r3(r.credit||0)]); }
+    data.push(['','','المجموع','','', ...(withCls?['']:[]), r3(td), r3(tc)]);
+    return data;
+  };
+  const hdrF=['#','التاريخ','البيان','رمز الحركة','نوع الحركة','التصنيف','مدين','دائن'];
+  const hdrC=['#','التاريخ','البيان','رمز الحركة','نوع الحركة','مدين','دائن'];
+  const sheets=[[ 'الكشف الكامل', mdlWs(`امانات ضريبة المبيعات من ${pr.from} الى ${pr.to}`, [hdrF], mkData(ST.trust.rows,true,true), [], [0]) ]];
+  for(const cls of ['sal','loc','imp','exp','pay','oth','']){
+    const rows=ST.trust.rows.filter(r=>(r.cls||'')===cls);
+    if(!rows.length) continue;
+    const nm=TCLS_AR[cls]?String(TCLS_AR[cls]).replace('⚠ ',''):'غير مصنف';
+    sheets.push([nm, mdlWs(`امانات ضريبة المبيعات - ${nm} من ${pr.from} الى ${pr.to}`, [hdrC], mkData(rows,false,false), [], [0])]);
+  }
+  mdlSave(sheets, expName('امانات_ضريبة_المبيعات'));
+}
+
 
 /* ================= 1) الجهات غير الخاضعة ================= */
 function guardEdit(inp){ if(!canEdit){
@@ -1361,8 +1487,7 @@ function renderPurchViews(){
       <span style="flex:1;"></span>
       <button class="btn-teal btn-sm" onclick="printPurchDetail()">🖨️ كشف المشتريات التفصيلي (نمط الإكسل)</button>
       <button class="btn-teal btn-sm" onclick="printPurchSummary()">🖨️ ملخص حسب النسبة</button>
-      <button class="btn-ghost btn-sm" onclick="xlsxFromPrintFn(()=>printPurchDetail(), expName('المشتريات_التفصيلي'))">📥 إكسل التفصيلي</button>
-      <button class="btn-ghost btn-sm" onclick="xlsxFromPrintFn(()=>printPurchSummary(), expName('المشتريات_حسب_النسبة'))">📥 إكسل الملخص</button>
+      <button class="btn-teal btn-sm" onclick="xlsxPurchModel()" title="النموذج الرسمي: المورد والحركة والصنف + مجموعات النسب (مبلغ/ضريبة/اجمالي) ومجموعها">📥 إكسل نموذج المشتريات</button>
       <button class="btn-ghost btn-sm" onclick="exportPurchCSV()">⬇️ CSV التفصيل</button>
     </div>
     <div id="purchViewTbl" style="margin-top:8px; overflow-x:auto;"></div>`;
@@ -2090,7 +2215,8 @@ async function onFileTrust(inp){
   const aoa=await readFileXlsxAoA(f);
   const hdr=(aoa[0]||[]).map(h=>String(h).trim());
   const iDate=findCol(hdr,'Posting Date'), iOrigin=findCol(hdr,'Origin'), iDet=findCol(hdr,'Details'),
-        iCum=findCol(hdr,/Cumulative Balance/), iDeb=findCol(hdr,/^Debit/), iCred=findCol(hdr,/^Credit/);
+        iCum=findCol(hdr,/Cumulative Balance/), iDeb=findCol(hdr,/^Debit/), iCred=findCol(hdr,/^Credit/),
+        iOnum=findCol(hdr,/Origin No/i);
   if(iDet<0||iDeb<0){ alert('لم أتعرف على أعمدة كشف الأمانات (Account Balance).'); return; }
   let ob=0; const rowsOut=[];
   aoa.slice(1).forEach((r,ix)=>{
@@ -2102,7 +2228,7 @@ async function onFileTrust(inp){
     // الأولوية: المرجع المحفوظ من تصنيفاتك السابقة ← ثم القواعد التلقائية
     const ref=TC_DB[trustSig(det)];
     const auto=ref||trustAutoClass(det);
-    rowsOut.push({i:ix, date:iDate>=0?String(r[iDate]||'').trim():'', origin, details:det, debit:r3(deb), credit:r3(cred), cls:auto, auto:!ref&&!!auto, ref:!!ref});
+    rowsOut.push({i:ix, date:iDate>=0?String(r[iDate]||'').trim():'', origin, onum:iOnum>=0?String(r[iOnum]||'').trim():'', details:det, debit:r3(deb), credit:r3(cred), cls:auto, auto:!ref&&!!auto, ref:!!ref});
   });
   ST.trust={ob, rows:rowsOut, fname:f.name};
   recomputeAll();
