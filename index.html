@@ -220,6 +220,10 @@
         <button class="btn-primary btn-sm" onclick="printNTClass('zero')">🖨️ مبيعات جهات صفرية</button>
         <button class="btn-primary btn-sm" onclick="printNTClass('exempt')">🖨️ مبيعات جهات معفاة</button>
         <button class="btn-teal btn-sm" onclick="printNTSummary()">🖨️ ملخص الجهات الثلاث</button>
+        <button class="btn-ghost btn-sm" onclick="xlsxFromPrintFn(()=>printNTClass('export'), expName('مبيعات_جهات_تصدير'))">📥 إكسل تصدير</button>
+        <button class="btn-ghost btn-sm" onclick="xlsxFromPrintFn(()=>printNTClass('zero'), expName('مبيعات_جهات_صفرية'))">📥 إكسل صفرية</button>
+        <button class="btn-ghost btn-sm" onclick="xlsxFromPrintFn(()=>printNTClass('exempt'), expName('مبيعات_جهات_معفاة'))">📥 إكسل معفاة</button>
+        <button class="btn-ghost btn-sm" onclick="xlsxFromPrintFn(()=>printNTSummary(), expName('ملخص_الجهات_الثلاث'))">📥 إكسل الملخص</button>
         <span class="hint">كل فئة تُطبع لوحدها: رمز الفاتورة (IN/CN) · العميل · الجهة · التاريخ · المبلغ + المجموع — الفواتير المستثناة لا تظهر إطلاقاً.</span>
       </div>
 
@@ -272,6 +276,7 @@
       <div class="toolrow">
         <input type="text" id="rowSearch" placeholder="بحث عام…" style="width:220px;" oninput="renderRowDetail()">
         <button class="btn-ghost btn-sm" onclick="printRows()">🖨️ طباعة النتيجة المفلترة</button>
+        <button class="btn-ghost btn-sm" onclick="xlsxFromPrintFn(()=>printRows(), expName('تحليل_المبيعات_تفصيلي'))">📥 إكسل النتيجة المفلترة</button>
         <button class="btn-ghost btn-sm" onclick="exportRowsCSV()">⬇️ تنزيل الكل (Excel/CSV)</button>
         <button class="btn-ghost btn-sm" onclick="DFILT={}; DSORT={id:null,dir:-1}; renderRowDetail()">🧹 مسح الفلاتر</button>
         <span class="hint">اضغط رأس أي عمود للترتيب (تصاعدي/تنازلي) · سطر الفلاتر تحت الرؤوس: نص عادي، وللأرقام اكتب مثل <b dir="ltr">&gt;100</b> أو <b dir="ltr">=0</b> ثم Enter · المجاميع بالأسفل للأسطر المفلترة.</span>
@@ -385,6 +390,8 @@
         <button class="btn-teal" onclick="saveDecl('final')">✅ اعتماد نهائي</button>
         <button class="btn-ghost" onclick="printDecl()">🖨️ نموذج 1: كشف داخلي للمراجعة</button>
         <button class="btn-ghost" style="border-color:var(--navy); font-weight:700;" onclick="printISTD()">🖨️ نموذج 2: نموذج دائرة ضريبة الدخل والمبيعات</button>
+        <button class="btn-ghost btn-sm" onclick="xlsxFromPrintFn(()=>printDecl(), expName('الكشف_الداخلي'))">📥 إكسل نموذج 1</button>
+        <button class="btn-ghost btn-sm" onclick="xlsxFromPrintFn(()=>printISTD(), expName('نموذج_الدائرة'))">📥 إكسل نموذج 2</button>
         <span class="status-msg" id="saveMsg2"></span>
       </div>
     </div>
@@ -402,7 +409,7 @@
 </main>
 
 <div id="printSheet"></div>
-<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 67</b></footer>
+<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 68</b></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -694,7 +701,7 @@ async function refreshCopies(pickDefault){
 function renderCopiesTable(){
   const el=$('copiesWrap'); if(!el) return;
   if(!MULTI || !COPIES.length){ el.innerHTML=''; return; }
-  el.innerHTML=`<div class="grp-title" style="margin-top:16px;"><span class="num">☰</span> نسخ هذه الفترة (${COPIES.length}) — للمقارنة والاعتماد</div>
+  el.innerHTML=`<div class="grp-title" style="margin-top:16px;"><span class="num">☰</span> نسخ هذه الفترة (${COPIES.length}) — للمقارنة والاعتماد <button class="btn-ghost btn-sm" onclick="xlsxFromEl('copiesWrap', expName('نسخ_الفترة'))" style="margin-inline-start:8px;">📥 إكسل</button></div>
   <table class="t" style="max-width:980px;"><thead><tr><th>المُعِدّ</th><th>الحالة</th><th class="num">ضريبة المخرجات</th><th class="num">ضريبة المدخلات</th><th class="num">الصافي</th><th>آخر تعديل</th><th></th></tr></thead><tbody>`+
   COPIES.map(c=>`<tr ${c.status==='final'?'style="background:var(--teal-bg);"':''}>
     <td>${esc(profilesMap[c.owner_id]||'مستخدم')}${c.owner_id===curUser.id?' <b>(أنا)</b>':''}</td>
@@ -767,13 +774,15 @@ function gtRender(tid, defs, rows, opts={}){
   const st=GT[tid];
   st.refresh=()=>gtRender(tid,defs,rows,opts);
   st.print=()=>gtPrint(tid,defs,rows,opts);
+  st.xlsx=()=>xlsxFromPrintFn(()=>gtPrint(tid,defs,rows,opts), expName(opts.title||'كشف'));
   const list=gtApply(tid,defs,rows);
   const max=opts.max||300;
   const arrow=id=>st.sort.id===id?(st.sort.dir===1?' ▲':' ▼'):'';
   const sums=gtSums(defs,list);
   el.innerHTML=
    `<div class="toolrow" style="margin:0 0 6px;">
-      <button class="btn-ghost btn-sm" onclick="GT['${tid}'].print()">🖨️ طباعة</button>
+      <button class="btn-ghost btn-sm" onclick="GT['${tid}'].print()" title="للطباعة أو الحفظ كملف PDF (اختر «حفظ كـ PDF» من نافذة الطباعة)">🖨️ طباعة / PDF</button>
+      <button class="btn-ghost btn-sm" onclick="GT['${tid}'].xlsx()">📥 إكسل</button>
       <button class="btn-ghost btn-sm" onclick="gtClear('${tid}')">🧹 مسح الفلاتر</button>
       <span class="hint">${list.length.toLocaleString()} سطر${rows.length!==list.length?` (من ${rows.length.toLocaleString()})`:''} · اضغط رأس العمود للترتيب · فلتر الأرقام: <b dir="ltr">&gt;100</b> <b dir="ltr">=0</b> ثم Enter</span>
     </div>
@@ -804,6 +813,39 @@ function gtPrint(tid,defs,rows,opts={}){
     <div style="margin-top:10px; font-size:9.5px; color:#555;">طُبع بتاريخ ${new Date().toLocaleString('en-GB')}</div>`;
   window.print();
 }
+
+/* ================= تصدير Excel — يعيد استخدام قوالب الطباعة نفسها ================= */
+function xlsxSheetFix(ws){ // تحويل النصوص الرقمية (مع فواصل الآلاف) إلى أرقام فعلية
+  if(!ws['!ref']) return;
+  const range=XLSX.utils.decode_range(ws['!ref']);
+  for(let R=range.s.r;R<=range.e.r;R++) for(let C=range.s.c;C<=range.e.c;C++){
+    const a=XLSX.utils.encode_cell({r:R,c:C}); const cell=ws[a];
+    if(cell&&cell.t==='s'){ const s=String(cell.v).trim();
+      if(/^-?\d{1,3}(,\d{3})*(\.\d+)?$/.test(s)&&s!==''){ cell.t='n'; cell.v=+s.replace(/,/g,''); delete cell.w; } } }
+}
+function xlsxFromPrintFn(fn, name){
+  if(typeof XLSX==='undefined'){ alert('مكتبة الإكسل لم تُحمَّل — تحقق من الإنترنت وحدّث الصفحة'); return; }
+  const orig=window.print; window.print=function(){}; // نبني كشف الطباعة دون فتح نافذة الطابعة
+  try{
+    fn();
+    const tables=$('printSheet').querySelectorAll('table');
+    if(!tables.length){ alert('لا يوجد جدول قابل للتصدير هنا'); return; }
+    const wb=XLSX.utils.book_new(); wb.Workbook={Views:[{RTL:true}]};
+    tables.forEach((t,i)=>{ const ws=XLSX.utils.table_to_sheet(t,{raw:true}); xlsxSheetFix(ws);
+      XLSX.utils.book_append_sheet(wb, ws, tables.length>1?('جدول '+(i+1)):'الكشف'); });
+    XLSX.writeFile(wb, name+'.xlsx');
+  }catch(e){ alert('تعذر التصدير: '+e.message); }
+  finally{ window.print=orig; $('printSheet').innerHTML=''; }
+}
+function xlsxFromEl(cid, name){ // تصدير جدول معروض على الشاشة كما هو
+  if(typeof XLSX==='undefined'){ alert('مكتبة الإكسل لم تُحمَّل — تحقق من الإنترنت وحدّث الصفحة'); return; }
+  const t=$(cid)&&$(cid).querySelector('table'); if(!t){ alert('لا يوجد جدول للتصدير'); return; }
+  const wb=XLSX.utils.book_new(); wb.Workbook={Views:[{RTL:true}]};
+  const ws=XLSX.utils.table_to_sheet(t,{raw:true}); xlsxSheetFix(ws);
+  XLSX.utils.book_append_sheet(wb, ws, 'الكشف');
+  XLSX.writeFile(wb, name+'.xlsx');
+}
+function expName(base){ return base+'_'+$('fYear').value+'_فترة'+$('fPeriod').value; }
 
 /* ================= 1) الجهات غير الخاضعة ================= */
 function guardEdit(inp){ if(!canEdit){
@@ -1319,6 +1361,8 @@ function renderPurchViews(){
       <span style="flex:1;"></span>
       <button class="btn-teal btn-sm" onclick="printPurchDetail()">🖨️ كشف المشتريات التفصيلي (نمط الإكسل)</button>
       <button class="btn-teal btn-sm" onclick="printPurchSummary()">🖨️ ملخص حسب النسبة</button>
+      <button class="btn-ghost btn-sm" onclick="xlsxFromPrintFn(()=>printPurchDetail(), expName('المشتريات_التفصيلي'))">📥 إكسل التفصيلي</button>
+      <button class="btn-ghost btn-sm" onclick="xlsxFromPrintFn(()=>printPurchSummary(), expName('المشتريات_حسب_النسبة'))">📥 إكسل الملخص</button>
       <button class="btn-ghost btn-sm" onclick="exportPurchCSV()">⬇️ CSV التفصيل</button>
     </div>
     <div id="purchViewTbl" style="margin-top:8px; overflow-x:auto;"></div>`;
@@ -2307,7 +2351,8 @@ function renderAll(C){
        <tr><td>قيمة الاستيراد للأصناف المعفاة</td><td class="num">${fmt(C.impExm)}</td><td class="num">0.000</td></tr>
       </tbody><tfoot><tr><td>المجموع</td><td class="num">${fmt(sumB)}</td><td class="num">${fmt(C.importsTax)}</td></tr></tfoot></table>
       <div class="hint" style="margin-top:6px;">أسطر النسبة 0% تُصنّف تلقائياً (لحوم/أسماك = صفرية · طحين/زيت/فاصولياء... = معفاة) — عدّل التصنيف من عمود «تصنيف 0%» بالجدول، والمستبعد (قيد نصي مثل مواد دعائية) عليه ☑ استبعاد.</div>
-      <div class="toolrow"><button class="btn-teal btn-sm" onclick="printImportsReport()">🖨️ كشف المستوردات الرسمي (مرتب حسب البيان)</button></div>
+      <div class="toolrow"><button class="btn-teal btn-sm" onclick="printImportsReport()">🖨️ كشف المستوردات الرسمي (مرتب حسب البيان)</button>
+      <button class="btn-ghost btn-sm" onclick="xlsxFromPrintFn(()=>printImportsReport(), expName('كشف_المستوردات_الرسمي'))">📥 إكسل الكشف الرسمي</button></div>
       <div id="importsChecks" style="margin-top:10px;"></div>
       <div class="scrollbox" style="max-height:380px; margin-top:10px;"><div id="importsRows"></div></div>`;
     renderImportsChecks();
@@ -3281,7 +3326,8 @@ function caResultHTML(r,ri,forPrint){
   }
   if(!forPrint) h+=`<div style="display:flex;gap:6px;margin-top:12px;justify-content:center;">
     <button class="btn-primary btn-sm" onclick="caSaveEntry(${ri})">💾 حفظ في السجل</button>
-    <button class="btn-ghost btn-sm" onclick="caPrint(${ri})">🖨 طباعة</button></div>`;
+    <button class="btn-ghost btn-sm" onclick="caPrint(${ri})" title="للطباعة أو الحفظ كملف PDF">🖨 طباعة / PDF</button>
+    <button class="btn-ghost btn-sm" onclick="xlsxFromPrintFn(()=>caPrint(${ri}), 'تدقيق_بيان_'+(((CA.results[${ri}].data||{}).declaration||{}).declaration_number||${ri}+1))">📥 إكسل</button></div>`;
   h+=`</div>`;
   return h;
 }
