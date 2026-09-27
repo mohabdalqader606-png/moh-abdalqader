@@ -17593,6 +17593,35 @@ renderDashboard();
     document.getElementById("csFileOverlay").classList.add("active");
   }
   document.getElementById("cancelCsFileModal").addEventListener("click", ()=> document.getElementById("csFileOverlay").classList.remove("active"));
+  const CS_AUTO_RANGE_LIMIT = 3000;
+  function csAutoGenerateRange(file){
+    const first = file.firstCheckNo, last = file.lastCheckNo;
+    if(!first || !last || !/^\d+$/.test(String(first).trim()) || !/^\d+$/.test(String(last).trim())) return;
+    const start = Number(first), end = Number(last);
+    if(!(start <= end)) return;
+    const count = end - start + 1;
+    if(count > CS_AUTO_RANGE_LIMIT){
+      alert(`نطاق الشيكات (${count} شيكاً) أكبر من الحد الآمن للتوليد التلقائي (${CS_AUTO_RANGE_LIMIT}). احفظ الملف بنطاق أصغر، أو أضف الشيكات يدوياً عبر «+ تسجيل فحص شيك».`);
+      return;
+    }
+    if(!file.entries) file.entries = [];
+    const existing = new Set(file.entries.map(e=>String(e.checkNo)));
+    const now = new Date().toISOString();
+    for(let n=start; n<=end; n++){
+      const checkNo = String(n);
+      if(existing.has(checkNo)) continue;
+      file.entries.push({
+        id: uid(), checkNo, checkDate:"", payee:"", amount:"",
+        responsiblePerson:"", status:"not_checked", note:"", refDoc:"", auditorName:"", testDate:"",
+        createdAt: now, updatedAt: now,
+      });
+    }
+    file.entries.sort((a,b)=>{
+      const na = Number(a.checkNo), nb = Number(b.checkNo);
+      if(!isNaN(na) && !isNaN(nb)) return na-nb;
+      return String(a.checkNo).localeCompare(String(b.checkNo));
+    });
+  }
   document.getElementById("saveCsFileBtn").addEventListener("click", ()=>{
     const fileNo = document.getElementById("csFFileNo").value.trim();
     if(!fileNo){ alert("الرجاء إدخال رقم الملف."); return; }
@@ -17602,11 +17631,12 @@ renderDashboard();
     const firstCheckNo = document.getElementById("csFFirstCheck").value.trim();
     const lastCheckNo = document.getElementById("csFLastCheck").value.trim();
     const now = new Date().toISOString();
+    let file;
     if(editId){
-      const file = csFindFile(editId);
+      file = csFindFile(editId);
       if(file){ file.fileNo = fileNo; file.bank = bank; file.period = period; file.firstCheckNo = firstCheckNo; file.lastCheckNo = lastCheckNo; file.updatedAt = now; }
     } else {
-      const file = {
+      file = {
         id: uid(),
         refCode: nextRefCode("CHK","csFiles"),
         fileNo, bank, period, firstCheckNo, lastCheckNo,
@@ -17616,9 +17646,10 @@ renderDashboard();
       DB.csFiles.push(file);
       currentCsFileId = file.id;
     }
+    if(file) csAutoGenerateRange(file);
     saveDB();
     document.getElementById("csFileOverlay").classList.remove("active");
-    const file = csFindFile(currentCsFileId || editId);
+    file = csFindFile(currentCsFileId || editId);
     if(file && document.getElementById("csFilePanel").style.display !== "none"){ csRenderFileDetail(file); }
     else { csRenderList(); }
   });
