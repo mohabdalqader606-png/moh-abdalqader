@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v50.0-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v50.1-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -1504,6 +1504,10 @@ th.yd,td.yd{background:rgba(11,31,58,.035);font-size:.92em}th.yd{color:var(--mut
   <button class="btn gold" onclick="exportGMReportPPTX()">📊 تصدير PowerPoint (~20 سلايد)</button>
   <span class="hint">تقرير تنفيذي شامل بمستوى مجالس الإدارة يغطي كل وحدات المحرك بأرقام مطابقة حرفياً لباقي الشاشات (نفس دوال الاحتساب). النسخة المُصدَّرة (HTML) تعمل بلا اتصال إنترنت وتتيح تغيير الفترة/المقارنة من داخلها.</span>
  </div>
+ <div class="row noprint tabs-mini" id="gmrModeSw">
+  <button type="button" class="on" onclick="gmrSetMode('v50')">التقرير التنفيذي الشامل</button>
+  <button type="button" onclick="gmrSetMode('v51')">التحليل الشهري المتقدم (تجريبي)</button>
+ </div>
  <div class="board" id="gmrPage"></div>
 </section>
 </main>
@@ -1920,7 +1924,7 @@ function calc(from,to,noSelf){
  const closeVals=Object.fromEntries(Object.keys(LINES).map(l=>[l,L[l].close]));
  BSc.CUR_NI=-plNet(closeVals);BSo.CUR_NI=-plNet(openVals); // credit balance in P&L accounts => profit
  [BSo,BSc].forEach(b=>{b.EQ=b.EQ_EX_RE+b.RE_BAL+b.CUR_NI;b.UNMAP=b.UNMAP||0;b.TLE=b.TL+b.EQ;b.DIFF=b.TA-b.TLE+(b.UNMAP);b.WC=b.CA-b.CL;b.NETDEBT=-(b.STL)+-(b.LTL)-b.CASH});
- const BSm={};per.forEach(k=>{const b=bsAt(closeAt[k]);b.CUR_NI=-plNet(closeAt[k]);b.EQ=b.EQ_EX_RE+b.RE_BAL+b.CUR_NI;b.TLE=b.TL+b.EQ;b.WC=b.CA-b.CL;BSm[k]=b});
+ const BSm={};per.forEach(k=>{const b=bsAt(closeAt[k]);b.CUR_NI=-plNet(closeAt[k]);b.EQ=b.EQ_EX_RE+b.RE_BAL+b.CUR_NI;b.TLE=b.TL+b.EQ;b.WC=b.CA-b.CL;b.NETDEBT=-(b.STL)+-(b.LTL)-b.CASH;BSm[k]=b});
  // Cash flow (indirect) for period and per month
  const cf=(b0,b1,is)=>{const d=l=>b1[l]-b0[l];const o={};
   o.NI=is.NI;o.DEPR=-(d('ACC_DEP'));o.DEPR_IS=is.DEPR;o.PROV=is.PROV;o.FIN=is.FIN_EXP-is.FIN_INC;
@@ -4782,9 +4786,12 @@ function gmrRiskFlags(is,b,cf,r,cm){
  if(BT.NET<0)F.push(['بنوك',`صافي المركز البنكي الإجمالي مديونية على الشركة بمبلغ ${fmt(Math.abs(BT.NET))}.`,'مراجعة اختبار الضغط البنكي (تبويب البنوك) والتحقق من كفاية التسهيلات المتاحة.']);
  return F;
 }
+let gmrMode='v50';
+function gmrSetMode(m){gmrMode=m;const sw=document.getElementById('gmrModeSw');if(sw)[...sw.querySelectorAll('button')].forEach((b,i)=>b.classList.toggle('on',(i===0)===(m==='v50')));renderGMReport()}
 function renderGMReport(){
  const el=document.getElementById('gmrPage');if(!el)return;
  if(!R){el.innerHTML='<p class="hint">اضغط "احتساب" أعلى الشاشة أولاً.</p>';return}
+ if(gmrMode==='v51'){renderGMReportV51();return}
  const is=R.IS.TOT,b=R.BSc,bo=R.BSo,cf=R.CF,r={...R.RAT,...advRatios()},cm=R.CMP,cur=S.settings.cur,co=S.settings.co,per=R.per;
  const cmpLabel=cm?cm.label:null,periodLabel=per[0]+' → '+per[per.length-1]+' ('+R.nMo+' شهر)';
  const today=new Date().toLocaleDateString('ar-JO');
@@ -4933,6 +4940,206 @@ function renderGMReport(){
  <p class="hint">تاريخ الإصدار: ${today} — الفترة: ${periodLabel}${cmpLabel?' — المقارنة: '+esc(cmpLabel):''} — العملة: ${esc(cur)}${S.settings.scale===1000?' (آلاف)':''}.</p>`;
 
  el.innerHTML=[sec1,sec2,sec3,sec4,sec5,sec6,sec7,sec8,sec9,sec10,sec11,sec12].join('\n');
+}
+
+/* ================= v51 (مرحلة ١): التحليل الشهري المتقدم — نفس بيانات calcCore() فقط، بلا أي احتساب مستقل =================
+   يغطي: الملخص التنفيذي، مصفوفة الأداء الشهرية (heatmap+sparkline)، الموسمية والتوقع السنوي (3 سيناريوهات)،
+   تحليل المصاريف مع كشف الشذوذ، ومحرك توصيات/سجل مخاطر مبني على اتجاهات فعلية من نفس الأرقام (بلا افتراضات خارجية). */
+function gmrHeatCell(v,mn,mx,txt,dir){
+ const t=mx>mn?(v-mn)/(mx-mn):0.5;let col;
+ if(dir){const goodT=dir==='high'?t:1-t;col=goodT<0.35?`rgba(214,69,69,${(0.12+0.5*(1-goodT)).toFixed(2)})`:`rgba(27,153,139,${(0.12+0.6*goodT).toFixed(2)})`}
+ else col=`rgba(11,31,58,${(0.06+0.32*t).toFixed(2)})`;
+ return `<td class="num" style="background:${col};white-space:nowrap" title="${txt}">${txt}</td>`;
+}
+function gmrMatrixRow(label,keys,vals,fmtFn,dir){
+ const nums=vals.filter(v=>v!=null&&isFinite(v));const mn=nums.length?Math.min(...nums):0,mx=nums.length?Math.max(...nums):1;
+ return `<tr><td>${label}</td>${vals.map(v=>v==null||!isFinite(v)?'<td class="num">—</td>':gmrHeatCell(v,mn,mx,fmtFn(v),dir)).join('')}<td>${spark(nums.length?nums:[0])}</td></tr>`;
+}
+function gmrV51Seasonality(hist,FULL){
+ const byMonth={};for(let m=1;m<=12;m++)byMonth[m]=[];
+ hist.forEach(k=>byMonth[+k.split('-')[1]].push(FULL.IS[k].NETSALES));
+ const avgAll=hist.reduce((a,k)=>a+FULL.IS[k].NETSALES,0)/hist.length;
+ const index={};for(let m=1;m<=12;m++){const arr=byMonth[m];index[m]=arr.length&&avgAll?(arr.reduce((a,b)=>a+b,0)/arr.length)/avgAll:1}
+ return {index,have:hist.length>=13,avgAll};
+}
+function gmrV51Outlook(hist,FULL,seas){
+ const lastK=hist[hist.length-1];const y=+lastK.split('-')[0],elapsedM=+lastK.split('-')[1];
+ const yMonths=hist.filter(k=>k.startsWith(y+'-'));
+ const ytdSales=yMonths.reduce((a,k)=>a+FULL.IS[k].NETSALES,0),ytdEbitda=yMonths.reduce((a,k)=>a+FULL.IS[k].EBITDA,0),ytdNI=yMonths.reduce((a,k)=>a+FULL.IS[k].NI,0);
+ const remainMonths=[];for(let m=elapsedM+1;m<=12;m++)remainMonths.push(m);
+ if(!remainMonths.length)return {y,elapsedM,ytdSales,ytdEbitda,ytdNI,done:true};
+ const recent=hist.slice(-Math.min(3,hist.length));
+ const deseas=recent.map(k=>FULL.IS[k].NETSALES/(seas.index[+k.split('-')[1]]||1));
+ const runRate=deseas.reduce((a,b)=>a+b,0)/deseas.length;
+ const trendWin=hist.slice(-Math.min(12,hist.length));
+ const trendVals=trendWin.map(k=>FULL.IS[k].NETSALES/(seas.index[+k.split('-')[1]]||1));
+ const n=trendVals.length,xs=trendVals.map((_,i)=>i),xbar=xs.reduce((a,b)=>a+b,0)/n,ybar=trendVals.reduce((a,b)=>a+b,0)/n;
+ let num=0,den=0;xs.forEach((x,i)=>{num+=(x-xbar)*(trendVals[i]-ybar);den+=(x-xbar)**2});
+ const slope=den?num/den:0,monthlyGrowth=ybar?slope/ybar:0;
+ const chgs=[];for(let i=1;i<trendVals.length;i++)if(trendVals[i-1])chgs.push((trendVals[i]-trendVals[i-1])/trendVals[i-1]);
+ const meanC=chgs.length?chgs.reduce((a,b)=>a+b,0)/chgs.length:0,varC=chgs.length?chgs.reduce((a,b)=>a+(b-meanC)**2,0)/chgs.length:0;
+ const vol=Math.max(0.03,Math.min(0.15,Math.sqrt(varC)||0.06));
+ const recentBase=recent.reduce((a,k)=>a+FULL.IS[k].NETSALES,0);
+ const ebMargin=recentBase?recent.reduce((a,k)=>a+FULL.IS[k].EBITDA,0)/recentBase:0,niMargin=recentBase?recent.reduce((a,k)=>a+FULL.IS[k].NI,0)/recentBase:0;
+ let projSales=0;remainMonths.forEach((m,i)=>{projSales+=runRate*(seas.index[m]||1)*Math.pow(1+monthlyGrowth,i+1)});
+ const base={sales:ytdSales+projSales,ebitda:ytdEbitda+projSales*ebMargin,ni:ytdNI+projSales*niMargin};
+ const opt={sales:ytdSales+projSales*(1+vol),ebitda:ytdEbitda+projSales*(1+vol)*ebMargin,ni:ytdNI+projSales*(1+vol)*niMargin};
+ const pes={sales:ytdSales+projSales*(1-vol),ebitda:ytdEbitda+projSales*(1-vol)*ebMargin,ni:ytdNI+projSales*(1-vol)*niMargin};
+ const lastActual=FULL.IS[lastK].NETSALES,expected=runRate*(seas.index[elapsedM]||1);
+ const unclosedAlert=seas.have&&expected>0&&lastActual<expected*0.55;
+ return {y,elapsedM,ytdSales,ytdEbitda,ytdNI,done:false,remainCount:remainMonths.length,vol,monthlyGrowth,base,opt,pes,unclosedAlert,expected,lastActual,lastK};
+}
+function gmrV51Anomalies(hist,FULL,lines){
+ // منهجية: تفكيك كلاسيكي (اتجاه متحرك 12 شهراً × مؤشر موسمية لكل شهر تقويمي) ثم z-score على الباقي (Residual) —
+ // يمنع تكرار وسم نفس الشهر الموسمي (مثل ديسمبر) كل سنة كـ"شذوذ"، ويمنع أثر النمو التراكمي عبر السنوات من تضخيم الانحراف.
+ const out=[];
+ lines.forEach(L=>{
+  const vals=hist.map(k=>FULL.IS[k][L]);const n=vals.length;if(n<15)return;
+  const trend=vals.map((_,i)=>{const w=vals.slice(Math.max(0,i-11),i+1);return w.reduce((a,b)=>a+b,0)/w.length});
+  const seasSum={},seasN={};hist.forEach((k,i)=>{const mo=+k.split('-')[1],r=trend[i]?vals[i]/trend[i]:1;seasSum[mo]=(seasSum[mo]||0)+r;seasN[mo]=(seasN[mo]||0)+1});
+  const seasIdx={};for(let m=1;m<=12;m++)seasIdx[m]=seasN[m]?seasSum[m]/seasN[m]:1;
+  const resid=vals.map((v,i)=>v-trend[i]*(seasIdx[+hist[i].split('-')[1]]||1));
+  const rMean=resid.reduce((a,b)=>a+b,0)/n,sd=Math.sqrt(resid.reduce((a,b)=>a+(b-rMean)**2,0)/n);
+  if(sd<=0)return;
+  resid.forEach((r,i)=>{if(i<11)return;const z=(r-rMean)/sd;if(Math.abs(z)>2.5)out.push({k:hist[i],line:L,v:vals[i],expected:vals[i]-r,z})});
+ });
+ return out.sort((a,b)=>Math.abs(b.z)-Math.abs(a.z));
+}
+const GMR_EXP_LINES=[['SELL','بيع وتوزيع'],['ADMIN','إداري وعمومي'],['SALARY','رواتب وأجور'],['DEPR','إهلاك'],['PROV','مخصصات']];
+function gmrV51Reco(hist,FULL,seas,anomalies){
+ const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+ const R3=hist.slice(-Math.min(3,hist.length)),P3=hist.length>=6?hist.slice(-6,-3):hist.slice(0,Math.min(3,hist.length));
+ const avgR=(per,key)=>{const vs=per.map(k=>FULL.RATm[k][key]).filter(v=>v!=null&&isFinite(v));return vs.length?vs.reduce((a,b)=>a+b,0)/vs.length:null};
+ const ltmN=Math.min(12,hist.length),ltm=hist.slice(-ltmN),ltmSales=ltm.reduce((a,k)=>a+FULL.IS[k].NETSALES,0),ltmCogs=ltm.reduce((a,k)=>a+FULL.IS[k].COGS,0);
+ const wacc=(S.settings.wacc||12)/100;
+ const REC=[];
+ const gmR=avgR(R3,'GM'),gmP=avgR(P3,'GM');
+ if(gmR!=null&&gmP!=null&&gmP-gmR>0.01){const impact=(gmP-gmR)*ltmSales;
+  REC.push({obs:`تراجع هامش الربح الإجمالي من ${pct(gmP)} إلى ${pct(gmR)} (آخر 3 أشهر مقابل الفترة السابقة).`,cause:'ارتفاع تكلفة المبيعات نسبة للأسعار أو تسريب سعري بالتفاوض.',impact,action:'مراجعة تسعير أهم الأصناف/العملاء ومراجعة عقود التوريد الرئيسية.',owner:'مدير المبيعات / المشتريات',priority:impact>ltmSales*0.01?'عالية':'متوسطة',timeframe:'30 يوماً'})}
+ const dsoR=avgR(R3,'DSO'),dsoP=avgR(P3,'DSO');
+ if(dsoR!=null&&dsoP!=null&&dsoR-dsoP>5){const impact=(dsoR-dsoP)/365*ltmSales*wacc;
+  REC.push({obs:`ارتفاع فترة تحصيل الذمم (DSO) من ${dsoP.toFixed(0)} إلى ${dsoR.toFixed(0)} يوماً.`,cause:'تراخي بمتابعة التحصيل أو تمديد شروط دفع لعملاء دون مراجعة.',impact,action:'تفعيل متابعة تحصيل مركّزة على أعلى العملاء تأخراً (تبويب أعمار الذمة) ومراجعة شروط الدفع الممنوحة.',owner:'مدير الائتمان والتحصيل',priority:impact>ltmSales*0.005?'عالية':'متوسطة',timeframe:'45 يوماً'})}
+ const dioR=avgR(R3,'DIO'),dioP=avgR(P3,'DIO');
+ if(dioR!=null&&dioP!=null&&dioR-dioP>5){const impact=(dioR-dioP)/365*ltmCogs*wacc;
+  REC.push({obs:`ارتفاع فترة بقاء المخزون (DIO) من ${dioP.toFixed(0)} إلى ${dioR.toFixed(0)} يوماً.`,cause:'تباطؤ دوران بعض الأصناف أو شراء زائد عن الحاجة الفعلية.',impact,action:'مراجعة أصناف بطيئة الحركة وتصفيتها، ومراجعة كميات أوامر الشراء المتكررة.',owner:'مدير المخازن / المشتريات',priority:impact>ltmCogs*0.005?'عالية':'متوسطة',timeframe:'60 يوماً'})}
+ const opR=avgR(R3,'OPEXR'),opP=avgR(P3,'OPEXR');
+ if(opR!=null&&opP!=null&&opR-opP>0.01){const impact=(opR-opP)*ltmSales;
+  REC.push({obs:`ارتفاع نسبة المصاريف التشغيلية إلى المبيعات من ${pct(opP)} إلى ${pct(opR)}.`,cause:'نمو المصاريف الثابتة أسرع من نمو المبيعات.',impact,action:'مراجعة بنود المصاريف الإدارية والبيعية الكبرى مقابل الموازنة.',owner:'المدير المالي',priority:impact>ltmSales*0.01?'عالية':'متوسطة',timeframe:'30 يوماً'})}
+ anomalies.slice(0,5).forEach(a=>{const nm=(GMR_EXP_LINES.find(x=>x[0]===a.line)||[a.line,a.line])[1];const impact=Math.abs(a.v-a.expected);
+  REC.push({obs:`قيمة غير معتادة ببند "${nm}" لشهر ${a.k}: ${fmt(a.v)} مقابل قيمة متوقعة (اتجاه × موسمية) ${fmt(a.expected)} (انحراف ${a.z.toFixed(1)}σ).`,cause:'بند استثنائي غير متكرر أو خطأ تصنيف/ترحيل محاسبي.',impact,action:'مراجعة القيود المرحّلة على هذا البند بالشهر المذكور للتأكد من صحة التصنيف.',owner:'المحاسب المسؤول',priority:'متوسطة',timeframe:'15 يوماً'})});
+ return REC.sort((a,b)=>Math.abs(b.impact)-Math.abs(a.impact));
+}
+function gmrV51Risks(hist,FULL){
+ const last=hist[hist.length-1],last3=hist.slice(-Math.min(3,hist.length));
+ const badCount=key=>last3.filter(k=>grade(key,FULL.RATm[k][key])[0]==='bad').length;
+ const RISK=[];
+ const addRisk=(name,key,mit)=>{const bc=badCount(key),v=FULL.RATm[last][key];if(!bc)return;
+  const prob=bc>=2?'مرتفعة':'متوسطة';const g=grade(key,v);const tol=(BENCH[key].hi-BENCH[key].lo)*0.25;
+  const impactLbl=g[0]==='bad'?'مرتفع':'متوسط';const score=(prob==='مرتفعة'?3:2)*(impactLbl==='مرتفع'?3:2);
+  RISK.push({name,obs:`${BENCH[key].n}: ${rfmt(key,v)} (المعيار ${BENCH[key].fmt==='%'?BENCH[key].lo*100+'%–'+BENCH[key].hi*100+'%':BENCH[key].lo+'–'+BENCH[key].hi})`,prob,impact:impactLbl,score,mit})};
+ addRisk('سيولة','CR','مراجعة جدولة الالتزامات المتداولة مقابل التدفقات النقدية المتوقعة، وتفعيل حدود ائتمانية احتياطية.');
+ addRisk('رفع مالي','ND_EBITDA','مراجعة خطة سداد التسهيلات وربطها بالتدفق التشغيلي، وتجنّب تسهيلات إضافية قبل خفض المديونية.');
+ addRisk('استمرارية','Z','مراجعة هيكل رأس المال العامل وربحية التشغيل معاً، ومتابعة المؤشر شهرياً.');
+ const seas=gmrV51Seasonality(hist,FULL);const maxIdx=Math.max(...Object.values(seas.index));
+ if(seas.have&&maxIdx>1.5)RISK.push({name:'تركّز موسمي',obs:`أعلى شهر موسمياً يبلغ ${(maxIdx*100).toFixed(0)}% من المتوسط الشهري — اعتماد كبير على موسم واحد.`,prob:'متوسطة',impact:'مرتفع',score:6,mit:'وضع خطة سيولة خاصة تغطي الأشهر خارج الموسم، وتنويع مصادر الإيراد إن أمكن.'});
+ return RISK.sort((a,b)=>b.score-a.score);
+}
+function renderGMReportV51(){
+ const el=document.getElementById('gmrPage');
+ const ms=months(),endK=R.per[R.per.length-1],hist=ms.filter(k=>k<=endK);
+ if(hist.length<3){el.innerHTML='<p class="hint">يحتاج هذا التحليل 3 أشهر بيانات على الأقل حتى نهاية الفترة المحدَّدة أعلى الشاشة.</p>';return}
+ const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+ const FULL=calcCore(hist[0],hist[hist.length-1]);
+ const co=S.settings.co,today=new Date().toLocaleDateString('ar-JO');
+ const last=hist[hist.length-1],lastIS=FULL.IS[last],lastR=FULL.RATm[last];
+ const W=Math.min(24,hist.length),win=hist.slice(-W);
+ const seas=gmrV51Seasonality(hist,FULL);
+ const outlook=gmrV51Outlook(hist,FULL,seas);
+ const anomalies=gmrV51Anomalies(hist,FULL,GMR_EXP_LINES.map(x=>x[0]));
+ const RECO=gmrV51Reco(hist,FULL,seas,anomalies);
+ const RISKS=gmrV51Risks(hist,FULL);
+ const ltmN=Math.min(12,hist.length),ltm=hist.slice(-ltmN),prevLtm=hist.length>=ltmN*2?hist.slice(-ltmN*2,-ltmN):null;
+ const ltmSum=key=>ltm.reduce((a,k)=>a+FULL.IS[k][key],0);
+ const prevLtmSum=key=>prevLtm?prevLtm.reduce((a,k)=>a+FULL.IS[k][key],0):null;
+ const yoy=(cur,prev)=>prev?(cur-prev)/Math.abs(prev):null;
+
+ // ==== ١. الملخص التنفيذي ====
+ const spSales=win.map(k=>FULL.IS[k].NETSALES),spEbitda=win.map(k=>FULL.IS[k].EBITDA),spNI=win.map(k=>FULL.IS[k].NI),spGM=win.map(k=>FULL.RATm[k].GM);
+ const verdict=lastIS.NI>=0&&grade('CR',lastR.CR)[0]!=='bad'?'أداء الشهر الأخير مستقر مع سيولة ضمن الحدود المقبولة.':(lastIS.NI<0?'خسارة تشغيلية بالشهر الأخير — يستدعي مراجعة عاجلة.':'أداء يحتاج متابعة على مؤشرات محدَّدة أدناه.');
+ let sec1=`<h2>١. الملخص التنفيذي — تحليل شهري متقدم</h2>
+ <p class="hint">${esc(co)} — حتى شهر ${last} (بيانات ${hist.length} شهراً). ${verdict}</p>`;
+ if(outlook.unclosedAlert)sec1+=`<p class="hint" style="color:#8a6d1a">⚠ مبيعات شهر ${last} (${fmt(outlook.lastActual)}) أقل بكثير من المتوقع موسمياً (${fmt(outlook.expected)}) — قد يكون الشهر غير مقفل بعد بالكامل بالنظام؛ يُفضَّل التأكد قبل اعتماد أرقامه نهائياً.</p>`;
+ sec1+=`<div class="grid g4">
+ ${kpi('صافي المبيعات (آخر شهر)',fmt(lastIS.NETSALES),spark(spSales),'',1)}
+ ${kpi('EBITDA (آخر شهر)',fmt(lastIS.EBITDA),spark(spEbitda),'',1)}
+ ${kpi('صافي الربح (آخر شهر)',fmt(lastIS.NI),spark(spNI),lastIS.NI>=0?'pos':'neg',1)}
+ ${kpi('هامش الربح الإجمالي',pct(lastR.GM),spark(spGM),'',1)}
+ </div>
+ <table><thead><tr><th>المؤشر (آخر 12 شهراً LTM)</th><th class="num">القيمة</th><th class="num">آخر 12 شهراً سابقة</th><th class="num">التغيّر</th></tr></thead><tbody>
+ <tr><td>صافي المبيعات</td><td class="num">${fmt(ltmSum('NETSALES'))}</td><td class="num">${prevLtmSum('NETSALES')!=null?fmt(prevLtmSum('NETSALES')):'—'}</td><td class="num ${cls(yoy(ltmSum('NETSALES'),prevLtmSum('NETSALES'))||0)}">${yoy(ltmSum('NETSALES'),prevLtmSum('NETSALES'))!=null?pct(yoy(ltmSum('NETSALES'),prevLtmSum('NETSALES'))):'—'}</td></tr>
+ <tr><td>EBITDA</td><td class="num">${fmt(ltmSum('EBITDA'))}</td><td class="num">${prevLtmSum('EBITDA')!=null?fmt(prevLtmSum('EBITDA')):'—'}</td><td class="num ${cls(yoy(ltmSum('EBITDA'),prevLtmSum('EBITDA'))||0)}">${yoy(ltmSum('EBITDA'),prevLtmSum('EBITDA'))!=null?pct(yoy(ltmSum('EBITDA'),prevLtmSum('EBITDA'))):'—'}</td></tr>
+ <tr><td>صافي الربح</td><td class="num">${fmt(ltmSum('NI'))}</td><td class="num">${prevLtmSum('NI')!=null?fmt(prevLtmSum('NI')):'—'}</td><td class="num ${cls(yoy(ltmSum('NI'),prevLtmSum('NI'))||0)}">${yoy(ltmSum('NI'),prevLtmSum('NI'))!=null?pct(yoy(ltmSum('NI'),prevLtmSum('NI'))):'—'}</td></tr>
+ </tbody></table>
+ <h3>أهم 3 توصيات (الأثر المالي الأعلى)</h3>
+ ${RECO.length?`<table><thead><tr><th>الملاحظة</th><th class="num">الأثر المقدَّر</th><th>الإجراء</th></tr></thead><tbody>${RECO.slice(0,3).map(r=>`<tr><td class="ex">${r.obs}</td><td class="num ${cls(-Math.abs(r.impact))}">${fmt(Math.abs(r.impact))}</td><td class="ex">${esc(r.action)}</td></tr>`).join('')}</tbody></table>`:'<p class="hint">✔ لا توجد ملاحظات ذات أثر مالي جوهري على الاتجاهات الأخيرة.</p>'}`;
+
+ // ==== ٢. مصفوفة الأداء الشهرية ====
+ let sec2=`<h2>٢. مصفوفة الأداء الشهرية (آخر ${win.length} شهراً)</h2>
+ <div class="tblwrap"><table><thead><tr><th>المؤشر</th>${win.map(k=>`<th>${k}</th>`).join('')}<th>الاتجاه</th></tr></thead><tbody>
+ ${gmrMatrixRow('صافي المبيعات',win,win.map(k=>FULL.IS[k].NETSALES),v=>fmt(v))}
+ ${gmrMatrixRow('هامش الربح الإجمالي',win,win.map(k=>FULL.RATm[k].GM),v=>pct(v),'high')}
+ ${gmrMatrixRow('EBITDA',win,win.map(k=>FULL.IS[k].EBITDA),v=>fmt(v))}
+ ${gmrMatrixRow('هامش صافي الربح',win,win.map(k=>FULL.RATm[k].NM),v=>pct(v),'high')}
+ ${gmrMatrixRow('DSO (يوم)',win,win.map(k=>FULL.RATm[k].DSO),v=>v.toFixed(0),'low')}
+ ${gmrMatrixRow('DIO (يوم)',win,win.map(k=>FULL.RATm[k].DIO),v=>v.toFixed(0),'low')}
+ ${gmrMatrixRow('DPO (يوم)',win,win.map(k=>FULL.RATm[k].DPO),v=>v.toFixed(0),'high')}
+ ${gmrMatrixRow('دورة التحويل النقدي CCC',win,win.map(k=>FULL.RATm[k].CCC),v=>v.toFixed(0),'low')}
+ ${gmrMatrixRow('صافي الدين / EBITDA',win,win.map(k=>FULL.RATm[k].ND_EBITDA),v=>v.toFixed(2),'low')}
+ </tbody></table></div>
+ <p class="hint">التلوين نسبي داخل كل صف (المقارنة بين أشهر نفس المؤشر فقط) — أخضر يعني أقرب للأفضل ضمن نفس الصف وأحمر أقرب للأسوأ، حسب اتجاه كل مؤشر (ارتفاع/انخفاض أفضل).</p>`;
+
+ // ==== ٣. الموسمية والتوقع السنوي ====
+ let sec3=`<h2>٣. الموسمية والتوقع السنوي (${outlook.y})</h2>`;
+ if(!seas.have)sec3+='<p class="hint">يحتاج مؤشر الموسمية 13 شهراً بيانات على الأقل ليكون موثوقاً — البيانات الحالية غير كافية.</p>';
+ else{sec3+=`<table><thead><tr>${[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>`<th>${m}</th>`).join('')}</tr></thead><tbody><tr>${[1,2,3,4,5,6,7,8,9,10,11,12].map(m=>{const idx=seas.index[m];const cls_=idx>1.15?'pos':idx<0.85?'neg':'';return `<td class="num ${cls_}">${(idx*100).toFixed(0)}%</td>`}).join('')}</tr></tbody></table>
+ <p class="hint">100% = المتوسط الشهري العام؛ فوق 100% موسم مرتفع، وتحته موسم منخفض.</p>`}
+ if(outlook.done)sec3+=`<p class="hint">السنة ${outlook.y} مكتملة الأشهر ضمن البيانات المحمَّلة — لا يوجد توقع متبقٍّ. الفعلي: مبيعات ${fmt(outlook.ytdSales)}، EBITDA ${fmt(outlook.ytdEbitda)}، صافي ربح ${fmt(outlook.ytdNI)}.</p>`;
+ else{sec3+=`<h3>توقع نهاية السنة (${outlook.remainCount} شهراً متبقياً) — 3 سيناريوهات</h3>
+ <table><thead><tr><th>البند</th><th class="num">متشائم</th><th class="num">أساسي</th><th class="num">متفائل</th></tr></thead><tbody>
+ <tr><td>صافي المبيعات (سنة كاملة)</td><td class="num">${fmt(outlook.pes.sales)}</td><td class="num"><b>${fmt(outlook.base.sales)}</b></td><td class="num">${fmt(outlook.opt.sales)}</td></tr>
+ <tr><td>EBITDA (سنة كاملة)</td><td class="num">${fmt(outlook.pes.ebitda)}</td><td class="num"><b>${fmt(outlook.base.ebitda)}</b></td><td class="num">${fmt(outlook.opt.ebitda)}</td></tr>
+ <tr><td>صافي الربح (سنة كاملة)</td><td class="num">${fmt(outlook.pes.ni)}</td><td class="num"><b>${fmt(outlook.base.ni)}</b></td><td class="num">${fmt(outlook.opt.ni)}</td></tr>
+ </tbody></table>
+ <p class="hint">المنهجية: تُستخرج مبيعات فعلية حتى ${last} (${fmt(outlook.ytdSales)})، وتُسقط الأشهر المتبقية من معدل تشغيلي حديث (آخر 3 أشهر) بعد تجريده من أثر الموسمية، مضروباً بمؤشر موسمية كل شهر متبقٍ وباتجاه نمو مُستخرج من آخر ${Math.min(12,hist.length)} شهراً. نطاق التفاؤل/التشاؤم مبني على تذبذب النمو الشهري الفعلي (${pct(outlook.vol)}) لا على افتراض تحكّمي. هذا توقع تقديري وليس التزاماً.</p>`}
+
+ // ==== ٤. تحليل المصاريف والشذوذ ====
+ let sec4=`<h2>٤. تحليل المصاريف (آخر ${win.length} شهراً)</h2>
+ <div class="tblwrap"><table><thead><tr><th>البند</th>${win.map(k=>`<th>${k}</th>`).join('')}<th>الاتجاه</th></tr></thead><tbody>
+ ${GMR_EXP_LINES.map(([code,name])=>gmrMatrixRow(name,win,win.map(k=>FULL.IS[k][code]),v=>fmt(v))).join('')}
+ ${gmrMatrixRow('إجمالي المصاريف التشغيلية',win,win.map(k=>FULL.IS[k].OPEX),v=>fmt(v))}
+ </tbody></table></div>`;
+ const lastVsPrior=GMR_EXP_LINES.map(([code,name])=>{const cur=FULL.IS[last][code],priorAvg=hist.length>1?hist.slice(-Math.min(4,hist.length),-1).reduce((a,k)=>a+FULL.IS[k][code],0)/Math.min(3,hist.length-1):cur;return {name,cur,chg:cur-priorAvg}}).sort((a,b)=>Math.abs(b.chg)-Math.abs(a.chg));
+ sec4+=`<h3>أكبر تغيّر ببنود المصاريف (آخر شهر مقابل متوسط 3 أشهر سابقة)</h3>
+ <table><thead><tr><th>البند</th><th class="num">آخر شهر</th><th class="num">التغيّر</th></tr></thead><tbody>
+ ${lastVsPrior.map(x=>`<tr><td>${x.name}</td><td class="num">${fmt(x.cur)}</td><td class="num ${cls(-x.chg)}">${fmt(x.chg)}</td></tr>`).join('')}
+ </tbody></table>`;
+ sec4+=`<h3>كشف شذوذ إحصائي (انحراف &gt; 2.5σ عن قيمة متوقعة = اتجاه متحرك 12 شهراً × مؤشر موسمية الشهر التقويمي — يستبعد النمط الموسمي المتكرر والنمو التراكمي)</h3>`;
+ sec4+=anomalies.length?`<table><thead><tr><th>الشهر</th><th>البند</th><th class="num">القيمة الفعلية</th><th class="num">القيمة المتوقعة</th><th class="num">σ</th></tr></thead><tbody>
+ ${anomalies.slice(0,20).map(a=>`<tr><td>${a.k}</td><td>${(GMR_EXP_LINES.find(x=>x[0]===a.line)||[a.line,a.line])[1]}</td><td class="num">${fmt(a.v)}</td><td class="num">${fmt(a.expected)}</td><td class="num">${a.z.toFixed(1)}</td></tr>`).join('')}
+ </tbody></table>${anomalies.length>20?`<p class="hint">معروض أعلى 20 حالة من أصل ${anomalies.length} حسب قوة الانحراف.</p>`:''}`:'<p class="hint">✔ لم يُكتشف شذوذ إحصائي جوهري ببنود المصاريف المتابَعة.</p>';
+
+ // ==== ٥. التوصيات وسجل المخاطر ====
+ let sec5=`<h2>٥. التوصيات (مرتبة حسب الأثر المالي المقدَّر)</h2>`;
+ sec5+=RECO.length?`<table><thead><tr><th>الملاحظة</th><th>السبب المرجّح</th><th class="num">الأثر المالي المقدَّر (سنوياً)</th><th>الإجراء المقترح</th><th>المسؤول</th><th>الأولوية</th><th>الإطار الزمني</th></tr></thead><tbody>
+ ${RECO.map(r=>`<tr><td class="ex">${r.obs}</td><td class="ex">${esc(r.cause)}</td><td class="num">${fmt(Math.abs(r.impact))}</td><td class="ex">${esc(r.action)}</td><td>${esc(r.owner)}</td><td><span class="badge ${r.priority==='عالية'?'bad':'warn'}">${r.priority}</span></td><td>${r.timeframe}</td></tr>`).join('')}
+ </tbody></table>`:'<p class="hint">✔ لا توجد توصيات ذات أثر مالي جوهري حالياً بناءً على الاتجاهات الأخيرة.</p>';
+ sec5+=`<h3>سجل المخاطر (احتمالية × أثر)</h3>`;
+ sec5+=RISKS.length?`<table><thead><tr><th>نوع الخطر</th><th>الملاحظة</th><th>الاحتمالية</th><th>الأثر</th><th>إجراء التخفيف المقترح</th></tr></thead><tbody>
+ ${RISKS.map(r=>`<tr><td>${r.name}</td><td class="ex">${r.obs}</td><td><span class="badge ${r.prob==='مرتفعة'?'bad':'warn'}">${r.prob}</span></td><td><span class="badge ${r.impact==='مرتفع'?'bad':'warn'}">${r.impact}</span></td><td class="ex">${esc(r.mit)}</td></tr>`).join('')}
+ </tbody></table>`:'<p class="hint">✔ لا توجد مخاطر مرصودة آلياً ضمن آخر 3 أشهر.</p>';
+ sec5+=`<p class="hint">هذا التحليل مرحلة أولى من v51 (تحليل شهري متقدم) — تشمل النسخ القادمة أنواع تقارير إضافية (ربعي، سنوي بمعدل نمو مركّب، مقارنة حرة، فلاش PNG) وتحليلات متقدمة إضافية (DuPont، جسر التدفق النقدي، حساسية رأس المال العامل) وتصدير PowerPoint مخصَّص لهذا التقرير. تاريخ الإصدار: ${today}.</p>`;
+
+ el.innerHTML=[sec1,sec2,sec3,sec4,sec5].join('\n');
 }
 
 /* ================= تصدير تقرير المدير العام: ملف HTML مستقل يعمل بدون إنترنت، مع فلترة فترة/مقارنة من داخله =================
