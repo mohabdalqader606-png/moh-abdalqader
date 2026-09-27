@@ -5055,7 +5055,8 @@ function renderGMReportV51(){
  const W=Math.min(24,hist.length),win=hist.slice(-W);
  const seas=gmrV51Seasonality(hist,FULL);
  const outlook=gmrV51Outlook(hist,FULL,seas);
- const anomalies=gmrV51Anomalies(hist,FULL,GMR_EXP_LINES.map(x=>x[0]));
+ const anomaliesAll=gmrV51Anomalies(hist,FULL,GMR_EXP_LINES.map(x=>x[0]));
+ const anomalies=anomaliesAll.filter(a=>R.per.includes(a.k)); // نعرض فقط شذوذاً وقع ضمن الفترة المحدَّدة أعلى الشاشة — لا نستدعي ملاحظات من سنوات سابقة خارج نطاق المراجعة الحالية
  const RECO=gmrV51Reco(hist,FULL,seas,anomalies);
  const RISKS=gmrV51Risks(hist,FULL);
  const ltmN=Math.min(12,hist.length),ltm=hist.slice(-ltmN),prevLtm=hist.length>=ltmN*2?hist.slice(-ltmN*2,-ltmN):null;
@@ -5065,26 +5066,35 @@ function renderGMReportV51(){
 
  // ==== ١. الملخص التنفيذي ====
  const spSales=win.map(k=>FULL.IS[k].NETSALES),spEbitda=win.map(k=>FULL.IS[k].EBITDA),spNI=win.map(k=>FULL.IS[k].NI),spGM=win.map(k=>FULL.RATm[k].GM);
- const verdict=lastIS.NI>=0&&grade('CR',lastR.CR)[0]!=='bad'?'أداء الشهر الأخير مستقر مع سيولة ضمن الحدود المقبولة.':(lastIS.NI<0?'خسارة تشغيلية بالشهر الأخير — يستدعي مراجعة عاجلة.':'أداء يحتاج متابعة على مؤشرات محدَّدة أدناه.');
+ const periodLabel=R.per[0]+(R.per.length>1?' → '+R.per[R.per.length-1]:'')+' ('+R.nMo+' شهر)';
+ const pIS=R.IS.TOT,pRAT=R.RAT;
+ const verdict=pIS.NI>=0&&grade('CR',pRAT.CR)[0]!=='bad'?'أداء الفترة مستقر مع سيولة ضمن الحدود المقبولة.':(pIS.NI<0?'خسارة تشغيلية خلال الفترة — يستدعي مراجعة عاجلة.':'أداء يحتاج متابعة على مؤشرات محدَّدة أدناه.');
  let sec1=`<h2>١. الملخص التنفيذي — تحليل شهري متقدم</h2>
- <p class="hint">${esc(co)} — حتى شهر ${last} (بيانات ${hist.length} شهراً). ${verdict}</p>`;
+ <p class="hint">${esc(co)} — الفترة المحدَّدة أعلى الشاشة: ${periodLabel}. ${verdict}</p>`;
  if(outlook.unclosedAlert)sec1+=`<p class="hint" style="color:#8a6d1a">⚠ مبيعات شهر ${last} (${fmt(outlook.lastActual)}) أقل بكثير من المتوقع موسمياً (${fmt(outlook.expected)}) — قد يكون الشهر غير مقفل بعد بالكامل بالنظام؛ يُفضَّل التأكد قبل اعتماد أرقامه نهائياً.</p>`;
  sec1+=`<div class="grid g4">
- ${kpi('صافي المبيعات (آخر شهر)',fmt(lastIS.NETSALES),spark(spSales),'',1)}
- ${kpi('EBITDA (آخر شهر)',fmt(lastIS.EBITDA),spark(spEbitda),'',1)}
- ${kpi('صافي الربح (آخر شهر)',fmt(lastIS.NI),spark(spNI),lastIS.NI>=0?'pos':'neg',1)}
- ${kpi('هامش الربح الإجمالي',pct(lastR.GM),spark(spGM),'',1)}
+ ${kpi('صافي المبيعات (الفترة المحدَّدة)',fmt(pIS.NETSALES),'','',1)}
+ ${kpi('EBITDA (الفترة المحدَّدة)',fmt(pIS.EBITDA),'','',1)}
+ ${kpi('صافي الربح (الفترة المحدَّدة)',fmt(pIS.NI),'',pIS.NI>=0?'pos':'neg',1)}
+ ${kpi('هامش الربح الإجمالي (الفترة المحدَّدة)',pct(pRAT.GM),'','',1)}
  </div>
- <table><thead><tr><th>المؤشر (آخر 12 شهراً LTM)</th><th class="num">القيمة</th><th class="num">آخر 12 شهراً سابقة</th><th class="num">التغيّر</th></tr></thead><tbody>
+ <p class="hint">هذه الأرقام مطابقة حرفياً لما تعرضه باقي تبويبات الشاشة لنفس الفترة المحدَّدة (نفس دالة calc()). القسم أدناه إضافي فقط لإظهار اتجاه آخر شهر ضمن الفترة داخل سياقه الشهري.</p>
+ <table><thead><tr><th>المؤشر — آخر شهر ضمن الفترة (${last})</th><th class="num">القيمة</th><th>الاتجاه (آخر ${win.length} شهراً)</th></tr></thead><tbody>
+ <tr><td>صافي المبيعات</td><td class="num">${fmt(lastIS.NETSALES)}</td><td>${spark(spSales)}</td></tr>
+ <tr><td>EBITDA</td><td class="num">${fmt(lastIS.EBITDA)}</td><td>${spark(spEbitda)}</td></tr>
+ <tr><td>صافي الربح</td><td class="num ${cls(lastIS.NI)}">${fmt(lastIS.NI)}</td><td>${spark(spNI)}</td></tr>
+ </tbody></table>
+ <table><thead><tr><th>المؤشر (آخر 12 شهراً LTM حتى ${last})</th><th class="num">القيمة</th><th class="num">آخر 12 شهراً سابقة</th><th class="num">التغيّر</th></tr></thead><tbody>
  <tr><td>صافي المبيعات</td><td class="num">${fmt(ltmSum('NETSALES'))}</td><td class="num">${prevLtmSum('NETSALES')!=null?fmt(prevLtmSum('NETSALES')):'—'}</td><td class="num ${cls(yoy(ltmSum('NETSALES'),prevLtmSum('NETSALES'))||0)}">${yoy(ltmSum('NETSALES'),prevLtmSum('NETSALES'))!=null?pct(yoy(ltmSum('NETSALES'),prevLtmSum('NETSALES'))):'—'}</td></tr>
  <tr><td>EBITDA</td><td class="num">${fmt(ltmSum('EBITDA'))}</td><td class="num">${prevLtmSum('EBITDA')!=null?fmt(prevLtmSum('EBITDA')):'—'}</td><td class="num ${cls(yoy(ltmSum('EBITDA'),prevLtmSum('EBITDA'))||0)}">${yoy(ltmSum('EBITDA'),prevLtmSum('EBITDA'))!=null?pct(yoy(ltmSum('EBITDA'),prevLtmSum('EBITDA'))):'—'}</td></tr>
  <tr><td>صافي الربح</td><td class="num">${fmt(ltmSum('NI'))}</td><td class="num">${prevLtmSum('NI')!=null?fmt(prevLtmSum('NI')):'—'}</td><td class="num ${cls(yoy(ltmSum('NI'),prevLtmSum('NI'))||0)}">${yoy(ltmSum('NI'),prevLtmSum('NI'))!=null?pct(yoy(ltmSum('NI'),prevLtmSum('NI'))):'—'}</td></tr>
  </tbody></table>
- <h3>أهم 3 توصيات (الأثر المالي الأعلى)</h3>
- ${RECO.length?`<table><thead><tr><th>الملاحظة</th><th class="num">الأثر المقدَّر</th><th>الإجراء</th></tr></thead><tbody>${RECO.slice(0,3).map(r=>`<tr><td class="ex">${r.obs}</td><td class="num ${cls(-Math.abs(r.impact))}">${fmt(Math.abs(r.impact))}</td><td class="ex">${esc(r.action)}</td></tr>`).join('')}</tbody></table>`:'<p class="hint">✔ لا توجد ملاحظات ذات أثر مالي جوهري على الاتجاهات الأخيرة.</p>'}`;
+ <h3>أهم توصيات ضمن الفترة المحدَّدة (الأثر المالي الأعلى)</h3>
+ ${RECO.length?`<table><thead><tr><th>الملاحظة</th><th class="num">الأثر المقدَّر</th><th>الإجراء</th></tr></thead><tbody>${RECO.slice(0,3).map(r=>`<tr><td class="ex">${r.obs}</td><td class="num ${cls(-Math.abs(r.impact))}">${fmt(Math.abs(r.impact))}</td><td class="ex">${esc(r.action)}</td></tr>`).join('')}</tbody></table>`:'<p class="hint">✔ لا توجد ملاحظات ذات أثر مالي جوهري ضمن الفترة المحدَّدة.</p>'}`;
 
  // ==== ٢. مصفوفة الأداء الشهرية ====
- let sec2=`<h2>٢. مصفوفة الأداء الشهرية (آخر ${win.length} شهراً)</h2>
+ let sec2=`<h2>٢. مصفوفة الأداء الشهرية (آخر ${win.length} شهراً حتى ${last})</h2>
+ <p class="hint">نافذة اتجاه أوسع من الفترة المحدَّدة أعلى الشاشة عمداً (لإظهار النمط الشهري) — تنتهي عند نفس آخر شهر بالفترة المحدَّدة ولا تُستبدل بها.</p>
  <div class="tblwrap"><table><thead><tr><th>المؤشر</th>${win.map(k=>`<th>${k}</th>`).join('')}<th>الاتجاه</th></tr></thead><tbody>
  ${gmrMatrixRow('صافي المبيعات',win,win.map(k=>FULL.IS[k].NETSALES),v=>fmt(v))}
  ${gmrMatrixRow('هامش الربح الإجمالي',win,win.map(k=>FULL.RATm[k].GM),v=>pct(v),'high')}
@@ -5113,7 +5123,8 @@ function renderGMReportV51(){
  <p class="hint">المنهجية: تُستخرج مبيعات فعلية حتى ${last} (${fmt(outlook.ytdSales)})، وتُسقط الأشهر المتبقية من معدل تشغيلي حديث (آخر 3 أشهر) بعد تجريده من أثر الموسمية، مضروباً بمؤشر موسمية كل شهر متبقٍ وباتجاه نمو مُستخرج من آخر ${Math.min(12,hist.length)} شهراً. نطاق التفاؤل/التشاؤم مبني على تذبذب النمو الشهري الفعلي (${pct(outlook.vol)}) لا على افتراض تحكّمي. هذا توقع تقديري وليس التزاماً.</p>`}
 
  // ==== ٤. تحليل المصاريف والشذوذ ====
- let sec4=`<h2>٤. تحليل المصاريف (آخر ${win.length} شهراً)</h2>
+ let sec4=`<h2>٤. تحليل المصاريف (آخر ${win.length} شهراً حتى ${last})</h2>
+ <p class="hint">جدول الاتجاه أعلاه نافذة أوسع من الفترة المحدَّدة للسياق فقط؛ أما كشف الشذوذ والتوصيات أدناه فمقتصر على الفترة المحدَّدة أعلى الشاشة (${periodLabel}) فقط.</p>
  <div class="tblwrap"><table><thead><tr><th>البند</th>${win.map(k=>`<th>${k}</th>`).join('')}<th>الاتجاه</th></tr></thead><tbody>
  ${GMR_EXP_LINES.map(([code,name])=>gmrMatrixRow(name,win,win.map(k=>FULL.IS[k][code]),v=>fmt(v))).join('')}
  ${gmrMatrixRow('إجمالي المصاريف التشغيلية',win,win.map(k=>FULL.IS[k].OPEX),v=>fmt(v))}
@@ -5123,13 +5134,14 @@ function renderGMReportV51(){
  <table><thead><tr><th>البند</th><th class="num">آخر شهر</th><th class="num">التغيّر</th></tr></thead><tbody>
  ${lastVsPrior.map(x=>`<tr><td>${x.name}</td><td class="num">${fmt(x.cur)}</td><td class="num ${cls(-x.chg)}">${fmt(x.chg)}</td></tr>`).join('')}
  </tbody></table>`;
- sec4+=`<h3>كشف شذوذ إحصائي (انحراف &gt; 2.5σ عن قيمة متوقعة = اتجاه متحرك 12 شهراً × مؤشر موسمية الشهر التقويمي — يستبعد النمط الموسمي المتكرر والنمو التراكمي)</h3>`;
+ sec4+=`<h3>كشف شذوذ إحصائي ضمن الفترة المحدَّدة فقط (انحراف &gt; 2.5σ عن قيمة متوقعة = اتجاه متحرك 12 شهراً × مؤشر موسمية الشهر التقويمي، محسوبة من كامل التاريخ — يستبعد النمط الموسمي المتكرر والنمو التراكمي)</h3>`;
  sec4+=anomalies.length?`<table><thead><tr><th>الشهر</th><th>البند</th><th class="num">القيمة الفعلية</th><th class="num">القيمة المتوقعة</th><th class="num">σ</th></tr></thead><tbody>
  ${anomalies.slice(0,20).map(a=>`<tr><td>${a.k}</td><td>${(GMR_EXP_LINES.find(x=>x[0]===a.line)||[a.line,a.line])[1]}</td><td class="num">${fmt(a.v)}</td><td class="num">${fmt(a.expected)}</td><td class="num">${a.z.toFixed(1)}</td></tr>`).join('')}
  </tbody></table>${anomalies.length>20?`<p class="hint">معروض أعلى 20 حالة من أصل ${anomalies.length} حسب قوة الانحراف.</p>`:''}`:'<p class="hint">✔ لم يُكتشف شذوذ إحصائي جوهري ببنود المصاريف المتابَعة.</p>';
 
  // ==== ٥. التوصيات وسجل المخاطر ====
- let sec5=`<h2>٥. التوصيات (مرتبة حسب الأثر المالي المقدَّر)</h2>`;
+ let sec5=`<h2>٥. التوصيات (مرتبة حسب الأثر المالي المقدَّر)</h2>
+ <p class="hint">مبنية على اتجاهات آخر 3 أشهر ضمن الفترة وأي شذوذ وقع داخل الفترة المحدَّدة (${periodLabel}) فقط — لا تُستدعى ملاحظات من خارج الفترة.</p>`;
  sec5+=RECO.length?`<table><thead><tr><th>الملاحظة</th><th>السبب المرجّح</th><th class="num">الأثر المالي المقدَّر (سنوياً)</th><th>الإجراء المقترح</th><th>المسؤول</th><th>الأولوية</th><th>الإطار الزمني</th></tr></thead><tbody>
  ${RECO.map(r=>`<tr><td class="ex">${r.obs}</td><td class="ex">${esc(r.cause)}</td><td class="num">${fmt(Math.abs(r.impact))}</td><td class="ex">${esc(r.action)}</td><td>${esc(r.owner)}</td><td><span class="badge ${r.priority==='عالية'?'bad':'warn'}">${r.priority}</span></td><td>${r.timeframe}</td></tr>`).join('')}
  </tbody></table>`:'<p class="hint">✔ لا توجد توصيات ذات أثر مالي جوهري حالياً بناءً على الاتجاهات الأخيرة.</p>';
