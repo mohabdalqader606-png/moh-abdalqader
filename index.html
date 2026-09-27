@@ -407,7 +407,7 @@
 </main>
 
 <div id="printSheet"></div>
-<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 71</b></footer>
+<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 72</b></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
@@ -848,8 +848,8 @@ function expName(base){ return base+'_'+$('fYear').value+'_فترة'+$('fPeriod'
 
 /* ================= نماذج الإكسل الرسمية (بنمط كشوفات المركز) ================= */
 const MDL_CO='مركز الكيلاني للأغذية';
-function mdlWs(subtitle, headRows, dataRows, groupMerges, intCols, pctCols){
-  return {subtitle, headRows, data:dataRows, gm:groupMerges||[], intCols:intCols||[], pctCols:pctCols||[]};
+function mdlWs(subtitle, headRows, dataRows, groupMerges, intCols, pctCols, dateCols){
+  return {subtitle, headRows, data:dataRows, gm:groupMerges||[], intCols:intCols||[], pctCols:pctCols||[], dateCols:dateCols||[]};
 }
 async function mdlSave(sheets, fname){
   if(typeof ExcelJS==='undefined'){ alert('مكتبة تنسيق الإكسل لم تُحمَّل — تحقق من الإنترنت وحدّث الصفحة'); return; }
@@ -880,7 +880,7 @@ async function mdlSave(sheets, fname){
         cell.alignment={horizontal:'center',vertical:'middle',wrapText:true};
         cell.border=BORD; } }
     // البيانات
-    const ints=new Set(spec.intCols), pcts=new Set(spec.pctCols);
+    const ints=new Set(spec.intCols), pcts=new Set(spec.pctCols), dts=new Set(spec.dateCols);
     for(let r=3+H;r<=2+H+spec.data.length;r++){
       const row=ws.getRow(r);
       const texts=row.values.filter(v=>typeof v==='string');
@@ -888,6 +888,10 @@ async function mdlSave(sheets, fname){
       const isOB=texts.includes('رصيد مدور');
       for(let c=1;c<=nCols;c++){ const cell=row.getCell(c);
         cell.border=BORD;
+        if(dts.has(c-1) && cell.value!=='' && cell.value!=null && !isTot){
+          const d=parseAnyDate(cell.value);
+          if(d){ cell.value=new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); cell.numFmt='dd/mm/yyyy'; }
+        }
         if(typeof cell.value==='number'){
           if(pcts.has(c-1)) cell.numFmt='0.##"%"';
           else if(ints.has(c-1)) cell.numFmt='0';
@@ -902,7 +906,7 @@ async function mdlSave(sheets, fname){
     // عرض الأعمدة تلقائياً من المحتوى
     for(let c=1;c<=nCols;c++){ let w=8;
       for(let r=3;r<=2+H+spec.data.length;r++){ const v=ws.getRow(r).getCell(c).value;
-        const len=v==null?0:String(typeof v==='number'?v.toFixed(3):v).length;
+        const len=v==null?0:(v instanceof Date?10:String(typeof v==='number'?v.toFixed(3):v).length);
         if(len>w) w=len; }
       ws.getColumn(c).width=Math.min(Math.max(w*1.15+2, 9), 48); }
     // فلتر تلقائي على صف الرأس الأخير
@@ -937,7 +941,7 @@ function xlsxSalesModel(){
   for(const [k,_,ht] of DCOLS){ tot.push(r3(rows.reduce((s,x)=>s+((x.v[k]||[0,0])[0]||0),0)));
     if(ht) tot.push(r3(rows.reduce((s,x)=>s+((x.v[k]||[0,0])[1]||0),0))); }
   data.push(tot);
-  mdlSave([[ 'تحليل المبيعات', mdlWs(`تحليل المبيعات من ${pr.from} الى ${pr.to}`, [h1,h2], data, gm) ]],
+  mdlSave([[ 'تحليل المبيعات', mdlWs(`تحليل المبيعات من ${pr.from} الى ${pr.to}`, [h1,h2], data, gm, [], [], [3]) ]],
     expName('تحليل_المبيعات'));
 }
 /* ---- نموذج الجهات غير الخاضعة: ورقة لكل جهة + تجميعي ---- */
@@ -953,11 +957,11 @@ function xlsxNTModel(){
     const list=[...ntApproved(cls)].sort(srt);
     const t=r3(list.reduce((s,d)=>s+d.total,0)); grand=r3(grand+t);
     const data=list.map(row); data.push(['المجموع','','','',t]);
-    sheets.push([nm, mdlWs(`مبيعات جهات ${nm} من ${pr.from} الى ${pr.to}`, [hdr], data, [])]);
+    sheets.push([nm, mdlWs(`مبيعات جهات ${nm} من ${pr.from} الى ${pr.to}`, [hdr], data, [], [], [], [3])]);
     allData.push(...list.map(row), ['مجموع جهات '+nm,'','','',t]);
   }
   allData.push(['المجموع الكلي','','','',grand]);
-  sheets.push(['تجميعي', mdlWs(`مبيعات الجهات غير الخاضعة من ${pr.from} الى ${pr.to}`, [hdr], allData, [])]);
+  sheets.push(['تجميعي', mdlWs(`مبيعات الجهات غير الخاضعة من ${pr.from} الى ${pr.to}`, [hdr], allData, [], [], [], [3])]);
   mdlSave(sheets, expName('الجهات_غير_الخاضعة'));
 }
 /* ---- نموذج المشتريات المحلية ---- */
@@ -1004,12 +1008,12 @@ function xlsxTrustModel(){
   };
   const hdrF=['#','التاريخ','البيان','رمز الحركة','نوع الحركة','التصنيف','مدين','دائن'];
   const hdrC=['#','التاريخ','البيان','رمز الحركة','نوع الحركة','مدين','دائن'];
-  const sheets=[[ 'الكشف الكامل', mdlWs(`امانات ضريبة المبيعات من ${pr.from} الى ${pr.to}`, [hdrF], mkData(ST.trust.rows,true,true), [], [0]) ]];
+  const sheets=[[ 'الكشف الكامل', mdlWs(`امانات ضريبة المبيعات من ${pr.from} الى ${pr.to}`, [hdrF], mkData(ST.trust.rows,true,true), [], [0], [], [1]) ]];
   for(const cls of ['sal','loc','imp','exp','pay','oth','']){
     const rows=ST.trust.rows.filter(r=>(r.cls||'')===cls);
     if(!rows.length) continue;
     const nm=TCLS_AR[cls]?String(TCLS_AR[cls]).replace('⚠ ',''):'غير مصنف';
-    sheets.push([nm, mdlWs(`امانات ضريبة المبيعات - ${nm} من ${pr.from} الى ${pr.to}`, [hdrC], mkData(rows,false,false), [], [0])]);
+    sheets.push([nm, mdlWs(`امانات ضريبة المبيعات - ${nm} من ${pr.from} الى ${pr.to}`, [hdrC], mkData(rows,false,false), [], [0], [], [1])]);
   }
   mdlSave(sheets, expName('امانات_ضريبة_المبيعات'));
 }
@@ -1020,12 +1024,18 @@ function xlsxImportsModel(){
   if(!ST.imports || !ST.imports.rows.length){ alert('ارفع كشف المستوردات أولاً.'); return; }
   const pr=periodRangeText();
   const rows=ST.imports.rows.filter(r=>!r.excl).sort((a,b)=>(+declKey(a.no)-+declKey(b.no)) || String(a.no).localeCompare(String(b.no)) || a.rate-b.rate);
-  const hdr=['التسلسل','رقم البيان','تاريخ البيان','رقم الوصل المالي','وصل التصفية','تاريخ الوصل المالي','قيمة البند','نسبة الضريبة','مبلغ الضريبة','وصف البنود'];
+  const withDesc=confirm('تضمين عمود «وصف البنود» في الملف؟\n\nموافق (OK) = مع الوصف · إلغاء (Cancel) = بدون');
+  const hdr=['التسلسل','رقم البيان','تاريخ البيان','رقم الوصل المالي','وصل التصفية','تاريخ الوصل المالي','قيمة البند','نسبة الضريبة','مبلغ الضريبة'];
+  if(withDesc) hdr.push('وصف البنود');
   let totB=0, totT=0;
   const data=rows.map((r,i)=>{ totB=r3(totB+r.base); totT=r3(totT+r.tax);
-    return [i+1, r.no||'', r.dateDecl||'', r.finNo||'', r.clearNo||'', r.dateFin||'', r3(r.base), +r.rate||0, r3(r.tax), r.items||'']; });
-  data.push(['','','','','','المجموع ('+rows.length+' سطر)', r3(totB), '', r3(totT), '']);
-  const sheets=[['المستوردات', mdlWs(`المستوردات من ${pr.from} الى ${pr.to}`, [hdr], data, [], [0], [7])]];
+    const out=[i+1, r.no||'', r.dateDecl||'', r.finNo||'', r.clearNo||'', r.dateFin||'', r3(r.base), +r.rate||0, r3(r.tax)];
+    if(withDesc) out.push(r.items||'');
+    return out; });
+  const tot=['','','','','','المجموع ('+rows.length+' سطر)', r3(totB), '', r3(totT)];
+  if(withDesc) tot.push('');
+  data.push(tot);
+  const sheets=[['المستوردات', mdlWs(`المستوردات من ${pr.from} الى ${pr.to}`, [hdr], data, [], [0], [7], [2,5])]];
   // ورقة الملخص حسب النسبة (كما بذيل الكشف المطبوع)
   try{
     const C=calc(); const ks=Object.keys(C.imports).sort((a,b)=>b-a);
