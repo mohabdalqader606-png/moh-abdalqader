@@ -407,7 +407,7 @@
 </main>
 
 <div id="printSheet"></div>
-<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 69</b></footer>
+<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 70</b></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
@@ -973,6 +973,32 @@ function xlsxTrustModel(){
 }
 
 
+/* ---- نموذج المستوردات ---- */
+function xlsxImportsModel(){
+  if(!ST.imports || !ST.imports.rows.length){ alert('ارفع كشف المستوردات أولاً.'); return; }
+  const pr=periodRangeText();
+  const rows=ST.imports.rows.filter(r=>!r.excl).sort((a,b)=>(+declKey(a.no)-+declKey(b.no)) || String(a.no).localeCompare(String(b.no)) || a.rate-b.rate);
+  const hdr=['التسلسل','رقم البيان','تاريخ البيان','رقم الوصل المالي','وصل التصفية','تاريخ الوصل المالي','قيمة البند','نسبة الضريبة','مبلغ الضريبة','وصف البنود'];
+  let totB=0, totT=0;
+  const data=rows.map((r,i)=>{ totB=r3(totB+r.base); totT=r3(totT+r.tax);
+    return [i+1, r.no||'', r.dateDecl||'', r.finNo||'', r.clearNo||'', r.dateFin||'', r3(r.base), +r.rate||0, r3(r.tax), r.items||'']; });
+  data.push(['','','','','','المجموع ('+rows.length+' سطر)', r3(totB), '', r3(totT), '']);
+  const ws=mdlWs(`المستوردات من ${pr.from} الى ${pr.to}`, [hdr], data, [], [0]);
+  // عمود نسبة الضريبة يظهر بعلامة % دون تحويل القيمة
+  { const range=XLSX.utils.decode_range(ws['!ref']);
+    for(let R=3;R<=range.e.r;R++){ const c=ws[XLSX.utils.encode_cell({r:R,c:7})]; if(c&&c.t==='n') c.z='0.##"%"'; } }
+  const sheets=[['المستوردات', ws]];
+  // ورقة الملخص حسب النسبة (كما بذيل الكشف المطبوع)
+  try{
+    const C=calc(); const ks=Object.keys(C.imports).sort((a,b)=>b-a);
+    const sd=ks.map(k=>['قيمة الاستيراد '+k+'%', r3(C.imports[k].b), 'مبلغ الضريبة '+k+'%', r3(C.imports[k].t)]);
+    sd.push(['قيمة الاستيراد 0%', r3(C.impZero), '', '']);
+    sd.push(['قيمة الاستيراد للأصناف المعفاه', r3(C.impExm), '', '']);
+    sd.push(['المجموع', r3(totB), 'المجموع', r3(totT)]);
+    sheets.push(['الملخص', mdlWs(`المستوردات - الملخص من ${pr.from} الى ${pr.to}`, [['البيان','القيمة','البيان','الضريبة']], sd, [])]);
+  }catch(e){}
+  mdlSave(sheets, expName('المستوردات'));
+}
 /* ================= 1) الجهات غير الخاضعة ================= */
 function guardEdit(inp){ if(!canEdit){
   alert(roleEdit?'هذه نسخة زميل آخر — للعمل افتح نسختك أنت من قائمة «نسخة الإقرار» في تبويب الفترة.'
@@ -2478,7 +2504,7 @@ function renderAll(C){
       </tbody><tfoot><tr><td>المجموع</td><td class="num">${fmt(sumB)}</td><td class="num">${fmt(C.importsTax)}</td></tr></tfoot></table>
       <div class="hint" style="margin-top:6px;">أسطر النسبة 0% تُصنّف تلقائياً (لحوم/أسماك = صفرية · طحين/زيت/فاصولياء... = معفاة) — عدّل التصنيف من عمود «تصنيف 0%» بالجدول، والمستبعد (قيد نصي مثل مواد دعائية) عليه ☑ استبعاد.</div>
       <div class="toolrow"><button class="btn-teal btn-sm" onclick="printImportsReport()">🖨️ كشف المستوردات الرسمي (مرتب حسب البيان)</button>
-      <button class="btn-ghost btn-sm" onclick="xlsxFromPrintFn(()=>printImportsReport(), expName('كشف_المستوردات_الرسمي'))">📥 إكسل الكشف الرسمي</button></div>
+      <button class="btn-teal btn-sm" onclick="xlsxImportsModel()" title="النموذج الرسمي: التسلسل، رقم البيان وتاريخه، الوصل المالي والتصفية وتاريخه، قيمة البند، النسبة، الضريبة، وصف البنود + ورقة ملخص النسب">📥 إكسل نموذج المستوردات</button></div>
       <div id="importsChecks" style="margin-top:10px;"></div>
       <div class="scrollbox" style="max-height:380px; margin-top:10px;"><div id="importsRows"></div></div>`;
     renderImportsChecks();
