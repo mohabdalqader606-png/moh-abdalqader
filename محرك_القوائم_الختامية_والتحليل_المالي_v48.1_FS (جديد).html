@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v50.1-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v50.2-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -5006,6 +5006,13 @@ function gmrV51Anomalies(hist,FULL,lines){
  return out.sort((a,b)=>Math.abs(b.z)-Math.abs(a.z));
 }
 const GMR_EXP_LINES=[['SELL','بيع وتوزيع'],['ADMIN','إداري وعمومي'],['SALARY','رواتب وأجور'],['DEPR','إهلاك'],['PROV','مخصصات']];
+function gmrV51Buckets(hist,unit){
+ // كل دلو (ربع/سنة) يُحتسب عبر calcCore() الحقيقية نفسها — بلا أي إعادة احتساب نسب يدوياً، لضمان مطابقة الأرقام لباقي الشاشة تماماً.
+ const keyFn=unit==='q'?k=>{const [y,m]=k.split('-').map(Number);return y+'-Q'+Math.ceil(m/3)}:k=>k.split('-')[0];
+ const need=unit==='q'?3:12;
+ const map={};hist.forEach(k=>{const kk=keyFn(k);(map[kk]=map[kk]||[]).push(k)});
+ return Object.keys(map).sort().filter(kk=>map[kk].length===need).map(kk=>{const ms=map[kk];return {label:kk,ms,C:calcCore(ms[0],ms[ms.length-1])}});
+}
 function gmrV51Reco(hist,FULL,seas,anomalies){
  const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
  const R3=hist.slice(-Math.min(3,hist.length)),P3=hist.length>=6?hist.slice(-6,-3):hist.slice(0,Math.min(3,hist.length));
@@ -5107,6 +5114,34 @@ function renderGMReportV51(){
  ${gmrMatrixRow('صافي الدين / EBITDA',win,win.map(k=>FULL.RATm[k].ND_EBITDA),v=>v.toFixed(2),'low')}
  </tbody></table></div>
  <p class="hint">التلوين نسبي داخل كل صف (المقارنة بين أشهر نفس المؤشر فقط) — أخضر يعني أقرب للأفضل ضمن نفس الصف وأحمر أقرب للأسوأ، حسب اتجاه كل مؤشر (ارتفاع/انخفاض أفضل).</p>`;
+ // ٢ب: مصفوفة ربعية — كل ربع مُحتسب عبر calcCore() (نفس المحرك، تجميع حقيقي لا تقريبي)
+ const QB=gmrV51Buckets(hist,'q').slice(-8);
+ if(QB.length>=2)sec2+=`<h3>٢ب. مصفوفة ربعية (آخر ${QB.length} ربعاً)</h3>
+ <div class="tblwrap"><table><thead><tr><th>المؤشر</th>${QB.map(b=>`<th>${b.label}</th>`).join('')}<th>الاتجاه</th></tr></thead><tbody>
+ ${gmrMatrixRow('صافي المبيعات',QB,QB.map(b=>b.C.IS.TOT.NETSALES),v=>fmt(v))}
+ ${gmrMatrixRow('هامش الربح الإجمالي',QB,QB.map(b=>b.C.RAT.GM),v=>pct(v),'high')}
+ ${gmrMatrixRow('EBITDA',QB,QB.map(b=>b.C.IS.TOT.EBITDA),v=>fmt(v))}
+ ${gmrMatrixRow('هامش صافي الربح',QB,QB.map(b=>b.C.RAT.NM),v=>pct(v),'high')}
+ ${gmrMatrixRow('صافي الدين / EBITDA',QB,QB.map(b=>b.C.RAT.ND_EBITDA),v=>v.toFixed(2),'low')}
+ </tbody></table></div>`;
+ else sec2+=`<h3>٢ب. مصفوفة ربعية</h3><p class="hint">يحتاج ربعين كاملين (6 أشهر) على الأقل من البيانات.</p>`;
+ // ٢ج: مصفوفة سنوية مع معدل النمو السنوي المركّب CAGR
+ const YB=gmrV51Buckets(hist,'y');
+ if(YB.length>=2){
+  const cagr=key=>{const first=YB[0].C.IS.TOT[key],last_=YB[YB.length-1].C.IS.TOT[key],n=YB.length-1;return (first>0&&last_>0&&n>0)?Math.pow(last_/first,1/n)-1:null};
+  sec2+=`<h3>٢ج. مصفوفة سنوية (${YB.length} سنة كاملة)</h3>
+ <div class="tblwrap"><table><thead><tr><th>المؤشر</th>${YB.map(b=>`<th>${b.label}</th>`).join('')}<th>الاتجاه</th></tr></thead><tbody>
+ ${gmrMatrixRow('صافي المبيعات',YB,YB.map(b=>b.C.IS.TOT.NETSALES),v=>fmt(v))}
+ ${gmrMatrixRow('هامش الربح الإجمالي',YB,YB.map(b=>b.C.RAT.GM),v=>pct(v),'high')}
+ ${gmrMatrixRow('EBITDA',YB,YB.map(b=>b.C.IS.TOT.EBITDA),v=>fmt(v))}
+ ${gmrMatrixRow('صافي الربح',YB,YB.map(b=>b.C.IS.TOT.NI),v=>fmt(v))}
+ </tbody></table></div>
+ <table><thead><tr><th>معدل النمو السنوي المركّب CAGR (${YB[0].label} → ${YB[YB.length-1].label})</th><th class="num">القيمة</th></tr></thead><tbody>
+ <tr><td>صافي المبيعات</td><td class="num">${cagr('NETSALES')!=null?pct(cagr('NETSALES')):'—'}</td></tr>
+ <tr><td>EBITDA</td><td class="num">${cagr('EBITDA')!=null?pct(cagr('EBITDA')):'—'}</td></tr>
+ <tr><td>صافي الربح</td><td class="num">${cagr('NI')!=null?pct(cagr('NI')):'—'}</td></tr>
+ </tbody></table>`;
+ } else sec2+=`<h3>٢ج. مصفوفة سنوية (CAGR)</h3><p class="hint">يحتاج سنتين كاملتين (24 شهراً) على الأقل من البيانات.</p>`;
 
  // ==== ٣. الموسمية والتوقع السنوي ====
  let sec3=`<h2>٣. الموسمية والتوقع السنوي (${outlook.y})</h2>`;
@@ -5149,9 +5184,32 @@ function renderGMReportV51(){
  sec5+=RISKS.length?`<table><thead><tr><th>نوع الخطر</th><th>الملاحظة</th><th>الاحتمالية</th><th>الأثر</th><th>إجراء التخفيف المقترح</th></tr></thead><tbody>
  ${RISKS.map(r=>`<tr><td>${r.name}</td><td class="ex">${r.obs}</td><td><span class="badge ${r.prob==='مرتفعة'?'bad':'warn'}">${r.prob}</span></td><td><span class="badge ${r.impact==='مرتفع'?'bad':'warn'}">${r.impact}</span></td><td class="ex">${esc(r.mit)}</td></tr>`).join('')}
  </tbody></table>`:'<p class="hint">✔ لا توجد مخاطر مرصودة آلياً ضمن آخر 3 أشهر.</p>';
- sec5+=`<p class="hint">هذا التحليل مرحلة أولى من v51 (تحليل شهري متقدم) — تشمل النسخ القادمة أنواع تقارير إضافية (ربعي، سنوي بمعدل نمو مركّب، مقارنة حرة، فلاش PNG) وتحليلات متقدمة إضافية (DuPont، جسر التدفق النقدي، حساسية رأس المال العامل) وتصدير PowerPoint مخصَّص لهذا التقرير. تاريخ الإصدار: ${today}.</p>`;
+ sec5+=`<p class="hint">هذا التحليل مرحلة ثانية من v51 (تحليل شهري متقدم) — تشمل المراحل القادمة تقرير مقارنة حرة وفلاش PNG وحساسية رأس المال العامل التفاعلية وتصدير PowerPoint مخصَّص لهذا التقرير. تاريخ الإصدار: ${today}.</p>`;
 
- el.innerHTML=[sec1,sec2,sec3,sec4,sec5].join('\n');
+ // ==== ٦. تحليل DuPont (تفكيك العائد على حقوق الملكية) — الفترة المحدَّدة ====
+ let sec6=`<h2>٦. تحليل DuPont — تفكيك العائد على حقوق الملكية (الفترة المحدَّدة: ${periodLabel})</h2>`;
+ if(pRAT.ROE==null||pRAT.NM==null||pRAT.ATO==null||pRAT.EM==null)sec6+='<p class="hint">يحتاج احتساب ROE/هامش صافي الربح/دوران الأصول/الرافعة المالية لعرض هذا التحليل — راجع تبويب النسب المالية.</p>';
+ else sec6+=tree({ROE:pct(pRAT.ROE),NM:pct(pRAT.NM),ATO:pRAT.ATO.toFixed(2)+'x',EM:pRAT.EM.toFixed(2)+'x',NI:fmt(pIS.NI),S:fmt(pIS.NETSALES),TA:fmt(R.BSc.TA),EQ:fmt(R.BSc.EQ)},760);
+ sec6+=`<p class="hint">ROE = هامش صافي الربح × دوران الأصول × الرافعة المالية (الأصول/حقوق الملكية) — نفس أرقام تبويب النسب المالية للفترة نفسها بلا أي احتساب إضافي.</p>`;
+
+ // ==== ٧. جسر التدفق النقدي (الفترة المحدَّدة) ====
+ const pcf=R.CF;
+ let sec7=`<h2>٧. جسر التدفق النقدي — من صافي الربح إلى صافي التغيّر بالنقد (الفترة المحدَّدة: ${periodLabel})</h2>
+ ${waterfall([
+  {n:'صافي الربح',v:pcf.NI,type:'total'},
+  {n:'+ إهلاك',v:pcf.DEPR},
+  {n:'+ مخصصات',v:pcf.PROV},
+  {n:'± ذمم مدينة',v:pcf.dAR},
+  {n:'± مخزون',v:pcf.dINV},
+  {n:'± ذمم دائنة',v:pcf.dAP},
+  {n:'التدفق التشغيلي',v:pcf.CFO,type:'total'},
+  {n:'استثمار',v:pcf.CFI},
+  {n:'تمويل',v:pcf.CFF},
+  {n:'صافي التغيّر بالنقد',v:pcf.NET,type:'total'}
+ ])}
+ <p class="hint">نفس مكونات قائمة التدفقات النقدية (تبويب التدفقات) للفترة المحدَّدة، معروضة كجسر تراكمي بدل جدول.${Math.abs(pcf.UNEXPL)>1?' ⚠ فرق غير مفسَّر '+fmt(pcf.UNEXPL)+' — انظر تبويب سلامة البيانات.':''}</p>`;
+
+ el.innerHTML=[sec1,sec2,sec3,sec4,sec5,sec6,sec7].join('\n');
 }
 
 /* ================= تصدير تقرير المدير العام: ملف HTML مستقل يعمل بدون إنترنت، مع فلترة فترة/مقارنة من داخله =================
