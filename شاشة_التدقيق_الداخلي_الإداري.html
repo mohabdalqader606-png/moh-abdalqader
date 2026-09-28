@@ -17519,11 +17519,11 @@ renderDashboard();
       return;
     }
     const tbody = ktTable(box, [
-      {l:"رقم الملف",cls:"w",k:"jefile"}, {l:"رقم الشيك",cls:"w",k:"jeno"}, {l:"تاريخ الشيك",cls:"w",k:"date"}, {l:"المستفيد / البيان"},
+      {l:"موجود",cls:"w",k:"li"}, {l:"رقم الملف",cls:"w",k:"jefile"}, {l:"رقم الشيك",cls:"w",k:"jeno"}, {l:"تاريخ الشيك",cls:"w",k:"date"}, {l:"المستفيد / البيان"},
       {l:"المبلغ",cls:"n",k:"amt"}, {l:"الشخص المسؤول",cls:"w",k:"resp"},
       {l:"حالة الفحص",cls:"w",k:"st"}, {l:"الملاحظة"}, {l:"المرجع/المستند",cls:"w wrap",k:"ref"},
       {l:"اسم المدقق",cls:"w",k:"resp"}, {l:"تاريخ الفحص",cls:"w",k:"date"}, {l:"",cls:"w",k:"act"},
-    ], {ariaLabel:"سجل فحص تسلسل الشيكات", minWidth:1460});
+    ], {ariaLabel:"سجل فحص تسلسل الشيكات", minWidth:1520});
     if(csFilterActive()){
       const note = document.createElement("div");
       note.style.cssText = "font-size:12.5px;color:var(--kd-muted);margin-bottom:8px;";
@@ -17532,8 +17532,10 @@ renderDashboard();
     }
     entries.forEach(entry=>{
       const stMeta = CS_STATUS_META[entry.status] || CS_STATUS_META.not_checked;
+      const hasNote = entry.status==="checked_note" || entry.status==="follow_up";
       const tr = document.createElement("tr");
       tr.innerHTML = `
+        <td class="w" style="text-align:center;"><input type="checkbox" class="cs-quick-ok" ${entry.status==="checked_ok"?"checked":""} ${hasNote?'disabled title="لديه ملاحظة — استخدم زر تعديل لتغيير حالته"':'title="تأشير سريع: الشيك موجود وسليم"'}></td>
         <td class="w">${escapeHtml(file.fileNo||file.refCode)}</td>
         <td class="w">${escapeHtml(entry.checkNo||"—")}</td>
         <td class="w">${entry.checkDate? ktShortDate(entry.checkDate) : "—"}</td>
@@ -17546,6 +17548,15 @@ renderDashboard();
         <td class="w">${escapeHtml(entry.auditorName||"—")}</td>
         <td class="w">${entry.testDate? ktShortDate(entry.testDate) : "—"}</td>
         <td class="w"><button type="button" class="btn btn-ghost btn-sm cs-edit-entry-btn kt-edit">تعديل</button> <button type="button" class="btn btn-ghost btn-sm cs-del-entry-btn" title="حذف الشيك">🗑</button></td>`;
+      tr.querySelector(".cs-quick-ok").onchange = (ev)=>{
+        entry.status = ev.target.checked ? "checked_ok" : "not_checked";
+        entry.testDate = ev.target.checked ? (entry.testDate || todayStr()) : entry.testDate;
+        entry.auditorName = entry.auditorName || csLastAuditorName(file);
+        entry.updatedAt = new Date().toISOString();
+        file.updatedAt = entry.updatedAt;
+        saveDB();
+        csRenderFileDetail(file);
+      };
       tr.querySelector(".cs-edit-entry-btn").onclick = ()=> csOpenEntryModal(file, entry);
       tr.querySelector(".cs-del-entry-btn").onclick = ()=>{
         if(!confirm(`حذف تسجيل فحص الشيك رقم «${entry.checkNo||""}»؟`)) return;
