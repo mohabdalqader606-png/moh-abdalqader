@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v50.3-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v50.4-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -1509,8 +1509,9 @@ th.yd,td.yd{background:rgba(11,31,58,.035);font-size:.92em}th.yd{color:var(--mut
   <button type="button" onclick="gmrSetMode('v51')">التحليل الشهري المتقدم (تجريبي)</button>
  </div>
  <div class="row noprint">
+  <button class="btn gold" onclick="exportGMReportV51HTML()">🖥️ تصدير شاشة تفاعلية مستقلة (HTML — تبويبات، بلا إنترنت)</button>
   <button class="btn gold" onclick="exportGMReportV51PPTX()">📊 تصدير PowerPoint — التحليل الشهري المتقدم (~11 سلايد)</button>
-  <span class="hint">يصدّر أرقام "التحليل الشهري المتقدم" (أعلاه) بغض النظر عن الوضع المعروض حالياً — بنفس أرقام الفترة المحدَّدة أعلى الشاشة.</span>
+  <span class="hint">يصدّران أرقام "التحليل الشهري المتقدم" (أعلاه) بغض النظر عن الوضع المعروض حالياً — بنفس أرقام الفترة المحدَّدة أعلى الشاشة، كلقطة ثابتة بتاريخ التصدير.</span>
  </div>
  <div class="board" id="gmrPage"></div>
 </section>
@@ -5077,10 +5078,7 @@ function gmrV51Context(){
  const QB=gmrV51Buckets(hist,'q').slice(-8),YB=gmrV51Buckets(hist,'y');
  return {ok:true,hist,FULL,co,today,last,lastIS,lastR,W,win,seas,outlook,anomalies,RECO,RISKS,ltmSum,prevLtmSum,yoy,periodLabel,pIS,pRAT,pcf,QB,YB};
 }
-function renderGMReportV51(){
- const el=document.getElementById('gmrPage');
- const X=gmrV51Context();
- if(!X.ok){el.innerHTML='<p class="hint">يحتاج هذا التحليل 3 أشهر بيانات على الأقل حتى نهاية الفترة المحدَّدة أعلى الشاشة.</p>';return}
+function gmrV51Sections(X){
  const {hist,FULL,co,today,last,lastIS,lastR,W,win,seas,outlook,anomalies,RECO,RISKS,ltmSum,prevLtmSum,yoy,periodLabel,pIS,pRAT,pcf,QB,YB}=X;
  const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
@@ -5217,7 +5215,14 @@ function renderGMReportV51(){
  ])}
  <p class="hint">نفس مكونات قائمة التدفقات النقدية (تبويب التدفقات) للفترة المحدَّدة، معروضة كجسر تراكمي بدل جدول.${Math.abs(pcf.UNEXPL)>1?' ⚠ فرق غير مفسَّر '+fmt(pcf.UNEXPL)+' — انظر تبويب سلامة البيانات.':''}</p>`;
 
- el.innerHTML=[sec1,sec2,sec3,sec4,sec5,sec6,sec7].join('\n');
+ return {sec1,sec2,sec3,sec4,sec5,sec6,sec7};
+}
+function renderGMReportV51(){
+ const el=document.getElementById('gmrPage');
+ const X=gmrV51Context();
+ if(!X.ok){el.innerHTML='<p class="hint">يحتاج هذا التحليل 3 أشهر بيانات على الأقل حتى نهاية الفترة المحدَّدة أعلى الشاشة.</p>';return}
+ const s=gmrV51Sections(X);
+ el.innerHTML=[s.sec1,s.sec2,s.sec3,s.sec4,s.sec5,s.sec6,s.sec7].join('\n');
 }
 
 /* ================= تصدير تقرير المدير العام: ملف HTML مستقل يعمل بدون إنترنت، مع فلترة فترة/مقارنة من داخله =================
@@ -5863,6 +5868,65 @@ async function exportGMReportV51PPTX(){
 
  const fname='التحليل_الشهري_المتقدم_'+String(co).replace(/\s+/g,'_')+'_'+last+'.pptx';
  await pptx.writeFile({fileName:fname});
+}
+
+/* ================= v51 — تصدير شاشة تفاعلية مستقلة (HTML واحد، يعمل بدون إنترنت) مقسَّمة تبويبات =================
+   لقطة ثابتة بتاريخ التصدير للفترة المحدَّدة أعلى الشاشة (بخلاف تصدير v50 الذي يعيد الاحتساب داخلياً لأي فترة) —
+   كل الأقسام السبعة (نفس renderGMReportV51() حرفياً عبر gmrV51Sections) موزَّعة على تبويبات قابلة للتنقل. */
+function exportGMReportV51HTML(){
+ if(!R){alert('يجب الاحتساب أولاً (اضغط زر "احتساب" أعلى الشاشة).');return}
+ const X=gmrV51Context();
+ if(!X.ok){alert('يحتاج هذا التقرير 3 أشهر بيانات على الأقل حتى نهاية الفترة المحدَّدة أعلى الشاشة.');return}
+ const s=gmrV51Sections(X);
+ const co=S.settings.co,today=X.today,periodLabel=X.periodLabel;
+ const TABS=[['tS1','١. الملخص التنفيذي',s.sec1],['tS2','٢. المصفوفة الشهرية/الربعية/السنوية',s.sec2],['tS3','٣. الموسمية والتوقع',s.sec3],['tS4','٤. تحليل المصاريف',s.sec4],['tS5','٥. التوصيات والمخاطر',s.sec5],['tS6','٦. DuPont',s.sec6],['tS7','٧. جسر التدفق النقدي',s.sec7]];
+ const doc=`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>التحليل الشهري المتقدم — ${co}</title><style>
+ body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;color:#1c2733;margin:0;background:#f3f5f9}
+ .wrap{max-width:1180px;margin:0 auto;padding:26px}
+ h1{font-size:20px;color:#1f3a5f;margin:0 0 2px;border-bottom:3px solid #c9a227;padding-bottom:8px}
+ .sub{color:#5a6b7d;font-size:12px;margin:6px 0 16px;line-height:1.7}
+ h2{font-size:15px;color:#1f3a5f;margin:0 0 10px}h3{font-size:13px;color:#39506e;margin:14px 0 6px}
+ table{border-collapse:collapse;width:100%;font-size:11.5px;margin-bottom:6px;background:#fff}
+ th{background:#1f3a5f;color:#fff;padding:7px 8px;font-weight:600;text-align:right;position:sticky;top:0}
+ td{border:1px solid #d7dee6;padding:6px 8px;vertical-align:top}
+ tr:nth-child(even) td{background:#f6f8fa}
+ .num{text-align:left;direction:ltr;font-variant-numeric:tabular-nums;white-space:nowrap}
+ .ex{font-size:11px;color:#3a4a5c;line-height:1.6;max-width:280px}
+ .neg{color:#b3261e}.pos{color:#1a7f37}
+ .tot td{background:#eef2f7!important;font-weight:700;border-top:2px solid #1f3a5f}
+ .badge{display:inline-block;padding:2px 8px;border-radius:20px;font-size:10.5px;background:#eef1f5;color:#444}
+ .badge.ok{background:#e6f4ea;color:#1a7f37}.badge.warn{background:#fff4d9;color:#8a6d1a}.badge.bad{background:#fbe9e7;color:#b3261e}
+ .hint{color:#8a97a6;font-size:12px}
+ .tblwrap{overflow:auto;max-height:72vh;border:1px solid #dde2ec;border-radius:8px}
+ .grid{display:grid;gap:14px}.grid.g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+ @media (max-width:900px){.grid.g4{grid-template-columns:repeat(2,minmax(0,1fr))}}
+ .kpi{background:linear-gradient(160deg,#0B1F3A,#1E3A66);color:#fff;border-radius:12px;padding:14px 16px;min-height:90px}
+ .kpi.light{background:#fff;color:#0B1F3A;border:1px solid #dde2ec}
+ .kpi .lbl{font-size:12px;opacity:.85}.kpi .val{font-size:22px;font-weight:700;margin:4px 0;font-variant-numeric:tabular-nums}
+ .kpi .sub{font-size:11.5px}.kpi .sub.neg{color:#b3261e}.kpi .sub.pos{color:#1a7f37}
+ .spark{width:110px;height:24px;vertical-align:middle}
+ .noprint{position:sticky;top:0;z-index:5;background:#0B1F3A;display:flex;gap:4px;padding:10px 26px;flex-wrap:wrap;align-items:center}
+ .noprint b{color:#fff;font-size:13px;margin-inline-end:10px}
+ .noprint button{background:#EEF1F7;color:#0B1F3A;border:0;border-radius:8px;padding:8px 14px;font-size:12.5px;cursor:pointer;font-family:inherit;font-weight:600}
+ .noprint button.on{background:#C9A227;color:#1c2733}
+ .tabpanel{display:none}.tabpanel.on{display:block}
+ @media print{.noprint{display:none}.tabpanel{display:block!important}}
+ </style></head><body>
+ <div class="noprint" id="xNav"><b>${co}</b>${TABS.map((t,i)=>`<button id="btn_${t[0]}" class="${i===0?'on':''}" onclick="xShow('${t[0]}')">${t[1]}</button>`).join('')}<button onclick="window.print()">🖨 طباعة/PDF</button></div>
+ <div class="wrap">
+ <h1>التحليل الشهري المتقدم</h1>
+ <div class="sub">${co} — لقطة ثابتة بتاريخ التصدير (${today}) للفترة المحدَّدة: ${periodLabel}. لتحديث الأرقام لفترة أخرى، أعِد التصدير من الشاشة الحيّة.</div>
+ ${TABS.map((t,i)=>`<div class="tabpanel ${i===0?'on':''}" id="${t[0]}">${t[2]}</div>`).join('\n')}
+ </div>
+ <script>
+ function xShow(id){document.querySelectorAll('.tabpanel').forEach(function(p){p.classList.toggle('on',p.id===id)});document.querySelectorAll('#xNav button[id^="btn_"]').forEach(function(b){b.classList.toggle('on',b.id==='btn_'+id)})}
+ <\/script>
+ </body></html>`;
+ const blob=new Blob([doc],{type:'text/html;charset=utf-8'});
+ const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+ a.download='التحليل_الشهري_المتقدم_'+String(co).replace(/\s+/g,'_')+'_'+X.last+'.html';
+ document.body.appendChild(a);a.click();a.remove();
+ toast('تم تصدير الشاشة التفاعلية');
 }
 
 /* ---------- Tooltips & Voice ---------- */
