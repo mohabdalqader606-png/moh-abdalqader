@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v50.4-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v50.5-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -5074,12 +5074,12 @@ function gmrV51Context(){
  const prevLtmSum=key=>prevLtm?prevLtm.reduce((a,k)=>a+FULL.IS[k][key],0):null;
  const yoy=(cur,prev)=>prev?(cur-prev)/Math.abs(prev):null;
  const periodLabel=R.per[0]+(R.per.length>1?' → '+R.per[R.per.length-1]:'')+' ('+R.nMo+' شهر)';
- const pIS=R.IS.TOT,pRAT=R.RAT,pcf=R.CF;
+ const pIS=R.IS.TOT,pRAT=R.RAT,pcf=R.CF,pBSc=R.BSc;
  const QB=gmrV51Buckets(hist,'q').slice(-8),YB=gmrV51Buckets(hist,'y');
- return {ok:true,hist,FULL,co,today,last,lastIS,lastR,W,win,seas,outlook,anomalies,RECO,RISKS,ltmSum,prevLtmSum,yoy,periodLabel,pIS,pRAT,pcf,QB,YB};
+ return {ok:true,hist,FULL,co,today,last,lastIS,lastR,W,win,seas,outlook,anomalies,RECO,RISKS,ltmSum,prevLtmSum,yoy,periodLabel,pIS,pRAT,pcf,pBSc,QB,YB};
 }
 function gmrV51Sections(X){
- const {hist,FULL,co,today,last,lastIS,lastR,W,win,seas,outlook,anomalies,RECO,RISKS,ltmSum,prevLtmSum,yoy,periodLabel,pIS,pRAT,pcf,QB,YB}=X;
+ const {hist,FULL,co,today,last,lastIS,lastR,W,win,seas,outlook,anomalies,RECO,RISKS,ltmSum,prevLtmSum,yoy,periodLabel,pIS,pRAT,pcf,pBSc,QB,YB}=X;
  const esc=t=>String(t==null?'':t).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
  // ==== ١. الملخص التنفيذي ====
@@ -5196,7 +5196,7 @@ function gmrV51Sections(X){
  // ==== ٦. تحليل DuPont (تفكيك العائد على حقوق الملكية) — الفترة المحدَّدة ====
  let sec6=`<h2>٦. تحليل DuPont — تفكيك العائد على حقوق الملكية (الفترة المحدَّدة: ${periodLabel})</h2>`;
  if(pRAT.ROE==null||pRAT.NM==null||pRAT.ATO==null||pRAT.EM==null)sec6+='<p class="hint">يحتاج احتساب ROE/هامش صافي الربح/دوران الأصول/الرافعة المالية لعرض هذا التحليل — راجع تبويب النسب المالية.</p>';
- else sec6+=tree({ROE:pct(pRAT.ROE),NM:pct(pRAT.NM),ATO:pRAT.ATO.toFixed(2)+'x',EM:pRAT.EM.toFixed(2)+'x',NI:fmt(pIS.NI),S:fmt(pIS.NETSALES),TA:fmt(R.BSc.TA),EQ:fmt(R.BSc.EQ)},760);
+ else sec6+=tree({ROE:pct(pRAT.ROE),NM:pct(pRAT.NM),ATO:pRAT.ATO.toFixed(2)+'x',EM:pRAT.EM.toFixed(2)+'x',NI:fmt(pIS.NI),S:fmt(pIS.NETSALES),TA:fmt(pBSc.TA),EQ:fmt(pBSc.EQ)},760);
  sec6+=`<p class="hint">ROE = هامش صافي الربح × دوران الأصول × الرافعة المالية (الأصول/حقوق الملكية) — نفس أرقام تبويب النسب المالية للفترة نفسها بلا أي احتساب إضافي.</p>`;
 
  // ==== ٧. جسر التدفق النقدي (الفترة المحدَّدة) ====
@@ -5873,18 +5873,28 @@ async function exportGMReportV51PPTX(){
 /* ================= v51 — تصدير شاشة تفاعلية مستقلة (HTML واحد، يعمل بدون إنترنت) مقسَّمة تبويبات =================
    لقطة ثابتة بتاريخ التصدير للفترة المحدَّدة أعلى الشاشة (بخلاف تصدير v50 الذي يعيد الاحتساب داخلياً لأي فترة) —
    كل الأقسام السبعة (نفس renderGMReportV51() حرفياً عبر gmrV51Sections) موزَّعة على تبويبات قابلة للتنقل. */
+/* ================= v51 — تصدير شاشة تفاعلية مستقلة شاملة: القوائم الثلاث + التحليل المالي + التحليل الشهري المتقدم =================
+   بخلاف النسخة السابقة (لقطة ثابتة)، هذا التصدير يعيد الاحتساب داخلياً لأي فترة يختارها المستخدم من الملف نفسه
+   (بلا إنترنت)، بنفس أسلوب exportGMReportHTML() تماماً (بيانات شهرية مضمَّنة + نسخ حرفي لصيغتي rat()/cf()) —
+   والدوال الخاصة بـv51 (gmrV51Sections وما يتصل بها) تُنسخ حرفياً وقت التصدير عبر toString() فتعمل بلا أي
+   إعادة كتابة يدوية قد تسبب تعارضاً بين الشاشة الحيّة والملف المُصدَّر. */
 function exportGMReportV51HTML(){
  if(!R){alert('يجب الاحتساب أولاً (اضغط زر "احتساب" أعلى الشاشة).');return}
- const X=gmrV51Context();
- if(!X.ok){alert('يحتاج هذا التقرير 3 أشهر بيانات على الأقل حتى نهاية الفترة المحدَّدة أعلى الشاشة.');return}
- const s=gmrV51Sections(X);
- const co=S.settings.co,today=X.today,periodLabel=X.periodLabel;
- const TABS=[['tS1','١. الملخص التنفيذي',s.sec1],['tS2','٢. المصفوفة الشهرية/الربعية/السنوية',s.sec2],['tS3','٣. الموسمية والتوقع',s.sec3],['tS4','٤. تحليل المصاريف',s.sec4],['tS5','٥. التوصيات والمخاطر',s.sec5],['tS6','٦. DuPont',s.sec6],['tS7','٧. جسر التدفق النقدي',s.sec7]];
- const doc=`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>التحليل الشهري المتقدم — ${co}</title><style>
+ const ms=months();
+ const FULL=calcCore(ms[0],ms[ms.length-1]);
+ const ISFIELDS=Object.keys(FULL.IS[ms[0]]);
+ const MONTHLY=ms.map(k=>({k,IS:FULL.IS[k],BS:FULL.BSm[k]}));
+ const openBS=FULL.BSo;
+ const co=S.settings.co,cur=S.settings.cur,scale=S.settings.scale||1,today=new Date().toLocaleDateString('ar-JO');
+ const D={MONTHLY,openBS,SETTINGS:{scale,cur,tax:S.settings.tax,wacc:S.settings.wacc,co},BENCH,RATIO_GROUPS:GMR_RATIO_GROUPS,per:R.per,ISFIELDS,today};
+ const dataJSON=JSON.stringify(D).replace(/</g,'\\u003c');
+ // ملاحظة: svgo وsf مُعرَّفتان حرفياً بأسفل (const مع arrow function) لأن toString() على تعبير arrow لا يعيد بيان const كاملاً
+ const portedFns=[gmrHeatCell,gmrMatrixRow,gmrV51Seasonality,gmrV51Outlook,gmrV51Anomalies,gmrV51Reco,gmrV51Risks,gmrV51Sections,spark,tree,waterfall,glowDefs,kpi].map(f=>f.toString()).join('\n');
+ const GMR_EXP_LINES_JSON=JSON.stringify(GMR_EXP_LINES);
+
+ const doc=`<!DOCTYPE html><html dir="rtl" lang="ar"><head><meta charset="utf-8"><title>التحليل الشهري المتقدم والقوائم المالية — ${co}</title><style>
  body{font-family:'Segoe UI',Tahoma,Arial,sans-serif;color:#1c2733;margin:0;background:#f3f5f9}
- .wrap{max-width:1180px;margin:0 auto;padding:26px}
- h1{font-size:20px;color:#1f3a5f;margin:0 0 2px;border-bottom:3px solid #c9a227;padding-bottom:8px}
- .sub{color:#5a6b7d;font-size:12px;margin:6px 0 16px;line-height:1.7}
+ h1{font-size:17px;color:#1f3a5f;margin:0}
  h2{font-size:15px;color:#1f3a5f;margin:0 0 10px}h3{font-size:13px;color:#39506e;margin:14px 0 6px}
  table{border-collapse:collapse;width:100%;font-size:11.5px;margin-bottom:6px;background:#fff}
  th{background:#1f3a5f;color:#fff;padding:7px 8px;font-weight:600;text-align:right;position:sticky;top:0}
@@ -5905,26 +5915,218 @@ function exportGMReportV51HTML(){
  .kpi .lbl{font-size:12px;opacity:.85}.kpi .val{font-size:22px;font-weight:700;margin:4px 0;font-variant-numeric:tabular-nums}
  .kpi .sub{font-size:11.5px}.kpi .sub.neg{color:#b3261e}.kpi .sub.pos{color:#1a7f37}
  .spark{width:110px;height:24px;vertical-align:middle}
- .noprint{position:sticky;top:0;z-index:5;background:#0B1F3A;display:flex;gap:4px;padding:10px 26px;flex-wrap:wrap;align-items:center}
- .noprint b{color:#fff;font-size:13px;margin-inline-end:10px}
- .noprint button{background:#EEF1F7;color:#0B1F3A;border:0;border-radius:8px;padding:8px 14px;font-size:12.5px;cursor:pointer;font-family:inherit;font-weight:600}
- .noprint button.on{background:#C9A227;color:#1c2733}
+ .topbar{position:sticky;top:0;z-index:5;background:#0B1F3A;display:flex;gap:8px;padding:10px 18px;flex-wrap:wrap;align-items:center;color:#fff}
+ .topbar label{font-size:12px;display:flex;gap:4px;align-items:center}
+ .topbar select{font-family:inherit;padding:4px 6px;border-radius:6px;border:1px solid #33456b;background:#132a4d;color:#fff}
+ .topbar button{background:#C9A227;color:#1c2733;border:0;border-radius:8px;padding:7px 14px;font-size:12.5px;cursor:pointer;font-family:inherit;font-weight:700}
+ .topbar .sub{color:#B9C4D6;font-size:11.5px;margin-inline-start:auto}
+ .shell{display:flex;align-items:flex-start;min-height:calc(100vh - 52px)}
+ .xnav{flex:0 0 230px;background:#fff;border-inline-start:1px solid #dde2ec;padding:14px 10px;position:sticky;top:52px;height:calc(100vh - 52px);overflow:auto}
+ .xnav .grp{font-size:11px;color:#8a97a6;font-weight:700;margin:14px 6px 6px;text-transform:uppercase}
+ .xnav button{display:block;width:100%;text-align:right;background:none;border:0;border-radius:8px;padding:9px 10px;font-size:12.5px;cursor:pointer;font-family:inherit;color:#1c2733;margin-bottom:2px}
+ .xnav button:hover{background:#EEF1F7}
+ .xnav button.on{background:#0B1F3A;color:#fff;font-weight:700}
+ .xmain{flex:1;min-width:0;padding:20px 24px}
  .tabpanel{display:none}.tabpanel.on{display:block}
- @media print{.noprint{display:none}.tabpanel{display:block!important}}
+ @media (max-width:860px){.shell{display:block}.xnav{position:static;height:auto;width:auto;display:flex;flex-wrap:wrap;border-inline-start:0;border-bottom:1px solid #dde2ec}.xnav button{width:auto}}
+ @media print{.topbar,.xnav{display:none}.tabpanel{display:block!important}.xmain{padding:0}}
  </style></head><body>
- <div class="noprint" id="xNav"><b>${co}</b>${TABS.map((t,i)=>`<button id="btn_${t[0]}" class="${i===0?'on':''}" onclick="xShow('${t[0]}')">${t[1]}</button>`).join('')}<button onclick="window.print()">🖨 طباعة/PDF</button></div>
- <div class="wrap">
- <h1>التحليل الشهري المتقدم</h1>
- <div class="sub">${co} — لقطة ثابتة بتاريخ التصدير (${today}) للفترة المحدَّدة: ${periodLabel}. لتحديث الأرقام لفترة أخرى، أعِد التصدير من الشاشة الحيّة.</div>
- ${TABS.map((t,i)=>`<div class="tabpanel ${i===0?'on':''}" id="${t[0]}">${t[2]}</div>`).join('\n')}
+ <div class="topbar">
+  <h1>${co}</h1>
+  <label>من <select id="xFrom"></select></label><label>إلى <select id="xTo"></select></label>
+  <label>المقارنة <select id="xCmp"><option value="none">بدون</option><option value="prev" selected>الفترة السابقة المماثلة</option><option value="ly">نفس الفترة سنة سابقة</option><option value="custom">فترة مخصصة</option></select></label>
+  <span id="xCmpCustom" style="display:none"><label>من <select id="xCmpFrom"></select></label><label>إلى <select id="xCmpTo"></select></label></span>
+  <button onclick="xRenderAll()">تحديث</button>
+  <button onclick="window.print()">🖨 طباعة/PDF</button>
+  <span class="sub" id="xPeriodLbl"></span>
+ </div>
+ <div class="shell">
+  <nav class="xnav" id="xNav">
+   <div class="grp">القوائم المالية</div>
+   <button id="btn_pInc" class="on" onclick="xShow('pInc')">قائمة الدخل</button>
+   <button id="btn_pBal" onclick="xShow('pBal')">المركز المالي</button>
+   <button id="btn_pCF" onclick="xShow('pCF')">التدفقات النقدية</button>
+   <button id="btn_pRat" onclick="xShow('pRat')">التحليل المالي (النسب)</button>
+   <div class="grp">التحليل الشهري المتقدم</div>
+   <button id="btn_pS1" onclick="xShow('pS1')">١. الملخص التنفيذي</button>
+   <button id="btn_pS2" onclick="xShow('pS2')">٢. المصفوفة الشهرية/الربعية/السنوية</button>
+   <button id="btn_pS3" onclick="xShow('pS3')">٣. الموسمية والتوقع</button>
+   <button id="btn_pS4" onclick="xShow('pS4')">٤. تحليل المصاريف</button>
+   <button id="btn_pS5" onclick="xShow('pS5')">٥. التوصيات والمخاطر</button>
+   <button id="btn_pS6" onclick="xShow('pS6')">٦. DuPont</button>
+   <button id="btn_pS7" onclick="xShow('pS7')">٧. جسر التدفق النقدي</button>
+  </nav>
+  <main class="xmain">
+   <div class="tabpanel on" id="pInc"></div>
+   <div class="tabpanel" id="pBal"></div>
+   <div class="tabpanel" id="pCF"></div>
+   <div class="tabpanel" id="pRat"></div>
+   <div class="tabpanel" id="pS1"></div>
+   <div class="tabpanel" id="pS2"></div>
+   <div class="tabpanel" id="pS3"></div>
+   <div class="tabpanel" id="pS4"></div>
+   <div class="tabpanel" id="pS5"></div>
+   <div class="tabpanel" id="pS6"></div>
+   <div class="tabpanel" id="pS7"></div>
+  </main>
  </div>
  <script>
- function xShow(id){document.querySelectorAll('.tabpanel').forEach(function(p){p.classList.toggle('on',p.id===id)});document.querySelectorAll('#xNav button[id^="btn_"]').forEach(function(b){b.classList.toggle('on',b.id==='btn_'+id)})}
+ const D=${dataJSON};
+ const GMR_EXP_LINES=${GMR_EXP_LINES_JSON};
+ const MK=D.MONTHLY.map(function(m){return m.k});const MBY={};D.MONTHLY.forEach(function(m){MBY[m.k]=m});
+ const BENCH=D.BENCH;const S={settings:D.SETTINGS};
+ const C={navy:'#0B1F3A',gold:'#C9A227',teal:'#1B998B',coral:'#D64545',ink2:'#1E3A66',muted:'#8A97AB',light:'#E6EAF2'};
+ const KIC={'الإيرادات':'📈','صافي المبيعات':'📈','مجمل الربح':'💰','صافي الربح':'🏆','التدفق التشغيلي':'💧','التدفق النقدي التشغيلي':'💧','الذمم المدينة':'👥','صافي البنوك/الدين':'🏦','EBITDA':'📊','ROE سنوي':'🎯'};
+ let _svgUid=0;
+ const svgo=(w,h,inner)=>\`<svg viewBox="0 0 \${w} \${h}" xmlns="http://www.w3.org/2000/svg" font-family="Segoe UI,Tahoma" font-size="11" direction="ltr">\${inner}</svg>\`;
+ const sf=v=>{const s=S.settings.scale||1;v=v/s;const a=Math.abs(v);return (v<0?'-':'')+(a>=1e6?(a/1e6).toFixed(2)+'M':a>=1e3?(a/1e3).toFixed(1)+'K':a.toFixed(0))};
+ function esc(t){return String(t==null?'':t).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+ function fmt(v,d){if(v==null||isNaN(v))return '—';const s=D.SETTINGS.scale||1;v=v/s;const a=Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:d==null?0:d,maximumFractionDigits:d==null?0:d});return v<0?'('+a+')':a}
+ function pct(v,d){d=d==null?1:d;return v==null||isNaN(v)||!isFinite(v)?'—':(v*100).toFixed(d)+'%'}
+ function chg(a,b){if(!b)return null;return (a-b)/Math.abs(b)}
+ function cls(v){return v<0?'num neg':'num'}
+ function rfmt(k,v){if(v==null||!isFinite(v))return '—';const f=D.BENCH[k].fmt;return f==='%'?pct(v):f==='d'?v.toFixed(0):f==='n'?fmt(v):v.toFixed(2)}
+ function grade(k,v){if(v==null||!isFinite(v))return ['','—'];const b=D.BENCH[k];const tol=(b.hi-b.lo)*0.25;
+  if(b.dir==='low')return v<=b.hi?['ok','✅ ضمن المعيار']:v<=b.hi+tol?['warn','⚠ قريب']:['bad','❌ خارج المعيار'];
+  if(b.dir==='high')return v>=b.lo?['ok','✅ ضمن المعيار']:v>=b.lo-tol?['warn','⚠ قريب']:['bad','❌ خارج المعيار'];
+  return (v>=b.lo&&v<=b.hi)?['ok','✅ ضمن المعيار']:(v>=b.lo-tol&&v<=b.hi+tol)?['warn','⚠ قريب']:['bad','❌ خارج المعيار']}
+ function bpDirA(v){return v>0.004?'ارتفع':v<-0.004?'انخفض':'استقر'}
+ function bpClsA(v){return v<-0.004?'neg':v>0.004?'pos':''}
+ function bpAmtRow(label,curV,cmpVal,cmpLabel,pctBase){
+  const pctTxt=pctBase?' ('+pct(curV/pctBase)+' من صافي المبيعات)':'';
+  if(cmpVal==null)return '<tr><td>'+label+'</td><td class="num"><b>'+fmt(curV)+'</b></td><td class="num">—</td><td class="num">—</td><td class="ex">بلغ '+fmt(curV)+pctTxt+' خلال الفترة، بدون فترة مقارنة محدَّدة.</td></tr>';
+  const dd=curV-cmpVal,p=chg(curV,cmpVal);
+  const chgClause=(Math.abs(dd)>0.004&&p!=null)?('، أي '+bpDirA(dd)+' بنسبة '+pct(Math.abs(p))):'';
+  const note=bpDirA(dd)+' من '+fmt(cmpVal)+' إلى '+fmt(curV)+chgClause+' مقارنة بـ'+cmpLabel+pctTxt+'.';
+  return '<tr><td>'+label+'</td><td class="num"><b>'+fmt(curV)+'</b></td><td class="num">'+fmt(cmpVal)+'</td><td class="num '+bpClsA(dd)+'">'+fmt(dd)+'</td><td class="ex">'+note+'</td></tr>';
+ }
+ function bpRatRow(k,rt,cmRat,cmpLabel){
+  let v=rt[k],cmpVal=cmRat?cmRat[k]:null;if(v!=null&&!isFinite(v))v=null;if(cmpVal!=null&&!isFinite(cmpVal))cmpVal=null;
+  const g=grade(k,v),b=D.BENCH[k];
+  if(v==null)return '<tr><td>'+b.n+'</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="c"><span class="badge">—</span></td><td class="ex">غير محتسب.</td></tr>';
+  const rangeTxt='(النطاق المرجعي '+rfmt(k,b.lo)+'–'+rfmt(k,b.hi)+')';
+  if(cmpVal==null)return '<tr><td>'+b.n+'</td><td class="num"><b>'+rfmt(k,v)+'</b></td><td class="num">—</td><td class="num">—</td><td class="c"><span class="badge '+g[0]+'">'+g[1]+'</span></td><td class="ex">بلغ '+rfmt(k,v)+' خلال الفترة '+rangeTxt+'.</td></tr>';
+  const dd=v-cmpVal,dTxt=b.fmt==='%'?pct(dd):dd.toFixed(2);
+  const note=bpDirA(dd)+' من '+rfmt(k,cmpVal)+' إلى '+rfmt(k,v)+' مقارنة بـ'+cmpLabel+' '+rangeTxt+'.';
+  return '<tr><td>'+b.n+'</td><td class="num"><b>'+rfmt(k,v)+'</b></td><td class="num">'+rfmt(k,cmpVal)+'</td><td class="num">'+dTxt+'</td><td class="c"><span class="badge '+g[0]+'">'+g[1]+'</span></td><td class="ex">'+note+'</td></tr>';
+ }
+ const cfFn=(b0,b1,is)=>{const dl=l=>(b1[l]||0)-(b0[l]||0);const o={};
+  o.NI=is.NI;o.DEPR=-(dl('ACC_DEP'));o.PROV=is.PROV;
+  o.dAR=-dl('AR');o.dUNB=-dl('UNBILLED');o.dDEF=-dl('DEFREV');o.dCHQ=-dl('CHQ');o.dINV=-dl('INV');o.dPRE=-dl('PREPAID');o.dREL_DR=-dl('RELATED_DR');
+  o.dAP=-dl('AP');o.dCHQP=-dl('CHQ_PAY');o.dACCR=-dl('ACCR');o.dTAX=-dl('TAX_PAY');o.dREL_CR=-dl('RELATED_CR');o.dEOS=-dl('EOS');
+  o.CFO=o.NI+o.DEPR+o.PROV+o.dAR+o.dUNB+o.dDEF+o.dCHQ+o.dINV+o.dPRE+o.dREL_DR+o.dAP+o.dCHQP+o.dACCR+o.dTAX+o.dREL_CR+o.dEOS;
+  o.CAPEX=-(dl('PPE')+dl('INTANG')+dl('OTHER_NCA'));o.CFI=o.CAPEX;
+  o.dSTL=-dl('STL');o.dLTL=-dl('LTL');o.dONCL=-dl('OTHER_NCL');o.dCAP=-dl('CAPITAL');o.dRES=-dl('RESERVES');o.dDIV=-dl('DIV');o.dOEQ=-dl('OTHER_EQ');
+  o.CFF=o.dSTL+o.dLTL+o.dONCL+o.dCAP+o.dRES+o.dDIV+o.dOEQ;
+  o.NET=o.CFO+o.CFI+o.CFF;o.CASH0=b0.CASH;o.CASH1=b1.CASH;o.ACTUAL=b1.CASH-b0.CASH;o.UNEXPL=o.ACTUAL-o.NET;o.FCF=o.CFO+o.CFI;
+  return o};
+ const ratFn=(is,b,bo,days,ann)=>{const avg=l=>((b[l]||0)+(bo[l]||0))/2;const o={};
+  o.CR=b.CL?b.CA/b.CL:null;o.QR=b.CL?(b.CA-b.INV)/b.CL:null;o.CashR=b.CL?b.CASH/b.CL:null;o.WC=b.WC;
+  o.DSO=is.NETSALES?avg('AR')/is.NETSALES*days:null;o.DIO=is.COGS?avg('INV')/is.COGS*days:null;o.DPO=is.COGS?-avg('AP')/is.COGS*days:null;o.CCC=(o.DSO||0)+(o.DIO||0)-(o.DPO||0);
+  o.ATO=b.TA?is.NETSALES*ann/((b.TA+bo.TA)/2):null;o.INVTO=avg('INV')?is.COGS*ann/avg('INV'):null;o.ARTO=avg('AR')?is.NETSALES*ann/avg('AR'):null;
+  o.GM=is.NETSALES?is.GP/is.NETSALES:null;o.OM=is.NETSALES?is.EBIT/is.NETSALES:null;o.EBITDAM=is.NETSALES?is.EBITDA/is.NETSALES:null;o.NM=is.NETSALES?is.NI/is.NETSALES:null;o.OPEXR=is.NETSALES?is.OPEX/is.NETSALES:null;
+  o.ROA=b.TA?is.NI*ann/((b.TA+bo.TA)/2):null;o.ROE=b.EQ?is.NI*ann/((b.EQ+bo.EQ)/2):null;o.ROCE=(b.TA-b.CL)?is.EBIT*ann/(b.TA-b.CL):null;
+  o.DE=b.EQ?b.TL/b.EQ:null;o.DR=b.TA?b.TL/b.TA:null;o.EM=b.EQ?b.TA/b.EQ:null;o.ICR=is.FIN_EXP?is.EBIT/is.FIN_EXP:null;
+  o.ND_EBITDA=is.EBITDA?b.NETDEBT/(is.EBITDA*ann):null;
+  o.SGA=is.NETSALES?(is.SELL+is.ADMIN)/is.NETSALES:null;o.FAT=b.NCA?is.NETSALES*ann/((b.NCA+bo.NCA)/2||b.NCA):null;o.WCT=b.WC?is.NETSALES*ann/((b.WC+bo.WC)/2||b.WC):null;o.EQR=b.TA?b.EQ/b.TA:null;o.NWC_S=is.NETSALES?b.WC/(is.NETSALES*ann):null;
+  const taxr=(D.SETTINGS.tax||0)/100;const nopat=is.EBIT*ann*(1-taxr);const invCap=b.EQ+(-(b.STL+b.LTL))-b.CASH;o.ROIC=invCap>0?nopat/invCap:null;const wacc=(D.SETTINGS.wacc||12)/100;o.EVA=invCap>0?(o.ROIC-wacc)*invCap:null;o.SPREAD=o.ROIC==null?null:o.ROIC-wacc;
+  o.SGR=(o.ROE!=null)?o.ROE*(1-Math.max(0,Math.min(1,-(b.DIV-bo.DIV)/(is.NI||1)))):null;o.DEF=is.OPEX+is.COGS?(b.CASH+b.AR+b.CHQ)/((is.OPEX+is.COGS)/days):null;
+  o.Z=b.TA?0.717*(b.WC/b.TA)+0.847*((b.RE_BAL+b.CUR_NI)/b.TA)+3.107*(is.EBIT*ann/b.TA)+0.42*(b.TL?b.EQ/b.TL:0)+0.998*(is.NETSALES*ann/b.TA):null;
+  return o};
+ function computeRange(from,to){
+  const i0=MK.indexOf(from),i1=MK.indexOf(to);if(i0<0||i1<0||i0>i1)return null;
+  const sel=MK.slice(i0,i1+1);const IS={};D.ISFIELDS.forEach(function(f){IS[f]=0});
+  sel.forEach(function(k){const m=MBY[k].IS;D.ISFIELDS.forEach(function(f){IS[f]+=(m[f]||0)})});
+  const BSc=MBY[to].BS;const BSo=i0>0?MBY[MK[i0-1]].BS:D.openBS;
+  if(BSc.NETDEBT==null)BSc.NETDEBT=-(BSc.STL||0)-(BSc.LTL||0)-(BSc.CASH||0);
+  if(BSo.NETDEBT==null)BSo.NETDEBT=-(BSo.STL||0)-(BSo.LTL||0)-(BSo.CASH||0);
+  const nMo=sel.length,ann=12/nMo,days=nMo*30.42;
+  const CF=cfFn(BSo,BSc,IS);const RAT=ratFn(IS,BSc,BSo,days,ann);
+  const debt=-(BSc.STL+BSc.LTL);
+  RAT.CCE=IS.EBITDA?CF.CFO/IS.EBITDA:null;RAT.CFO_NI=IS.NI?CF.CFO/IS.NI:null;RAT.CFO_D=debt>0?CF.CFO*ann/debt:null;RAT.FCF_S=IS.NETSALES?CF.FCF/IS.NETSALES:null;RAT.CAPEX_D=IS.DEPR?-CF.CFI/IS.DEPR:null;
+  return {per:sel,IS,BSc,BSo,CF,RAT,nMo};
+ }
+ function prevKeyX(k,n){let y=+k.split('-')[0],m=+k.split('-')[1];m-=n;while(m<=0){m+=12;y--}return y+'-'+String(m).padStart(2,'0')}
+ function fillSel(sel){sel.innerHTML=MK.map(function(k){return '<option>'+k+'</option>'}).join('')}
+ function secIncome(cur,cmp,cmpLabel){const is=cur.IS;const amtRow=function(l,c,p,b){return bpAmtRow(l,c,p,cmpLabel,b)};
+  return '<h2>قائمة الدخل</h2><table><thead><tr><th>البند</th><th>الحالية</th><th>المقارنة</th><th>التغير</th><th>الشرح</th></tr></thead><tbody>'+
+   amtRow('صافي المبيعات',is.NETSALES,cmp&&cmp.IS.NETSALES)+amtRow('مجمل الربح',is.GP,cmp&&cmp.IS.GP,is.NETSALES)+amtRow('EBITDA',is.EBITDA,cmp&&cmp.IS.EBITDA,is.NETSALES)+amtRow('EBIT',is.EBIT,cmp&&cmp.IS.EBIT,is.NETSALES)+amtRow('الربح قبل الضريبة',is.EBT,cmp&&cmp.IS.EBT,is.NETSALES)+amtRow('صافي الربح',is.NI,cmp&&cmp.IS.NI,is.NETSALES)+'</tbody></table>';}
+ function secBalance(cur,cmp,cmpLabel){const b=cur.BSc;const amtRow=function(l,c,p){return bpAmtRow(l,c,p,cmpLabel)};
+  return '<h2>المركز المالي</h2><table><thead><tr><th>البند</th><th>الحالية</th><th>المقارنة</th><th>التغير</th><th>الشرح</th></tr></thead><tbody>'+
+   amtRow('الأصول المتداولة',b.CA,cmp&&cmp.BSc.CA)+amtRow('الأصول غير المتداولة',b.NCA,cmp&&cmp.BSc.NCA)+amtRow('إجمالي الأصول',b.TA,cmp&&cmp.BSc.TA)+amtRow('الالتزامات المتداولة',b.CL,cmp&&cmp.BSc.CL)+amtRow('الالتزامات غير المتداولة',b.NCL,cmp&&cmp.BSc.NCL)+amtRow('إجمالي الالتزامات',b.TL,cmp&&cmp.BSc.TL)+amtRow('حقوق الملكية',b.EQ,cmp&&cmp.BSc.EQ)+amtRow('رأس المال العامل',b.WC,cmp&&cmp.BSc.WC)+'</tbody></table>';}
+ function secCF(cur,cmp,cmpLabel){const cf=cur.CF;const amtRow=function(l,c,p){return bpAmtRow(l,c,p,cmpLabel)};
+  let h='<h2>التدفقات النقدية</h2><table><thead><tr><th>البند</th><th>الحالية</th><th>المقارنة</th><th>التغير</th><th>الشرح</th></tr></thead><tbody>'+
+   amtRow('التدفق التشغيلي',cf.CFO,cmp&&cmp.CF.CFO)+amtRow('التدفق الاستثماري',cf.CFI,cmp&&cmp.CF.CFI)+amtRow('التدفق التمويلي',cf.CFF,cmp&&cmp.CF.CFF)+amtRow('صافي التغيّر بالنقد',cf.NET,cmp&&cmp.CF.NET)+amtRow('النقد أول الفترة',cf.CASH0,cmp&&cmp.CF.CASH0)+amtRow('النقد آخر الفترة',cf.CASH1,cmp&&cmp.CF.CASH1)+'</tbody></table>';
+  if(Math.abs(cf.UNEXPL)>1)h+='<p class="hint">⚠ فرق غير مفسَّر بالتدفقات النقدية: '+fmt(cf.UNEXPL)+'.</p>';
+  return h;}
+ function secRatios(cur,cmp,cmpLabel){const r=cur.RAT;
+  let h='<h2>التحليل المالي (النسب)</h2><table><thead><tr><th>المؤشر</th><th class="num">القيمة</th><th class="num">المعيار</th><th>الحالة</th></tr></thead><tbody>'+
+   ['GM','NM','CR','DE','ROE','ND_EBITDA'].map(function(k){const g=grade(k,r[k]);return '<tr><td>'+D.BENCH[k].n+'</td><td class="num"><b>'+rfmt(k,r[k])+'</b></td><td class="num">'+D.BENCH[k].lo+'–'+D.BENCH[k].hi+'</td><td><span class="badge '+g[0]+'">'+g[1]+'</span></td></tr>'}).join('')+'</tbody></table>';
+  D.RATIO_GROUPS.forEach(function(gr){h+='<h3>'+gr[0]+'</h3><table><thead><tr><th>المؤشر</th><th class="num">الحالية</th><th class="num">المقارنة</th><th class="num">التغير</th><th>الحالة</th><th>الشرح</th></tr></thead><tbody>'+gr[1].map(function(k){return bpRatRow(k,r,cmp?cmp.RAT:null,cmpLabel)}).join('')+'</tbody></table>'});
+  return h;}
+ ${portedFns}
+ const RATmCache={};(function(){let pb=D.openBS;MK.forEach(function(k){RATmCache[k]=ratFn(MBY[k].IS,MBY[k].BS,pb,30.42,12);pb=MBY[k].BS})})();
+ function gmrV51BucketsX(hist,unit){
+  const keyFn=unit==='q'?function(k){const y=+k.split('-')[0],m=+k.split('-')[1];return y+'-Q'+Math.ceil(m/3)}:function(k){return k.split('-')[0]};
+  const need=unit==='q'?3:12;const map={};hist.forEach(function(k){const kk=keyFn(k);(map[kk]=map[kk]||[]).push(k)});
+  return Object.keys(map).sort().filter(function(kk){return map[kk].length===need}).map(function(kk){const ms2=map[kk];const cr=computeRange(ms2[0],ms2[ms2.length-1]);return {label:kk,ms:ms2,C:{IS:{TOT:cr.IS},RAT:cr.RAT}}});
+ }
+ function gmrV51ContextX(fromSel,toSel){
+  const hist=MK.filter(function(k){return k<=toSel});
+  if(hist.length<3)return {ok:false};
+  const FULLx={IS:{},RATm:RATmCache};hist.forEach(function(k){FULLx.IS[k]=MBY[k].IS});MK.forEach(function(k){if(!FULLx.IS[k])FULLx.IS[k]=MBY[k].IS});
+  const co2=D.SETTINGS.co,today2=D.today;
+  const last=hist[hist.length-1],lastIS=FULLx.IS[last],lastR=FULLx.RATm[last];
+  const W=Math.min(12,hist.length),win=hist.slice(-W);
+  const seas=gmrV51Seasonality(hist,FULLx);
+  const outlook=gmrV51Outlook(hist,FULLx,seas);
+  const anomaliesAll=gmrV51Anomalies(hist,FULLx,GMR_EXP_LINES.map(function(x){return x[0]}));
+  const cur=computeRange(fromSel,toSel);
+  const selPer=cur.per;
+  const anomalies=anomaliesAll.filter(function(a){return selPer.indexOf(a.k)>=0});
+  const RECO=gmrV51Reco(hist,FULLx,seas,anomalies);
+  const RISKS=gmrV51Risks(hist,FULLx);
+  const ltmN=Math.min(12,hist.length),ltm=hist.slice(-ltmN),prevLtm=hist.length>=ltmN*2?hist.slice(-ltmN*2,-ltmN):null;
+  const ltmSum=function(key){return ltm.reduce(function(a,k){return a+FULLx.IS[k][key]},0)};
+  const prevLtmSum=function(key){return prevLtm?prevLtm.reduce(function(a,k){return a+FULLx.IS[k][key]},0):null};
+  const yoy=function(c,p){return p?(c-p)/Math.abs(p):null};
+  const periodLabel=selPer[0]+(selPer.length>1?' → '+selPer[selPer.length-1]:'')+' ('+cur.nMo+' شهر)';
+  const pIS=cur.IS,pRAT=cur.RAT,pcf=cur.CF,pBSc=cur.BSc;
+  const QB=gmrV51BucketsX(hist,'q').slice(-8),YB=gmrV51BucketsX(hist,'y');
+  return {ok:true,hist:hist,FULL:FULLx,co:co2,today:today2,last:last,lastIS:lastIS,lastR:lastR,W:W,win:win,seas:seas,outlook:outlook,anomalies:anomalies,RECO:RECO,RISKS:RISKS,ltmSum:ltmSum,prevLtmSum:prevLtmSum,yoy:yoy,periodLabel:periodLabel,pIS:pIS,pRAT:pRAT,pcf:pcf,pBSc:pBSc,QB:QB,YB:YB};
+ }
+ function xShow(id){document.querySelectorAll('.tabpanel').forEach(function(p){p.classList.toggle('on',p.id===id)});document.querySelectorAll('#xNav button').forEach(function(b){b.classList.toggle('on',b.id==='btn_'+id)})}
+ function xRenderAll(){
+  const from=document.getElementById('xFrom').value,to=document.getElementById('xTo').value;
+  const cur=computeRange(from,to);if(!cur){alert('فترة غير صالحة.');return}
+  const mode=document.getElementById('xCmp').value;let cmp=null,cmpLabel=null;
+  if(mode==='prev'){const n=cur.per.length,ct_=prevKeyX(from,1),cf_=prevKeyX(from,n);cmp=computeRange(cf_,ct_);cmpLabel=cmp?cf_+' → '+ct_:null}
+  else if(mode==='ly'){const cf_=prevKeyX(from,12),ct_=prevKeyX(to,12);cmp=computeRange(cf_,ct_);cmpLabel=cmp?cf_+' → '+ct_:null}
+  else if(mode==='custom'){const cf_=document.getElementById('xCmpFrom').value,ct_=document.getElementById('xCmpTo').value;cmp=computeRange(cf_,ct_);cmpLabel=cmp?cf_+' → '+ct_:null}
+  if(cmp){cur.RAT.SG=chg(cur.IS.NETSALES,cmp.IS.NETSALES);cur.RAT.NIG=chg(cur.IS.NI,cmp.IS.NI);cur.RAT.OL=cur.RAT.SG?chg(cur.IS.EBIT,cmp.IS.EBIT)/cur.RAT.SG:null}
+  document.getElementById('pInc').innerHTML=secIncome(cur,cmp,cmpLabel);
+  document.getElementById('pBal').innerHTML=secBalance(cur,cmp,cmpLabel);
+  document.getElementById('pCF').innerHTML=secCF(cur,cmp,cmpLabel);
+  document.getElementById('pRat').innerHTML=secRatios(cur,cmp,cmpLabel);
+  document.getElementById('xPeriodLbl').textContent='الفترة: '+from+' → '+to+(cmpLabel?' — مقارنة: '+cmpLabel:'');
+  const Xv51=gmrV51ContextX(from,to);
+  const ids=['pS1','pS2','pS3','pS4','pS5','pS6','pS7'];
+  if(!Xv51.ok){ids.forEach(function(id){document.getElementById(id).innerHTML='<p class="hint">يحتاج هذا التحليل 3 أشهر بيانات على الأقل حتى نهاية الفترة المختارة.</p>'});return}
+  const Sx=gmrV51Sections(Xv51);
+  document.getElementById('pS1').innerHTML=Sx.sec1;document.getElementById('pS2').innerHTML=Sx.sec2;document.getElementById('pS3').innerHTML=Sx.sec3;
+  document.getElementById('pS4').innerHTML=Sx.sec4;document.getElementById('pS5').innerHTML=Sx.sec5;document.getElementById('pS6').innerHTML=Sx.sec6;document.getElementById('pS7').innerHTML=Sx.sec7;
+ }
+ function xInit(){['xFrom','xTo','xCmpFrom','xCmpTo'].forEach(function(id){fillSel(document.getElementById(id))});
+  document.getElementById('xFrom').value=D.per[0];document.getElementById('xTo').value=D.per[D.per.length-1];
+  document.getElementById('xCmp').onchange=function(){document.getElementById('xCmpCustom').style.display=document.getElementById('xCmp').value==='custom'?'':'none'};
+  xRenderAll();
+ }
+ xInit();
  <\/script>
  </body></html>`;
  const blob=new Blob([doc],{type:'text/html;charset=utf-8'});
  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
- a.download='التحليل_الشهري_المتقدم_'+String(co).replace(/\s+/g,'_')+'_'+X.last+'.html';
+ a.download='التحليل_الشهري_المتقدم_والقوائم_'+String(co).replace(/\s+/g,'_')+'_'+R.per[R.per.length-1]+'.html';
  document.body.appendChild(a);a.click();a.remove();
  toast('تم تصدير الشاشة التفاعلية');
 }
