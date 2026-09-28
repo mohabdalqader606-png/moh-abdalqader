@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v50.7-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v50.8-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -6349,13 +6349,45 @@ function exportGMReportV51HTML(){
   if(Math.abs(cf.UNEXPL)>1)h+='<p class="hint">⚠ فرق غير مفسَّر بالتدفقات النقدية: '+fmt(cf.UNEXPL)+'.</p>';
   return h;
  }
- function secRatios(cur,cmp,cmpLabel){const r=cur.RAT;
-  let h='<h2>التحليل المالي (النسب)</h2><table><thead><tr><th>المؤشر</th><th class="num">القيمة</th><th class="num">المعيار</th><th>الحالة</th></tr></thead><tbody>'+
-   ['GM','NM','CR','DE','ROE','ND_EBITDA'].map(function(k){const g=grade(k,r[k]);return '<tr><td>'+D.BENCH[k].n+'</td><td class="num"><b>'+rfmt(k,r[k])+'</b></td><td class="num">'+D.BENCH[k].lo+'–'+D.BENCH[k].hi+'</td><td><span class="badge '+g[0]+'">'+g[1]+'</span></td></tr>'}).join('')+'</tbody></table>';
-  D.RATIO_GROUPS.forEach(function(gr){h+='<h3>'+gr[0]+'</h3><table><thead><tr><th>المؤشر</th><th class="num">الحالية</th><th class="num">المقارنة</th><th class="num">التغير</th><th>الحالة</th><th>الشرح</th></tr></thead><tbody>'+gr[1].map(function(k){return bpRatRow(k,r,cmp?cmp.RAT:null,cmpLabel)}).join('')+'</tbody></table>'});
-  return h;}
+ let ratViewX='sum';
+ function setRatView(m){ratViewX=m;xRenderAll()}
+ function secRatios(cur,cmp,cmpLabel){
+  const mode=ratViewX,r=cur.RAT;
+  let h='<h2>التحليل المالي (النسب)</h2>'+viewSwitcher(mode,'setRatView',VS_LABELS);
+  if(mode==='sum'){
+   h+='<table><thead><tr><th>المؤشر</th><th class="num">القيمة</th><th class="num">المعيار</th><th>الحالة</th></tr></thead><tbody>'+
+    ['GM','NM','CR','DE','ROE','ND_EBITDA'].map(function(k){const g=grade(k,r[k]);return '<tr><td>'+D.BENCH[k].n+'</td><td class="num"><b>'+rfmt(k,r[k])+'</b></td><td class="num">'+D.BENCH[k].lo+'–'+D.BENCH[k].hi+'</td><td><span class="badge '+g[0]+'">'+g[1]+'</span></td></tr>'}).join('')+'</tbody></table>';
+   D.RATIO_GROUPS.forEach(function(gr){h+='<h3>'+gr[0]+'</h3><table><thead><tr><th>المؤشر</th><th class="num">الحالية</th><th class="num">المقارنة</th><th class="num">التغير</th><th>الحالة</th><th>الشرح</th></tr></thead><tbody>'+gr[1].map(function(k){return bpRatRow(k,r,cmp?cmp.RAT:null,cmpLabel)}).join('')+'</tbody></table>'});
+  } else if(mode==='months'){
+   h+='<div class="tblwrap"><table><thead><tr><th>المؤشر</th>'+cur.per.map(function(k){return '<th class="num">'+k+'</th>'}).join('')+'</tr></thead><tbody>';
+   D.RATIO_GROUPS.forEach(function(gr){
+    h+='<tr class="sec"><td colspan="'+(cur.per.length+1)+'">'+gr[0]+'</td></tr>';
+    gr[1].forEach(function(k){
+     h+='<tr><td>'+D.BENCH[k].n+'</td>'+cur.per.map(function(mk){const v=RATmCache[mk]?RATmCache[mk][k]:null;return '<td class="num">'+(v==null?'—':rfmt(k,v))+'</td>'}).join('')+'</tr>';
+    });
+   });
+   h+='</tbody></table></div>';
+  } else if(mode==='years'){
+   const YG=yearGroupsX(cur.per);
+   h+='<p class="hint">'+ydLbl()+'</p><div class="tblwrap"><table><thead><tr><th>المؤشر</th>'+YG.map(function(g){return '<th class="num">'+g.lbl+'</th>'}).join('')+'</tr></thead><tbody>';
+   D.RATIO_GROUPS.forEach(function(gr){
+    h+='<tr class="sec"><td colspan="'+(YG.length+1)+'">'+gr[0]+'</td></tr>';
+    gr[1].forEach(function(k){
+     const vs=YG.map(function(g){const cr=computeRange(g.ms[0],g.ms[g.ms.length-1]);return cr&&cr.RAT?cr.RAT[k]:null});
+     h+='<tr><td>'+D.BENCH[k].n+'</td>'+vs.map(function(v,i){return '<td class="num">'+(v==null?'—':rfmt(k,v))+'</td>'+(i>0?ydCells(v,vs[i-1],0):'')}).join('')+'</tr>';
+    });
+   });
+   h+='</tbody></table></div>';
+  }
+  return h;
+ }
  ${portedFns}
- const RATmCache={},CFmCache={};(function(){let pb=D.openBS;MK.forEach(function(k){RATmCache[k]=ratFn(MBY[k].IS,MBY[k].BS,pb,30.42,12);CFmCache[k]=cfFn(pb,MBY[k].BS,MBY[k].IS);pb=MBY[k].BS})})();
+ const RATmCache={},CFmCache={};(function(){let pb=D.openBS;MK.forEach(function(k){
+  const ratm=ratFn(MBY[k].IS,MBY[k].BS,pb,30.42,12);const cfm=cfFn(pb,MBY[k].BS,MBY[k].IS);
+  const debt=-(MBY[k].BS.STL+MBY[k].BS.LTL);
+  ratm.CCE=MBY[k].IS.EBITDA?cfm.CFO/MBY[k].IS.EBITDA:null;ratm.CFO_NI=MBY[k].IS.NI?cfm.CFO/MBY[k].IS.NI:null;ratm.CFO_D=debt>0?cfm.CFO*12/debt:null;ratm.FCF_S=MBY[k].IS.NETSALES?cfm.FCF/MBY[k].IS.NETSALES:null;ratm.CAPEX_D=MBY[k].IS.DEPR?-cfm.CFI/MBY[k].IS.DEPR:null;
+  RATmCache[k]=ratm;CFmCache[k]=cfm;pb=MBY[k].BS;
+ })})();
  function gmrV51BucketsX(hist,unit){
   const keyFn=unit==='q'?function(k){const y=+k.split('-')[0],m=+k.split('-')[1];return y+'-Q'+Math.ceil(m/3)}:function(k){return k.split('-')[0]};
   const need=unit==='q'?3:12;const map={};hist.forEach(function(k){const kk=keyFn(k);(map[kk]=map[kk]||[]).push(k)});
