@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v50.9-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v50.10-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -3180,10 +3180,58 @@ function opdGroupSum(rows,keyCol,...valCols){
  const by={};rows.forEach(r=>{const k=r[keyCol]==null||r[keyCol]===''?'غير محدد':r[keyCol];const o=by[k]=by[k]||{};valCols.forEach(c=>o[c]=(o[c]||0)+(typeof r[c]==='number'?r[c]:0))});
  return Object.entries(by).map(([n,o])=>({n,...o}));
 }
-function opdTopTable(list,valKey,gpKey,totSales,title){
- return `<h3>${title}</h3><table><thead><tr><th>البند</th><th class="num">المبيعات</th><th class="num">% من الإجمالي</th>${gpKey?'<th class="num">هامش الربح</th>':''}</tr></thead><tbody>
+function opdTopTable(list,valKey,gpKey,totSales,title,valLabel){
+ valLabel=valLabel||'القيمة';
+ return `<h3>${title}</h3><table><thead><tr><th>البند</th><th class="num">${valLabel}</th><th class="num">% من الإجمالي</th>${gpKey?'<th class="num">هامش الربح</th>':''}</tr></thead><tbody>
  ${list.slice(0,10).map(r=>`<tr><td>${opsEsc(r.n)}</td><td class="num">${fmt(r[valKey])}</td><td class="num">${pct(totSales?r[valKey]/totSales:null)}</td>${gpKey?`<td class="num">${pct(r[valKey]?r[gpKey]/r[valKey]:null)}</td>`:''}</tr>`).join('')}
  </tbody></table>`;
+}
+const AGING_BUCKETS=[
+ {label:'جاري (M0)',cols:['M0 الشهر الحالي']},
+ {label:'1-3 أشهر',cols:['M1 شهر قبل','M2 شهرين قبل','M3 3 أشهر قبل']},
+ {label:'4-6 أشهر',cols:['M4 4 أشهر قبل','M5 5 أشهر قبل','M6 6 أشهر قبل']},
+ {label:'7-12 شهر',cols:['M7 7 أشهر قبل','M8 8 أشهر قبل','M9 9 أشهر قبل','M10 10 أشهر قبل','M11 11 أشهر قبل']},
+ {label:'أكثر من سنة',cols:['M12plus أقدم من 12 شهر']},
+];
+function opdAgingAnalysis(rows,balCol){
+ const bucketTotals=AGING_BUCKETS.map(b=>({label:b.label,val:rows.reduce((a,r)=>a+b.cols.reduce((s,c)=>s+(r[c]||0),0),0)}));
+ const overdueVal=bucketTotals.slice(1).reduce((a,b)=>a+b.val,0);
+ const overdueFn=r=>AGING_BUCKETS.slice(1).reduce((s,b)=>s+b.cols.reduce((x,c)=>x+(r[c]||0),0),0);
+ return {bucketTotals,overdueVal,overdueFn};
+}
+function opdRenderAR(stored,label,icon,srcKey){
+ if(!stored||!stored.rows.length)return `<p class="hint">لا توجد بيانات مستوردة بعد — افتح "📥 إدارة البيانات والاستيراد" واستورد ${srcKey}.</p>`;
+ const rows=stored.rows;
+ const balCol='الرصيد الحقيقي (من القيود حتى اليوم)',chqCol='الشيكات المؤجلة',limCol='السقف الائتماني';
+ const totBal=opdTopNum(rows,balCol),totChq=opdTopNum(rows,chqCol),netExposure=totBal-totChq;
+ const {bucketTotals,overdueVal,overdueFn}=opdAgingAnalysis(rows,balCol);
+ const overdueRate=totBal?overdueVal/totBal:null;
+ const breaches=rows.filter(r=>(r[limCol]||0)>0&&(r[balCol]||0)>(r[limCol]||0)).map(r=>({name:r['اسم العميل']||r['اسم المورد'],code:r['رمز العميل']||r['رمز المورد'],bal:r[balCol],lim:r[limCol],over:r[balCol]-r[limCol]})).sort((a,b)=>b.over-a.over);
+ const topBal=rows.slice().sort((a,b)=>(b[balCol]||0)-(a[balCol]||0)).slice(0,10);
+ const top3Share=totBal?topBal.slice(0,3).reduce((a,r)=>a+(r[balCol]||0),0)/totBal:0;
+ const overdueList=rows.map(r=>({name:r['اسم العميل']||r['اسم المورد'],code:r['رمز العميل']||r['رمز المورد'],bal:r[balCol],overdue:overdueFn(r)})).filter(r=>r.overdue>0).sort((a,b)=>b.overdue-a.overdue).slice(0,10);
+ let h=`<h2>${icon} تحليل ${label} <span class="hint">(من ${srcKey} — ${rows.length} صف، تاريخ الاستخراج ${new Date(stored.extractedAt).toLocaleDateString('ar-JO')})</span></h2>`;
+ h+=`<div class="grid g4">
+  ${kpi('إجمالي الرصيد',fmt(totBal),rows.length+' حساب','',1)}
+  ${kpi('صافي التعرّض (بعد الشيكات المؤجلة)',fmt(netExposure),'شيكات مؤجلة '+fmt(totChq),'',1)}
+  ${kpi('نسبة المتأخر (غير جاري)',pct(overdueRate),fmt(overdueVal),(overdueRate!=null&&overdueRate>0.3)?'neg':'',1)}
+  ${kpi('تجاوزوا السقف الائتماني',String(breaches.length),breaches.length?fmt(breaches.reduce((a,b)=>a+b.over,0))+' زيادة':'لا يوجد',breaches.length?'neg':'pos',1)}
+ </div>`;
+ if(top3Share>0.5)h+=`<p class="hint" style="color:#8a6d1a">⚠ تركّز: أعلى 3 حسابات يشكّلون ${pct(top3Share)} من إجمالي الرصيد.</p>`;
+ h+=`<h3>توزيع الأعمار</h3><table><thead><tr>${bucketTotals.map(b=>'<th class="num">'+b.label+'</th>').join('')}</tr></thead><tbody><tr>${bucketTotals.map(b=>`<td class="num ${b.label==='جاري (M0)'?'':(totBal&&b.val/totBal>0.15?'neg':'')}">${fmt(b.val)} <span class="hint">(${pct(totBal?b.val/totBal:null)})</span></td>`).join('')}</tr></tbody></table>`;
+ if(breaches.length)h+=`<h3 style="color:#b3261e">⚠ تجاوزوا السقف الائتماني (${breaches.length})</h3><table><thead><tr><th>الحساب</th><th class="num">الرصيد</th><th class="num">السقف</th><th class="num">الزيادة</th></tr></thead><tbody>
+ ${breaches.slice(0,15).map(b=>`<tr><td>${opsEsc(b.name)} <span class="hint">(${opsEsc(b.code)})</span></td><td class="num">${fmt(b.bal)}</td><td class="num">${fmt(b.lim)}</td><td class="num neg">${fmt(b.over)}</td></tr>`).join('')}
+ </tbody></table>`;
+ h+=`<h3>أعلى 10 حسابات (حسب الرصيد)</h3><table><thead><tr><th>الحساب</th><th class="num">الرصيد</th><th class="num">% من الإجمالي</th><th class="num">شيكات مؤجلة</th></tr></thead><tbody>
+ ${topBal.map(r=>`<tr><td>${opsEsc(r['اسم العميل']||r['اسم المورد'])} <span class="hint">(${opsEsc(r['رمز العميل']||r['رمز المورد'])})</span></td><td class="num">${fmt(r[balCol])}</td><td class="num">${pct(totBal?r[balCol]/totBal:null)}</td><td class="num">${fmt(r[chqCol]||0)}</td></tr>`).join('')}
+ </tbody></table>`;
+ h+=`<h3>أعلى 10 حسابات بالمتأخر (أكثر من شهر)</h3>`;
+ h+=overdueList.length?`<table><thead><tr><th>الحساب</th><th class="num">إجمالي الرصيد</th><th class="num">المتأخر</th></tr></thead><tbody>
+ ${overdueList.map(r=>`<tr><td>${opsEsc(r.name)} <span class="hint">(${opsEsc(r.code)})</span></td><td class="num">${fmt(r.bal)}</td><td class="num neg">${fmt(r.overdue)}</td></tr>`).join('')}
+ </tbody></table>`:'<p class="hint">✔ لا يوجد حسابات متأخرة ضمن البيانات المستوردة.</p>';
+ const byRep=opdGroupSum(rows,'المندوب',balCol).sort((a,b)=>b[balCol]-a[balCol]);
+ if(byRep.length)h+=opdTopTable(byRep,balCol,null,totBal,'الرصيد حسب المندوب','الرصيد');
+ return h;
 }
 function opdRenderSales(stored){
  if(!stored||!stored.rows.length)return '<p class="hint">لا توجد بيانات مبيعات مستوردة بعد — افتح تبويب "📥 إدارة البيانات والاستيراد" واستورد نتيجة q1 (المبيعات الشهرية).</p>';
@@ -3213,8 +3261,8 @@ function opdRenderSales(stored){
   h+=`<h3>الاتجاه الشهري — المبيعات ومجمل الربح</h3>${lineChart(months,[{n:'صافي المبيعات',data:months.map(k=>byMonth[k].sales),col:C.navy,fill:1},{n:'مجمل الربح',data:months.map(k=>byMonth[k].gp),col:C.gold}],1000,280)}`;
   h+=`<h3>اتجاه هامش الربح الشهري</h3>${lineChart(months,[{n:'هامش الربح',data:months.map(k=>byMonth[k].sales?byMonth[k].gp/byMonth[k].sales:null),col:C.teal}],1000,220,{pct:1})}`;
  }
- h+=opdTopTable(repList,'صافي المبيعات','مجمل الربح',totSales,'أعلى 10 مندوبين (حسب المبيعات)');
- h+=opdTopTable(grpList,'صافي المبيعات','مجمل الربح',totSales,'أعلى 10 مجموعات أصناف (حسب المبيعات)');
+ h+=opdTopTable(repList,'صافي المبيعات','مجمل الربح',totSales,'أعلى 10 مندوبين (حسب المبيعات)','المبيعات');
+ h+=opdTopTable(grpList,'صافي المبيعات','مجمل الربح',totSales,'أعلى 10 مجموعات أصناف (حسب المبيعات)','المبيعات');
  return h;
 }
 function opdRenderOverview(stored){
@@ -3232,6 +3280,7 @@ async function renderOpData(){
  let h='';
  if(opdSub==='overview')h=opdRenderOverview(stored);
  else if(opdSub==='sales')h=opdRenderSales(byKey.q1);
+ else if(opdSub==='ar')h=opdRenderAR(byKey.q2,'أعمار ذمم العملاء','👥','q2');
  else if(opdSub==='import'){
   const totalBytes=stored.reduce((a,s)=>a+(s?s.bytes:0),0);
   if(totalBytes>10*1024*1024)h+=`<p class="hint" style="color:#b3261e">⚠ إجمالي حجم البيانات التشغيلية المستوردة ${(totalBytes/1024/1024).toFixed(1)} ميجابايت — تجاوز الحد المقترح (10MB) لأداء المتصفح.</p>`;
