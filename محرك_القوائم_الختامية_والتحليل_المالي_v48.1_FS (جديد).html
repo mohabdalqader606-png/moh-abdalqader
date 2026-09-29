@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v50.16-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v50.17-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -1247,6 +1247,7 @@ th.yd,td.yd{background:rgba(11,31,58,.035);font-size:.92em}th.yd{color:var(--mut
 <section class="tab" id="tab-opdata">
  <div class="row noprint">
   <span class="hint">بيانات SAP التشغيلية المُلخَّصة (كويريز Query Manager) — تُخزَّن منفصلة تماماً عن بيانات القوائم المالية، ولا تدخل ضمن نسخة الملف الاحتياطي الأساسية.</span>
+  <button class="btn gold sm" onclick="exportOpDataPPTX()">📊 تصدير لوحة تنفيذية PowerPoint</button>
  </div>
  <div class="row noprint tabs-mini" id="opdSubNav">
   <button class="on" data-sub="overview" onclick="opdShowSub('overview')">نظرة عامة</button>
@@ -3555,6 +3556,187 @@ async function renderOpData(){
  }
  else h=`<p class="hint">تحليل هذا المجال قيد الإنشاء — سيُضاف بمرحلة قادمة. البيانات الخام متاحة الآن بتبويب "📥 إدارة البيانات والاستيراد".</p>`;
  el.innerHTML=h;
+}
+/* ================= تصدير لوحة تنفيذية PowerPoint لمركز البيانات التشغيلية =================
+   يعتمد على نفس دوال التحليل المشتركة (opdTopNum/opdGroupSum/opdAgingAnalysis/opdMergeByCode/opdReconcileStatus)
+   المستخدمة بالعرض الحيّ، فلا يكرر أي منطق حساب — فقط يبني الشرائح من نفس الأرقام. */
+async function exportOpDataPPTX(){
+ if(typeof PptxGenJS==='undefined'){alert('تعذّر تحميل مكتبة PowerPoint (مضمَّنة بالملف — حدّث الصفحة).');return}
+ const stored=await Promise.all(OPS_SOURCES.map(s=>opsIdbGet(s.key)));
+ const byKey={};OPS_SOURCES.forEach((s,i)=>byKey[s.key]=stored[i]);
+ if(!stored.some(Boolean)){alert('لا توجد أي بيانات مستوردة بعد — افتح "📥 إدارة البيانات والاستيراد" واستورد مصدراً واحداً على الأقل.');return}
+ const co=S.settings.co,cur=S.settings.cur,today=new Date().toLocaleDateString('ar-JO');
+ const periodLabel=R?(R.per[0]+' → '+R.per[R.per.length-1]):'بلا فترة محتسبة';
+ const NAVY='0B1F3A',GOLD='C9A227',TEAL='1B998B',CORAL='D64545',WHITE='FFFFFF',LIGHT='F5F6FA',TEXT='1A2233',MUTED='6B7A90';
+ const STATUS_COLORS={ok:{fill:'E2F3EA',color:'1B7A43',label:'مطابق'},warn:{fill:'FCF2D9',color:'8A6D1A',label:'تنبيه'},bad:{fill:'FBE3E1',color:'B3261E',label:'⚠ فرق كبير'}};
+ const pptx=new PptxGenJS();
+ pptx.defineLayout({name:'WIDE',width:13.33,height:7.5});
+ pptx.layout='WIDE';pptx.rtlMode=true;
+ pptx.title='مركز البيانات التشغيلية — لوحة تنفيذية — '+co;pptx.author=co;
+ const RTL={rtlMode:true,align:'right',fontFace:'Arial'};
+ const addHeader=(slide,title)=>{slide.background={color:WHITE};
+  slide.addShape('rect',{x:0,y:0,w:13.33,h:0.95,fill:{color:NAVY}});
+  slide.addText(title,{x:0.4,y:0,w:12.53,h:0.95,...RTL,fontSize:21,bold:true,color:WHITE,valign:'middle'});
+  slide.addShape('rect',{x:0,y:0.95,w:13.33,h:0.04,fill:{color:GOLD}});};
+ let slideNo=0;
+ const addFooter=(slide)=>{slideNo++;slide.addText(co+' — '+periodLabel,{x:0.4,y:7.1,w:11,h:0.3,...RTL,fontSize:8.5,color:MUTED});
+  slide.addText(String(slideNo),{x:12.6,y:7.1,w:0.4,h:0.3,align:'center',fontSize:8.5,color:MUTED});};
+ const addKpiRow=(slide,kpis,y)=>{const cardW=2.9,gap=0.25,startX=0.4,h=1.7;
+  kpis.slice(0,4).forEach((k,i)=>{const x=startX+i*(cardW+gap);
+   slide.addShape('roundRect',{x,y,w:cardW,h,fill:{color:LIGHT},line:{color:'DDE2EC',width:1},rectRadius:0.08});
+   slide.addText(k[0],{x:x+0.15,y:y+0.12,w:cardW-0.3,h:0.5,...RTL,fontSize:11.5,color:MUTED});
+   slide.addText(k[1],{x:x+0.15,y:y+0.62,w:cardW-0.3,h:0.55,align:'center',fontSize:16,bold:true,color:NAVY,fontFace:'Arial'});
+   if(k[2])slide.addText(k[2],{x:x+0.15,y:y+1.18,w:cardW-0.3,h:0.4,align:'center',fontSize:10,color:MUTED});
+  });};
+ const addRtlTable=(slide,headCells,rows,y,h,cellFillFn)=>{
+  const headRow=gmrRtlRow(headCells).map(hh=>({text:String(hh),options:{bold:true,color:WHITE,fill:{color:NAVY},align:'center',fontSize:10.5}}));
+  const bodyRows=rows.map((rr,ri)=>{const rev=gmrRtlRow(rr);return rev.map((cell,ci)=>{
+   const custom=cellFillFn?cellFillFn(ri,ci,rev.length):null;
+   return {text:String(cell),options:{align:ci===rev.length-1?'right':'center',fontSize:10,fill:{color:(custom&&custom.fill)||(ri%2?LIGHT:WHITE)},color:(custom&&custom.color)||TEXT,bold:!!(custom&&custom.bold)}};
+  })});
+  slide.addTable([headRow,...bodyRows],{x:0.4,y,w:12.53,h,rtlMode:true,border:{type:'solid',color:'DDE2EC',pt:0.5},autoPage:false});
+ };
+ const kpiTableSlide=(title,kpis,tableHead,tableRows,cellFillFn,notes)=>{
+  const s=pptx.addSlide();addHeader(s,title);
+  if(kpis&&kpis.length)addKpiRow(s,kpis,1.25);
+  if(tableHead&&tableRows&&tableRows.length)addRtlTable(s,tableHead,tableRows,kpis&&kpis.length?3.15:1.25,kpis&&kpis.length?3.7:5.6,cellFillFn);
+  addFooter(s);if(notes)s.addNotes(notes);return s;
+ };
+
+ // 1. الغلاف
+ {const s=pptx.addSlide();s.background={color:NAVY};
+  s.addText('مركز البيانات التشغيلية',{x:0.8,y:2.0,w:11.73,h:0.9,...RTL,align:'center',fontSize:32,bold:true,color:WHITE});
+  s.addText('لوحة تنفيذية',{x:0.8,y:2.8,w:11.73,h:0.6,...RTL,align:'center',fontSize:18,color:GOLD});
+  s.addText(co,{x:0.8,y:3.5,w:11.73,h:0.5,...RTL,align:'center',fontSize:16,color:WHITE});
+  s.addText('الفترة: '+periodLabel,{x:0.8,y:4.1,w:11.73,h:0.4,...RTL,align:'center',fontSize:13,color:'C9D3E4'});
+  s.addText('تاريخ الإصدار: '+today+'  |  بيانات SAP التشغيلية الملخَّصة — مصدر مستقل عن القوائم المالية',{x:0.8,y:6.7,w:11.73,h:0.4,...RTL,align:'center',fontSize:10.5,color:'9FB0C8'});
+ }
+
+ // 2. لوحة المطابقة الرقابية
+ {const items=opdReconcileStatus(stored);
+  if(!R){kpiTableSlide('لوحة المطابقة الرقابية',null,null,null,null,'لم تُحتسب القوائم المالية بعد — لا يمكن عرض المطابقة مقابل الأستاذ العام.');
+   const s=pptx.slides[pptx.slides.length-1];
+   s.addText('⚠ لم تُحتسب القوائم المالية بعد (زر "احتساب" أعلى الشاشة) — لا يمكن عرض مطابقة الأرقام مقابل الأستاذ العام.',{...RTL,x:0.6,y:2.5,w:12.13,h:1,fontSize:14,color:'8A6D1A'});
+  } else if(!items||!items.length){
+   const s=kpiTableSlide('لوحة المطابقة الرقابية',null,null,null,null,'لا توجد بعد مصادر مستوردة قابلة للمطابقة.');
+   s.addText('لا توجد بعد مصادر مستوردة قابلة للمطابقة مع الأستاذ العام.',{...RTL,x:0.6,y:2.5,w:12.13,h:1,fontSize:14,color:TEXT});
+  } else {
+   const rows=items.map(it=>{const cls_=it.rec.pctDiff==null?'':it.rec.pctDiff>0.03?'bad':it.rec.pctDiff>0.01?'warn':'ok';
+    const sc=STATUS_COLORS[cls_]||{fill:'FFFFFF',color:TEXT,label:'—'};
+    return {cells:[it.label,fmt(it.rec.total),fmt(it.rec.glVal),fmt(it.rec.diff),it.rec.pctDiff==null?'—':pct(it.rec.pctDiff),sc.label],sc};
+   });
+   kpiTableSlide('لوحة المطابقة الرقابية',null,['المصدر','القيمة المستوردة','رصيد الأستاذ العام','الفرق','النسبة','الحالة'],
+    rows.map(r=>r.cells),(ri,ci)=>ci===0?{fill:rows[ri].sc.fill,color:rows[ri].sc.color,bold:true}:null,
+    'الحالة: أخضر = فرق أقل من 1%، أصفر = 1-3%، أحمر = أكثر من 3% — يحتاج مراجعة.');
+  }
+ }
+
+ // 3. المبيعات والمرتجعات (q1 + q8)
+ {const rows1=byKey.q1?byKey.q1.rows:[];
+  const totSales=opdTopNum(rows1,'صافي المبيعات'),totGP=opdTopNum(rows1,'مجمل الربح'),totInv=opdTopNum(rows1,'عدد الفواتير'),totRet=opdTopNum(rows1,'قيمة المرتجعات');
+  const gm=totSales?totGP/totSales:null,avgInv=totInv?totSales/totInv:null,retRate=totSales?totRet/totSales:null;
+  const kpis=[['إجمالي المبيعات',fmt(totSales)],['هامش الربح الإجمالي',pct(gm)],['متوسط قيمة الفاتورة',fmt(avgInv)],['نسبة المرتجعات',pct(retRate)]];
+  const repList=rows1.length?opdGroupSum(rows1,'المندوب','صافي المبيعات','مجمل الربح').sort((a,b)=>b['صافي المبيعات']-a['صافي المبيعات']).slice(0,5):[];
+  const rows=repList.map(r=>[r.n,fmt(r['صافي المبيعات']),pct(totSales?r['صافي المبيعات']/totSales:null)]);
+  kpiTableSlide('المبيعات والمرتجعات (q1 + q8)',rows1.length?kpis:null,rows.length?['المندوب','المبيعات','% من الإجمالي']:null,rows,null,
+   rows1.length?'من بيانات q1 — أعلى 5 مندوبين حسب المبيعات.':'لا توجد بيانات q1 مستوردة.');
+ }
+
+ // 4. العملاء وأعمار الذمم (q2)
+ {const rows2=byKey.q2?byKey.q2.rows:[];
+  const balCol='الرصيد الحقيقي (من القيود حتى اليوم)',chqCol='الشيكات المؤجلة',limCol='السقف الائتماني';
+  const totBal=opdTopNum(rows2,balCol),totChq=opdTopNum(rows2,chqCol);
+  const {bucketTotals,overdueVal}=rows2.length?opdAgingAnalysis(rows2,AGING_BUCKETS):{bucketTotals:[],overdueVal:0};
+  const overdueRate=totBal?overdueVal/totBal:null;
+  const breaches=rows2.filter(r=>(r[limCol]||0)>0&&(r[balCol]||0)>(r[limCol]||0)).length;
+  const kpis=[['إجمالي الرصيد',fmt(totBal)],['صافي التعرّض',fmt(totBal-totChq)],['نسبة المتأخر',pct(overdueRate)],['تجاوزوا السقف',String(breaches)]];
+  const rows=bucketTotals.map(b=>[b.label,fmt(b.val),pct(totBal?b.val/totBal:null)]);
+  kpiTableSlide('العملاء وأعمار الذمم (q2)',rows2.length?kpis:null,rows.length?['الشريحة','القيمة','% من الإجمالي']:null,rows,null,
+   rows2.length?'توزيع أعمار أرصدة العملاء.':'لا توجد بيانات q2 مستوردة.');
+ }
+
+ // 5. المشتريات والموردين (q5 + q6)
+ {const rows5=byKey.q5?byKey.q5.rows:[];
+  const yearCols=rows5.length?(byKey.q5.headers||[]).filter(h=>/^مشتريات \d{4}$/.test(h)).sort():[];
+  let curYc=null,totPurch=0;
+  if(yearCols.length){let lastIdx=-1;yearCols.forEach((yc,i)=>{if(opdTopNum(rows5,yc)>0)lastIdx=i});curYc=yearCols[lastIdx>=0?lastIdx:yearCols.length-1];totPurch=opdTopNum(rows5,curYc)}
+  const nSuppliers=new Set(rows5.map(r=>r['رمز المورد'])).size;
+  const rows6=byKey.q6?byKey.q6.rows:[];
+  const balCol6='الرصيد الحقيقي (من القيود حتى اليوم)';
+  const totAP=opdTopNum(rows6,balCol6);
+  const {bucketTotals:apBuckets,overdueVal:apOverdue}=rows6.length?opdAgingAnalysis(rows6,AGING_BUCKETS_AP):{bucketTotals:[],overdueVal:0};
+  const kpis=[['مشتريات '+(curYc?curYc.match(/\d{4}/)[0]:'—'),fmt(totPurch)],['عدد الموردين',String(nSuppliers)],['رصيد ذمم الموردين',fmt(totAP)],['المتأخر (موردين)',fmt(apOverdue)]];
+  const rows=apBuckets.map(b=>[b.label,fmt(b.val),pct(totAP?b.val/totAP:null)]);
+  kpiTableSlide('المشتريات والموردين (q5 + q6)',(rows5.length||rows6.length)?kpis:null,rows.length?['شريحة أعمار الذمم (موردين)','القيمة','% من الإجمالي']:null,rows,null,
+   'المشتريات من q5، أعمار ذمم الموردين من q6.');
+ }
+
+ // 6. الأصناف والمخزون (q3 + q4)
+ {const rows4=byKey.q4?byKey.q4.rows:[];
+  const totQty=opdTopNum(rows4,'الكمية'),totVal=opdTopNum(rows4,'القيمة');
+  const EXPIRY_BUCKETS=[{label:'منتهي الصلاحية',col:'منتهي الصلاحية'},{label:'أقل من 30 يوماً',col:'أقل من 30 يوماً'},{label:'30 حتى 90 يوماً',col:'30 حتى 90 يوماً'},{label:'90 حتى 180 يوماً',col:'90 حتى 180 يوماً'},{label:'أكثر من 180 يوماً',col:'أكثر من 180 يوماً'}];
+  const unitVal=r=>(r['الكمية']?r['القيمة']/r['الكمية']:0);
+  const bucketTotals=EXPIRY_BUCKETS.map(b=>({label:b.label,val:rows4.reduce((a,r)=>a+(r[b.col]||0)*unitVal(r),0)}));
+  const riskVal=(bucketTotals[0]?bucketTotals[0].val:0)+(bucketTotals[1]?bucketTotals[1].val:0);
+  const kpis=[['قيمة المخزون',fmt(totVal)],['إجمالي الكمية',totQty.toLocaleString('en-US')],['مخاطر الصلاحية',fmt(riskVal)],['نسبة المخاطر',pct(totVal?riskVal/totVal:null)]];
+  const rows=bucketTotals.map(b=>[b.label,fmt(b.val),pct(totVal?b.val/totVal:null)]);
+  kpiTableSlide('الأصناف والمخزون (q3 + q4)',rows4.length?kpis:null,rows.length?['شريحة الصلاحية','القيمة التقديرية','% من الإجمالي']:null,rows,null,
+   rows4.length?'توزيع أعمار صلاحية المخزون (من q4).':'لا توجد بيانات q4 مستوردة.');
+ }
+
+ // 7. الشيكات (q7)
+ {const rows7=byKey.q7?byKey.q7.rows:[];
+  const incoming=rows7.filter(r=>r['النوع']==='وارد'),outgoing=rows7.filter(r=>r['النوع']==='صادر'),returned=rows7.filter(r=>r['النوع']==='مرتجع');
+  const totIn=opdTopNum(incoming,'القيمة'),totOut=opdTopNum(outgoing,'القيمة'),totRet=opdTopNum(returned,'القيمة');
+  const totAll=totIn+totOut+totRet,retRate=totAll?totRet/totAll:null;
+  const kpis=[['شيكات واردة',fmt(totIn)],['شيكات صادرة',fmt(totOut)],['صافي الشيكات',fmt(totIn-totOut)],['نسبة المرتجعة',pct(retRate)]];
+  kpiTableSlide('الشيكات (q7)',rows7.length?kpis:null,null,null,null,rows7.length?'':'لا توجد بيانات q7 مستوردة.');
+ }
+
+ // 8. المؤشرات التشغيلية (q9)
+ {const rows9=byKey.q9?byKey.q9.rows.slice().sort((a,b)=>(a['السنة']-b['السنة'])||(a['الشهر']-b['الشهر'])):[];
+  const last=rows9[rows9.length-1],prev=rows9.length>1?rows9[rows9.length-2]:null;
+  const chg=(cur,base)=>(base!=null&&base!==0)?(cur-base)/Math.abs(base):null;
+  const kpis=last?[
+   ['العملاء النشطون',String(last['العملاء النشطون']||0)],
+   ['عدد الفواتير',String(last['عدد الفواتير']||0)],
+   ['متوسط قيمة الفاتورة',fmt(last['متوسط قيمة الفاتورة'])],
+   ['نمو العملاء (شهري)',prev?pct(chg(last['العملاء النشطون'],prev['العملاء النشطون'])):'—'],
+  ]:null;
+  kpiTableSlide('المؤشرات التشغيلية (q9)',kpis,null,null,null,rows9.length?'آخر شهر متوفر: '+last['السنة']+'-'+String(last['الشهر']).padStart(2,'0')+'.':'لا توجد بيانات q9 مستوردة.');
+ }
+
+ // 9. لوحة التنبيهات المجمَّعة
+ {const alerts=[];
+  if(R){const items=opdReconcileStatus(stored)||[];items.forEach(it=>{if(it.rec.pctDiff!=null&&it.rec.pctDiff>0.03)alerts.push('⚠ فرق مطابقة '+pct(it.rec.pctDiff)+' — '+it.label+' مقابل الأستاذ العام.')})}
+  const rows2=byKey.q2?byKey.q2.rows:[];
+  const balCol='الرصيد الحقيقي (من القيود حتى اليوم)',limCol='السقف الائتماني';
+  const breaches=rows2.filter(r=>(r[limCol]||0)>0&&(r[balCol]||0)>(r[limCol]||0));
+  if(breaches.length)alerts.push('⚠ '+breaches.length+' عميل تجاوز السقف الائتماني بإجمالي زيادة '+fmt(breaches.reduce((a,r)=>a+(r[balCol]-r[limCol]),0))+'.');
+  const rows4=byKey.q4?byKey.q4.rows:[];
+  const expiredQty=opdTopNum(rows4,'منتهي الصلاحية');
+  if(expiredQty>0)alerts.push('⚠ يوجد '+expiredQty.toLocaleString('en-US')+' وحدة مخزون منتهية الصلاحية.');
+  const rows7=byKey.q7?byKey.q7.rows:[];
+  const retVal=opdTopNum(rows7.filter(r=>r['النوع']==='مرتجع'),'القيمة');
+  const allChkVal=opdTopNum(rows7,'القيمة');
+  if(allChkVal&&retVal/allChkVal>0.02)alerts.push('⚠ نسبة الشيكات المرتجعة '+pct(retVal/allChkVal)+' — أعلى من 2%.');
+  const s=pptx.addSlide();addHeader(s,'لوحة التنبيهات المجمَّعة');
+  if(alerts.length){
+   s.addText(alerts.map(a=>'•  '+a).join('\n'),{...RTL,x:0.6,y:1.4,w:12.13,h:5,fontSize:15,color:TEXT,valign:'top',lineSpacingMultiple:1.6});
+  } else {
+   s.addText('✔ لا توجد تنبيهات حرجة ضمن البيانات المستوردة حالياً.',{...RTL,x:0.6,y:1.4,w:12.13,h:1,fontSize:16,color:'1B7A43'});
+  }
+  addFooter(s);
+ }
+
+ // 10. الختام
+ {const s=pptx.addSlide();s.background={color:NAVY};
+  s.addText('شكراً',{x:0.8,y:2.8,w:11.73,h:1,...RTL,align:'center',fontSize:36,bold:true,color:WHITE});
+  s.addText(co+' — '+periodLabel,{x:0.8,y:3.9,w:11.73,h:0.5,...RTL,align:'center',fontSize:14,color:GOLD});
+ }
+
+ const fname='مركز_البيانات_التشغيلية_'+String(co).replace(/\s+/g,'_')+'_'+new Date().toISOString().slice(0,10)+'.pptx';
+ await pptx.writeFile({fileName:fname});
 }
 function opsInit(){const b=document.querySelector('nav [data-t="opdata"]');if(b)b.addEventListener('click',()=>renderOpData())}
 opsInit();
