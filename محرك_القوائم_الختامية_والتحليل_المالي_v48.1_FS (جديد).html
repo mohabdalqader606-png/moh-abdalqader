@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v50.14-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v50.15-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -3440,6 +3440,36 @@ function opdRenderInventory(storedQ4,storedQ3){
  if((!storedQ4||!storedQ4.rows.length)&&(!storedQ3||!storedQ3.rows.length))return '<p class="hint">لا توجد بيانات أصناف أو مخزون مستوردة بعد — افتح تبويب "📥 إدارة البيانات والاستيراد" واستورد نتيجة q3 (ملخص الأصناف) وq4 (المخزون والصلاحية).</p>';
  return `<h2>🏭 تحليل الأصناف والمخزون</h2>${opdRenderStock(storedQ4)}${opdRenderItemSales(storedQ3)}`;
 }
+function opdRenderKPI(stored){
+ if(!stored||!stored.rows.length)return '<p class="hint">لا توجد بيانات مؤشرات تشغيلية مستوردة بعد — افتح تبويب "📥 إدارة البيانات والاستيراد" واستورد نتيجة q9 (مؤشرات تشغيلية).</p>';
+ const rows=stored.rows.slice().sort((a,b)=>(a['السنة']-b['السنة'])||(a['الشهر']-b['الشهر']));
+ const ymKey=r=>r['السنة']+'-'+String(r['الشهر']).padStart(2,'0');
+ const months=rows.map(ymKey);
+ const last=rows[rows.length-1],prev=rows.length>1?rows[rows.length-2]:null;
+ const lyIdx=rows.findIndex(r=>r['السنة']===last['السنة']-1&&r['الشهر']===last['الشهر']);
+ const ly=lyIdx>=0?rows[lyIdx]:null;
+ const chg=(cur,base)=>(base!=null&&base!==0)?(cur-base)/Math.abs(base):null;
+ const trendTxt=field=>{const mom=prev?chg(last[field],prev[field]):null,yoy=ly?chg(last[field],ly[field]):null;const parts=[];if(mom!=null)parts.push('شهري '+pct(mom));if(yoy!=null)parts.push('سنوي '+pct(yoy));return parts.join(' • ')};
+ const trendCls=field=>{const mom=prev?chg(last[field],prev[field]):null;return mom==null?'':(mom>=0?'pos':'neg')};
+ let h=`<h2>⚙️ المؤشرات التشغيلية <span class="hint">(من q9 — ${rows.length} صف، تاريخ الاستخراج ${new Date(stored.extractedAt).toLocaleDateString('ar-JO')})</span></h2>`;
+ h+=`<p class="hint">آخر شهر متوفر: ${months[months.length-1]}${prev?' — مقارنة بالشهر السابق ('+ymKey(prev)+')':''}${ly?' وبنفس الشهر بالسنة السابقة ('+ymKey(ly)+')':''}.</p>`;
+ h+=`<div class="grid g4">
+  ${kpi('العملاء النشطون (آخر شهر)',(last['العملاء النشطون']||0).toLocaleString('en-US'),trendTxt('العملاء النشطون'),trendCls('العملاء النشطون'),1)}
+  ${kpi('عدد الفواتير (آخر شهر)',(last['عدد الفواتير']||0).toLocaleString('en-US'),trendTxt('عدد الفواتير'),trendCls('عدد الفواتير'),1)}
+  ${kpi('متوسط قيمة الفاتورة',fmt(last['متوسط قيمة الفاتورة']),trendTxt('متوسط قيمة الفاتورة'),'',1)}
+  ${kpi('عدد الأصناف المباعة (آخر شهر)',(last['عدد الأصناف المباعة']||0).toLocaleString('en-US'),trendTxt('عدد الأصناف المباعة'),'',1)}
+ </div>`;
+ if(months.length>1){
+  h+=`<h3>الاتجاه الشهري — العملاء النشطون وعدد الفواتير</h3>${lineChart(months,[{n:'العملاء النشطون',data:rows.map(r=>r['العملاء النشطون']),col:C.navy},{n:'عدد الفواتير',data:rows.map(r=>r['عدد الفواتير']),col:C.teal}],1000,260)}`;
+  h+=`<h3>اتجاه متوسط قيمة الفاتورة</h3>${lineChart(months,[{n:'متوسط قيمة الفاتورة',data:rows.map(r=>r['متوسط قيمة الفاتورة']),col:C.gold,fill:1}],1000,220)}`;
+  h+=`<h3>اتجاه عدد الأصناف المباعة شهرياً (اتساع السلة)</h3>${lineChart(months,[{n:'عدد الأصناف المباعة',data:rows.map(r=>r['عدد الأصناف المباعة']),col:C.coral}],1000,220)}`;
+ }
+ const last12=rows.slice(-12);
+ h+=`<h3>تفصيل آخر ${last12.length} شهراً</h3><table><thead><tr><th>الشهر</th><th class="num">العملاء النشطون</th><th class="num">عدد الفواتير</th><th class="num">متوسط قيمة الفاتورة</th><th class="num">عدد الأصناف المباعة</th></tr></thead><tbody>
+ ${last12.slice().reverse().map(r=>`<tr><td>${ymKey(r)}</td><td class="num">${(r['العملاء النشطون']||0).toLocaleString('en-US')}</td><td class="num">${(r['عدد الفواتير']||0).toLocaleString('en-US')}</td><td class="num">${fmt(r['متوسط قيمة الفاتورة'])}</td><td class="num">${(r['عدد الأصناف المباعة']||0).toLocaleString('en-US')}</td></tr>`).join('')}
+ </tbody></table>`;
+ return h;
+}
 function opdRenderChecks(stored){
  if(!stored||!stored.rows.length)return '<p class="hint">لا توجد بيانات شيكات مستوردة بعد — افتح تبويب "📥 إدارة البيانات والاستيراد" واستورد نتيجة q7 (الشيكات).</p>';
  const rows=stored.rows;
@@ -3490,6 +3520,7 @@ async function renderOpData(){
  else if(opdSub==='ap')h=opdRenderPurchases(byKey.q5)+opdRenderAR(byKey.q6,'أعمار ذمم الموردين','🏢','q6',{chqCol:'الشيكات المؤجلة (صادرة)',buckets:AGING_BUCKETS_AP});
  else if(opdSub==='inv')h=opdRenderInventory(byKey.q4,byKey.q3);
  else if(opdSub==='chk')h=opdRenderChecks(byKey.q7);
+ else if(opdSub==='kpi')h=opdRenderKPI(byKey.q9);
  else if(opdSub==='import'){
   const totalBytes=stored.reduce((a,s)=>a+(s?s.bytes:0),0);
   if(totalBytes>10*1024*1024)h+=`<p class="hint" style="color:#b3261e">⚠ إجمالي حجم البيانات التشغيلية المستوردة ${(totalBytes/1024/1024).toFixed(1)} ميجابايت — تجاوز الحد المقترح (10MB) لأداء المتصفح.</p>`;
