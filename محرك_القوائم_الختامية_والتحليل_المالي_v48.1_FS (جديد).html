@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v50.12-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v50.13-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -3180,6 +3180,18 @@ function opdGroupSum(rows,keyCol,...valCols){
  const by={};rows.forEach(r=>{const k=r[keyCol]==null||r[keyCol]===''?'غير محدد':r[keyCol];const o=by[k]=by[k]||{};valCols.forEach(c=>o[c]=(o[c]||0)+(typeof r[c]==='number'?r[c]:0))});
  return Object.entries(by).map(([n,o])=>({n,...o}));
 }
+function opdMergeByCode(rows,codeCol,sumCols){
+ const map={};
+ rows.forEach(r=>{
+  const k=r[codeCol];
+  if(!map[k]){map[k]={...r}}
+  else{
+   sumCols.forEach(c=>{map[k][c]=(map[k][c]||0)+(typeof r[c]==='number'?r[c]:0)});
+   Object.keys(r).forEach(c=>{if(!sumCols.includes(c)&&(map[k][c]==null||map[k][c]==='')&&r[c]!=null)map[k][c]=r[c]});
+  }
+ });
+ return Object.values(map);
+}
 function opdTopTable(list,valKey,gpKey,totSales,title,valLabel){
  valLabel=valLabel||'القيمة';
  return `<h3>${title}</h3><table><thead><tr><th>البند</th><th class="num">${valLabel}</th><th class="num">% من الإجمالي</th>${gpKey?'<th class="num">هامش الربح</th>':''}</tr></thead><tbody>
@@ -3325,6 +3337,90 @@ function opdRenderPurchases(stored){
  });
  return h;
 }
+function opdRenderStock(stored){
+ if(!stored||!stored.rows.length)return '<p class="hint">لا توجد بيانات مخزون مستوردة بعد — افتح تبويب "📥 إدارة البيانات والاستيراد" واستورد نتيجة q4 (المخزون والصلاحية).</p>';
+ const rows=stored.rows;
+ const totQty=opdTopNum(rows,'الكمية'),totVal=opdTopNum(rows,'القيمة');
+ const EXPIRY_BUCKETS=[
+  {label:'منتهي الصلاحية',col:'منتهي الصلاحية',bad:true},
+  {label:'أقل من 30 يوماً',col:'أقل من 30 يوماً',bad:true},
+  {label:'30 حتى 90 يوماً',col:'30 حتى 90 يوماً',bad:false},
+  {label:'90 حتى 180 يوماً',col:'90 حتى 180 يوماً',bad:false},
+  {label:'أكثر من 180 يوماً',col:'أكثر من 180 يوماً',bad:false},
+ ];
+ const unitVal=r=>(r['الكمية']?r['القيمة']/r['الكمية']:0);
+ const bucketTotals=EXPIRY_BUCKETS.map(b=>{
+  const qty=opdTopNum(rows,b.col);
+  const val=rows.reduce((a,r)=>a+(r[b.col]||0)*unitVal(r),0);
+  return {...b,qty,val};
+ });
+ const expiredQty=bucketTotals[0].qty,expiredVal=bucketTotals[0].val,expiring30Val=bucketTotals[1].val;
+ const riskVal=expiredVal+expiring30Val,riskRate=totVal?riskVal/totVal:null;
+ const today=new Date();
+ const withDays=rows.filter(r=>(r['الكمية']||0)>0).map(r=>{
+  const lastMove=r['تاريخ آخر حركة']?new Date(r['تاريخ آخر حركة']):null;
+  const days=lastMove&&!isNaN(lastMove)?Math.floor((today-lastMove)/86400000):null;
+  return {...r,daysSinceMove:days};
+ });
+ const deadRows=withDays.filter(r=>r.daysSinceMove==null||r.daysSinceMove>90);
+ const deadStockVal=deadRows.reduce((a,r)=>a+(r['القيمة']||0),0);
+ const deadStock=deadRows.slice().sort((a,b)=>(b['القيمة']||0)-(a['القيمة']||0)).slice(0,10);
+ let h=`<h3>المخزون <span class="hint">(من q4 — ${rows.length} صف، تاريخ الاستخراج ${new Date(stored.extractedAt).toLocaleDateString('ar-JO')})</span></h3>`;
+ h+=`<div class="grid g4">
+  ${kpi('إجمالي قيمة المخزون',fmt(totVal),rows.length+' صنف برصيد','',1)}
+  ${kpi('إجمالي الكمية',totQty.toLocaleString('en-US'),'','',1)}
+  ${kpi('مخاطر الصلاحية (منتهي + أقل من 30 يوم)',fmt(riskVal),pct(riskRate),(riskRate!=null&&riskRate>0.05)?'neg':'',1)}
+  ${kpi('راكد (بلا حركة أكثر من 90 يوم)',fmt(deadStockVal),totVal?pct(deadStockVal/totVal):'—',deadStockVal>0?'neg':'pos',1)}
+ </div>`;
+ h+=`<h4>توزيع أعمار الصلاحية</h4><table><thead><tr>${bucketTotals.map(b=>'<th class="num">'+b.label+'</th>').join('')}</tr></thead><tbody>
+ <tr>${bucketTotals.map(b=>`<td class="num ${b.bad&&b.val>0?'neg':''}">${fmt(b.val)} <span class="hint">(${b.qty.toLocaleString('en-US')} وحدة${totVal?' — '+pct(b.val/totVal):''})</span></td>`).join('')}</tr>
+ </tbody></table>`;
+ if(expiredQty>0)h+=`<p class="hint" style="color:#b3261e">⚠ يوجد ${expiredQty.toLocaleString('en-US')} وحدة منتهية الصلاحية بقيمة تقديرية ${fmt(expiredVal)} (القيمة تقديرية بمتوسط سعر الصنف).</p>`;
+ h+=`<h4>أعلى 10 أصناف راكدة (رصيد موجود بلا حركة لأكثر من 90 يوم)</h4>`;
+ h+=deadStock.length?`<table><thead><tr><th>الصنف</th><th class="num">الكمية</th><th class="num">القيمة</th><th>آخر حركة</th></tr></thead><tbody>
+ ${deadStock.map(r=>`<tr><td>${opsEsc(r['اسم الصنف'])} <span class="hint">(${opsEsc(r['رمز الصنف'])})</span></td><td class="num">${fmt(r['الكمية'])}</td><td class="num">${fmt(r['القيمة'])}</td><td>${r.daysSinceMove!=null?new Date(r['تاريخ آخر حركة']).toLocaleDateString('ar-JO'):'لا يوجد سجل حركة'}</td></tr>`).join('')}
+ </tbody></table>`:'<p class="hint">✔ لا يوجد أصناف راكدة ضمن البيانات المستوردة.</p>';
+ return h;
+}
+function opdRenderItemSales(stored){
+ if(!stored||!stored.rows.length)return '<p class="hint">لا توجد بيانات مبيعات أصناف مستوردة بعد — افتح تبويب "📥 إدارة البيانات والاستيراد" واستورد نتيجة q3 (ملخص الأصناف).</p>';
+ const sumCols=['مجمل الربح','المرتجعات'];
+ (stored.headers||[]).forEach(h=>{if(/^(كمية|قيمة) \d{4}$/.test(h))sumCols.push(h)});
+ const merged=opdMergeByCode(stored.rows,'رمز الصنف',sumCols);
+ const yearCols=(stored.headers||Object.keys(stored.rows[0]||{})).filter(h=>/^قيمة \d{4}$/.test(h)).sort();
+ if(!yearCols.length)return '<p class="hint">تعذّر التعرف على أعمدة السنوات ببيانات q3 المستوردة.</p>';
+ const years=yearCols.map(h=>h.match(/\d{4}/)[0]);
+ let lastIdx=-1;
+ yearCols.forEach((yc,i)=>{if(opdTopNum(merged,yc)>0)lastIdx=i});
+ const idx=lastIdx>=0?lastIdx:yearCols.length-1;
+ const curYc=yearCols[idx],curYear=years[idx];
+ const totSalesCur=opdTopNum(merged,curYc),totGP=opdTopNum(merged,'مجمل الربح'),totRet=opdTopNum(merged,'المرتجعات');
+ const gm=totSalesCur?totGP/totSalesCur:null,retRate=totSalesCur?totRet/totSalesCur:null;
+ const topItems=merged.slice().sort((a,b)=>(b[curYc]||0)-(a[curYc]||0)).slice(0,10)
+  .map(r=>({n:(r['اسم الصنف']||'')+' ('+(r['رمز الصنف']||'')+')',[curYc]:r[curYc],'مجمل الربح':r['مجمل الربح']}));
+ const top3Share=totSalesCur?topItems.slice(0,3).reduce((a,r)=>a+(r[curYc]||0),0)/totSalesCur:0;
+ const byGroup=opdGroupSum(merged,'المجموعة',curYc,'مجمل الربح').sort((a,b)=>b[curYc]-a[curYc]);
+ const deadItems=merged.filter(r=>(r['الرصيد الحالي']||0)>0&&(r[curYc]||0)===0).sort((a,b)=>(b['الرصيد الحالي']||0)-(a['الرصيد الحالي']||0)).slice(0,10);
+ let h=`<h3>مبيعات الأصناف <span class="hint">(من q3 — ${merged.length} صنف، تاريخ الاستخراج ${new Date(stored.extractedAt).toLocaleDateString('ar-JO')})</span></h3>`;
+ h+=`<div class="grid g4">
+  ${kpi('مبيعات '+curYear,fmt(totSalesCur),merged.length+' صنف','',1)}
+  ${kpi('هامش الربح',pct(gm),fmt(totGP),'',1)}
+  ${kpi('نسبة المرتجعات',pct(retRate),fmt(totRet),(retRate!=null&&retRate>0.03)?'neg':'',1)}
+  ${kpi('تركّز الأصناف (أعلى 3)',pct(top3Share),'',top3Share>0.5?'neg':'',1)}
+ </div>`;
+ if(top3Share>0.5)h+=`<p class="hint" style="color:#8a6d1a">⚠ تركّز مبيعات: أعلى 3 أصناف يشكّلون ${pct(top3Share)} من مبيعات ${curYear}.</p>`;
+ h+=opdTopTable(topItems,curYc,'مجمل الربح',totSalesCur,'أعلى 10 أصناف مبيعاً (سنة '+curYear+')','المبيعات');
+ if(byGroup.length)h+=opdTopTable(byGroup,curYc,'مجمل الربح',totSalesCur,'أعلى 10 مجموعات أصناف (سنة '+curYear+')','المبيعات');
+ h+=`<h4>أصناف برصيد مخزون بلا أي مبيعات بسنة ${curYear}</h4>`;
+ h+=deadItems.length?`<table><thead><tr><th>الصنف</th><th class="num">الرصيد الحالي</th></tr></thead><tbody>
+ ${deadItems.map(r=>`<tr><td>${opsEsc(r['اسم الصنف'])} <span class="hint">(${opsEsc(r['رمز الصنف'])})</span></td><td class="num">${fmt(r['الرصيد الحالي'])}</td></tr>`).join('')}
+ </tbody></table>`:'<p class="hint">✔ لا يوجد أصناف كهذه ضمن البيانات المستوردة.</p>';
+ return h;
+}
+function opdRenderInventory(storedQ4,storedQ3){
+ if((!storedQ4||!storedQ4.rows.length)&&(!storedQ3||!storedQ3.rows.length))return '<p class="hint">لا توجد بيانات أصناف أو مخزون مستوردة بعد — افتح تبويب "📥 إدارة البيانات والاستيراد" واستورد نتيجة q3 (ملخص الأصناف) وq4 (المخزون والصلاحية).</p>';
+ return `<h2>🏭 تحليل الأصناف والمخزون</h2>${opdRenderStock(storedQ4)}${opdRenderItemSales(storedQ3)}`;
+}
 function opdRenderChecks(stored){
  if(!stored||!stored.rows.length)return '<p class="hint">لا توجد بيانات شيكات مستوردة بعد — افتح تبويب "📥 إدارة البيانات والاستيراد" واستورد نتيجة q7 (الشيكات).</p>';
  const rows=stored.rows;
@@ -3373,6 +3469,7 @@ async function renderOpData(){
  else if(opdSub==='sales')h=opdRenderSales(byKey.q1);
  else if(opdSub==='ar')h=opdRenderAR(byKey.q2,'أعمار ذمم العملاء','👥','q2',{limCol:'السقف الائتماني',repCol:'المندوب'});
  else if(opdSub==='ap')h=opdRenderPurchases(byKey.q5)+opdRenderAR(byKey.q6,'أعمار ذمم الموردين','🏢','q6',{chqCol:'الشيكات المؤجلة (صادرة)',buckets:AGING_BUCKETS_AP});
+ else if(opdSub==='inv')h=opdRenderInventory(byKey.q4,byKey.q3);
  else if(opdSub==='chk')h=opdRenderChecks(byKey.q7);
  else if(opdSub==='import'){
   const totalBytes=stored.reduce((a,s)=>a+(s?s.bytes:0),0);
