@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v50.8-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v50.9-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -1246,7 +1246,18 @@ th.yd,td.yd{background:rgba(11,31,58,.035);font-size:.92em}th.yd{color:var(--mut
 <!-- ============ مركز البيانات التشغيلية (مبيعات/مشتريات/مخزون/أعمار ذمم...) ============ -->
 <section class="tab" id="tab-opdata">
  <div class="row noprint">
-  <span class="hint">بيانات SAP التشغيلية المُلخَّصة (كويريز Query Manager) — تُخزَّن منفصلة تماماً عن بيانات القوائم المالية، ولا تدخل ضمن نسخة الملف الاحتياطي الأساسية. كل استيراد يستبدل النسخة السابقة لنفس المصدر بالكامل.</span>
+  <span class="hint">بيانات SAP التشغيلية المُلخَّصة (كويريز Query Manager) — تُخزَّن منفصلة تماماً عن بيانات القوائم المالية، ولا تدخل ضمن نسخة الملف الاحتياطي الأساسية.</span>
+ </div>
+ <div class="row noprint tabs-mini" id="opdSubNav">
+  <button class="on" data-sub="overview" onclick="opdShowSub('overview')">نظرة عامة</button>
+  <button data-sub="sales" onclick="opdShowSub('sales')">المبيعات</button>
+  <button data-sub="ar" onclick="opdShowSub('ar')">العملاء وأعمار الذمم</button>
+  <button data-sub="inv" onclick="opdShowSub('inv')">الأصناف والمخزون</button>
+  <button data-sub="ap" onclick="opdShowSub('ap')">المشتريات والموردين</button>
+  <button data-sub="chk" onclick="opdShowSub('chk')">الشيكات</button>
+  <button data-sub="ret" onclick="opdShowSub('ret')">المرتجعات</button>
+  <button data-sub="kpi" onclick="opdShowSub('kpi')">المؤشرات التشغيلية</button>
+  <button data-sub="import" onclick="opdShowSub('import')">📥 إدارة البيانات والاستيراد</button>
  </div>
  <div id="opDataPage"><p class="hint">جارٍ التحميل...</p></div>
 </section>
@@ -3162,14 +3173,72 @@ function opsRenderSourceCard(src,stored){
  </div>
  </div>`;
 }
+let opdSub='overview';
+function opdShowSub(id){opdSub=id;document.querySelectorAll('#opdSubNav button').forEach(b=>b.classList.toggle('on',b.dataset.sub===id));renderOpData()}
+function opdTopNum(rows,col){return rows.reduce((a,r)=>a+(typeof r[col]==='number'?r[col]:0),0)}
+function opdGroupSum(rows,keyCol,...valCols){
+ const by={};rows.forEach(r=>{const k=r[keyCol]==null||r[keyCol]===''?'غير محدد':r[keyCol];const o=by[k]=by[k]||{};valCols.forEach(c=>o[c]=(o[c]||0)+(typeof r[c]==='number'?r[c]:0))});
+ return Object.entries(by).map(([n,o])=>({n,...o}));
+}
+function opdTopTable(list,valKey,gpKey,totSales,title){
+ return `<h3>${title}</h3><table><thead><tr><th>البند</th><th class="num">المبيعات</th><th class="num">% من الإجمالي</th>${gpKey?'<th class="num">هامش الربح</th>':''}</tr></thead><tbody>
+ ${list.slice(0,10).map(r=>`<tr><td>${opsEsc(r.n)}</td><td class="num">${fmt(r[valKey])}</td><td class="num">${pct(totSales?r[valKey]/totSales:null)}</td>${gpKey?`<td class="num">${pct(r[valKey]?r[gpKey]/r[valKey]:null)}</td>`:''}</tr>`).join('')}
+ </tbody></table>`;
+}
+function opdRenderSales(stored){
+ if(!stored||!stored.rows.length)return '<p class="hint">لا توجد بيانات مبيعات مستوردة بعد — افتح تبويب "📥 إدارة البيانات والاستيراد" واستورد نتيجة q1 (المبيعات الشهرية).</p>';
+ const rows=stored.rows;
+ const ymKey=r=>r['السنة']+'-'+String(r['الشهر']).padStart(2,'0');
+ const byMonth={};
+ rows.forEach(r=>{const k=ymKey(r);const m=byMonth[k]=byMonth[k]||{sales:0,gp:0};m.sales+=r['صافي المبيعات']||0;m.gp+=r['مجمل الربح']||0});
+ const months=Object.keys(byMonth).sort();
+ const totSales=opdTopNum(rows,'صافي المبيعات'),totGP=opdTopNum(rows,'مجمل الربح'),totInv=opdTopNum(rows,'عدد الفواتير'),totKg=opdTopNum(rows,'الكمية بالكيلو'),totRet=opdTopNum(rows,'قيمة المرتجعات');
+ const gm=totSales?totGP/totSales:null,avgInv=totInv?totSales/totInv:null,retRate=totSales?totRet/totSales:null;
+ const repList=opdGroupSum(rows,'المندوب','صافي المبيعات','مجمل الربح').sort((a,b)=>b['صافي المبيعات']-a['صافي المبيعات']);
+ const grpList=opdGroupSum(rows,'مجموعة الأصناف','صافي المبيعات','مجمل الربح').sort((a,b)=>b['صافي المبيعات']-a['صافي المبيعات']);
+ const top3Share=totSales?repList.slice(0,3).reduce((a,r)=>a+r['صافي المبيعات'],0)/totSales:0;
+ const byYear={};rows.forEach(r=>{const y=r['السنة'];byYear[y]=(byYear[y]||0)+(r['صافي المبيعات']||0)});
+ const years=Object.keys(byYear).sort();
+ const yoy=years.length>=2&&byYear[years[years.length-2]]?(byYear[years[years.length-1]]-byYear[years[years.length-2]])/Math.abs(byYear[years[years.length-2]]):null;
+ let h=`<h2>📈 تحليل المبيعات <span class="hint">(من q1 — ${rows.length} صف، تاريخ الاستخراج ${new Date(stored.extractedAt).toLocaleDateString('ar-JO')})</span></h2>`;
+ h+=`<div class="grid g4">
+  ${kpi('إجمالي المبيعات',fmt(totSales),months.length+' شهر','',1)}
+  ${kpi('هامش الربح الإجمالي',pct(gm),fmt(totGP),'',1)}
+  ${kpi('متوسط قيمة الفاتورة',fmt(avgInv),totInv.toLocaleString('en-US')+' فاتورة','',1)}
+  ${kpi('نسبة المرتجعات',pct(retRate),fmt(totRet),(retRate!=null&&retRate>0.03)?'neg':'',1)}
+ </div>`;
+ if(yoy!=null)h+=`<p class="hint">نمو المبيعات ${years[years.length-1]} مقابل ${years[years.length-2]}: <b class="${yoy>=0?'pos':'neg'}">${pct(yoy)}</b></p>`;
+ if(top3Share>0.5)h+=`<p class="hint" style="color:#8a6d1a">⚠ تركّز مبيعات: أعلى 3 مندوبين يشكّلون ${pct(top3Share)} من إجمالي المبيعات — مخاطرة اعتماد على عدد محدود من المندوبين.</p>`;
+ if(months.length>1){
+  h+=`<h3>الاتجاه الشهري — المبيعات ومجمل الربح</h3>${lineChart(months,[{n:'صافي المبيعات',data:months.map(k=>byMonth[k].sales),col:C.navy,fill:1},{n:'مجمل الربح',data:months.map(k=>byMonth[k].gp),col:C.gold}],1000,280)}`;
+  h+=`<h3>اتجاه هامش الربح الشهري</h3>${lineChart(months,[{n:'هامش الربح',data:months.map(k=>byMonth[k].sales?byMonth[k].gp/byMonth[k].sales:null),col:C.teal}],1000,220,{pct:1})}`;
+ }
+ h+=opdTopTable(repList,'صافي المبيعات','مجمل الربح',totSales,'أعلى 10 مندوبين (حسب المبيعات)');
+ h+=opdTopTable(grpList,'صافي المبيعات','مجمل الربح',totSales,'أعلى 10 مجموعات أصناف (حسب المبيعات)');
+ return h;
+}
+function opdRenderOverview(stored){
+ const have=OPS_SOURCES.filter((s,i)=>stored[i]);
+ let h=`<h2>نظرة عامة على البيانات التشغيلية</h2>`;
+ if(!have.length)return h+'<p class="hint">لا توجد بيانات مستوردة بعد — افتح تبويب "📥 إدارة البيانات والاستيراد" لبدء الاستيراد.</p>';
+ h+=`<div class="grid g4">${OPS_SOURCES.map((s,i)=>{const st=stored[i];return kpi(s.icon+' '+s.label,st?st.rows.length.toLocaleString('en-US')+' صف':'—',st?new Date(st.extractedAt).toLocaleDateString('ar-JO'):'لا يوجد استيراد',st?'':'neg',1)}).join('')}</div>`;
+ h+='<p class="hint">افتح أي تبويب أعلاه لتحليل مفصَّل لذلك المجال. تبويب "إدارة البيانات والاستيراد" فيه الاستيراد/التحديث/الحذف لكل مصدر.</p>';
+ return h;
+}
 async function renderOpData(){
  const el=document.getElementById('opDataPage');if(!el)return;
  const stored=await Promise.all(OPS_SOURCES.map(s=>opsIdbGet(s.key)));
- const totalBytes=stored.reduce((a,s)=>a+(s?s.bytes:0),0);
+ const byKey={};OPS_SOURCES.forEach((s,i)=>byKey[s.key]=stored[i]);
  let h='';
- if(totalBytes>10*1024*1024)h+=`<p class="hint" style="color:#b3261e">⚠ إجمالي حجم البيانات التشغيلية المستوردة ${(totalBytes/1024/1024).toFixed(1)} ميجابايت — تجاوز الحد المقترح (10MB) لأداء المتصفح.</p>`;
- if(!R)h+=`<p class="hint">⚠ لا توجد قوائم مالية محتسبة بعد — مطابقة الأرقام مع الأستاذ العام (السطر أسفل كل بطاقة) لن تظهر حتى تضغط "احتساب" أعلى الشاشة.</p>`;
- h+=OPS_SOURCES.map((s,i)=>opsRenderSourceCard(s,stored[i])).join('\n');
+ if(opdSub==='overview')h=opdRenderOverview(stored);
+ else if(opdSub==='sales')h=opdRenderSales(byKey.q1);
+ else if(opdSub==='import'){
+  const totalBytes=stored.reduce((a,s)=>a+(s?s.bytes:0),0);
+  if(totalBytes>10*1024*1024)h+=`<p class="hint" style="color:#b3261e">⚠ إجمالي حجم البيانات التشغيلية المستوردة ${(totalBytes/1024/1024).toFixed(1)} ميجابايت — تجاوز الحد المقترح (10MB) لأداء المتصفح.</p>`;
+  if(!R)h+=`<p class="hint">⚠ لا توجد قوائم مالية محتسبة بعد — مطابقة الأرقام مع الأستاذ العام (أسفل كل بطاقة) لن تظهر حتى تضغط "احتساب" أعلى الشاشة.</p>`;
+  h+=OPS_SOURCES.map((s,i)=>opsRenderSourceCard(s,stored[i])).join('\n');
+ }
+ else h=`<p class="hint">تحليل هذا المجال قيد الإنشاء — سيُضاف بمرحلة قادمة. البيانات الخام متاحة الآن بتبويب "📥 إدارة البيانات والاستيراد".</p>`;
  el.innerHTML=h;
 }
 function opsInit(){const b=document.querySelector('nav [data-t="opdata"]');if(b)b.addEventListener('click',()=>renderOpData())}
