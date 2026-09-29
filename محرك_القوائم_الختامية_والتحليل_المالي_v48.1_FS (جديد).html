@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v50.15-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v50.16-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -3501,12 +3501,38 @@ function opdRenderChecks(stored){
  if(byBankRet.length)h+=opdTopTable(byBankRet,'القيمة',null,totReturned,'البنوك حسب الشيكات المرتجعة','القيمة');
  return h;
 }
+function opdReconcileStatus(stored){
+ if(!R)return null;
+ const items=[];
+ OPS_SOURCES.forEach((s,i)=>{
+  const st=stored[i];
+  if(!st||!st.rows.length)return;
+  if(s.glLine){const rec=opsReconcile(s,st.rows);if(rec)items.push({label:s.label,rec})}
+  if(s.glLine2){const rec2=opsReconcile({...s,valueCol:s.valueCol2,glLine:s.glLine2},st.rows);if(rec2)items.push({label:s.label+' — '+s.valueCol2,rec:rec2})}
+ });
+ return items;
+}
+function opdRenderReconcilePanel(stored){
+ if(!R)return '<p class="hint">⚠ لوحة المطابقة الرقابية ستظهر هنا بعد احتساب القوائم المالية (زر "احتساب" أعلى الشاشة).</p>';
+ const items=opdReconcileStatus(stored);
+ if(!items||!items.length)return '<p class="hint">لا توجد بعد مصادر مستوردة قابلة للمطابقة مع الأستاذ العام (المبيعات/التكلفة، أعمار ذمم العملاء، المخزون، أعمار ذمم الموردين).</p>';
+ const worst=items.reduce((a,b)=>(b.rec.pctDiff||0)>(a.rec.pctDiff||0)?b:a);
+ const worstCls=worst.rec.pctDiff==null?'':worst.rec.pctDiff>0.03?'bad':worst.rec.pctDiff>0.01?'warn':'ok';
+ let h='<h3>لوحة المطابقة الرقابية <span class="hint">(مقابل الأستاذ العام — الفترة المحددة أعلى الشاشة)</span></h3>';
+ if(worstCls==='bad')h+='<p class="hint" style="color:#b3261e">⚠ يوجد فرق مطابقة أكبر من 3% بأحد المصادر — راجع التفاصيل بتبويب "📥 إدارة البيانات والاستيراد".</p>';
+ h+='<div class="grid g4">'+items.map(it=>{
+  const cls_=it.rec.pctDiff==null?'':it.rec.pctDiff>0.03?'bad':it.rec.pctDiff>0.01?'warn':'ok';
+  return kpi(it.label,fmt(it.rec.diff),`<span class="badge ${cls_}">${it.rec.pctDiff==null?'—':pct(it.rec.pctDiff)}</span>`,'',1);
+ }).join('')+'</div>';
+ return h;
+}
 function opdRenderOverview(stored){
  const have=OPS_SOURCES.filter((s,i)=>stored[i]);
  let h=`<h2>نظرة عامة على البيانات التشغيلية</h2>`;
  if(!have.length)return h+'<p class="hint">لا توجد بيانات مستوردة بعد — افتح تبويب "📥 إدارة البيانات والاستيراد" لبدء الاستيراد.</p>';
  h+=`<div class="grid g4">${OPS_SOURCES.map((s,i)=>{const st=stored[i];return kpi(s.icon+' '+s.label,st?st.rows.length.toLocaleString('en-US')+' صف':'—',st?new Date(st.extractedAt).toLocaleDateString('ar-JO'):'لا يوجد استيراد',st?'':'neg',1)}).join('')}</div>`;
  h+='<p class="hint">افتح أي تبويب أعلاه لتحليل مفصَّل لذلك المجال. تبويب "إدارة البيانات والاستيراد" فيه الاستيراد/التحديث/الحذف لكل مصدر.</p>';
+ h+=opdRenderReconcilePanel(stored);
  return h;
 }
 async function renderOpData(){
