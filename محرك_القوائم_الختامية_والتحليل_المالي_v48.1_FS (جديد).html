@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v50.10-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v50.11-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -3265,6 +3265,37 @@ function opdRenderSales(stored){
  h+=opdTopTable(grpList,'صافي المبيعات','مجمل الربح',totSales,'أعلى 10 مجموعات أصناف (حسب المبيعات)','المبيعات');
  return h;
 }
+function opdRenderChecks(stored){
+ if(!stored||!stored.rows.length)return '<p class="hint">لا توجد بيانات شيكات مستوردة بعد — افتح تبويب "📥 إدارة البيانات والاستيراد" واستورد نتيجة q7 (الشيكات).</p>';
+ const rows=stored.rows;
+ const ymKey=r=>r['سنة الاستحقاق']+'-'+String(r['شهر الاستحقاق']).padStart(2,'0');
+ const incoming=rows.filter(r=>r['النوع']==='وارد'),outgoing=rows.filter(r=>r['النوع']==='صادر'),returned=rows.filter(r=>r['النوع']==='مرتجع');
+ const totIncoming=opdTopNum(incoming,'القيمة'),totOutgoing=opdTopNum(outgoing,'القيمة'),totReturned=opdTopNum(returned,'القيمة');
+ const cntIncoming=opdTopNum(incoming,'العدد'),cntOutgoing=opdTopNum(outgoing,'العدد'),cntReturned=opdTopNum(returned,'العدد');
+ const totAll=totIncoming+totOutgoing+totReturned,net=totIncoming-totOutgoing;
+ const returnRate=totAll?totReturned/totAll:null;
+ const byMonth={};
+ rows.forEach(r=>{const k=ymKey(r);const m=byMonth[k]=byMonth[k]||{in:0,out:0,ret:0};if(r['النوع']==='وارد')m.in+=r['القيمة']||0;else if(r['النوع']==='صادر')m.out+=r['القيمة']||0;else m.ret+=r['القيمة']||0});
+ const months=Object.keys(byMonth).sort();
+ const byBankIn=opdGroupSum(incoming,'البنك','القيمة').sort((a,b)=>b['القيمة']-a['القيمة']);
+ const byBankOut=opdGroupSum(outgoing,'البنك','القيمة').sort((a,b)=>b['القيمة']-a['القيمة']);
+ const byBankRet=opdGroupSum(returned,'البنك','القيمة').sort((a,b)=>b['القيمة']-a['القيمة']);
+ let h=`<h2>🧾 تحليل الشيكات <span class="hint">(من q7 — ${rows.length} صف، تاريخ الاستخراج ${new Date(stored.extractedAt).toLocaleDateString('ar-JO')})</span></h2>`;
+ h+=`<div class="grid g4">
+  ${kpi('شيكات واردة (من العملاء)',fmt(totIncoming),cntIncoming.toLocaleString('en-US')+' شيك','',1)}
+  ${kpi('شيكات صادرة (للموردين)',fmt(totOutgoing),cntOutgoing.toLocaleString('en-US')+' شيك','',1)}
+  ${kpi('صافي الشيكات (وارد − صادر)',fmt(net),'',net<0?'neg':'pos',1)}
+  ${kpi('الشيكات المرتجعة',fmt(totReturned),cntReturned.toLocaleString('en-US')+' شيك — '+pct(returnRate),(returnRate!=null&&returnRate>0.02)?'neg':'',1)}
+ </div>`;
+ h+=`<p class="hint">⚠ عمود "النوع" بالكويري q7 يجمع الشيكات المرتجعة (الواردة المرفوضة من البنك + الصادرة الملغاة) بنفس التصنيف "مرتجع" دون تمييز الاتجاه — رقم "الشيكات المرتجعة" أعلاه إجمالي الحالتين معاً.</p>`;
+ if(months.length>1){
+  h+=`<h3>الاتجاه الشهري — واردة / صادرة / مرتجعة</h3>${lineChart(months,[{n:'واردة',data:months.map(k=>byMonth[k].in),col:C.navy,fill:1},{n:'صادرة',data:months.map(k=>byMonth[k].out),col:C.teal},{n:'مرتجعة',data:months.map(k=>byMonth[k].ret),col:C.coral}],1000,280)}`;
+ }
+ if(byBankIn.length)h+=opdTopTable(byBankIn,'القيمة',null,totIncoming,'أعلى 10 بنوك — شيكات واردة','القيمة');
+ if(byBankOut.length)h+=opdTopTable(byBankOut,'القيمة',null,totOutgoing,'أعلى 10 بنوك — شيكات صادرة','القيمة');
+ if(byBankRet.length)h+=opdTopTable(byBankRet,'القيمة',null,totReturned,'البنوك حسب الشيكات المرتجعة','القيمة');
+ return h;
+}
 function opdRenderOverview(stored){
  const have=OPS_SOURCES.filter((s,i)=>stored[i]);
  let h=`<h2>نظرة عامة على البيانات التشغيلية</h2>`;
@@ -3281,6 +3312,7 @@ async function renderOpData(){
  if(opdSub==='overview')h=opdRenderOverview(stored);
  else if(opdSub==='sales')h=opdRenderSales(byKey.q1);
  else if(opdSub==='ar')h=opdRenderAR(byKey.q2,'أعمار ذمم العملاء','👥','q2');
+ else if(opdSub==='chk')h=opdRenderChecks(byKey.q7);
  else if(opdSub==='import'){
   const totalBytes=stored.reduce((a,s)=>a+(s?s.bytes:0),0);
   if(totalBytes>10*1024*1024)h+=`<p class="hint" style="color:#b3261e">⚠ إجمالي حجم البيانات التشغيلية المستوردة ${(totalBytes/1024/1024).toFixed(1)} ميجابايت — تجاوز الحد المقترح (10MB) لأداء المتصفح.</p>`;
