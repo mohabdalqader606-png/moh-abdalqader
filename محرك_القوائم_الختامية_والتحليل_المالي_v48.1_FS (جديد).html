@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v50.11-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v50.12-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -3193,44 +3193,57 @@ const AGING_BUCKETS=[
  {label:'7-12 شهر',cols:['M7 7 أشهر قبل','M8 8 أشهر قبل','M9 9 أشهر قبل','M10 10 أشهر قبل','M11 11 أشهر قبل']},
  {label:'أكثر من سنة',cols:['M12plus أقدم من 12 شهر']},
 ];
-function opdAgingAnalysis(rows,balCol){
- const bucketTotals=AGING_BUCKETS.map(b=>({label:b.label,val:rows.reduce((a,r)=>a+b.cols.reduce((s,c)=>s+(r[c]||0),0),0)}));
+// q6 (أعمار ذمم الموردين) يستخدم تسميات أعمدة مختلفة عن q2 (نفس الفكرة، ألفاظ مغايرة بالكويري الفعلي)
+const AGING_BUCKETS_AP=[
+ {label:'جاري (M0)',cols:['M0 (قبل 0 شهر)']},
+ {label:'1-3 أشهر',cols:['M1 (قبل 1 شهر)','M2 (قبل 2 شهر)','M3 (قبل 3 شهر)']},
+ {label:'4-6 أشهر',cols:['M4 (قبل 4 شهر)','M5 (قبل 5 شهر)','M6 (قبل 6 شهر)']},
+ {label:'7-12 شهر',cols:['M7 (قبل 7 شهر)','M8 (قبل 8 شهر)','M9 (قبل 9 شهر)','M10 (قبل 10 شهر)','M11 (قبل 11 شهر)']},
+ {label:'أكثر من سنة',cols:['M12 فأكثر']},
+];
+function opdAgingAnalysis(rows,buckets){
+ buckets=buckets||AGING_BUCKETS;
+ const bucketTotals=buckets.map(b=>({label:b.label,val:rows.reduce((a,r)=>a+b.cols.reduce((s,c)=>s+(r[c]||0),0),0)}));
  const overdueVal=bucketTotals.slice(1).reduce((a,b)=>a+b.val,0);
- const overdueFn=r=>AGING_BUCKETS.slice(1).reduce((s,b)=>s+b.cols.reduce((x,c)=>x+(r[c]||0),0),0);
+ const overdueFn=r=>buckets.slice(1).reduce((s,b)=>s+b.cols.reduce((x,c)=>x+(r[c]||0),0),0);
  return {bucketTotals,overdueVal,overdueFn};
 }
-function opdRenderAR(stored,label,icon,srcKey){
+function opdRenderAR(stored,label,icon,srcKey,opts){
+ opts=opts||{};
  if(!stored||!stored.rows.length)return `<p class="hint">لا توجد بيانات مستوردة بعد — افتح "📥 إدارة البيانات والاستيراد" واستورد ${srcKey}.</p>`;
  const rows=stored.rows;
- const balCol='الرصيد الحقيقي (من القيود حتى اليوم)',chqCol='الشيكات المؤجلة',limCol='السقف الائتماني';
+ const balCol='الرصيد الحقيقي (من القيود حتى اليوم)',chqCol=opts.chqCol||'الشيكات المؤجلة',limCol=opts.limCol,buckets=opts.buckets||AGING_BUCKETS;
+ const nameOf=r=>r['اسم العميل']||r['اسم المورد'],codeOf=r=>r['رمز العميل']||r['رمز المورد'];
  const totBal=opdTopNum(rows,balCol),totChq=opdTopNum(rows,chqCol),netExposure=totBal-totChq;
- const {bucketTotals,overdueVal,overdueFn}=opdAgingAnalysis(rows,balCol);
+ const {bucketTotals,overdueVal,overdueFn}=opdAgingAnalysis(rows,buckets);
  const overdueRate=totBal?overdueVal/totBal:null;
- const breaches=rows.filter(r=>(r[limCol]||0)>0&&(r[balCol]||0)>(r[limCol]||0)).map(r=>({name:r['اسم العميل']||r['اسم المورد'],code:r['رمز العميل']||r['رمز المورد'],bal:r[balCol],lim:r[limCol],over:r[balCol]-r[limCol]})).sort((a,b)=>b.over-a.over);
+ const breaches=limCol?rows.filter(r=>(r[limCol]||0)>0&&(r[balCol]||0)>(r[limCol]||0)).map(r=>({name:nameOf(r),code:codeOf(r),bal:r[balCol],lim:r[limCol],over:r[balCol]-r[limCol]})).sort((a,b)=>b.over-a.over):[];
  const topBal=rows.slice().sort((a,b)=>(b[balCol]||0)-(a[balCol]||0)).slice(0,10);
  const top3Share=totBal?topBal.slice(0,3).reduce((a,r)=>a+(r[balCol]||0),0)/totBal:0;
- const overdueList=rows.map(r=>({name:r['اسم العميل']||r['اسم المورد'],code:r['رمز العميل']||r['رمز المورد'],bal:r[balCol],overdue:overdueFn(r)})).filter(r=>r.overdue>0).sort((a,b)=>b.overdue-a.overdue).slice(0,10);
+ const overdueList=rows.map(r=>({name:nameOf(r),code:codeOf(r),bal:r[balCol],overdue:overdueFn(r)})).filter(r=>r.overdue>0).sort((a,b)=>b.overdue-a.overdue).slice(0,10);
  let h=`<h2>${icon} تحليل ${label} <span class="hint">(من ${srcKey} — ${rows.length} صف، تاريخ الاستخراج ${new Date(stored.extractedAt).toLocaleDateString('ar-JO')})</span></h2>`;
  h+=`<div class="grid g4">
   ${kpi('إجمالي الرصيد',fmt(totBal),rows.length+' حساب','',1)}
   ${kpi('صافي التعرّض (بعد الشيكات المؤجلة)',fmt(netExposure),'شيكات مؤجلة '+fmt(totChq),'',1)}
   ${kpi('نسبة المتأخر (غير جاري)',pct(overdueRate),fmt(overdueVal),(overdueRate!=null&&overdueRate>0.3)?'neg':'',1)}
-  ${kpi('تجاوزوا السقف الائتماني',String(breaches.length),breaches.length?fmt(breaches.reduce((a,b)=>a+b.over,0))+' زيادة':'لا يوجد',breaches.length?'neg':'pos',1)}
+  ${limCol?kpi('تجاوزوا السقف الائتماني',String(breaches.length),breaches.length?fmt(breaches.reduce((a,b)=>a+b.over,0))+' زيادة':'لا يوجد',breaches.length?'neg':'pos',1):kpi('حسابات متأخرة',String(overdueList.length)+' من '+rows.length,overdueVal?fmt(overdueVal)+' إجمالي متأخر':'لا يوجد',overdueVal>0?'neg':'pos',1)}
  </div>`;
  if(top3Share>0.5)h+=`<p class="hint" style="color:#8a6d1a">⚠ تركّز: أعلى 3 حسابات يشكّلون ${pct(top3Share)} من إجمالي الرصيد.</p>`;
  h+=`<h3>توزيع الأعمار</h3><table><thead><tr>${bucketTotals.map(b=>'<th class="num">'+b.label+'</th>').join('')}</tr></thead><tbody><tr>${bucketTotals.map(b=>`<td class="num ${b.label==='جاري (M0)'?'':(totBal&&b.val/totBal>0.15?'neg':'')}">${fmt(b.val)} <span class="hint">(${pct(totBal?b.val/totBal:null)})</span></td>`).join('')}</tr></tbody></table>`;
- if(breaches.length)h+=`<h3 style="color:#b3261e">⚠ تجاوزوا السقف الائتماني (${breaches.length})</h3><table><thead><tr><th>الحساب</th><th class="num">الرصيد</th><th class="num">السقف</th><th class="num">الزيادة</th></tr></thead><tbody>
+ if(limCol&&breaches.length)h+=`<h3 style="color:#b3261e">⚠ تجاوزوا السقف الائتماني (${breaches.length})</h3><table><thead><tr><th>الحساب</th><th class="num">الرصيد</th><th class="num">السقف</th><th class="num">الزيادة</th></tr></thead><tbody>
  ${breaches.slice(0,15).map(b=>`<tr><td>${opsEsc(b.name)} <span class="hint">(${opsEsc(b.code)})</span></td><td class="num">${fmt(b.bal)}</td><td class="num">${fmt(b.lim)}</td><td class="num neg">${fmt(b.over)}</td></tr>`).join('')}
  </tbody></table>`;
  h+=`<h3>أعلى 10 حسابات (حسب الرصيد)</h3><table><thead><tr><th>الحساب</th><th class="num">الرصيد</th><th class="num">% من الإجمالي</th><th class="num">شيكات مؤجلة</th></tr></thead><tbody>
- ${topBal.map(r=>`<tr><td>${opsEsc(r['اسم العميل']||r['اسم المورد'])} <span class="hint">(${opsEsc(r['رمز العميل']||r['رمز المورد'])})</span></td><td class="num">${fmt(r[balCol])}</td><td class="num">${pct(totBal?r[balCol]/totBal:null)}</td><td class="num">${fmt(r[chqCol]||0)}</td></tr>`).join('')}
+ ${topBal.map(r=>`<tr><td>${opsEsc(nameOf(r))} <span class="hint">(${opsEsc(codeOf(r))})</span></td><td class="num">${fmt(r[balCol])}</td><td class="num">${pct(totBal?r[balCol]/totBal:null)}</td><td class="num">${fmt(r[chqCol]||0)}</td></tr>`).join('')}
  </tbody></table>`;
  h+=`<h3>أعلى 10 حسابات بالمتأخر (أكثر من شهر)</h3>`;
  h+=overdueList.length?`<table><thead><tr><th>الحساب</th><th class="num">إجمالي الرصيد</th><th class="num">المتأخر</th></tr></thead><tbody>
  ${overdueList.map(r=>`<tr><td>${opsEsc(r.name)} <span class="hint">(${opsEsc(r.code)})</span></td><td class="num">${fmt(r.bal)}</td><td class="num neg">${fmt(r.overdue)}</td></tr>`).join('')}
  </tbody></table>`:'<p class="hint">✔ لا يوجد حسابات متأخرة ضمن البيانات المستوردة.</p>';
- const byRep=opdGroupSum(rows,'المندوب',balCol).sort((a,b)=>b[balCol]-a[balCol]);
- if(byRep.length)h+=opdTopTable(byRep,balCol,null,totBal,'الرصيد حسب المندوب','الرصيد');
+ if(opts.repCol){
+  const byRep=opdGroupSum(rows,opts.repCol,balCol).sort((a,b)=>b[balCol]-a[balCol]);
+  if(byRep.length)h+=opdTopTable(byRep,balCol,null,totBal,'الرصيد حسب '+opts.repCol,'الرصيد');
+ }
  return h;
 }
 function opdRenderSales(stored){
@@ -3263,6 +3276,53 @@ function opdRenderSales(stored){
  }
  h+=opdTopTable(repList,'صافي المبيعات','مجمل الربح',totSales,'أعلى 10 مندوبين (حسب المبيعات)','المبيعات');
  h+=opdTopTable(grpList,'صافي المبيعات','مجمل الربح',totSales,'أعلى 10 مجموعات أصناف (حسب المبيعات)','المبيعات');
+ return h;
+}
+function opdRenderPurchases(stored){
+ if(!stored||!stored.rows.length)return '<p class="hint">لا توجد بيانات مشتريات مستوردة بعد — افتح تبويب "📥 إدارة البيانات والاستيراد" واستورد نتيجة q5 (المشتريات).</p>';
+ const rows=stored.rows;
+ const yearCols=(stored.headers||Object.keys(rows[0]||{})).filter(h=>/^مشتريات \d{4}$/.test(h)).sort();
+ if(!yearCols.length)return '<p class="hint">تعذّر التعرف على أعمدة السنوات ببيانات q5 المستوردة.</p>';
+ const years=yearCols.map(h=>h.match(/\d{4}/)[0]);
+ const currencies=[...new Set(rows.map(r=>r['العملة']||'JOD'))];
+ const byCurYear={};
+ currencies.forEach(c=>{byCurYear[c]={};yearCols.forEach(yc=>{byCurYear[c][yc]=0})});
+ rows.forEach(r=>{const c=r['العملة']||'JOD';yearCols.forEach(yc=>{byCurYear[c][yc]+=(typeof r[yc]==='number'?r[yc]:0)})});
+ const curTotals=currencies.map(c=>({c,tot:yearCols.reduce((a,yc)=>a+byCurYear[c][yc],0)})).sort((a,b)=>b.tot-a.tot);
+ const mainCur=curTotals.length?curTotals[0].c:'JOD';
+ let lastIdx=-1;
+ yearCols.forEach((yc,i)=>{const tot=currencies.reduce((a,c)=>a+byCurYear[c][yc],0);if(tot>0)lastIdx=i});
+ const idx=lastIdx>=0?lastIdx:yearCols.length-1;
+ const curYear=years[idx],curYc=yearCols[idx];
+ const prevYc=idx>0?yearCols[idx-1]:null,prevYear=idx>0?years[idx-1]:null;
+ const totCurYearMain=byCurYear[mainCur][curYc]||0;
+ const totPrevYearMain=prevYc?(byCurYear[mainCur][prevYc]||0):null;
+ const yoy=(totPrevYearMain&&totPrevYearMain!==0)?(totCurYearMain-totPrevYearMain)/Math.abs(totPrevYearMain):null;
+ const nSuppliers=new Set(rows.map(r=>r['رمز المورد'])).size;
+ const topMain=rows.filter(r=>(r['العملة']||'JOD')===mainCur).slice().sort((a,b)=>(b[curYc]||0)-(a[curYc]||0)).slice(0,10);
+ const top3Share=totCurYearMain?topMain.slice(0,3).reduce((a,r)=>a+(r[curYc]||0),0)/totCurYearMain:0;
+ let h=`<h2>🛒 تحليل المشتريات <span class="hint">(من q5 — ${rows.length} صف، تاريخ الاستخراج ${new Date(stored.extractedAt).toLocaleDateString('ar-JO')})</span></h2>`;
+ h+=`<div class="grid g4">
+  ${kpi('مشتريات '+curYear+' ('+mainCur+')',fmt(totCurYearMain),nSuppliers+' مورد','',1)}
+  ${kpi('النمو مقابل '+(prevYear||'—'),yoy==null?'—':pct(yoy),'',yoy!=null?(yoy<0?'neg':'pos'):'',1)}
+  ${kpi('عدد العملات المستخدمة',String(currencies.length),currencies.join('، '),'',1)}
+  ${kpi('تركّز الموردين (أعلى 3)',pct(top3Share),mainCur,top3Share>0.5?'neg':'',1)}
+ </div>`;
+ if(currencies.length>1)h+=`<p class="hint">⚠ مشتريات متعددة العملات — الأرقام أعلاه والجداول أدناه محسوبة كل عملة على حدة تفادياً لجمع عملات مختلفة ببعضها.</p>`;
+ if(curYear===String(new Date().getFullYear()))h+=`<p class="hint">ملاحظة: سنة ${curYear} لم تكتمل بعد — رقم "النمو" أعلاه يقارن سنة جزئية بسنة كاملة (${prevYear||''}).</p>`;
+ if(top3Share>0.5)h+=`<p class="hint" style="color:#8a6d1a">⚠ تركّز مشتريات: أعلى 3 موردين (${mainCur}) يشكّلون ${pct(top3Share)} من مشتريات ${curYear}.</p>`;
+ if(yearCols.length>1){
+  const palette=[C.navy,C.teal,C.coral,C.gold];
+  h+=`<h3>الاتجاه السنوي للمشتريات حسب العملة</h3>${lineChart(years,currencies.map((c,i)=>({n:c,data:yearCols.map(yc=>byCurYear[c][yc]),col:palette[i%palette.length]})),1000,280)}`;
+ }
+ currencies.forEach(c=>{
+  const list=rows.filter(r=>(r['العملة']||'JOD')===c).slice().sort((a,b)=>(b[curYc]||0)-(a[curYc]||0)).slice(0,10);
+  const totC=byCurYear[c][curYc]||0;
+  h+=`<h3>أعلى 10 موردين — ${opsEsc(c)} (سنة ${curYear})</h3>`;
+  h+=list.length?`<table><thead><tr><th>المورد</th><th class="num">مشتريات ${curYear}</th><th class="num">% من إجمالي ${opsEsc(c)}</th></tr></thead><tbody>
+  ${list.map(r=>`<tr><td>${opsEsc(r['اسم المورد'])} <span class="hint">(${opsEsc(r['رمز المورد'])})</span></td><td class="num">${fmt(r[curYc])}</td><td class="num">${pct(totC?r[curYc]/totC:null)}</td></tr>`).join('')}
+  </tbody></table>`:`<p class="hint">لا يوجد مشتريات بعملة ${opsEsc(c)} بسنة ${curYear}.</p>`;
+ });
  return h;
 }
 function opdRenderChecks(stored){
@@ -3311,7 +3371,8 @@ async function renderOpData(){
  let h='';
  if(opdSub==='overview')h=opdRenderOverview(stored);
  else if(opdSub==='sales')h=opdRenderSales(byKey.q1);
- else if(opdSub==='ar')h=opdRenderAR(byKey.q2,'أعمار ذمم العملاء','👥','q2');
+ else if(opdSub==='ar')h=opdRenderAR(byKey.q2,'أعمار ذمم العملاء','👥','q2',{limCol:'السقف الائتماني',repCol:'المندوب'});
+ else if(opdSub==='ap')h=opdRenderPurchases(byKey.q5)+opdRenderAR(byKey.q6,'أعمار ذمم الموردين','🏢','q6',{chqCol:'الشيكات المؤجلة (صادرة)',buckets:AGING_BUCKETS_AP});
  else if(opdSub==='chk')h=opdRenderChecks(byKey.q7);
  else if(opdSub==='import'){
   const totalBytes=stored.reduce((a,s)=>a+(s?s.bytes:0),0);
