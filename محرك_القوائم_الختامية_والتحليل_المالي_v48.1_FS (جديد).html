@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v50.13-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v50.14-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -1255,7 +1255,6 @@ th.yd,td.yd{background:rgba(11,31,58,.035);font-size:.92em}th.yd{color:var(--mut
   <button data-sub="inv" onclick="opdShowSub('inv')">الأصناف والمخزون</button>
   <button data-sub="ap" onclick="opdShowSub('ap')">المشتريات والموردين</button>
   <button data-sub="chk" onclick="opdShowSub('chk')">الشيكات</button>
-  <button data-sub="ret" onclick="opdShowSub('ret')">المرتجعات</button>
   <button data-sub="kpi" onclick="opdShowSub('kpi')">المؤشرات التشغيلية</button>
   <button data-sub="import" onclick="opdShowSub('import')">📥 إدارة البيانات والاستيراد</button>
  </div>
@@ -3258,7 +3257,7 @@ function opdRenderAR(stored,label,icon,srcKey,opts){
  }
  return h;
 }
-function opdRenderSales(stored){
+function opdRenderSales(stored,storedRet){
  if(!stored||!stored.rows.length)return '<p class="hint">لا توجد بيانات مبيعات مستوردة بعد — افتح تبويب "📥 إدارة البيانات والاستيراد" واستورد نتيجة q1 (المبيعات الشهرية).</p>';
  const rows=stored.rows;
  const ymKey=r=>r['السنة']+'-'+String(r['الشهر']).padStart(2,'0');
@@ -3288,6 +3287,26 @@ function opdRenderSales(stored){
  }
  h+=opdTopTable(repList,'صافي المبيعات','مجمل الربح',totSales,'أعلى 10 مندوبين (حسب المبيعات)','المبيعات');
  h+=opdTopTable(grpList,'صافي المبيعات','مجمل الربح',totSales,'أعلى 10 مجموعات أصناف (حسب المبيعات)','المبيعات');
+ if(storedRet&&storedRet.rows.length){
+  const retRows=storedRet.rows;
+  const ymKeyR=r=>r['السنة']+'-'+String(r['الشهر']).padStart(2,'0');
+  const byMonthRet={};
+  retRows.forEach(r=>{const k=ymKeyR(r);const m=byMonthRet[k]=byMonthRet[k]||{val:0,qty:0};m.val+=r['القيمة']||0;m.qty+=r['الكمية']||0});
+  const retMonths=Object.keys(byMonthRet).sort();
+  const totRetQ8=opdTopNum(retRows,'القيمة'),totQtyRetQ8=opdTopNum(retRows,'الكمية');
+  const byGroupRet=opdGroupSum(retRows,'مجموعة الأصناف','القيمة','الكمية').sort((a,b)=>b['القيمة']-a['القيمة']);
+  h+=`<h3>تفصيل المرتجعات <span class="hint">(من q8 — ${retRows.length} صف، تاريخ الاستخراج ${new Date(storedRet.extractedAt).toLocaleDateString('ar-JO')})</span></h3>`;
+  h+=`<div class="grid g4">
+   ${kpi('إجمالي قيمة المرتجعات',fmt(totRetQ8),retMonths.length+' شهر','',1)}
+   ${kpi('إجمالي كمية المرتجعات',totQtyRetQ8.toLocaleString('en-US'),'','',1)}
+  </div>`;
+  if(retMonths.length>1){
+   const retRateByMonth=retMonths.map(k=>byMonth[k]&&byMonth[k].sales?byMonthRet[k].val/byMonth[k].sales:null);
+   h+=`<h4>الاتجاه الشهري لقيمة المرتجعات</h4>${lineChart(retMonths,[{n:'قيمة المرتجعات',data:retMonths.map(k=>byMonthRet[k].val),col:C.coral,fill:1}],1000,240)}`;
+   h+=`<h4>نسبة المرتجعات من المبيعات (شهرياً)</h4>${lineChart(retMonths,[{n:'نسبة المرتجعات',data:retRateByMonth,col:C.gold}],1000,200,{pct:1})}`;
+  }
+  if(byGroupRet.length)h+=opdTopTable(byGroupRet,'القيمة',null,totRetQ8,'أعلى 10 مجموعات أصناف بالمرتجعات','القيمة');
+ }
  return h;
 }
 function opdRenderPurchases(stored){
@@ -3466,7 +3485,7 @@ async function renderOpData(){
  const byKey={};OPS_SOURCES.forEach((s,i)=>byKey[s.key]=stored[i]);
  let h='';
  if(opdSub==='overview')h=opdRenderOverview(stored);
- else if(opdSub==='sales')h=opdRenderSales(byKey.q1);
+ else if(opdSub==='sales')h=opdRenderSales(byKey.q1,byKey.q8);
  else if(opdSub==='ar')h=opdRenderAR(byKey.q2,'أعمار ذمم العملاء','👥','q2',{limCol:'السقف الائتماني',repCol:'المندوب'});
  else if(opdSub==='ap')h=opdRenderPurchases(byKey.q5)+opdRenderAR(byKey.q6,'أعمار ذمم الموردين','🏢','q6',{chqCol:'الشيكات المؤجلة (صادرة)',buckets:AGING_BUCKETS_AP});
  else if(opdSub==='inv')h=opdRenderInventory(byKey.q4,byKey.q3);
