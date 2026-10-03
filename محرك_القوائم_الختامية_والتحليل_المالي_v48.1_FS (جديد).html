@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v50.19-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v50.20-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -3208,6 +3208,15 @@ function opsRenderSourceCard(src,stored){
 let opdSub='overview';
 function opdShowSub(id){opdSub=id;document.querySelectorAll('#opdSubNav button').forEach(b=>b.classList.toggle('on',b.dataset.sub===id));renderOpData()}
 function opdTopNum(rows,col){return rows.reduce((a,r)=>a+(typeof r[col]==='number'?r[col]:0),0)}
+function opdFilterByPeriod(rows,yearCol,monthCol){
+ if(!R)return rows;
+ const perSet=new Set(R.per);
+ return rows.filter(r=>{const y=r[yearCol],m=r[monthCol];if(y==null||m==null)return false;return perSet.has(y+'-'+String(m).padStart(2,'0'))});
+}
+function opdPeriodNote(allLen,filteredLen){
+ if(!R)return `<p class="hint">⚠ لسا ما تم احتساب القوائم المالية (زر "احتساب" أعلى الشاشة) — هذا التحليل معروض على كامل البيانات المستوردة (${allLen.toLocaleString('en-US')} صف) بلا فلترة بالفترة.</p>`;
+ return `<p class="hint">مفلتر حسب الفترة المحددة أعلى الشاشة (${R.per[0]} → ${R.per[R.per.length-1]}) — ${filteredLen.toLocaleString('en-US')} من ${allLen.toLocaleString('en-US')} صف مستورد.</p>`;
+}
 function opdGroupSum(rows,keyCol,...valCols){
  const by={};rows.forEach(r=>{const k=r[keyCol]==null||r[keyCol]===''?'غير محدد':r[keyCol];const o=by[k]=by[k]||{};valCols.forEach(c=>o[c]=(o[c]||0)+(typeof r[c]==='number'?r[c]:0))});
  return Object.entries(by).map(([n,o])=>({n,...o}));
@@ -3266,6 +3275,7 @@ function opdRenderAR(stored,label,icon,srcKey,opts){
  const top3Share=totBal?topBal.slice(0,3).reduce((a,r)=>a+(r[balCol]||0),0)/totBal:0;
  const overdueList=rows.map(r=>({name:nameOf(r),code:codeOf(r),bal:r[balCol],overdue:overdueFn(r)})).filter(r=>r.overdue>0).sort((a,b)=>b.overdue-a.overdue).slice(0,10);
  let h=`<h2>${icon} تحليل ${label} <span class="hint">(من ${srcKey} — ${rows.length} صف، تاريخ الاستخراج ${new Date(stored.extractedAt).toLocaleDateString('ar-JO')})</span></h2>`;
+ h+='<p class="hint">هذا تحليل أعمار ذمم لحظي (كما هو بتاريخ الاستخراج أعلاه) — لا يتأثر بالفترة المحددة أعلى الشاشة؛ الفترة تؤثر فقط على سطر المطابقة مع الأستاذ العام.</p>';
  h+=`<div class="grid g4">
   ${kpi('إجمالي الرصيد',fmt(totBal),rows.length+' حساب','',1)}
   ${kpi('صافي التعرّض (بعد الشيكات المؤجلة)',fmt(netExposure),'شيكات مؤجلة '+fmt(totChq),'',1)}
@@ -3292,7 +3302,9 @@ function opdRenderAR(stored,label,icon,srcKey,opts){
 }
 function opdRenderSales(stored){
  if(!stored||!stored.rows.length)return '<p class="hint">لا توجد بيانات مبيعات مستوردة بعد — افتح تبويب "📥 إدارة البيانات والاستيراد" واستورد نتيجة q1 (المبيعات الشهرية).</p>';
- const rows=stored.rows;
+ const allRows=stored.rows;
+ const rows=opdFilterByPeriod(allRows,'السنة','الشهر');
+ if(R&&!rows.length)return opdPeriodNote(allRows.length,0)+'<p class="hint">لا توجد بيانات مبيعات ضمن الفترة المحددة أعلى الشاشة — وسّع الفترة أو استورد بيانات لها.</p>';
  const ymKey=r=>r['السنة']+'-'+String(r['الشهر']).padStart(2,'0');
  const byMonth={};
  rows.forEach(r=>{const k=ymKey(r);const m=byMonth[k]=byMonth[k]||{sales:0,gp:0};m.sales+=r['صافي المبيعات']||0;m.gp+=r['مجمل الربح']||0});
@@ -3308,6 +3320,7 @@ function opdRenderSales(stored){
  const years=Object.keys(byYear).sort();
  const yoy=years.length>=2&&byYear[years[years.length-2]]?(byYear[years[years.length-1]]-byYear[years[years.length-2]])/Math.abs(byYear[years[years.length-2]]):null;
  let h=`<h2>📈 تحليل المبيعات <span class="hint">(من q1 — ${rows.length} صف، تاريخ الاستخراج ${new Date(stored.extractedAt).toLocaleDateString('ar-JO')})</span></h2>`;
+ h+=opdPeriodNote(allRows.length,rows.length);
  h+=`<div class="grid g4">
   ${kpi('إجمالي صافي المبيعات',fmt(totSales),months.length+' شهر','',1)}
   ${kpi('هامش الربح الإجمالي',pct(gm),fmt(totGP),'',1)}
@@ -3350,6 +3363,7 @@ function opdRenderPurchases(stored){
  const topMain=rows.filter(r=>(r['العملة']||'JOD')===mainCur).slice().sort((a,b)=>(b[curYc]||0)-(a[curYc]||0)).slice(0,10);
  const top3Share=totCurYearMain?topMain.slice(0,3).reduce((a,r)=>a+(r[curYc]||0),0)/totCurYearMain:0;
  let h=`<h2>🛒 تحليل المشتريات <span class="hint">(من q5 — ${rows.length} صف، تاريخ الاستخراج ${new Date(stored.extractedAt).toLocaleDateString('ar-JO')})</span></h2>`;
+ h+='<p class="hint">هذا تحليل سنوي (q5 محور بالسنوات) — لا يتأثر بالفترة المحددة أعلى الشاشة.</p>';
  h+=`<div class="grid g4">
   ${kpi('مشتريات '+curYear+' ('+mainCur+')',fmt(totCurYearMain),nSuppliers+' مورد','',1)}
   ${kpi('النمو مقابل '+(prevYear||'—'),yoy==null?'—':pct(yoy),'',yoy!=null?(yoy<0?'neg':'pos'):'',1)}
@@ -3402,6 +3416,7 @@ function opdRenderStock(stored){
  const deadStockVal=deadRows.reduce((a,r)=>a+(r['القيمة']||0),0);
  const deadStock=deadRows.slice().sort((a,b)=>(b['القيمة']||0)-(a['القيمة']||0)).slice(0,10);
  let h=`<h3>المخزون <span class="hint">(من q4 — ${rows.length} صف، تاريخ الاستخراج ${new Date(stored.extractedAt).toLocaleDateString('ar-JO')})</span></h3>`;
+ h+='<p class="hint">هذا رصيد مخزون لحظي (كما هو بتاريخ الاستخراج) — لا يتأثر بالفترة المحددة أعلى الشاشة.</p>';
  h+=`<div class="grid g4">
   ${kpi('إجمالي قيمة المخزون',fmt(totVal),rows.length+' صنف برصيد','',1)}
   ${kpi('إجمالي الكمية',totQty.toLocaleString('en-US'),'','',1)}
@@ -3438,6 +3453,7 @@ function opdRenderItemSales(stored){
  const byGroup=opdGroupSum(merged,'المجموعة',curYc,'مجمل الربح').sort((a,b)=>b[curYc]-a[curYc]);
  const deadItems=merged.filter(r=>(r['الرصيد الحالي']||0)>0&&(r[curYc]||0)===0).sort((a,b)=>(b['الرصيد الحالي']||0)-(a['الرصيد الحالي']||0)).slice(0,10);
  let h=`<h3>مبيعات الأصناف <span class="hint">(من q3 — ${merged.length} صنف، تاريخ الاستخراج ${new Date(stored.extractedAt).toLocaleDateString('ar-JO')})</span></h3>`;
+ h+='<p class="hint">هذا تحليل سنوي (q3 محور بالسنوات) — لا يتأثر بالفترة المحددة أعلى الشاشة.</p>';
  h+=`<div class="grid g4">
   ${kpi('مبيعات '+curYear,fmt(totSalesCur),merged.length+' صنف','',1)}
   ${kpi('هامش الربح',pct(gm),fmt(totGP),'',1)}
@@ -3459,7 +3475,10 @@ function opdRenderInventory(storedQ4,storedQ3){
 }
 function opdRenderKPI(stored){
  if(!stored||!stored.rows.length)return '<p class="hint">لا توجد بيانات مؤشرات تشغيلية مستوردة بعد — افتح تبويب "📥 إدارة البيانات والاستيراد" واستورد نتيجة q9 (مؤشرات تشغيلية).</p>';
- const rows=stored.rows.slice().sort((a,b)=>(a['السنة']-b['السنة'])||(a['الشهر']-b['الشهر']));
+ const allRows=stored.rows;
+ const filtered=opdFilterByPeriod(allRows,'السنة','الشهر');
+ if(R&&!filtered.length)return opdPeriodNote(allRows.length,0)+'<p class="hint">لا توجد بيانات مؤشرات تشغيلية ضمن الفترة المحددة أعلى الشاشة — وسّع الفترة أو استورد بيانات لها.</p>';
+ const rows=filtered.slice().sort((a,b)=>(a['السنة']-b['السنة'])||(a['الشهر']-b['الشهر']));
  const ymKey=r=>r['السنة']+'-'+String(r['الشهر']).padStart(2,'0');
  const months=rows.map(ymKey);
  const last=rows[rows.length-1],prev=rows.length>1?rows[rows.length-2]:null;
@@ -3469,6 +3488,7 @@ function opdRenderKPI(stored){
  const trendTxt=field=>{const mom=prev?chg(last[field],prev[field]):null,yoy=ly?chg(last[field],ly[field]):null;const parts=[];if(mom!=null)parts.push('شهري '+pct(mom));if(yoy!=null)parts.push('سنوي '+pct(yoy));return parts.join(' • ')};
  const trendCls=field=>{const mom=prev?chg(last[field],prev[field]):null;return mom==null?'':(mom>=0?'pos':'neg')};
  let h=`<h2>⚙️ المؤشرات التشغيلية <span class="hint">(من q9 — ${rows.length} صف، تاريخ الاستخراج ${new Date(stored.extractedAt).toLocaleDateString('ar-JO')})</span></h2>`;
+ h+=opdPeriodNote(allRows.length,rows.length);
  h+=`<p class="hint">آخر شهر متوفر: ${months[months.length-1]}${prev?' — مقارنة بالشهر السابق ('+ymKey(prev)+')':''}${ly?' وبنفس الشهر بالسنة السابقة ('+ymKey(ly)+')':''}.</p>`;
  h+=`<div class="grid g4">
   ${kpi('العملاء النشطون (آخر شهر)',(last['العملاء النشطون']||0).toLocaleString('en-US'),trendTxt('العملاء النشطون'),trendCls('العملاء النشطون'),1)}
@@ -3489,7 +3509,9 @@ function opdRenderKPI(stored){
 }
 function opdRenderChecks(stored){
  if(!stored||!stored.rows.length)return '<p class="hint">لا توجد بيانات شيكات مستوردة بعد — افتح تبويب "📥 إدارة البيانات والاستيراد" واستورد نتيجة q7 (الشيكات).</p>';
- const rows=stored.rows;
+ const allRows=stored.rows;
+ const rows=opdFilterByPeriod(allRows,'سنة الاستحقاق','شهر الاستحقاق');
+ if(R&&!rows.length)return opdPeriodNote(allRows.length,0)+'<p class="hint">لا توجد بيانات شيكات ضمن الفترة المحددة أعلى الشاشة — وسّع الفترة أو استورد بيانات لها.</p>';
  const ymKey=r=>r['سنة الاستحقاق']+'-'+String(r['شهر الاستحقاق']).padStart(2,'0');
  const incoming=rows.filter(r=>r['النوع']==='وارد'),outgoing=rows.filter(r=>r['النوع']==='صادر'),returned=rows.filter(r=>r['النوع']==='مرتجع');
  const totIncoming=opdTopNum(incoming,'القيمة'),totOutgoing=opdTopNum(outgoing,'القيمة'),totReturned=opdTopNum(returned,'القيمة');
@@ -3503,6 +3525,7 @@ function opdRenderChecks(stored){
  const byBankOut=opdGroupSum(outgoing,'البنك','القيمة').sort((a,b)=>b['القيمة']-a['القيمة']);
  const byBankRet=opdGroupSum(returned,'البنك','القيمة').sort((a,b)=>b['القيمة']-a['القيمة']);
  let h=`<h2>🧾 تحليل الشيكات <span class="hint">(من q7 — ${rows.length} صف، تاريخ الاستخراج ${new Date(stored.extractedAt).toLocaleDateString('ar-JO')})</span></h2>`;
+ h+=opdPeriodNote(allRows.length,rows.length);
  h+=`<div class="grid g4">
   ${kpi('شيكات واردة (من العملاء)',fmt(totIncoming),cntIncoming.toLocaleString('en-US')+' شيك','',1)}
   ${kpi('شيكات صادرة (للموردين)',fmt(totOutgoing),cntOutgoing.toLocaleString('en-US')+' شيك','',1)}
