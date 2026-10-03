@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v50.18-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v50.19-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -3290,15 +3290,17 @@ function opdRenderAR(stored,label,icon,srcKey,opts){
  }
  return h;
 }
-function opdRenderSales(stored,storedRet){
+function opdRenderSales(stored){
  if(!stored||!stored.rows.length)return '<p class="hint">لا توجد بيانات مبيعات مستوردة بعد — افتح تبويب "📥 إدارة البيانات والاستيراد" واستورد نتيجة q1 (المبيعات الشهرية).</p>';
  const rows=stored.rows;
  const ymKey=r=>r['السنة']+'-'+String(r['الشهر']).padStart(2,'0');
  const byMonth={};
  rows.forEach(r=>{const k=ymKey(r);const m=byMonth[k]=byMonth[k]||{sales:0,gp:0};m.sales+=r['صافي المبيعات']||0;m.gp+=r['مجمل الربح']||0});
  const months=Object.keys(byMonth).sort();
- const totSales=opdTopNum(rows,'صافي المبيعات'),totGP=opdTopNum(rows,'مجمل الربح'),totInv=opdTopNum(rows,'عدد الفواتير'),totKg=opdTopNum(rows,'الكمية بالكيلو'),totRet=opdTopNum(rows,'قيمة المرتجعات');
- const gm=totSales?totGP/totSales:null,avgInv=totInv?totSales/totInv:null,retRate=totSales?totRet/totSales:null;
+ // "صافي المبيعات" بq1 صافي أصلاً (فواتير ناقص مرتجعات بنفس الكويري) — ما منعرض مبيعات/مرتجعات كل وحدة لحالها
+ // لأن أغلب المرتجعات عندنا تصحيح أخطاء إدخال (فاتورة كبيرة قبالها مرتجع كبير)، فعرضها لحالها بيضلل أكثر مما يفيد.
+ const totSales=opdTopNum(rows,'صافي المبيعات'),totGP=opdTopNum(rows,'مجمل الربح'),totInv=opdTopNum(rows,'عدد الفواتير');
+ const gm=totSales?totGP/totSales:null,avgInv=totInv?totSales/totInv:null;
  const repList=opdGroupSum(rows,'المندوب','صافي المبيعات','مجمل الربح').sort((a,b)=>b['صافي المبيعات']-a['صافي المبيعات']);
  const grpList=opdGroupSum(rows,'مجموعة الأصناف','صافي المبيعات','مجمل الربح').sort((a,b)=>b['صافي المبيعات']-a['صافي المبيعات']);
  const top3Share=totSales?repList.slice(0,3).reduce((a,r)=>a+r['صافي المبيعات'],0)/totSales:0;
@@ -3307,39 +3309,21 @@ function opdRenderSales(stored,storedRet){
  const yoy=years.length>=2&&byYear[years[years.length-2]]?(byYear[years[years.length-1]]-byYear[years[years.length-2]])/Math.abs(byYear[years[years.length-2]]):null;
  let h=`<h2>📈 تحليل المبيعات <span class="hint">(من q1 — ${rows.length} صف، تاريخ الاستخراج ${new Date(stored.extractedAt).toLocaleDateString('ar-JO')})</span></h2>`;
  h+=`<div class="grid g4">
-  ${kpi('إجمالي المبيعات',fmt(totSales),months.length+' شهر','',1)}
+  ${kpi('إجمالي صافي المبيعات',fmt(totSales),months.length+' شهر','',1)}
   ${kpi('هامش الربح الإجمالي',pct(gm),fmt(totGP),'',1)}
   ${kpi('متوسط قيمة الفاتورة',fmt(avgInv),totInv.toLocaleString('en-US')+' فاتورة','',1)}
-  ${kpi('نسبة المرتجعات',pct(retRate),fmt(totRet),(retRate!=null&&retRate>0.03)?'neg':'',1)}
  </div>`;
- if(yoy!=null)h+=`<p class="hint">نمو المبيعات ${years[years.length-1]} مقابل ${years[years.length-2]}: <b class="${yoy>=0?'pos':'neg'}">${pct(yoy)}</b></p>`;
- if(top3Share>0.5)h+=`<p class="hint" style="color:#8a6d1a">⚠ تركّز مبيعات: أعلى 3 مندوبين يشكّلون ${pct(top3Share)} من إجمالي المبيعات — مخاطرة اعتماد على عدد محدود من المندوبين.</p>`;
+ if(yoy!=null)h+=`<p class="hint">نمو صافي المبيعات ${years[years.length-1]} مقابل ${years[years.length-2]}: <b class="${yoy>=0?'pos':'neg'}">${pct(yoy)}</b></p>`;
+ if(top3Share>0.5)h+=`<p class="hint" style="color:#8a6d1a">⚠ تركّز مبيعات: أعلى 3 مندوبين يشكّلون ${pct(top3Share)} من إجمالي صافي المبيعات — مخاطرة اعتماد على عدد محدود من المندوبين.</p>`;
  if(months.length>1){
-  h+=`<h3>الاتجاه الشهري — المبيعات ومجمل الربح</h3>${lineChart(months,[{n:'صافي المبيعات',data:months.map(k=>byMonth[k].sales),col:C.navy,fill:1},{n:'مجمل الربح',data:months.map(k=>byMonth[k].gp),col:C.gold}],1000,280)}`;
+  const peak=months.map(k=>({k,v:byMonth[k].sales})).reduce((a,b)=>Math.abs(b.v)>Math.abs(a.v)?b:a);
+  const typical=months.reduce((a,k)=>a+Math.abs(byMonth[k].sales),0)/months.length;
+  if(typical>0&&Math.abs(peak.v)>typical*5)h+=`<p class="hint" style="color:#b3261e">⚠ شهر ${peak.k} فيه قيمة شاذة (${fmt(peak.v)}) أكبر بكثير من المتوسط الشهري الطبيعي (${fmt(typical)}) — رجّح يكون قيد تصحيح/فاتورة خطأ إدخال كبيرة بـSAP وليس نشاطاً تجارياً فعلياً. راجعه بـQuery Manager قبل الاعتماد على الأرقام.</p>`;
+  h+=`<h3>الاتجاه الشهري — صافي المبيعات ومجمل الربح</h3>${lineChart(months,[{n:'صافي المبيعات',data:months.map(k=>byMonth[k].sales),col:C.navy,fill:1},{n:'مجمل الربح',data:months.map(k=>byMonth[k].gp),col:C.gold}],1000,280)}`;
   h+=`<h3>اتجاه هامش الربح الشهري</h3>${lineChart(months,[{n:'هامش الربح',data:months.map(k=>byMonth[k].sales?byMonth[k].gp/byMonth[k].sales:null),col:C.teal}],1000,220,{pct:1})}`;
  }
- h+=opdTopTable(repList,'صافي المبيعات','مجمل الربح',totSales,'أعلى 10 مندوبين (حسب المبيعات)','المبيعات');
- h+=opdTopTable(grpList,'صافي المبيعات','مجمل الربح',totSales,'أعلى 10 مجموعات أصناف (حسب المبيعات)','المبيعات');
- if(storedRet&&storedRet.rows.length){
-  const retRows=storedRet.rows;
-  const ymKeyR=r=>r['السنة']+'-'+String(r['الشهر']).padStart(2,'0');
-  const byMonthRet={};
-  retRows.forEach(r=>{const k=ymKeyR(r);const m=byMonthRet[k]=byMonthRet[k]||{val:0,qty:0};m.val+=r['القيمة']||0;m.qty+=r['الكمية']||0});
-  const retMonths=Object.keys(byMonthRet).sort();
-  const totRetQ8=opdTopNum(retRows,'القيمة'),totQtyRetQ8=opdTopNum(retRows,'الكمية');
-  const byGroupRet=opdGroupSum(retRows,'مجموعة الأصناف','القيمة','الكمية').sort((a,b)=>b['القيمة']-a['القيمة']);
-  h+=`<h3>تفصيل المرتجعات <span class="hint">(من q8 — ${retRows.length} صف، تاريخ الاستخراج ${new Date(storedRet.extractedAt).toLocaleDateString('ar-JO')})</span></h3>`;
-  h+=`<div class="grid g4">
-   ${kpi('إجمالي قيمة المرتجعات',fmt(totRetQ8),retMonths.length+' شهر','',1)}
-   ${kpi('إجمالي كمية المرتجعات',totQtyRetQ8.toLocaleString('en-US'),'','',1)}
-  </div>`;
-  if(retMonths.length>1){
-   const retRateByMonth=retMonths.map(k=>byMonth[k]&&byMonth[k].sales?byMonthRet[k].val/byMonth[k].sales:null);
-   h+=`<h4>الاتجاه الشهري لقيمة المرتجعات</h4>${lineChart(retMonths,[{n:'قيمة المرتجعات',data:retMonths.map(k=>byMonthRet[k].val),col:C.coral,fill:1}],1000,240)}`;
-   h+=`<h4>نسبة المرتجعات من المبيعات (شهرياً)</h4>${lineChart(retMonths,[{n:'نسبة المرتجعات',data:retRateByMonth,col:C.gold}],1000,200,{pct:1})}`;
-  }
-  if(byGroupRet.length)h+=opdTopTable(byGroupRet,'القيمة',null,totRetQ8,'أعلى 10 مجموعات أصناف بالمرتجعات','القيمة');
- }
+ h+=opdTopTable(repList,'صافي المبيعات','مجمل الربح',totSales,'أعلى 10 مندوبين (حسب صافي المبيعات)','صافي المبيعات');
+ h+=opdTopTable(grpList,'صافي المبيعات','مجمل الربح',totSales,'أعلى 10 مجموعات أصناف (حسب صافي المبيعات)','صافي المبيعات');
  return h;
 }
 function opdRenderPurchases(stored){
@@ -3574,7 +3558,7 @@ async function renderOpData(){
  const byKey={};OPS_SOURCES.forEach((s,i)=>byKey[s.key]=stored[i]);
  let h='';
  if(opdSub==='overview')h=opdRenderOverview(stored);
- else if(opdSub==='sales')h=opdRenderSales(byKey.q1,byKey.q8);
+ else if(opdSub==='sales')h=opdRenderSales(byKey.q1);
  else if(opdSub==='ar')h=opdRenderAR(byKey.q2,'أعمار ذمم العملاء','👥','q2',{limCol:'السقف الائتماني',repCol:'المندوب'});
  else if(opdSub==='ap')h=opdRenderPurchases(byKey.q5)+opdRenderAR(byKey.q6,'أعمار ذمم الموردين','🏢','q6',{chqCol:'الشيكات المؤجلة (صادرة)',buckets:AGING_BUCKETS_AP});
  else if(opdSub==='inv')h=opdRenderInventory(byKey.q4,byKey.q3);
@@ -3663,15 +3647,15 @@ async function exportOpDataPPTX(){
   }
  }
 
- // 3. المبيعات والمرتجعات (q1 + q8)
+ // 3. المبيعات (صافي)
  {const rows1=byKey.q1?byKey.q1.rows:[];
-  const totSales=opdTopNum(rows1,'صافي المبيعات'),totGP=opdTopNum(rows1,'مجمل الربح'),totInv=opdTopNum(rows1,'عدد الفواتير'),totRet=opdTopNum(rows1,'قيمة المرتجعات');
-  const gm=totSales?totGP/totSales:null,avgInv=totInv?totSales/totInv:null,retRate=totSales?totRet/totSales:null;
-  const kpis=[['إجمالي المبيعات',fmt(totSales)],['هامش الربح الإجمالي',pct(gm)],['متوسط قيمة الفاتورة',fmt(avgInv)],['نسبة المرتجعات',pct(retRate)]];
+  const totSales=opdTopNum(rows1,'صافي المبيعات'),totGP=opdTopNum(rows1,'مجمل الربح'),totInv=opdTopNum(rows1,'عدد الفواتير');
+  const gm=totSales?totGP/totSales:null,avgInv=totInv?totSales/totInv:null;
+  const kpis=[['إجمالي صافي المبيعات',fmt(totSales)],['هامش الربح الإجمالي',pct(gm)],['متوسط قيمة الفاتورة',fmt(avgInv)]];
   const repList=rows1.length?opdGroupSum(rows1,'المندوب','صافي المبيعات','مجمل الربح').sort((a,b)=>b['صافي المبيعات']-a['صافي المبيعات']).slice(0,5):[];
   const rows=repList.map(r=>[r.n,fmt(r['صافي المبيعات']),pct(totSales?r['صافي المبيعات']/totSales:null)]);
-  kpiTableSlide('المبيعات والمرتجعات (q1 + q8)',rows1.length?kpis:null,rows.length?['المندوب','المبيعات','% من الإجمالي']:null,rows,null,
-   rows1.length?'من بيانات q1 — أعلى 5 مندوبين حسب المبيعات.':'لا توجد بيانات q1 مستوردة.');
+  kpiTableSlide('المبيعات (صافي) — q1',rows1.length?kpis:null,rows.length?['المندوب','صافي المبيعات','% من الإجمالي']:null,rows,null,
+   rows1.length?'من بيانات q1 (صافي فواتير ناقص مرتجعات) — أعلى 5 مندوبين.':'لا توجد بيانات q1 مستوردة.');
  }
 
  // 4. العملاء وأعمار الذمم (q2)
