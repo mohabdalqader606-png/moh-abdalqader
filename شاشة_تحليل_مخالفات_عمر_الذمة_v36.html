@@ -990,6 +990,7 @@ ORDER BY T0."ShortName", T0."RefDate"</code>
   .mrpt-view-toggle button.active{background:var(--mrpt-navy-light); color:#fff;}
   .mrpt-filter-box{width:100%; max-width:340px; border:1.5px solid var(--mrpt-border); border-radius:8px; padding:7px 10px; font-size:13.5px; font-family:inherit;}
   table.mrpt-tbl tr.mrpt-reason-row td{padding:2px 8px 9px; font-size:12.5px; color:var(--mrpt-risk); font-weight:400; white-space:normal; line-height:1.5;}
+  table.mrpt-tbl tr.mrpt-reason-row.mrpt-reason-ok td{color:var(--mrpt-muted);}
   table.mrpt-tbl tr:has(+ tr.mrpt-reason-row) td{border-bottom:none;}
   .mrpt-stat-grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:18px;}
   .mrpt-stat-card{background:#fff; border:1px solid var(--mrpt-border); border-radius:10px; padding:11px 13px;}
@@ -3488,15 +3489,18 @@ function mrptAgingHtml(){
       return db - da;
     });
     body = `<table class="mrpt-tbl"><thead><tr>
-      <th>رمز العميل</th><th>اسم العميل</th><th>المندوب</th><th class="num">السقف الائتماني</th><th class="num">الرصيد</th><th class="num">الشيكات المؤجلة</th><th class="num">التعرض الكلي</th><th>الاستحقاق المفروض</th><th>الحالة</th>
+      <th>رمز العميل</th><th>اسم العميل</th><th>المندوب</th><th class="num">السقف الائتماني</th><th class="num">الرصيد</th><th class="num">الشيكات المؤجلة</th><th class="num">التعرض الكلي</th><th>الاستحقاق المفروض</th>
     </tr></thead><tbody>`;
     sortedRows.forEach(r=>{
-      body += `<tr class="${r.status==='overdue'?'mrpt-risk-row':''}">
+      // "الحالة" مو عمود — سطر كامل تحت بيانات العميل، عشان ما ينقطع/يختفي بالطباعة إذا الجدول صار عريض
+      const riskClass = r.status==='overdue'?'mrpt-risk-row':'';
+      body += `<tr class="${riskClass}">
         <td>${mrptEsc(r.cardCode)}</td><td>${mrptEsc(r.cardName)}</td><td>${mrptEsc(r.slpName)}</td>
         <td class="num">${r.creditLine?fmtNum(r.creditLine):'—'}</td>
         <td class="num">${fmtNum(r.balance)}</td><td class="num">${fmtNum(r.checks)}</td><td class="num">${fmtNum(r.totalExposure)}</td>
-        <td>${r.dueDate?fmtDate(r.dueDate):'—'}</td><td>${mrptEsc(r.statusLabel)}</td>
-      </tr>`;
+        <td>${r.dueDate?fmtDate(r.dueDate):'—'}</td>
+      </tr>
+      <tr class="mrpt-reason-row ${riskClass} ${r.status==='overdue'?'':'mrpt-reason-ok'}"><td colspan="8">↳ الحالة: ${mrptEsc(r.statusLabel)}</td></tr>`;
     });
     body += '</tbody></table>';
   }
