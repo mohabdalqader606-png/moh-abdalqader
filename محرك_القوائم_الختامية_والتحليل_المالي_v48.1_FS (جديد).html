@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v50.22-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v50.23-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -68,6 +68,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}
 th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
 th{background:#F0F3F9;color:var(--ink);font-weight:700;position:sticky;top:0;z-index:2}
 td.num,th.num{text-align:left;font-variant-numeric:tabular-nums;font-family:var(--mono);direction:ltr}
+.nowrap{white-space:nowrap}
 tr.tot td{font-weight:700;background:#F7F9FD;border-top:2px solid var(--navy)}
 tr.sec td{background:var(--navy);color:#fff;font-weight:700;letter-spacing:.3px}
 tr.sub td{font-weight:600;background:#FBFBFD}
@@ -776,7 +777,7 @@ body[data-mode="exec"] #tab-home .cc-charts .chart svg,body[data-mode="exec"] #t
  #tab-bank #bankPos:empty,#tab-bank #bankStudy:empty,#tab-bank #bankDetail:empty,#tab-bank #stress:empty,#tab-bank #bankNarr:empty,#tab-bank .chart:empty{display:none}
  /* wide analytical tables must fit the printed page: headers wrap, cells tighten, and the per-month tables (13+ columns) are scaled down instead of clipped */
  #tab-bank th,#tab-bank td{white-space:normal;padding:4px 6px}
- #tab-bank td.num,#tab-bank td.pos,#tab-bank td.neg,#tab-bank td[class=""],#tab-bank td[style*="var(--mono)"]{white-space:nowrap}
+ #tab-bank td.num,#tab-bank td.pos,#tab-bank td.neg,#tab-bank td.nowrap,#tab-bank td[class=""],#tab-bank td[style*="var(--mono)"]{white-space:nowrap}
  #tab-bank .tblwrap:has(tr > :nth-child(9)) table{font-size:11px}
  #tab-bank .tblwrap:has(tr > :nth-child(9)) th:first-child,#tab-bank .tblwrap:has(tr > :nth-child(9)) td:first-child{position:static!important;box-shadow:none!important}
  #tab-bank .tblwrap:has(tr > :nth-child(13)) table{zoom:.78}
@@ -2215,7 +2216,7 @@ function renderBankPos(){if(!R)return;S.bankManual=S.bankManual||{};const rows={
  const mbSel=document.getElementById('mainBankSel');
  if(mbSel)mbSel.innerHTML='<option value="">(بدون تحديد)</option>'+bk.slice().sort().map(b=>`<option value="${b}" ${S.mainBank===b?'selected':''}>${b}</option>`).join('');
  bk.forEach(b=>{const r=rows[b],m=S.bankManual[b]||{};const o=sumO(r.DR)+sumO(r.CR);const dr=sum(r.DR),cr=sum(r.CR),e=dr+cr;const mov=e-o;const mg=sum(r.MARGIN),ch=sum(r.CHQ),nt=-sum(r.NOTES)+(m.notes||0);const n2=e+mg+ch-nt;T.O+=o;T.MOV+=mov;T.E+=e;T.MARGIN+=mg;T.CHQ+=ch;T.NOTES+=nt;T.NET+=n2;
-  h+=`<tr style="cursor:pointer" onclick="bankDetail('${b}')"><td><b>${b}</b></td><td class="${cls(o)}">${fmt(o)}</td><td class="${cls(mov)}"><b>${fmt(mov)}</b></td><td class="${cls(e)}">${fmt(e)}</td><td class="num">${fmt(mg)}</td><td class="num">${fmt(ch)}</td><td class="num">${fmt(nt)}</td><td class="${cls(n2)}"><b>${fmt(n2)}</b></td><td><span class="badge ${n2>=0?'ok':'bad'}">${n2>=0?'لي عند البنك':'عليّ للبنك'}</span></td></tr>`});
+  h+=`<tr style="cursor:pointer" onclick="bankDetail('${b}')"><td class="nowrap"><b>${b}</b></td><td class="${cls(o)}">${fmt(o)}</td><td class="${cls(mov)}"><b>${fmt(mov)}</b></td><td class="${cls(e)}">${fmt(e)}</td><td class="num">${fmt(mg)}</td><td class="num">${fmt(ch)}</td><td class="num">${fmt(nt)}</td><td class="${cls(n2)}"><b>${fmt(n2)}</b></td><td><span class="badge ${n2>=0?'ok':'bad'}">${n2>=0?'لي عند البنك':'عليّ للبنك'}</span></td></tr>`});
  const chu=sum(CHU);
  h+=`<tr class="tot"><td>إجمالي البنوك</td><td class="num">${fmt(T.O)}</td><td class="${cls(T.MOV)}"><b>${fmt(T.MOV)}</b></td><td class="num">${fmt(T.E)}</td><td class="num">${fmt(T.MARGIN)}</td><td class="num">${fmt(T.CHQ)}</td><td class="num">${fmt(T.NOTES)}</td><td class="${cls(T.NET)}"><b>${fmt(T.NET)}</b></td><td><span class="badge ${T.NET>=0?'ok':'bad'}">${T.NET>=0?'صافي لي':'صافي عليّ'}</span></td></tr>`;
  if(CHU.length)h+=`<tr><td>شيكات برسم التحصيل غير موزعة على بنك (${CHU.length} حساب)</td><td colspan="4"></td><td class="num">${fmt(chu)}</td><td></td><td class="num">${fmt(T.NET+chu)}</td><td class="hint">وزّعها من جدول التجميع</td></tr>`;
@@ -2225,10 +2226,10 @@ function renderBankPos(){if(!R)return;S.bankManual=S.bankManual||{};const rows={
   const monthlyTable=(title,note,partsAtO,partsAtK)=>{
    let t=`<details open style="margin-top:14px"><summary style="cursor:pointer;color:var(--ink2);font-weight:700;padding:4px 0">${title} <span class="hint">${note||''} (اضغط للإخفاء/الإظهار)</span></summary><table>`+HDR;
    const p0=partsAtO();const acc0=p0.dr+p0.cr;
-   t+=`<tr class="sub"><td>افتتاحي الفترة</td><td class="num">—</td><td class="num">—</td><td class="${cls(acc0)}">${fmt(acc0)}</td><td class="num">${fmt(p0.mg)}</td><td class="num">${fmt(p0.ch)}</td><td class="num">${fmt(p0.nt)}</td><td class="${cls(p0.net)}"><b>${fmt(p0.net)}</b></td><td class="num">—</td><td><span class="badge ${p0.net>=0?'ok':'bad'}">${p0.net>=0?'لي':'عليّ'}</span></td></tr>`;
+   t+=`<tr class="sub"><td class="nowrap">افتتاحي الفترة</td><td class="num">—</td><td class="num">—</td><td class="${cls(acc0)}">${fmt(acc0)}</td><td class="num">${fmt(p0.mg)}</td><td class="num">${fmt(p0.ch)}</td><td class="num">${fmt(p0.nt)}</td><td class="${cls(p0.net)}"><b>${fmt(p0.net)}</b></td><td class="num">—</td><td><span class="badge ${p0.net>=0?'ok':'bad'}">${p0.net>=0?'لي':'عليّ'}</span></td></tr>`;
    let prevAcc=acc0,prevNet=p0.net;
    R.per.forEach(k=>{const p=partsAtK(k);const accE=p.dr+p.cr;const mov=accE-prevAcc;const netDiff=p.net-prevNet;
-    t+=`<tr><td>${k}</td><td class="${cls(prevAcc)}">${fmt(prevAcc)}</td><td class="${cls(mov)}"><b>${fmt(mov)}</b></td><td class="${cls(accE)}">${fmt(accE)}</td><td class="num">${fmt(p.mg)}</td><td class="num">${fmt(p.ch)}</td><td class="num">${fmt(p.nt)}</td><td class="${cls(p.net)}"><b>${fmt(p.net)}</b></td><td class="${cls(netDiff)}">${netDiff>=0?'▲ ':'▼ '}${fmt(netDiff)}</td><td><span class="badge ${p.net>=0?'ok':'bad'}">${p.net>=0?'لي':'عليّ'}</span></td></tr>`;
+    t+=`<tr><td class="nowrap">${k}</td><td class="${cls(prevAcc)}">${fmt(prevAcc)}</td><td class="${cls(mov)}"><b>${fmt(mov)}</b></td><td class="${cls(accE)}">${fmt(accE)}</td><td class="num">${fmt(p.mg)}</td><td class="num">${fmt(p.ch)}</td><td class="num">${fmt(p.nt)}</td><td class="${cls(p.net)}"><b>${fmt(p.net)}</b></td><td class="${cls(netDiff)}">${netDiff>=0?'▲ ':'▼ '}${fmt(netDiff)}</td><td><span class="badge ${p.net>=0?'ok':'bad'}">${p.net>=0?'لي':'عليّ'}</span></td></tr>`;
     prevAcc=accE;prevNet=p.net});
    return t+'</table></details>'};
   // 1) الإجمالي — كل البنوك (يشمل الشيكات غير الموزعة)
