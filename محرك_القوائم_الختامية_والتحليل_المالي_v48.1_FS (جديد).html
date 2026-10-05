@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>v50.20-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
+<title>v50.21-FS — محرك القوائم الختامية والتحليل المالي (نسخة القوائم فقط) — مركز الكيلاني للأغذية</title>
 <style>
 :root{
   --navy:#0B1F3A; --ink:#14284B; --ink2:#1E3A66; --paper:#F5F6FA; --card:#FFFFFF; --line:#DDE2EC;
@@ -1300,7 +1300,9 @@ th.yd,td.yd{background:rgba(11,31,58,.035);font-size:.92em}th.yd{color:var(--mut
   <div id="bankManual" style="margin-top:8px"></div></details>
   </details>
  </div>
- <div class="card"><h2>مركز البنوك — بداية الفترة، الحركات، النهاية، والصافي</h2><p class="hint">رصيد الحسابات = صافي الجواري/التسهيلات/القروض للبنك. صافي حركات الفترة = رصيد النهاية − رصيد البداية (<span class="pos">موجب = سداد/تحسّن لصالحك</span>، <span class="neg">سالب = زاد المسحوب عليك</span>). صافي المركز = رصيد النهاية + التأمينات + شيكات التحصيل − الكمبيالات/أوراق الدفع.</p><div class="tblwrap" id="bankPos"></div></div>
+ <div class="card"><h2>مركز البنوك — بداية الفترة، الحركات، النهاية، والصافي</h2><p class="hint">رصيد الحسابات = صافي الجواري/التسهيلات/القروض للبنك. صافي حركات الفترة = رصيد النهاية − رصيد البداية (<span class="pos">موجب = سداد/تحسّن لصالحك</span>، <span class="neg">سالب = زاد المسحوب عليك</span>). صافي المركز = رصيد النهاية + التأمينات + شيكات التحصيل − الكمبيالات/أوراق الدفع.</p>
+  <div class="row noprint"><label>🏦 البنك الرئيسي: <select id="mainBankSel" onchange="setMainBank(this.value)"><option value="">(بدون تحديد)</option></select></label><span class="hint">يُعرض جدوله الشهري أول البنوك أدناه مباشرة بعد جدول الإجمالي.</span></div>
+  <div class="tblwrap" id="bankPos"></div></div>
  <div class="card"><h2>شرح تفصيلي — مركز كل بنك</h2><div class="tblwrap" id="bankStmtNarr"></div></div>
  <div class="grid g2">
   <div class="card"><h2>صافي المركز البنكي شهرياً</h2><div class="chart" id="chBankTrend"></div></div>
@@ -2177,6 +2179,7 @@ function autoBank(force){S.bank=S.bank||{};S.banks=S.banks||[];if(S.bankAutoDone
   S.bank[a.code]={bank:b,role:bankRoleAuto(a,l)};if(b&&!S.banks.includes(b))S.banks.push(b)});
  S.bankAutoDone=true}
 function addBank(){const n=document.getElementById('bkNew').value.trim();if(!n)return;S.banks=S.banks||[];if(!S.banks.includes(n))S.banks.push(n);document.getElementById('bkNew').value='';saveState();renderBankMap()}
+function setMainBank(v){S.mainBank=v||'';saveState();renderBankPos()}
 const BANK_EXCL=['INV','AR','PPE','ACC_DEP','INTANG','OTHER_NCA','AP','RELATED_DR','RELATED_CR','CAPITAL','RESERVES','RE','DIV','OTHER_EQ','TAX_PAY','EOS','SALES','SALES_RET','COGS','SELL','ADMIN','SALARY','DEPR','PROV','OTHER_INC','OTHER_EXP','FIN_EXP','FIN_INC','TAX'];
 function bankHousekeeping(){S.bank=S.bank||{};S.banks=S.banks||[];
  Object.values(S.accounts).forEach(a=>{if(!a.post||![1,2].includes(+a.drawer)||BANK_EXCL.includes(effLine(a.code)))return;const b=detectBank(a.name);if(b&&!S.banks.includes(b))S.banks.push(b)});
@@ -2205,6 +2208,9 @@ function renderBankPos(){if(!R)return;S.bankManual=S.bankManual||{};const rows={
  const sumO=cs=>cs.reduce((a,c)=>a+((R.openBal&&R.openBal[c])||0),0);
  const T={O:0,MOV:0,E:0,MARGIN:0,CHQ:0,NOTES:0,NET:0};let h=`<table><tr><th>البنك</th><th class="num">رصيد الحسابات بداية الفترة</th><th class="num">صافي حركات الفترة</th><th class="num">رصيد الحسابات نهاية الفترة</th><th class="num">(+) التأمينات النقدية</th><th class="num">(+) شيكات برسم التحصيل</th><th class="num">(−) كمبيالات/أوراق دفع</th><th class="num">صافي المركز مع البنك</th><th>الحالة</th></tr>`;
  const bk=Object.keys(rows).sort((a,b)=>b.length-a.length);const netAt=(b,k)=>{const r=rows[b];const m=S.bankManual[b]||{};return sum(r.DR,k)+sum(r.CR,k)+sum(r.MARGIN,k)+sum(r.CHQ,k)-(sum(r.NOTES,k)*-1)-(m.notes||0)};
+ if(S.mainBank&&bk.includes(S.mainBank)){bk.splice(bk.indexOf(S.mainBank),1);bk.unshift(S.mainBank)}
+ const mbSel=document.getElementById('mainBankSel');
+ if(mbSel)mbSel.innerHTML='<option value="">(بدون تحديد)</option>'+bk.slice().sort().map(b=>`<option value="${b}" ${S.mainBank===b?'selected':''}>${b}</option>`).join('');
  bk.forEach(b=>{const r=rows[b],m=S.bankManual[b]||{};const o=sumO(r.DR)+sumO(r.CR);const dr=sum(r.DR),cr=sum(r.CR),e=dr+cr;const mov=e-o;const mg=sum(r.MARGIN),ch=sum(r.CHQ),nt=-sum(r.NOTES)+(m.notes||0);const n2=e+mg+ch-nt;T.O+=o;T.MOV+=mov;T.E+=e;T.MARGIN+=mg;T.CHQ+=ch;T.NOTES+=nt;T.NET+=n2;
   h+=`<tr style="cursor:pointer" onclick="bankDetail('${b}')"><td><b>${b}</b></td><td class="${cls(o)}">${fmt(o)}</td><td class="${cls(mov)}"><b>${fmt(mov)}</b></td><td class="${cls(e)}">${fmt(e)}</td><td class="num">${fmt(mg)}</td><td class="num">${fmt(ch)}</td><td class="num">${fmt(nt)}</td><td class="${cls(n2)}"><b>${fmt(n2)}</b></td><td><span class="badge ${n2>=0?'ok':'bad'}">${n2>=0?'لي عند البنك':'عليّ للبنك'}</span></td></tr>`});
  const chu=sum(CHU);
@@ -2212,15 +2218,15 @@ function renderBankPos(){if(!R)return;S.bankManual=S.bankManual||{};const rows={
  if(CHU.length)h+=`<tr><td>شيكات برسم التحصيل غير موزعة على بنك (${CHU.length} حساب)</td><td colspan="4"></td><td class="num">${fmt(chu)}</td><td></td><td class="num">${fmt(T.NET+chu)}</td><td class="hint">وزّعها من جدول التجميع</td></tr>`;
  h+='</table>';
  if(bk.length&&R.per.length){
-  const HDR=`<tr><th>الشهر</th><th class="num">رصيد الحسابات بداية الشهر</th><th class="num">صافي حركات الشهر</th><th class="num">رصيد الحسابات نهاية الشهر</th><th class="num">(+) التأمينات النقدية</th><th class="num">(+) شيكات برسم التحصيل</th><th class="num">(−) كمبيالات/أوراق دفع</th><th class="num">صافي المركز</th><th>الحالة</th></tr>`;
+  const HDR=`<tr><th>الشهر</th><th class="num">رصيد الحسابات بداية الشهر</th><th class="num">صافي حركات الشهر</th><th class="num">رصيد الحسابات نهاية الشهر</th><th class="num">(+) التأمينات النقدية</th><th class="num">(+) شيكات برسم التحصيل</th><th class="num">(−) كمبيالات/أوراق دفع</th><th class="num">صافي المركز</th><th class="num">التغيّر عن الشهر السابق</th><th>الحالة</th></tr>`;
   const monthlyTable=(title,note,partsAtO,partsAtK)=>{
    let t=`<details open style="margin-top:14px"><summary style="cursor:pointer;color:var(--ink2);font-weight:700;padding:4px 0">${title} <span class="hint">${note||''} (اضغط للإخفاء/الإظهار)</span></summary><table>`+HDR;
    const p0=partsAtO();const acc0=p0.dr+p0.cr;
-   t+=`<tr class="sub"><td>افتتاحي الفترة</td><td class="num">—</td><td class="num">—</td><td class="${cls(acc0)}">${fmt(acc0)}</td><td class="num">${fmt(p0.mg)}</td><td class="num">${fmt(p0.ch)}</td><td class="num">${fmt(p0.nt)}</td><td class="${cls(p0.net)}"><b>${fmt(p0.net)}</b></td><td><span class="badge ${p0.net>=0?'ok':'bad'}">${p0.net>=0?'لي':'عليّ'}</span></td></tr>`;
-   let prevAcc=acc0;
-   R.per.forEach(k=>{const p=partsAtK(k);const accE=p.dr+p.cr;const mov=accE-prevAcc;
-    t+=`<tr><td>${k}</td><td class="${cls(prevAcc)}">${fmt(prevAcc)}</td><td class="${cls(mov)}"><b>${fmt(mov)}</b></td><td class="${cls(accE)}">${fmt(accE)}</td><td class="num">${fmt(p.mg)}</td><td class="num">${fmt(p.ch)}</td><td class="num">${fmt(p.nt)}</td><td class="${cls(p.net)}"><b>${fmt(p.net)}</b></td><td><span class="badge ${p.net>=0?'ok':'bad'}">${p.net>=0?'لي':'عليّ'}</span></td></tr>`;
-    prevAcc=accE});
+   t+=`<tr class="sub"><td>افتتاحي الفترة</td><td class="num">—</td><td class="num">—</td><td class="${cls(acc0)}">${fmt(acc0)}</td><td class="num">${fmt(p0.mg)}</td><td class="num">${fmt(p0.ch)}</td><td class="num">${fmt(p0.nt)}</td><td class="${cls(p0.net)}"><b>${fmt(p0.net)}</b></td><td class="num">—</td><td><span class="badge ${p0.net>=0?'ok':'bad'}">${p0.net>=0?'لي':'عليّ'}</span></td></tr>`;
+   let prevAcc=acc0,prevNet=p0.net;
+   R.per.forEach(k=>{const p=partsAtK(k);const accE=p.dr+p.cr;const mov=accE-prevAcc;const netDiff=p.net-prevNet;
+    t+=`<tr><td>${k}</td><td class="${cls(prevAcc)}">${fmt(prevAcc)}</td><td class="${cls(mov)}"><b>${fmt(mov)}</b></td><td class="${cls(accE)}">${fmt(accE)}</td><td class="num">${fmt(p.mg)}</td><td class="num">${fmt(p.ch)}</td><td class="num">${fmt(p.nt)}</td><td class="${cls(p.net)}"><b>${fmt(p.net)}</b></td><td class="${cls(netDiff)}">${netDiff>=0?'▲ ':'▼ '}${fmt(netDiff)}</td><td><span class="badge ${p.net>=0?'ok':'bad'}">${p.net>=0?'لي':'عليّ'}</span></td></tr>`;
+    prevAcc=accE;prevNet=p.net});
    return t+'</table></details>'};
   // 1) الإجمالي — كل البنوك (يشمل الشيكات غير الموزعة)
   const aggAt=f=>{let dr=0,cr=0,mg=0,ch=0,nt=0;bk.forEach(b=>{const r=rows[b],m=S.bankManual[b]||{};dr+=f(r.DR);cr+=f(r.CR);mg+=f(r.MARGIN);ch+=f(r.CHQ);nt+=-f(r.NOTES)+(m.notes||0)});ch+=f(CHU);return {dr,cr,mg,ch,nt,net:dr+cr+mg+ch-nt}};
@@ -2228,7 +2234,7 @@ function renderBankPos(){if(!R)return;S.bankManual=S.bankManual||{};const rows={
   // 2) جدول شهري لكل بنك على حدة
   bk.forEach(b=>{const r=rows[b],m=S.bankManual[b]||{};
    const bAt=f=>{const dr=f(r.DR),cr=f(r.CR),mg=f(r.MARGIN),ch=f(r.CHQ),nt=-f(r.NOTES)+(m.notes||0);return {dr,cr,mg,ch,nt,net:dr+cr+mg+ch-nt}};
-   h+=monthlyTable('المركز الشهري — '+b,'',()=>bAt(cs=>sumO(cs)),k=>bAt(cs=>sum(cs,k)))});
+   h+=monthlyTable((b===S.mainBank?'⭐ المركز الشهري — '+b+' (البنك الرئيسي)':'المركز الشهري — '+b),'',()=>bAt(cs=>sumO(cs)),k=>bAt(cs=>sum(cs,k)))});
  }
  if(!bk.length)h='<p class="hint">لم يتم تحديد بنوك بعد — راجع جدول التجميع أعلاه.</p>';
  document.getElementById('bankPos').innerHTML=h;
