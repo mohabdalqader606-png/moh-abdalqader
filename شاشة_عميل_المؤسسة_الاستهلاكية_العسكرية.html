@@ -1010,13 +1010,25 @@ let cloudSaveTimer = null;
 let cloudSynced = false; // بيصير true بعد أول محاولة سحب من السيرفر هالجلسة (نجحت أو ما لقت شي — المهم إنه صار فيه فحص)
 let pendingCloudSave = false; // true من لحظة ما صار تعديل محلي لحد ما ينرفع فعلاً للسيرفر بنجاح — تستخدم لتحذير الإغلاق ومؤشر الحالة
 let lastCloudUpdatedAt = null; // آخر updated_at عرفناه من السيرفر (من سحب أو رفع ناجح) — نقارن فيه بالسحب الدوري
+let cloudSaveWaitingForSync = false; // صار تعديل محلي بس أول سحب للسيرفر (cloudSynced) لسا ما تأكد (قيد التنفيذ أو فشل) — نرفعه تلقائياً فور ما يتأكد
 function updateCloudStatusBadge(){
   const el = document.getElementById('cloudSyncMsg'); if(!el) return;
   if(pendingCloudSave){ el.textContent = '… عم نحفظ على السيرفر المشترك'; el.className='status-msg'; }
 }
+// بيصير true فقط من هون — هيك أي تعديل محلي كان بانتظار أول مزامنة (cloudSaveWaitingForSync) بيترفع تلقائياً فور ما تتأكد
+function markCloudSynced(){
+  cloudSynced = true;
+  if(cloudSaveWaitingForSync){ cloudSaveWaitingForSync = false; queueCloudSave(); }
+}
 function queueCloudSave(){
   if(!sb || !curUser || !roleEdit) return; // بدون تسجيل دخول بصلاحية تعديل: يضل الحفظ محلي بس
-  if(!cloudSynced) return; // حماية: ما نرفع قبل ما نتأكد شفنا آخر نسخة بالسيرفر أول
+  if(!cloudSynced){
+    // ما تأكدنا لسا من آخر نسخة بالسيرفر (أول تحميل لسا ما خلص، أو فشل) — ما نرفع عمياني، بس نخلي
+    // التعديل معلّم عشان يترفع تلقائياً فور ما تتأكد المزامنة (markCloudSynced)، بدل ما يضيع بصمت.
+    cloudSaveWaitingForSync = true;
+    const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '⚠ ما تأكدنا من آخر نسخة بالسيرفر بعد — بياناتك محفوظة محلياً وهترفع تلقائياً فور ما يتأكد الاتصال'; el.className='status-msg err'; }
+    return;
+  }
   pendingCloudSave = true; // نعلّمها فوراً (قبل التأخير) عشان تحذير الإغلاق يشتغل حتى بأول جزء من الثانية
   updateCloudStatusBadge();
   clearTimeout(cloudSaveTimer);
@@ -1043,7 +1055,7 @@ async function pushStateToCloud(){
 // تحذير صريح قبل إغلاق/تحديث الصفحة لو في تعديل لسا ما وصل السيرفر — هاد يمنع ضياع تعديلات بصمت
 // (مثل حدا يسكر التاب خلال الثانية ونص تأخير الرفع، أو وهو قاطع إنترنت والرفع عم يعيد المحاولة).
 window.addEventListener('beforeunload', function(e){
-  if(curUser && roleEdit && pendingCloudSave){
+  if(curUser && roleEdit && (pendingCloudSave || cloudSaveWaitingForSync)){
     e.preventDefault();
     e.returnValue = '';
   }
@@ -1071,7 +1083,7 @@ async function pullStateFromCloud(){
   if(!sb || !curUser) return;
   try{
     const {data, error} = await sb.from('mil_app_state').select('data, updated_at').eq('id','main').maybeSingle();
-    if(error || !data || !data.data){ cloudSynced = true; return; }
+    if(error || !data || !data.data){ markCloudSynced(); return; }
     // حماية إضافية: لو هالجهاز عنده تعديلات محلية أحدث من آخر نسخة بالسيرفر (مثلاً استوردت سندات
     // ثم عملت ريفريش بسرعة قبل ما يوصل الرفع المؤجّل — 1.5 ثانية)، ما نمسحها بسحب نسخة سيرفر أقدم —
     // نحافظ على المحلي ونرفعه فوراً بدل ما نستبدله.
@@ -1079,6 +1091,7 @@ async function pullStateFromCloud(){
     try{ localSavedAt = localStorage.getItem(SAVED_AT_KEY); }catch(e){}
     if(localSavedAt && data.updated_at && new Date(localSavedAt) > new Date(data.updated_at)){
       cloudSynced = true;
+      cloudSaveWaitingForSync = false;
       lastCloudUpdatedAt = data.updated_at;
       queueCloudSave();
       const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ عندك تعديلات محلية أحدث من السيرفر — رح تترفع بدل ما تنمسح'; el.className='status-msg ok'; }
@@ -1106,10 +1119,16 @@ async function pullStateFromCloud(){
     { const picker = document.getElementById('workMonthPicker'); if(picker) picker.value = CURRENT_MONTH; }
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, VOUCHER_META, DUMMY_INV_ITEMS, INVOICE_LOG, PRINT_ASSETS, BRANCHES, BRANCH_CODE_MAP, MONTHLY_DATA, CURRENT_MONTH}));
     switchPage(currentPage||'mapping');
-    cloudSynced = true;
     lastCloudUpdatedAt = data.updated_at;
+    markCloudSynced();
     const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ تم تحميل آخر نسخة من السيرفر المشترك'; el.className='status-msg ok'; }
-  }catch(e){ console.warn('تعذر التحميل من السيرفر المشترك', e); }
+  }catch(e){
+    // فشل السحب بالكامل (مشكلة اتصال) — ما نسيب cloudSynced=false للأبد بصمت (كان هاد بيعطّل أي رفع
+    // مستقبلي طول الجلسة بدون ما حدا يلاحظ)، نعيد المحاولة تلقائياً ونبين تحذير واضح لحد ما تنجح.
+    console.warn('تعذر التحميل من السيرفر المشترك', e);
+    const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '⚠ تعذر الاتصال بالسيرفر المشترك — عم نعيد المحاولة…'; el.className='status-msg err'; }
+    setTimeout(pullStateFromCloud, 10000);
+  }
 }
 
 /* ==================== تنقّل الصفحات ==================== */
