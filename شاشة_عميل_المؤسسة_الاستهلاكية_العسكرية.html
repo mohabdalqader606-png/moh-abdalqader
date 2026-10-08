@@ -1008,22 +1008,64 @@ function saveState(){
    موجودة بالسيرفر بنسخة فاضية/افتراضية قبل ما يشوفها أصلاً. */
 let cloudSaveTimer = null;
 let cloudSynced = false; // بيصير true بعد أول محاولة سحب من السيرفر هالجلسة (نجحت أو ما لقت شي — المهم إنه صار فيه فحص)
+let pendingCloudSave = false; // true من لحظة ما صار تعديل محلي لحد ما ينرفع فعلاً للسيرفر بنجاح — تستخدم لتحذير الإغلاق ومؤشر الحالة
+let lastCloudUpdatedAt = null; // آخر updated_at عرفناه من السيرفر (من سحب أو رفع ناجح) — نقارن فيه بالسحب الدوري
+function updateCloudStatusBadge(){
+  const el = document.getElementById('cloudSyncMsg'); if(!el) return;
+  if(pendingCloudSave){ el.textContent = '… عم نحفظ على السيرفر المشترك'; el.className='status-msg'; }
+}
 function queueCloudSave(){
   if(!sb || !curUser || !roleEdit) return; // بدون تسجيل دخول بصلاحية تعديل: يضل الحفظ محلي بس
   if(!cloudSynced) return; // حماية: ما نرفع قبل ما نتأكد شفنا آخر نسخة بالسيرفر أول
+  pendingCloudSave = true; // نعلّمها فوراً (قبل التأخير) عشان تحذير الإغلاق يشتغل حتى بأول جزء من الثانية
+  updateCloudStatusBadge();
   clearTimeout(cloudSaveTimer);
   cloudSaveTimer = setTimeout(pushStateToCloud, 1500);
 }
 async function pushStateToCloud(){
+  cloudSaveTimer = null;
   if(!sb || !curUser || !roleEdit || !cloudSynced) return;
-  if(!ITEMS.length){ return; } // حماية: ما نرفع أبداً لو صار ITEMS فاضي بالغلط (بدل ما يمسح نسخة السيرفر)
+  if(!ITEMS.length){ pendingCloudSave = false; return; } // حماية: ما نرفع أبداً لو صار ITEMS فاضي بالغلط (بدل ما يمسح نسخة السيرفر)
   try{
+    const nowIso = new Date().toISOString();
     const data = {ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, VOUCHER_META, DUMMY_INV_ITEMS, INVOICE_LOG, PRINT_ASSETS, BRANCHES, BRANCH_CODE_MAP, MONTHLY_DATA, CURRENT_MONTH};
-    await sb.from('mil_app_state').upsert({id:'main', data, updated_by:curUser.id, updated_at:new Date().toISOString()});
+    await sb.from('mil_app_state').upsert({id:'main', data, updated_by:curUser.id, updated_at:nowIso});
+    pendingCloudSave = false;
+    lastCloudUpdatedAt = nowIso;
     const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ محفوظ على السيرفر المشترك · '+new Date().toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'}); el.className='status-msg ok'; }
   }catch(e){
-    const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '⚠ تعذر الحفظ على السيرفر المشترك — البيانات محفوظة محلياً بس'; el.className='status-msg err'; }
+    // نحاول نعيد الرفع تلقائياً بعد شوي بدل ما نستسلم بصمت — pendingCloudSave يضل true لحد ما ينرفع فعلاً
+    const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '⚠ تعذر الحفظ على السيرفر المشترك — عم نعيد المحاولة… لا تسكر الصفحة'; el.className='status-msg err'; }
+    clearTimeout(cloudSaveTimer);
+    cloudSaveTimer = setTimeout(pushStateToCloud, 10000);
   }
+}
+// تحذير صريح قبل إغلاق/تحديث الصفحة لو في تعديل لسا ما وصل السيرفر — هاد يمنع ضياع تعديلات بصمت
+// (مثل حدا يسكر التاب خلال الثانية ونص تأخير الرفع، أو وهو قاطع إنترنت والرفع عم يعيد المحاولة).
+window.addEventListener('beforeunload', function(e){
+  if(curUser && roleEdit && pendingCloudSave){
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+// سحب دوري خفيف كل 5 دقايق: نفحص بس توقيت آخر تحديث بالسيرفر (بدون تحميل كل البيانات)، ولو تغيّر
+// عن آخر شي نعرفه، نعمل سحب كامل — هيك أي مستخدم فاتح الشاشة بيشوف تعديلات الباقي بدون ما يحتاج
+// يضغط 🔄 يدوياً. نتجنب قطع المستخدم وهو عم يكتب بحقل إدخال، ونتجنب التعارض مع رفع محلي قيد الانتظار.
+let cloudPollTimer = null;
+async function checkForRemoteUpdates(){
+  if(!sb || !curUser || !cloudSynced) return;
+  if(cloudSaveTimer || pendingCloudSave) return; // في رفع محلي قيد التنفيذ — ما نتعارض معه، رح نتأكد بالدورة الجاية
+  const activeTag = document.activeElement && document.activeElement.tagName;
+  if(activeTag==='INPUT' || activeTag==='TEXTAREA' || activeTag==='SELECT') return; // المستخدم عم يكتب حالياً — نأجل لحد ما يخلص
+  try{
+    const {data, error} = await sb.from('mil_app_state').select('updated_at').eq('id','main').maybeSingle();
+    if(error || !data || !data.updated_at) return;
+    if(data.updated_at !== lastCloudUpdatedAt) await pullStateFromCloud();
+  }catch(e){}
+}
+function startCloudPolling(){
+  if(cloudPollTimer) return;
+  cloudPollTimer = setInterval(checkForRemoteUpdates, 5*60*1000);
 }
 async function pullStateFromCloud(){
   if(!sb || !curUser) return;
@@ -1037,6 +1079,7 @@ async function pullStateFromCloud(){
     try{ localSavedAt = localStorage.getItem(SAVED_AT_KEY); }catch(e){}
     if(localSavedAt && data.updated_at && new Date(localSavedAt) > new Date(data.updated_at)){
       cloudSynced = true;
+      lastCloudUpdatedAt = data.updated_at;
       queueCloudSave();
       const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ عندك تعديلات محلية أحدث من السيرفر — رح تترفع بدل ما تنمسح'; el.className='status-msg ok'; }
       return;
@@ -1064,6 +1107,7 @@ async function pullStateFromCloud(){
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, VOUCHER_META, DUMMY_INV_ITEMS, INVOICE_LOG, PRINT_ASSETS, BRANCHES, BRANCH_CODE_MAP, MONTHLY_DATA, CURRENT_MONTH}));
     switchPage(currentPage||'mapping');
     cloudSynced = true;
+    lastCloudUpdatedAt = data.updated_at;
     const el = document.getElementById('cloudSyncMsg'); if(el){ el.textContent = '✔ تم تحميل آخر نسخة من السيرفر المشترك'; el.className='status-msg ok'; }
   }catch(e){ console.warn('تعذر التحميل من السيرفر المشترك', e); }
 }
@@ -4824,6 +4868,7 @@ async function onSignedIn(user){
   document.getElementById('loginView').style.display = 'none';
   // نسحب آخر نسخة من السيرفر المشترك *قبل* ما نكشف الشاشة — هيك ما ينعرض/ينتعدل عليه أي بيانات محلية قديمة/فاضية قبل ما نتأكد من آخر نسخة، وما ينفتح المجال لأي حفظ تلقائي يستبق السحب
   await pullStateFromCloud();
+  startCloudPolling();
   document.getElementById('appView').style.display = 'block';
 }
 (async function bootAuth(){
