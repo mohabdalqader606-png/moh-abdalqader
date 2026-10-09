@@ -833,6 +833,10 @@ ORDER BY T0."DocNum"</code>
 
 <script>
 /* ==================== تخزين ==================== */
+// ⚠️ ارفع هاد الرقم مع كل تحديث فعلي يُدفع لهاي الشاشة (أي تاريخ/نص مختلف كافي) — هو يلي بيخلي
+// checkForNewVersion() تكتشف وجود نسخة أحدث وتنبّه أي مستخدم فاتح الشاشة تلقائياً بدل ما يضل عالق
+// على نسخة قديمة بصمت لحد ما حدا يحكيله يدوياً يعمل تحديث قوي.
+const APP_VERSION = '2026-10-09.1';
 const STORAGE_KEY = 'milInst_v2';
 let IS_FRESH_LOAD = false;
 let freshLoadBannerDismissed = false;
@@ -1078,6 +1082,35 @@ async function checkForRemoteUpdates(){
 function startCloudPolling(){
   if(cloudPollTimer) return;
   cloudPollTimer = setInterval(checkForRemoteUpdates, 5*60*1000);
+}
+// كشف تلقائي لوجود نسخة أحدث من هاي الشاشة منشورة، وتنبيه أي مستخدم فاتحها بدون ما يحتاج يعرف
+// يعمل تحديث قوي يدوياً بنفسه — نجيب نسخة الصفحة الحية (بدون كاش) ونقارن رقم APP_VERSION فيها.
+let newVersionBannerShown = false;
+async function checkForNewVersion(){
+  if(newVersionBannerShown) return;
+  try{
+    const res = await fetch(location.href, {cache:'no-store'});
+    if(!res.ok) return;
+    const text = await res.text();
+    const m = text.match(/const APP_VERSION = '([^']+)'/);
+    if(m && m[1] && m[1] !== APP_VERSION) showNewVersionBanner();
+  }catch(e){}
+}
+function showNewVersionBanner(){
+  if(newVersionBannerShown) return;
+  newVersionBannerShown = true;
+  const b = document.createElement('div');
+  b.id = 'newVersionBanner';
+  b.style.cssText = 'position:fixed; top:0; inset-inline:0; z-index:99999; background:var(--navy); color:#fff; text-align:center; padding:11px 16px; font-size:13px; font-weight:700; cursor:pointer; box-shadow:0 4px 14px rgba(0,0,0,.25);';
+  b.textContent = '🔄 في نسخة جديدة من الشاشة — اضغط هون للتحديث الآن';
+  b.onclick = () => location.reload();
+  document.body.prepend(b);
+}
+let versionPollTimer = null;
+function startVersionPolling(){
+  if(versionPollTimer) return;
+  checkForNewVersion();
+  versionPollTimer = setInterval(checkForNewVersion, 5*60*1000);
 }
 async function pullStateFromCloud(){
   if(!sb || !curUser) return;
@@ -4893,6 +4926,7 @@ async function onSignedIn(user){
   // نسحب آخر نسخة من السيرفر المشترك *قبل* ما نكشف الشاشة — هيك ما ينعرض/ينتعدل عليه أي بيانات محلية قديمة/فاضية قبل ما نتأكد من آخر نسخة، وما ينفتح المجال لأي حفظ تلقائي يستبق السحب
   await pullStateFromCloud();
   startCloudPolling();
+  startVersionPolling();
   document.getElementById('appView').style.display = 'block';
 }
 (async function bootAuth(){
