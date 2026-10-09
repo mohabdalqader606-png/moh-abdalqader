@@ -1117,7 +1117,12 @@ async function pullStateFromCloud(){
     rebuildAutoInvoices();
     if(!GROUPS.find(g=>g.id===currentGroupId)) currentGroupId = GROUPS[0] ? GROUPS[0].id : null;
     { const picker = document.getElementById('workMonthPicker'); if(picker) picker.value = CURRENT_MONTH; }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, VOUCHER_META, DUMMY_INV_ITEMS, INVOICE_LOG, PRINT_ASSETS, BRANCHES, BRANCH_CODE_MAP, MONTHLY_DATA, CURRENT_MONTH}));
+    // التخزين المحلي (localStorage) مجرد نسخة احتياطية مريحة — المصدر الأساسي هو السيرفر المشترك.
+    // لو حجم البيانات تجاوز سعة التخزين المحلي للمتصفح (QuotaExceededError)، ما لازم هاد يُسقط
+    // كل عملية السحب (وبالتالي يمنع cloudSynced من يصير true للأبد ويعلّق كل حفظ مستقبلي) —
+    // نعزلها بمعالجة أخطاء خاصة فيها لحالها.
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify({ITEMS, GROUPS, TRANSFERS, STATEMENT, DUMMY_INVOICES, VOUCHER_META, DUMMY_INV_ITEMS, INVOICE_LOG, PRINT_ASSETS, BRANCHES, BRANCH_CODE_MAP, MONTHLY_DATA, CURRENT_MONTH})); }
+    catch(e){ console.warn('تعذر حفظ نسخة محلية (التخزين ممتلئ) — البيانات بالذاكرة وعلى السيرفر المشترك سليمة', e); }
     switchPage(currentPage||'mapping');
     lastCloudUpdatedAt = data.updated_at;
     markCloudSynced();
