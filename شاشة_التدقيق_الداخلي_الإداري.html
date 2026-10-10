@@ -17196,6 +17196,35 @@ renderDashboard();
     document.getElementById("jeFileOverlay").classList.add("active");
   }
   document.getElementById("cancelJeFileModal").addEventListener("click", ()=> document.getElementById("jeFileOverlay").classList.remove("active"));
+  const JE_AUTO_RANGE_LIMIT = 3000;
+  function jeAutoGenerateRange(file){
+    const first = file.firstEntryNo, last = file.lastEntryNo;
+    if(!first || !last || !/^\d+$/.test(String(first).trim()) || !/^\d+$/.test(String(last).trim())) return;
+    const start = Number(first), end = Number(last);
+    if(!(start <= end)) return;
+    const count = end - start + 1;
+    if(count > JE_AUTO_RANGE_LIMIT){
+      alert(`نطاق القيود (${count} قيداً) أكبر من الحد الآمن للتوليد التلقائي (${JE_AUTO_RANGE_LIMIT}). احفظ الملف بنطاق أصغر، أو أضف القيود يدوياً عبر «+ تسجيل فحص قيد».`);
+      return;
+    }
+    if(!file.entries) file.entries = [];
+    const existing = new Set(file.entries.map(e=>String(e.entryNo)));
+    const now = new Date().toISOString();
+    for(let n=start; n<=end; n++){
+      const entryNo = String(n);
+      if(existing.has(entryNo)) continue;
+      file.entries.push({
+        id: uid(), entryNo, entryDate:"", account:"", amount:"",
+        responsiblePerson:"", department:"", status:"not_checked", note:"", refDoc:"", auditorName:"", checkDate:"",
+        createdAt: now, updatedAt: now,
+      });
+    }
+    file.entries.sort((a,b)=>{
+      const na = Number(a.entryNo), nb = Number(b.entryNo);
+      if(!isNaN(na) && !isNaN(nb)) return na-nb;
+      return String(a.entryNo).localeCompare(String(b.entryNo));
+    });
+  }
   document.getElementById("saveJeFileBtn").addEventListener("click", ()=>{
     const fileNo = document.getElementById("jeFFileNo").value.trim();
     if(!fileNo){ alert("الرجاء إدخال رقم الملف."); return; }
@@ -17204,11 +17233,12 @@ renderDashboard();
     const firstEntryNo = document.getElementById("jeFFirstEntry").value.trim();
     const lastEntryNo = document.getElementById("jeFLastEntry").value.trim();
     const now = new Date().toISOString();
+    let file;
     if(editId){
-      const file = jeFindFile(editId);
+      file = jeFindFile(editId);
       if(file){ file.fileNo = fileNo; file.period = period; file.firstEntryNo = firstEntryNo; file.lastEntryNo = lastEntryNo; file.updatedAt = now; }
     } else {
-      const file = {
+      file = {
         id: uid(),
         refCode: nextRefCode("JE","jeFiles"),
         fileNo, period, firstEntryNo, lastEntryNo,
@@ -17218,9 +17248,10 @@ renderDashboard();
       DB.jeFiles.push(file);
       currentJeFileId = file.id;
     }
+    if(file) jeAutoGenerateRange(file);
     saveDB();
     document.getElementById("jeFileOverlay").classList.remove("active");
-    const file = jeFindFile(currentJeFileId || editId);
+    file = jeFindFile(currentJeFileId || editId);
     if(file && document.getElementById("jeFilePanel").style.display !== "none"){ jeRenderFileDetail(file); }
     else { jeRenderList(); }
   });
