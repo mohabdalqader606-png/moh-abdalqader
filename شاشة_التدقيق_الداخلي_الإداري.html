@@ -17111,11 +17111,11 @@ renderDashboard();
       return;
     }
     const tbody = ktTable(box, [
-      {l:"رقم الملف",cls:"w",k:"jefile"}, {l:"رقم القيد",cls:"w",k:"jeno"}, {l:"تاريخ القيد",cls:"w",k:"date"}, {l:"الحساب"},
+      {l:"موجود",cls:"w",k:"li"}, {l:"رقم الملف",cls:"w",k:"jefile"}, {l:"رقم القيد",cls:"w",k:"jeno"}, {l:"تاريخ القيد",cls:"w",k:"date"}, {l:"الحساب"},
       {l:"المبلغ",cls:"n",k:"amt"}, {l:"الشخص المسؤول",cls:"w",k:"resp"}, {l:"القسم",cls:"w",k:"cat"},
       {l:"حالة الفحص",cls:"w",k:"st"}, {l:"الملاحظة"}, {l:"المرجع/المستند",cls:"w wrap",k:"ref"},
       {l:"اسم المدقق",cls:"w",k:"resp"}, {l:"تاريخ الفحص",cls:"w",k:"date"}, {l:"",cls:"w",k:"act"},
-    ], {ariaLabel:"سجل فحص القيود", minWidth:1550});
+    ], {ariaLabel:"سجل فحص القيود", minWidth:1590});
     if(jeFilterActive()){
       const note = document.createElement("div");
       note.style.cssText = "font-size:12.5px;color:var(--kd-muted);margin-bottom:8px;";
@@ -17124,8 +17124,10 @@ renderDashboard();
     }
     entries.forEach(entry=>{
       const stMeta = JE_STATUS_META[entry.status] || JE_STATUS_META.not_checked;
+      const hasNote = entry.status==="checked_note" || entry.status==="follow_up";
       const tr = document.createElement("tr");
       tr.innerHTML = `
+        <td class="w" style="text-align:center;"><input type="checkbox" class="je-quick-ok" ${entry.status==="checked_ok"?"checked":""} ${hasNote?'disabled title="لديه ملاحظة — استخدم زر تعديل لتغيير حالته"':'title="تأشير سريع: القيد تم فحصه وسليم"'}></td>
         <td class="w">${escapeHtml(file.fileNo||file.refCode)}</td>
         <td class="w">${escapeHtml(entry.entryNo||"—")}</td>
         <td class="w">${entry.entryDate? ktShortDate(entry.entryDate) : "—"}</td>
@@ -17139,6 +17141,15 @@ renderDashboard();
         <td class="w">${escapeHtml(entry.auditorName||"—")}</td>
         <td class="w">${entry.checkDate? ktShortDate(entry.checkDate) : "—"}</td>
         <td class="w"><button type="button" class="btn btn-ghost btn-sm je-edit-entry-btn kt-edit">تعديل</button> <button type="button" class="btn btn-ghost btn-sm je-del-entry-btn" title="حذف القيد">🗑</button></td>`;
+      tr.querySelector(".je-quick-ok").onchange = (ev)=>{
+        entry.status = ev.target.checked ? "checked_ok" : "not_checked";
+        entry.checkDate = ev.target.checked ? (entry.checkDate || todayStr()) : entry.checkDate;
+        entry.auditorName = entry.auditorName || jeLastAuditorName(file);
+        entry.updatedAt = new Date().toISOString();
+        file.updatedAt = entry.updatedAt;
+        saveDB();
+        jeRenderFileDetail(file);
+      };
       tr.querySelector(".je-edit-entry-btn").onclick = ()=> jeOpenEntryModal(file, entry);
       tr.querySelector(".je-del-entry-btn").onclick = ()=>{
         if(!confirm(`حذف تسجيل فحص القيد رقم «${entry.entryNo||""}»؟`)) return;
