@@ -150,6 +150,8 @@
   .link-row input{width:100%;}
   .rm-link{background:#FEE2E2;color:#B91C1C;border:none;border-radius:8px;width:30px;height:30px;cursor:pointer;font-size:14px;}
   .add-link-btn{background:#EEF2F7;color:var(--navy);border:none;border-radius:8px;padding:7px 12px;font-size:12.5px;font-weight:700;cursor:pointer;}
+  .acct-row{display:grid;grid-template-columns:1fr 1fr 34px;gap:8px;margin-bottom:8px;align-items:center;}
+  .acct-row input{border:1px solid var(--border);border-radius:8px;padding:7px 9px;font-size:12.5px;font-family:inherit;width:100%;}
   .modal-actions{display:flex;justify-content:space-between;margin-top:18px;gap:10px;}
 
   /* library */
@@ -3814,6 +3816,14 @@
       </div>
     </div>
 
+    <div class="field">
+      <label>جدول حسابات مرجعي (رقم الحساب / اسم الحساب) — اختياري</label>
+      <div class="links-editor" id="taskAccountsEditor"></div>
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button type="button" class="add-link-btn" id="addTaskAccountRow">+ إضافة حساب</button>
+      </div>
+    </div>
+
     <div class="modal-actions">
       <button class="btn btn-danger" id="deleteTaskBtn" style="display:none;">حذف المهمة</button>
       <div style="display:flex;gap:8px;margin-right:auto;">
@@ -3881,6 +3891,14 @@
       <div style="display:flex;gap:8px;margin-top:8px;">
         <button type="button" class="add-link-btn" id="addRecLinkRow">+ إضافة رابط / أداة</button>
         <button type="button" class="add-link-btn" id="importRecFromLibBtn" style="background:#EAF4EE;color:#166534;">📥 استيراد كويري من المكتبة</button>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>جدول حسابات مرجعي (رقم الحساب / اسم الحساب) — اختياري</label>
+      <div class="links-editor" id="recAccountsEditor"></div>
+      <div style="display:flex;gap:8px;margin-top:8px;">
+        <button type="button" class="add-link-btn" id="addRecAccountRow">+ إضافة حساب</button>
       </div>
     </div>
 
@@ -10293,6 +10311,8 @@ document.getElementById("closeLinkModal").onclick = ()=> document.getElementById
 const taskOverlay = document.getElementById("taskOverlay");
 let currentLinks = [];
 let linksContainerId = "linksEditor";
+let currentAccounts = [];
+let accountsContainerId = "taskAccountsEditor";
 
 function openTaskModal(task, defaults){
   document.getElementById("editId").value = task ? task.id : "";
@@ -10321,6 +10341,10 @@ function openTaskModal(task, defaults){
   currentLinks = task ? JSON.parse(JSON.stringify(task.links||[])) : [];
   linksContainerId = "linksEditor";
   renderLinksEditor();
+
+  currentAccounts = task ? JSON.parse(JSON.stringify(task.accounts||[])) : [];
+  accountsContainerId = "taskAccountsEditor";
+  renderAccountsEditor();
 
   taskOverlay.classList.add("active");
 }
@@ -10370,6 +10394,31 @@ document.getElementById("addLinkRow").onclick = ()=>{
   renderLinksEditor();
 };
 
+function renderAccountsEditor(){
+  const box = document.getElementById(accountsContainerId);
+  box.innerHTML = "";
+  if(currentAccounts.length===0){
+    box.innerHTML = `<div style="font-size:12px;color:var(--muted);text-align:center;padding:6px;">لا توجد حسابات بعد — أضف رقم واسم الحساب المرجعي</div>`;
+  }
+  currentAccounts.forEach((ac,i)=>{
+    const row = document.createElement("div");
+    row.className = "acct-row";
+    row.innerHTML = `
+      <input type="text" class="ac-no" data-i="${i}" placeholder="رقم الحساب" value="${escapeHtml(ac.accNo||'')}">
+      <input type="text" class="ac-name" data-i="${i}" placeholder="اسم الحساب" value="${escapeHtml(ac.accName||'')}">
+      <button type="button" class="rm-link" data-i="${i}">✕</button>
+    `;
+    box.appendChild(row);
+  });
+  box.querySelectorAll(".ac-no").forEach(el=> el.oninput = e=>{ currentAccounts[+e.target.dataset.i].accNo = e.target.value; });
+  box.querySelectorAll(".ac-name").forEach(el=> el.oninput = e=>{ currentAccounts[+e.target.dataset.i].accName = e.target.value; });
+  box.querySelectorAll(".rm-link").forEach(el=> el.onclick = e=>{ currentAccounts.splice(+e.target.dataset.i,1); renderAccountsEditor(); });
+}
+document.getElementById("addTaskAccountRow").onclick = ()=>{
+  currentAccounts.push({accNo:"", accName:""});
+  renderAccountsEditor();
+};
+
 document.getElementById("cancelModal").onclick = ()=> taskOverlay.classList.remove("active");
 
 document.getElementById("saveTaskBtn").onclick = ()=>{
@@ -10396,6 +10445,7 @@ document.getElementById("saveTaskBtn").onclick = ()=>{
     engagementId: document.getElementById("taskEngagementId").value || null,
     wpRef: id ? (DB.tasks.find(t=>t.id===id)?.wpRef || nextRefCode("WP","wp")) : nextRefCode("WP","wp"),
     links: currentLinks.filter(l=>l.label || l.value),
+    accounts: currentAccounts.filter(a=>a.accNo || a.accName),
   };
   if(mode==="range" && payload.to < payload.from){ alert("تاريخ النهاية يجب أن يكون بعد تاريخ البداية"); return; }
 
@@ -11652,12 +11702,20 @@ function openRecurringModal(rec){
   linksContainerId = "recLinksEditor";
   renderLinksEditor();
 
+  currentAccounts = rec ? JSON.parse(JSON.stringify(rec.accounts||[])) : [];
+  accountsContainerId = "recAccountsEditor";
+  renderAccountsEditor();
+
   document.getElementById("recOverlay").classList.add("active");
 }
 
 document.getElementById("addRecLinkRow").onclick = ()=>{
   currentLinks.push({type:"query", label:"", value:"", docEntry:""});
   renderLinksEditor();
+};
+document.getElementById("addRecAccountRow").onclick = ()=>{
+  currentAccounts.push({accNo:"", accName:""});
+  renderAccountsEditor();
 };
 document.getElementById("importRecFromLibBtn").onclick = ()=>{
   document.getElementById("qPickerSearch").value = "";
@@ -11679,6 +11737,7 @@ document.getElementById("saveRecBtn").onclick = ()=>{
     weekday: freq==="weekly" ? +document.getElementById("recWeekday").value : null,
     notes: document.getElementById("recNotes").value.trim(),
     links: currentLinks.filter(l=>l.label || l.value),
+    accounts: currentAccounts.filter(a=>a.accNo || a.accName),
     active: document.getElementById("recActive").checked,
   };
   if(id){
@@ -11749,6 +11808,7 @@ function generateRecurringForDate(dateStr){
         priority: r.priority||"medium",
         notes: r.notes||"",
         links: JSON.parse(JSON.stringify(r.links||[])),
+        accounts: JSON.parse(JSON.stringify(r.accounts||[])),
         recurringId: r.id,
       });
       dirty = true;
