@@ -725,12 +725,12 @@ ORDER BY T0."DocNum"</code>
           <button class="btn-danger btn-sm" onclick="returnSelectedDummyInvoicesToReview()" title="بترجع الفواتير المحددة (بالـcheckbox جنب كل وحدة) لقائمة المراجعة فوق عشان تعتمدها من جديد — بدون إعادة قراءتها بالذكاء الاصطناعي. حدد الكل من الـcheckbox براس الجدول لو بدك ترجعهم كلهم.">↺ إرجاع المحدد للمراجعة</button>
         </div>
         <div id="dummyInvItemsDetailBox"></div>
-        <div class="hint" style="margin-top:10px;">تصدير كشف Excel (تسلسل / تاريخ / رقم الفاتورة / السوق / قيمة الفاتورة / مستودع) — اختياري لفترة معيّنة:</div>
+        <div class="hint" style="margin-top:10px;">كشف خلاصة الفواتير (تسلسل / تاريخ / رقم الفاتورة / السوق / قيمة الفاتورة / مستودع) مع مجموع الحركة — تصدير Excel أو طباعة A4، اختياري لفترة معيّنة (لو تركت التواريخ فاضية بيطلع كل الفواتير):</div>
         <div class="row-actions">
           <label style="font-size:12px; display:flex; align-items:center; gap:6px;">من تاريخ <input type="date" id="dummyExportFrom"></label>
           <label style="font-size:12px; display:flex; align-items:center; gap:6px;">إلى تاريخ <input type="date" id="dummyExportTo"></label>
           <button class="btn-primary btn-sm" onclick="exportDummyInvoicesExcel()">📊 تصدير Excel</button>
-          <button class="btn-ghost btn-sm" onclick="printSection('dummyInvTable','سجل فواتير الصرف الوهمي')">🖨️ طباعة</button>
+          <button class="btn-ghost btn-sm" onclick="printDummyInvoicesReport()">🖨️ طباعة الكشف (A4)</button>
           <span class="status-msg" id="dummyExportMsg"></span>
         </div>
       </details>
@@ -836,7 +836,7 @@ ORDER BY T0."DocNum"</code>
 // ⚠️ ارفع هاد الرقم مع كل تحديث فعلي يُدفع لهاي الشاشة (أي تاريخ/نص مختلف كافي) — هو يلي بيخلي
 // checkForNewVersion() تكتشف وجود نسخة أحدث وتنبّه أي مستخدم فاتح الشاشة تلقائياً بدل ما يضل عالق
 // على نسخة قديمة بصمت لحد ما حدا يحكيله يدوياً يعمل تحديث قوي.
-const APP_VERSION = '2026-10-12.1';
+const APP_VERSION = '2026-10-12.2';
 const STORAGE_KEY = 'milInst_v2';
 let IS_FRESH_LOAD = false;
 let freshLoadBannerDismissed = false;
@@ -855,6 +855,7 @@ let MONTHLY_DATA = {}; // {'YYYY-MM': {STATEMENT:[...], qty:{invId:{itemKey:num}
 let CURRENT_MONTH = ''; // 'YYYY-MM' — شهر العمل المفتوح حالياً
 let DUMMY_INVOICES = []; // {id, docNum, date, branch, amount}
 let VOUCHER_META = {}; // {normDocNum: {invNo, done}} — حالة كل سند تحويل: رقم فاتورة الصرف المرتبطة فيه، وهل انطبعت فواتيره (تم)
+const DUMMY_INV_WAREHOUSE = '17'; // مستودع فواتير الصرف الوهمي ثابت دائماً — ما ينقرأ من الفاتورة ولا من الذكاء الاصطناعي
 let DUMMY_INV_ITEMS = []; // {invoiceNo, date, market, theirCode, theirName, qty, price, value} — أصناف فواتير الصرف الوهمي (مستوردة من الفاتورة الأصلية) للمطابقة اليومية مع سندات التحويل
 let INVOICE_LOG = []; // {id, key, groupId, groupName, docType, docNo, docDate, printedAt, lines:[{theirCode,theirName,qty,price,net,taxPct,taxVal,total,whsPrice,whsTotal}]}
 // صور الرأسية والذيل الرسمية المستخرجة من فاتورة المؤسسة الأصلية — مدمجة بالبرنامج، تُستخدم بالطباعة تلقائياً
@@ -3198,7 +3199,7 @@ function syncDummyInvoiceHeaders(newItems){
     const row = DUMMY_INVOICES.find(x=>normDocNum(x.docNum)===key);
     const amount = Math.round(info.amount*1000)/1000;
     if(row){ row.docNum = info.docNum; row.date = info.date||row.date; row.branch = info.branch||row.branch; row.amount = amount; }
-    else DUMMY_INVOICES.push({id:uid(), docNum:info.docNum, date:info.date, branch:info.branch, amount, warehouse:''});
+    else DUMMY_INVOICES.push({id:uid(), docNum:info.docNum, date:info.date, branch:info.branch, amount, warehouse:DUMMY_INV_WAREHOUSE});
   });
   renderDummyInvoices();
 }
@@ -3212,7 +3213,7 @@ const DUMMY_INV_PROMPT = `أنت خبير بقراءة "فاتورة الصرف 
 
 قواعد صارمة:
 1) لكل فاتورة منفصلة أضف عنصراً مستقلاً في مصفوفة invoices — لا تدمج فاتورتين مع بعض ولا تتجاوز أي فاتورة أو صفحة.
-2) لكل فاتورة استخرج: invoiceNo = رقم المستند الطويل (حوالي 10 أرقام، يبدأ عادةً بـ 26، مثل 2621109928) المطبوع في الصندوق العلوي من الفاتورة بجانب التاريخ ورقم المستودع — أرقام فقط. تنبيه مهم: الفاتورة فيها أيضاً خانة مكتوب بجانبها حرفياً "رقم الفاتورة" وفيها رقم تسلسلي قصير (مثل 17) — هذا الرقم القصير ليس المطلوب إطلاقاً، تجاهله تماماً ولا تضعه في invoiceNo أبداً. إذا لم تجد رقماً طويلاً بهذا الشكل ضع null بدل الرقم القصير. ثم date (تاريخ الفاتورة محوّلاً لصيغة YYYY-MM-DD)، market (اسم السوق أو الفرع كما هو مكتوب بالضبط)، warehouse (رقم/كود المستودع لو مطبوع على الفاتورة — وإلا اتركه null، لا تخترعه)، totalAmount (المبلغ الإجمالي المطبوع بآخر الفاتورة كرقم — انسخه كما هو مطبوع، لا تحسبه بنفسك من الأسطر).
+2) لكل فاتورة استخرج: invoiceNo = رقم المستند الطويل (حوالي 10 أرقام، يبدأ عادةً بـ 26، مثل 2621109928) المطبوع في الصندوق العلوي من الفاتورة بجانب التاريخ ورقم المستودع — أرقام فقط. تنبيه مهم: الفاتورة فيها أيضاً خانة مكتوب بجانبها حرفياً "رقم الفاتورة" وفيها رقم تسلسلي قصير (مثل 17) — هذا الرقم القصير ليس المطلوب إطلاقاً، تجاهله تماماً ولا تضعه في invoiceNo أبداً. إذا لم تجد رقماً طويلاً بهذا الشكل ضع null بدل الرقم القصير. ثم date (تاريخ الفاتورة محوّلاً لصيغة YYYY-MM-DD)، market (اسم السوق أو الفرع كما هو مكتوب بالضبط)، warehouse (اتركه null دائماً — المستودع ثابت ويُضبط تلقائياً من النظام)، totalAmount (المبلغ الإجمالي المطبوع بآخر الفاتورة كرقم — انسخه كما هو مطبوع، لا تحسبه بنفسك من الأسطر).
 3) لكل صنف بالفاتورة استخرج: code (رمز المادة كما هو مطبوع بالضبط، أرقام)، qty (الكمية رقماً)، price (سعر الوحدة رقماً)، value (قيمة/إجمالي السطر رقماً). لا تستخرج اسم الصنف إطلاقاً وما تضيف حقل name — اسم كل صنف بيتحدد لاحقاً تلقائياً من جدول ربط أصناف داخلي حسب رمزه، فتركيزك الكامل ينحصر بدقة قراءة الرمز والأرقام بس.
 4) اقرأ كل رقم بدقة متناهية رقماً رقماً، وتحقق داخلياً أن qty × price ≈ value لكل سطر. أي رقم غير واضح بالصورة أو لا يمكن حسم قراءته بثقة — ضعه null بدل التخمين. لا تخترع رقماً أبداً.
 5) تجاهل صفوف المجاميع الفارغة التي لا تمثل صنفاً فعلياً.
@@ -3378,7 +3379,7 @@ async function diHandleFiles(evt){
       const {text, usage}=await diCallAPI(b64, files[i].size);
       const parsed=diSafeParse(text);
       const invs=(parsed.invoices||[]).map(inv=>({
-        invoiceNo: inv.invoiceNo||'', date: inv.date||'', market: inv.market||'', warehouse: inv.warehouse||'', totalAmount: inv.totalAmount??null,
+        invoiceNo: inv.invoiceNo||'', date: inv.date||'', market: inv.market||'', warehouse: DUMMY_INV_WAREHOUSE, totalAmount: inv.totalAmount??null,
         // الاسم ما منطلبه من الذكاء الاصطناعي أبداً — منجيبه من جدول ربط الأصناف حسب الرمز يلي قراه، عشان ما يخترع اسم غلط
         items:(inv.items||[]).map(it=>diBackfillItem({code:it.code??null, name:diKnownNameForCode(it.code)||null, qty:it.qty??null, price:it.price??null, value:it.value??null})),
         srcFile: files[i].name
@@ -3500,12 +3501,11 @@ function diInvoiceToItems(inv){
     qty: +it.qty||0, price: it.price==null?0:+it.price, value: it.value==null?(+it.qty*(it.price||0)):+it.value
   }));
 }
-// مستودع الفاتورة والمبلغ الإجمالي المطبوع (لو الذكاء الاصطناعي قدر يقرأهم) مو جزء من سطور DUMMY_INV_ITEMS نفسها،
+// المستودع ثابت (DUMMY_INV_WAREHOUSE) والمبلغ الإجمالي المطبوع مو جزء من سطور DUMMY_INV_ITEMS نفسها،
 // فبنحطهم مباشرة على صف "سجل فواتير الصرف الوهمي" بعد ما syncDummyInvoiceHeaders يبنيه/يحدّثه.
 function diSetInvoiceWarehouse(inv){
-  if(!inv.warehouse) return;
   const row = DUMMY_INVOICES.find(x=>normDocNum(x.docNum)===normDocNum(inv.invoiceNo));
-  if(row){ row.warehouse = inv.warehouse; saveState(); renderDummyInvoices(); }
+  if(row && row.warehouse !== DUMMY_INV_WAREHOUSE){ row.warehouse = DUMMY_INV_WAREHOUSE; saveState(); renderDummyInvoices(); }
 }
 // نستخدم المبلغ المطبوع بآخر الفاتورة (لو انقرأ) بدل حساب مجموع الأسطر — أدق وما يتأثر لو سطر ناقص أو رقمه غلط
 function diSetInvoiceTotalAmount(inv){
@@ -3924,7 +3924,7 @@ function renderDailyInvoiceMatch(){
 
 /* ==================== سجل فواتير الصرف الوهمي ==================== */
 function addDummyInvoiceRow(){
-  DUMMY_INVOICES.push({id: uid(), docNum:'', date:'', branch:'', amount:0, warehouse:''});
+  DUMMY_INVOICES.push({id: uid(), docNum:'', date:'', branch:'', amount:0, warehouse:DUMMY_INV_WAREHOUSE});
   saveState();
   renderDummyInvoices();
 }
@@ -3967,7 +3967,7 @@ async function returnSelectedDummyInvoicesToReview(){
   // نبني عناصر مراجعة من أصناف الفواتير المحددة بس (DUMMY_INV_ITEMS) مجمّعة برقم الفاتورة — بدون فقدان أي بيانات مقروءة أو دفع تكلفة قراءة إضافية
   const byInv = new Map();
   DUMMY_INV_ITEMS.filter(r=>selectedNorm.has(normDocNum(r.invoiceNo))).forEach(r=>{
-    if(!byInv.has(r.invoiceNo)) byInv.set(r.invoiceNo, {invoiceNo:r.invoiceNo, date:r.date||'', market:r.market||'', warehouse:'', totalAmount:null, items:[], srcFile:'(معاد من فواتير اتعمدت سابقاً)'});
+    if(!byInv.has(r.invoiceNo)) byInv.set(r.invoiceNo, {invoiceNo:r.invoiceNo, date:r.date||'', market:r.market||'', warehouse:DUMMY_INV_WAREHOUSE, totalAmount:null, items:[], srcFile:'(معاد من فواتير اتعمدت سابقاً)'});
     byInv.get(r.invoiceNo).items.push({code:r.theirCode, name:r.theirName||null, qty:r.qty, price:r.price, value:r.value});
   });
   byInv.forEach((inv, invoiceNo)=>{
@@ -4001,7 +4001,7 @@ function renderDummyInvoices(){
       <option value="__new__">+ إضافة فرع جديد...</option>
     </select></td>
     <td><input type="number" step="any" value="${r.amount}" onchange="updateDummyInvoiceField('${r.id}','amount',this.value)" style="width:100px;"></td>
-    <td><input type="text" value="${esc(r.warehouse||'')}" onchange="updateDummyInvoiceField('${r.id}','warehouse',this.value)" style="width:60px; direction:ltr; text-align:left;"></td>
+    <td><input type="text" value="${esc(r.warehouse||DUMMY_INV_WAREHOUSE)}" onchange="updateDummyInvoiceField('${r.id}','warehouse',this.value)" style="width:60px; direction:ltr; text-align:left;"></td>
     <td><button class="btn-ghost tiny-btn" onclick="diShowInvoiceItems('${esc(r.docNum)}')">🔍 الأصناف</button></td>
     <td><button class="btn-danger tiny-btn" onclick="deleteDummyInvoiceRow('${r.id}')">حذف</button></td>
   </tr>`).join('') || '<tr><td colspan="8" class="muted" style="padding:10px;">ما في فواتير مسجلة بعد — رح تتعبى تلقائياً لما تعتمد فواتير من قسم "مطابقة يومية" فوق، أو اضغط "إضافة فاتورة يدوياً".</td></tr>';
@@ -4064,36 +4064,105 @@ function handleBranchSelect(selectEl, id){
   updateDummyInvoiceField(id, 'branch', selectEl.value);
 }
 function ddmmyyyy(iso){ return iso ? iso.split('-').reverse().join('-') : ''; }
-function exportDummyInvoicesExcel(){
-  if(!window.XLSX){ flash('dummyExportMsg','مكتبة تصدير Excel ما تحمّلت (تحتاج اتصال إنترنت أول مرة).', false); return; }
+/* بيانات كشف خلاصة فواتير الصرف الوهمي (مشتركة بين تصدير Excel والطباعة A4):
+   الصفوف المفلترة بالفترة ومرتبة بالتاريخ ثم رقم الفاتورة، والمجموع، وسطور الترويسة بنفس شكل الكشف المعتمد. */
+function dummyInvoicesReportData(){
   const from = document.getElementById('dummyExportFrom').value;
   const to = document.getElementById('dummyExportTo').value;
   let rows = DUMMY_INVOICES.filter(r=>r.date);
   if(from) rows = rows.filter(r=>r.date >= from);
   if(to) rows = rows.filter(r=>r.date <= to);
-  rows = rows.slice().sort((a,b)=> a.date.localeCompare(b.date));
-  if(!rows.length){ flash('dummyExportMsg','ما في فواتير بهاي الفترة (تأكد إنك عبّيت التاريخ لكل فاتورة).', false); return; }
-
+  rows = rows.slice().sort((a,b)=> a.date.localeCompare(b.date) || String(a.docNum).localeCompare(String(b.docNum)));
+  if(!rows.length) return null;
   const total = rows.reduce((s,r)=> s+(+r.amount||0), 0);
   const monthSrc = to || from || rows[rows.length-1].date;
-  const [my, mm] = monthSrc.split('-');
-  const monthLabel = (+mm) + '-' + my;
-  const rangeFrom = ddmmyyyy(from || rows[0].date);
-  const rangeTo = ddmmyyyy(to || rows[rows.length-1].date);
+  const monthLabel = monthSrc.slice(0,7); // YYYY-MM
+  const rangeFrom = from || rows[0].date;
+  const rangeTo = to || rows[rows.length-1].date;
+  return {
+    rows, total,
+    companyLine: 'مركز الكيلاني للأغذية',
+    titleLine: 'كشف خلاصة فواتير المؤسسة الاستهلاكية العسكرية لشهر '+monthLabel,
+    totalLabel: 'مجموع الحركة',
+    rangeLine: 'استلامات المؤسسة الاستهلاكية العسكرية من '+rangeFrom+' الى '+rangeTo,
+  };
+}
+function exportDummyInvoicesExcel(){
+  if(!window.XLSX){ flash('dummyExportMsg','مكتبة تصدير Excel ما تحمّلت (تحتاج اتصال إنترنت أول مرة).', false); return; }
+  const rep = dummyInvoicesReportData();
+  if(!rep){ flash('dummyExportMsg','ما في فواتير بهاي الفترة (تأكد إنك عبّيت التاريخ لكل فاتورة).', false); return; }
 
   const data = [
-    ['كشف خلاصة فواتير المؤسسة الاستهلاكية العسكرية لشهر', '', monthLabel, '', '', '', 'مجموع الحركة', fmt3(total)],
-    ['استلامات المؤسسة الاستهلاكية العسكرية من '+rangeFrom+' الى '+rangeTo],
-    [],
+    [rep.companyLine],
+    [rep.titleLine, '', '', '', rep.totalLabel, +fmt3(rep.total)],
+    [rep.rangeLine],
     ['التسلسل','تاريخ','رقم الفاتورة','السوق','قيمة الفاتورة','مستودع']
   ];
-  rows.forEach((r,idx)=> data.push([idx+1, ddmmyyyy(r.date), r.docNum, r.branch, r.amount, r.warehouse||'']));
+  rep.rows.forEach((r,idx)=>{
+    const [y,m,d] = r.date.split('-').map(Number);
+    data.push([idx+1, new Date(y, m-1, d), r.docNum, r.branch, +(+r.amount||0).toFixed(3), r.warehouse||DUMMY_INV_WAREHOUSE]);
+  });
 
-  const ws = XLSX.utils.aoa_to_sheet(data);
+  const ws = XLSX.utils.aoa_to_sheet(data, {cellDates:true});
+  // تنسيق الخلايا متل الكشف المعتمد: التاريخ dd-mmm-yy، القيم بثلاث خانات عشرية
+  for(let i=0; i<rep.rows.length; i++){
+    const rr = 5 + i; // صفوف البيانات تبدأ بعد 4 سطور ترويسة (1-based)
+    const dc = ws['B'+rr]; if(dc){ dc.z = 'dd-mmm-yy'; }
+    const vc = ws['E'+rr]; if(vc){ vc.z = '0.000'; }
+  }
+  if(ws['F2']) ws['F2'].z = '0.000';
+  ws['!cols'] = [{wch:8},{wch:12},{wch:14},{wch:34},{wch:14},{wch:9}];
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, 'كشف الفواتير');
   XLSX.writeFile(wb, `كشف_فواتير_الصرف_الوهمي.xlsx`);
-  flash('dummyExportMsg', `تم تصدير ${rows.length} فاتورة — مجموع الحركة ${fmt3(total)}.`, true);
+  flash('dummyExportMsg', `تم تصدير ${rep.rows.length} فاتورة — مجموع الحركة ${fmt3(rep.total)}.`, true);
+}
+// طباعة نفس الكشف بتنسيق A4 نظيف (ترويسة + جدول + مجموع) بدل طباعة الجدول التحريري بحقوله
+function printDummyInvoicesReport(){
+  const rep = dummyInvoicesReportData();
+  if(!rep){ flash('dummyExportMsg','ما في فواتير بهاي الفترة (تأكد إنك عبّيت التاريخ لكل فاتورة).', false); return; }
+  const w = window.open('', '_blank');
+  if(!w){ alert('المتصفح منع فتح نافذة الطباعة — اسمح بالنوافذ المنبثقة لهذا الموقع.'); return; }
+  const rowsHtml = rep.rows.map((r,idx)=>`<tr>
+      <td class="c">${idx+1}</td>
+      <td class="c mono">${esc(ddmmyyyy(r.date))}</td>
+      <td class="c mono">${esc(r.docNum)}</td>
+      <td>${esc(r.branch||'')}</td>
+      <td class="n mono">${fmt3(r.amount)}</td>
+      <td class="c mono">${esc(r.warehouse||DUMMY_INV_WAREHOUSE)}</td>
+    </tr>`).join('');
+  w.document.write(`<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="UTF-8"><title>${esc(rep.titleLine)}</title>
+    <style>
+      @page{size:A4 portrait; margin:12mm;}
+      *{box-sizing:border-box;}
+      body{font-family:'Segoe UI',Tahoma,Arial,sans-serif; color:#1B2536; margin:0; font-size:12px;}
+      .hdr{text-align:center; margin-bottom:10px;}
+      .hdr .co{font-size:17px; font-weight:800; margin:0 0 4px;}
+      .hdr .ttl{font-size:14px; font-weight:700; margin:0 0 4px; display:flex; justify-content:space-between; align-items:baseline; gap:12px;}
+      .hdr .ttl .tot{font-size:13px; white-space:nowrap;}
+      .hdr .rng{font-size:12px; color:#333; margin:0;}
+      table{width:100%; border-collapse:collapse; font-size:11.5px;}
+      thead{display:table-header-group;}
+      tr{page-break-inside:avoid;}
+      th,td{border:1px solid #777; padding:4px 7px; text-align:right;}
+      th{background:#E9ECF2; font-weight:700; text-align:center;}
+      td.c{text-align:center;} td.n{text-align:left; direction:ltr;}
+      .mono{font-family:Consolas,'Courier New',monospace; direction:ltr; unicode-bidi:isolate;}
+      tfoot td{font-weight:800; background:#F4F6F9;}
+    </style></head><body>
+    <div class="hdr">
+      <div class="co">${esc(rep.companyLine)}</div>
+      <div class="ttl"><span>${esc(rep.titleLine)}</span><span class="tot">${esc(rep.totalLabel)}: <span class="mono">${fmt3(rep.total)}</span></span></div>
+      <div class="rng">${esc(rep.rangeLine)}</div>
+    </div>
+    <table>
+      <thead><tr><th style="width:8%;">التسلسل</th><th style="width:13%;">تاريخ</th><th style="width:16%;">رقم الفاتورة</th><th>السوق</th><th style="width:15%;">قيمة الفاتورة</th><th style="width:10%;">مستودع</th></tr></thead>
+      <tbody>${rowsHtml}</tbody>
+      <tfoot><tr><td colspan="4" style="text-align:center;">${esc(rep.totalLabel)} (${rep.rows.length} فاتورة)</td><td class="n mono">${fmt3(rep.total)}</td><td></td></tr></tfoot>
+    </table>
+    <script>window.onload=function(){ setTimeout(function(){ window.print(); }, 200); };<\/script>
+    </body></html>`);
+  w.document.close();
 }
 
 function getFilteredInvoiceLogRecords(){
