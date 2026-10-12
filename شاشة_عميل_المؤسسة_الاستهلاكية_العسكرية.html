@@ -836,7 +836,7 @@ ORDER BY T0."DocNum"</code>
 // ⚠️ ارفع هاد الرقم مع كل تحديث فعلي يُدفع لهاي الشاشة (أي تاريخ/نص مختلف كافي) — هو يلي بيخلي
 // checkForNewVersion() تكتشف وجود نسخة أحدث وتنبّه أي مستخدم فاتح الشاشة تلقائياً بدل ما يضل عالق
 // على نسخة قديمة بصمت لحد ما حدا يحكيله يدوياً يعمل تحديث قوي.
-const APP_VERSION = '2026-10-09.1';
+const APP_VERSION = '2026-10-12.1';
 const STORAGE_KEY = 'milInst_v2';
 let IS_FRESH_LOAD = false;
 let freshLoadBannerDismissed = false;
@@ -3212,7 +3212,7 @@ const DUMMY_INV_PROMPT = `أنت خبير بقراءة "فاتورة الصرف 
 
 قواعد صارمة:
 1) لكل فاتورة منفصلة أضف عنصراً مستقلاً في مصفوفة invoices — لا تدمج فاتورتين مع بعض ولا تتجاوز أي فاتورة أو صفحة.
-2) لكل فاتورة استخرج: invoiceNo (رقم الفاتورة كما هو مطبوع، أرقام فقط)، date (تاريخ الفاتورة محوّلاً لصيغة YYYY-MM-DD)، market (اسم السوق أو الفرع كما هو مكتوب بالضبط)، warehouse (رقم/كود المستودع لو مطبوع على الفاتورة — وإلا اتركه null، لا تخترعه)، totalAmount (المبلغ الإجمالي المطبوع بآخر الفاتورة كرقم — انسخه كما هو مطبوع، لا تحسبه بنفسك من الأسطر).
+2) لكل فاتورة استخرج: invoiceNo = رقم المستند الطويل (حوالي 10 أرقام، يبدأ عادةً بـ 26، مثل 2621109928) المطبوع في الصندوق العلوي من الفاتورة بجانب التاريخ ورقم المستودع — أرقام فقط. تنبيه مهم: الفاتورة فيها أيضاً خانة مكتوب بجانبها حرفياً "رقم الفاتورة" وفيها رقم تسلسلي قصير (مثل 17) — هذا الرقم القصير ليس المطلوب إطلاقاً، تجاهله تماماً ولا تضعه في invoiceNo أبداً. إذا لم تجد رقماً طويلاً بهذا الشكل ضع null بدل الرقم القصير. ثم date (تاريخ الفاتورة محوّلاً لصيغة YYYY-MM-DD)، market (اسم السوق أو الفرع كما هو مكتوب بالضبط)، warehouse (رقم/كود المستودع لو مطبوع على الفاتورة — وإلا اتركه null، لا تخترعه)، totalAmount (المبلغ الإجمالي المطبوع بآخر الفاتورة كرقم — انسخه كما هو مطبوع، لا تحسبه بنفسك من الأسطر).
 3) لكل صنف بالفاتورة استخرج: code (رمز المادة كما هو مطبوع بالضبط، أرقام)، qty (الكمية رقماً)، price (سعر الوحدة رقماً)، value (قيمة/إجمالي السطر رقماً). لا تستخرج اسم الصنف إطلاقاً وما تضيف حقل name — اسم كل صنف بيتحدد لاحقاً تلقائياً من جدول ربط أصناف داخلي حسب رمزه، فتركيزك الكامل ينحصر بدقة قراءة الرمز والأرقام بس.
 4) اقرأ كل رقم بدقة متناهية رقماً رقماً، وتحقق داخلياً أن qty × price ≈ value لكل سطر. أي رقم غير واضح بالصورة أو لا يمكن حسم قراءته بثقة — ضعه null بدل التخمين. لا تخترع رقماً أبداً.
 5) تجاهل صفوف المجاميع الفارغة التي لا تمثل صنفاً فعلياً.
@@ -3321,6 +3321,11 @@ function diBackfillItem(it){
   else if(v==null && q!=null && p!=null) it.value = Math.round(q*p*1000)/1000;
   else if(q==null && p!=null && v!=null && p!==0) it.qty = Math.round((v/p)*1000)/1000;
   return it;
+}
+// رقم المستند الحقيقي بالفاتورة طويل (~10 أرقام). رقم قصير = غالباً الذكاء الاصطناعي أخذ الرقم التسلسلي يلي جنب عنوان "رقم الفاتورة" (مثل 17) بالغلط — ما يتطابق مع أي سند تحويل
+function diInvoiceNoSuspicious(invoiceNo){
+  const digits = String(invoiceNo||'').replace(/\D/g,'');
+  return digits.length>0 && digits.length<8;
 }
 function diLineMismatch(it){
   if(it.qty==null||it.price==null||it.value==null) return false;
@@ -3435,9 +3440,11 @@ function diRenderReview(){
   DI_READ.invoices.forEach((inv,idx)=>{
     const flags = inv.items.some(it=>it.code==null||it.name==null||it.qty==null||it.price==null||it.value==null||diLineMismatch(it));
     const anyNameMismatch = inv.items.some(it=>diNameMismatch(it.name, diKnownNameForCode(it.code)));
-    h+=`<div class="card" style="margin-bottom:10px; ${(flags||anyNameMismatch)?'border-color:var(--crimson);':''}">
+    const invNoSuspicious = diInvoiceNoSuspicious(inv.invoiceNo);
+    h+=`<div class="card" style="margin-bottom:10px; ${(flags||anyNameMismatch||invNoSuspicious)?'border-color:var(--crimson);':''}">
+      ${invNoSuspicious?`<div class="status-msg err" style="margin-bottom:6px;">⚠ رقم الفاتورة "${esc(inv.invoiceNo)}" قصير جداً — غالباً هاد الرقم التسلسلي يلي جنب عنوان "رقم الفاتورة" بالفاتورة، مش رقم المستند الحقيقي. اكتب رقم المستند الطويل (~10 أرقام، مثل 2621109928) من الصندوق العلوي جنب التاريخ، وإلا ما رح تتطابق مع سندات التحويل.</div>`:''}
       <div class="row-actions" style="margin-bottom:6px;">
-        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">رقم الفاتورة <input type="text" data-di="${idx}" data-f="invoiceNo" value="${esc(inv.invoiceNo)}" style="width:150px; direction:ltr; text-align:left;" oninput="diEditField(this)"></label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">رقم الفاتورة <input type="text" data-di="${idx}" data-f="invoiceNo" value="${esc(inv.invoiceNo)}" style="width:150px; direction:ltr; text-align:left; ${invNoSuspicious?'border-color:var(--crimson);':''}" oninput="diEditField(this)"></label>
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;">التاريخ <input type="date" data-di="${idx}" data-f="date" value="${esc(inv.date)}" oninput="diEditField(this)"></label>
         <label style="font-size:12px; display:flex; align-items:center; gap:6px; flex:1;">السوق <input type="text" data-di="${idx}" data-f="market" value="${esc(inv.market)}" style="width:100%;" oninput="diEditField(this)"></label>
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;">مستودع <input type="text" data-di="${idx}" data-f="warehouse" value="${esc(inv.warehouse||'')}" style="width:70px; direction:ltr; text-align:left;" oninput="diEditField(this)"></label>
@@ -3525,7 +3532,7 @@ async function diApproveAll(){
   let ok=0, skipped=0;
   const remaining=[];
   for(const inv of DI_READ.invoices){
-    const flags = !inv.invoiceNo || inv.items.some(it=>it.code==null||it.name==null||it.qty==null||it.price==null||it.value==null||diLineMismatch(it));
+    const flags = !inv.invoiceNo || diInvoiceNoSuspicious(inv.invoiceNo) || inv.items.some(it=>it.code==null||it.name==null||it.qty==null||it.price==null||it.value==null||diLineMismatch(it));
     if(flags){ remaining.push(inv); skipped++; continue; }
     const newItems=diInvoiceToItems(inv);
     if(!newItems.length){ remaining.push(inv); skipped++; continue; }
