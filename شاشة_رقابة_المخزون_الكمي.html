@@ -412,7 +412,7 @@ kbd{font-family:ui-monospace,Menlo,monospace;font-size:11px;background:var(--car
       <!-- ===== Sales import ===== -->
       <section class="page" data-page="sales">
         <div class="card">
-          <div class="hd"><div><h2>استيراد المبيعات اليومية من إكسل</h2><p>ارفع ملف المبيعات اليومي، اربط الأعمدة مرة واحدة، راجع المطابقة ثم رحّل الحركة كمبيعات (إخراج) على المستودع.</p></div>
+          <div class="hd"><div><h2>استيراد المبيعات اليومية من إكسل</h2><p>ارفع ملف المبيعات اليومي (إكسل) أو الصقه مباشرة، اربط الأعمدة مرة واحدة، راجع المطابقة ثم رحّل: كمية البيع كمبيعات وكمية الشراء كمشتريات.</p></div>
             <div class="steps"><span class="on" id="st1">1. الملف</span><span id="st2">2. الأعمدة</span><span id="st3">3. المراجعة</span><span id="st4">4. الترحيل</span></div></div>
           <div class="bd" style="gap:14px;display:flex;flex-direction:column">
             <div class="grid g3">
@@ -428,15 +428,18 @@ kbd{font-family:ui-monospace,Menlo,monospace;font-size:11px;background:var(--car
                 <div class="field"><label>الورقة</label><select class="in" id="slSheet"></select></div>
                 <div class="field"><label>صف العناوين</label><input type="number" class="in" id="slHeaderRow" min="1" value="1"></div>
               </div>
-              <div class="grid g5">
-                <div class="field"><label>عمود كود الصنف</label><select class="in" id="mCode"></select></div>
-                <div class="field"><label>عمود اسم الصنف</label><select class="in" id="mName"></select></div>
-                <div class="field"><label>عمود الكمية <span class="req">*</span></label><select class="in" id="mQty"></select></div>
+              <div class="grid g4">
+                <div class="field"><label>عمود رمز المادة</label><select class="in" id="mCode"></select></div>
+                <div class="field"><label>عمود رمز الوحدة (المفتاح الفريد)</label><select class="in" id="mCode2"></select></div>
+                <div class="field"><label>عمود وصف المادة</label><select class="in" id="mName"></select></div>
+                <div class="field"><label>عمود كمية البيع <span class="req">*</span></label><select class="in" id="mQty"></select></div>
+                <div class="field"><label>عمود كمية الشراء (اختياري)</label><select class="in" id="mBuy"></select></div>
                 <div class="field"><label>عمود التاريخ (اختياري)</label><select class="in" id="mDate"></select></div>
                 <div class="field"><label>عمود المستودع (اختياري)</label><select class="in" id="mWh"></select></div>
               </div>
+              <div class="hint" style="margin-top:10px">المطابقة تتم برمز الوحدة أولاً (لأن رمز المادة قد يتكرر لأكثر من وحدة)، ثم برمز المادة إن كان وحيداً، ثم بالوصف. كمية البيع تُرحَّل كمبيعات (إخراج) وكمية الشراء كفاتورة مشتريات (إدخال) على نفس التاريخ والمستودع.</div>
               <div class="row between" style="margin-top:10px">
-                <label class="toggle"><input type="checkbox" id="slAgg" checked>تجميع الكميات لكل صنف (نفس التاريخ والمستودع)</label>
+                <div class="row"><label class="toggle"><input type="checkbox" id="slAgg" checked>تجميع الكميات لكل صنف</label><span id="slBuyWrap" style="display:none"><label class="toggle"><input type="checkbox" id="slBuy" checked>ترحيل كمية الشراء كفاتورة مشتريات</label></span></div>
                 <div class="row"><button class="btn" id="slPreviewBtn">معاينة المطابقة</button></div>
               </div>
             </div>
@@ -727,7 +730,7 @@ kbd{font-family:ui-monospace,Menlo,monospace;font-size:11px;background:var(--car
 /* =========================================================
    رقابة المخزون الكمي — منطق الشاشة
    ========================================================= */
-const APP_VER = '1.1.0';
+const APP_VER = '1.2.0';
 const DB_KEY = 'kinv_ctrl_v1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -1478,82 +1481,101 @@ function slLoad(wb, fileName) {
   slWB = wb; slWB._fileName = fileName || 'لصق'; fillSelect($('#slSheet'), wb.SheetNames.map(n => ({ v: n, l: n }))); $('#slSheet').value = wb.SheetNames[0];
   slParseSheet(true); $('#slMapWrap').style.display = ''; $('#slPreview').innerHTML = ''; slOut = null; slStep(2);
 }
+const SL_GUESS = {
+  mCode: ['رمز المادة', 'كود الصنف', 'الكود', 'كود', 'رقم الصنف', 'رقم المادة', 'code', 'item code', 'sku'],
+  mCode2: ['رمز الوحدة', 'كود الوحدة', 'unit code', 'code2'],
+  mName: ['وصف المادة', 'اسم الصنف', 'الصنف', 'الاسم', 'المادة', 'البيان', 'الوصف', 'name', 'item', 'description', 'product'],
+  mQty: ['كمية البيع', 'الكمية المباعة', 'كمية المبيعات', 'المبيعات', 'الكمية', 'كمية', 'qty', 'quantity', 'sales qty', 'العدد'],
+  mBuy: ['كمية الشراء', 'الكمية المشتراة', 'كمية المشتريات', 'المشتريات', 'purchase qty', 'purchases'],
+  mDate: ['التاريخ', 'تاريخ', 'date', 'يوم'],
+  mWh: ['المستودع', 'مستودع', 'الفرع', 'فرع', 'warehouse', 'branch', 'store', 'المخزن'],
+};
 function slParseSheet(autoHeader = false) {
   const aoa = sheetAOA(slWB, $('#slSheet').value); if (autoHeader) $('#slHeaderRow').value = detectHeaderRow(aoa) + 1;
   const hr = Math.max(0, (+$('#slHeaderRow').value || 1) - 1); slHeaders = (aoa[hr] || []).map(h => String(h).trim()); slRows = aoa.slice(hr + 1).filter(r => r.some(c => String(c).trim() !== ''));
   const saved = S.settings.salesMap || {};
-  const guesses = { mCode: ['رمز المادة', 'كود الصنف', 'الكود', 'كود', 'رقم الصنف', 'رمز الوحدة', 'code', 'item code', 'sku', 'رقم المادة'], mName: ['اسم الصنف', 'الصنف', 'الاسم', 'المادة', 'البيان', 'name', 'item', 'description', 'product'], mQty: ['الكمية', 'كمية', 'الكمية المباعة', 'qty', 'quantity', 'العدد'], mDate: ['التاريخ', 'تاريخ', 'date', 'يوم'], mWh: ['المستودع', 'مستودع', 'الفرع', 'فرع', 'warehouse', 'branch', 'store', 'المخزن'] };
-  for (const [id, keys] of Object.entries(guesses)) { fillSelect($('#' + id), colOpts(slHeaders)); let v = ''; if (saved[id] && slHeaders.includes(saved[id])) v = String(slHeaders.indexOf(saved[id])); else { const g = guessCol(slHeaders, keys); if (g >= 0) v = String(g); } $('#' + id).value = v; }
+  for (const [id, keys] of Object.entries(SL_GUESS)) { fillSelect($('#' + id), colOpts(slHeaders)); let v = ''; if (saved[id] && slHeaders.includes(saved[id])) v = String(slHeaders.indexOf(saved[id])); else if (!(id in saved)) { const g = guessCol(slHeaders, keys); if (g >= 0) v = String(g); } else { const g = guessCol(slHeaders, keys); if (g >= 0) v = String(g); } $('#' + id).value = v; }
+  $('#slBuyWrap').style.display = $('#mBuy').value !== '' ? '' : 'none';
 }
-function matchItem(code, name) {
-  const cc = normCode(code), nn = normName(name);
-  if (cc) { const i = S.items.find(x => normCode(x.code) === cc) || S.items.find(x => x.code2 && normCode(x.code2) === cc) || S.items.find(x => x.barcode && normCode(x.barcode) === cc); if (i) return i; }
-  if (nn) { const a = S.aliases[nn]; if (a && itemById(a)) return itemById(a); const i = S.items.find(x => normName(x.name) === nn); if (i) return i; const j = S.items.find(x => normCode(x.code) === normCode(name) || (x.code2 && normCode(x.code2) === normCode(name))); if (j) return j; }
+/** مطابقة صنف من ملف المبيعات: رمز الوحدة هو المفتاح الفريد، ورمز المادة قد يتكرر لعدة وحدات */
+function matchItem(code, name, code2 = '') {
+  const cc = normCode(code), c2 = normCode(code2), nn = normName(name);
+  if (c2) { const i = S.items.find(x => x.code2 && normCode(x.code2) === c2); if (i) return i; }
+  if (cc) {
+    const cand = S.items.filter(x => normCode(x.code) === cc);
+    if (cand.length === 1 && (!c2 || !cand[0].code2)) return cand[0];           // رمز مادة وحيد ولا يتعارض مع رمز الوحدة
+    if (!c2) { const i = S.items.find(x => x.code2 && normCode(x.code2) === cc) || S.items.find(x => x.barcode && normCode(x.barcode) === cc); if (i) return i; }
+  }
+  if (nn) { const a = S.aliases[nn]; if (a && itemById(a)) return itemById(a); const i = S.items.find(x => normName(x.name) === nn); if (i) return i; if (!cc && !c2) { const j = S.items.find(x => normCode(x.code) === normCode(name) || (x.code2 && normCode(x.code2) === normCode(name))); if (j) return j; } }
   return null;
 }
 function matchWh(text) { const n = normName(text), c = normCode(text); return S.warehouses.find(w => normName(w.name) === n || normCode(w.code) === c) || S.warehouses.find(w => n && normName(w.name).includes(n)) || null; }
+function slCols() { const c = k => { const v = $('#' + k).value; return v === '' ? -1 : +v; }; return { code: c('mCode'), code2: c('mCode2'), name: c('mName'), qty: c('mQty'), buy: c('mBuy'), date: c('mDate'), wh: c('mWh') }; }
 function slPreview() {
-  const c = k => { const v = $('#' + k).value; return v === '' ? -1 : +v; }; const C = { code: c('mCode'), name: c('mName'), qty: c('mQty'), date: c('mDate'), wh: c('mWh') };
-  const host = $('#slPreview'); const errs = [];
-  if (C.qty < 0) errs.push('حدد عمود الكمية'); if (C.code < 0 && C.name < 0) errs.push('حدد عمود كود الصنف أو اسم الصنف على الأقل');
+  const C = slCols(); const host = $('#slPreview'); const errs = [];
+  if (C.qty < 0 && C.buy < 0) errs.push('حدد عمود كمية البيع (أو كمية الشراء على الأقل)'); if (C.code < 0 && C.code2 < 0 && C.name < 0) errs.push('حدد عمود رمز المادة أو رمز الوحدة أو الوصف');
   if (C.date < 0 && !$('#slDate').value) errs.push('حدد تاريخ المبيعات'); if (C.wh < 0 && !$('#slWh').value) errs.push('حدد المستودع');
   if (errs.length) { host.innerHTML = `<div class="hint bad">${errs.map(esc).join(' · ')}</div>`; return; }
-  S.settings.salesMap = { mCode: slHeaders[C.code] || '', mName: slHeaders[C.name] || '', mQty: slHeaders[C.qty] || '', mDate: slHeaders[C.date] || '', mWh: slHeaders[C.wh] || '' }; save();
-  const defDate = $('#slDate').value, defWh = $('#slWh').value, agg = $('#slAgg').checked;
+  const sm = {}; for (const id of Object.keys(SL_GUESS)) sm[id] = slHeaders[C[{ mCode: 'code', mCode2: 'code2', mName: 'name', mQty: 'qty', mBuy: 'buy', mDate: 'date', mWh: 'wh' }[id]]] || ''; S.settings.salesMap = sm; save();
+  const defDate = $('#slDate').value, defWh = $('#slWh').value, agg = $('#slAgg').checked, useBuy = C.buy >= 0 && $('#slBuy').checked;
   const g = (r, i) => i >= 0 ? r[i] : '';
   let out = slRows.map((r, k) => {
-    const code = String(g(r, C.code) ?? '').trim(), name = String(g(r, C.name) ?? '').trim(), qty = num(g(r, C.qty));
+    const code = String(g(r, C.code) ?? '').trim(), code2 = String(g(r, C.code2) ?? '').trim(), name = String(g(r, C.name) ?? '').trim();
+    const qty = C.qty >= 0 ? num(g(r, C.qty)) : 0, buy = useBuy ? num(g(r, C.buy)) : 0;
     const date = C.date >= 0 ? (excelDate(g(r, C.date)) || defDate) : defDate; const whTxt = C.wh >= 0 ? String(g(r, C.wh)).trim() : ''; const wh = C.wh >= 0 && whTxt ? matchWh(whTxt) : whById(defWh);
-    const item = matchItem(code, name);
-    let st = item ? 'ok' : 'nomatch'; if (!date) st = 'nodate'; else if (!wh) st = 'nowh'; else if (!(qty > 0)) st = 'noqty';
-    return { k: k + 1, code, name, qty, date, wh: wh?.id || '', whTxt, itemId: item?.id || '', st };
+    const item = matchItem(code, name, code2);
+    let st = item ? 'ok' : 'nomatch'; if (!date) st = 'nodate'; else if (!wh) st = 'nowh'; else if (!(qty > 0) && !(buy > 0)) st = 'noqty';
+    return { k: k + 1, code, code2, name, qty: round3(Math.max(0, qty)), buy: round3(Math.max(0, buy)), date, wh: wh?.id || '', whTxt, itemId: item?.id || '', st };
   });
-  if (agg) { const m = new Map(); for (const o of out) { if (o.st !== 'ok') { m.set('x' + o.k, o); continue; } const key = `${o.itemId}|${o.date}|${o.wh}`; const e = m.get(key); if (e) { e.qty = round3(e.qty + o.qty); e.n = (e.n || 1) + 1; } else m.set(key, { ...o, n: 1 }); } out = [...m.values()]; }
-  slOut = out; slRenderPreview(); slStep(3);
+  if (agg) { const m = new Map(); for (const o of out) { if (o.st !== 'ok') { m.set('x' + o.k, o); continue; } const key = `${o.itemId}|${o.date}|${o.wh}`; const e = m.get(key); if (e) { e.qty = round3(e.qty + o.qty); e.buy = round3(e.buy + o.buy); e.n = (e.n || 1) + 1; } else m.set(key, { ...o, n: 1 }); } out = [...m.values()]; }
+  slOut = out; slOut._useBuy = useBuy; slRenderPreview(); slStep(3);
 }
 function slRenderPreview() {
-  const host = $('#slPreview'); const out = slOut; const ok = out.filter(o => o.st === 'ok'), bad = out.length - ok.length;
+  const host = $('#slPreview'); const out = slOut; const useBuy = out._useBuy; const ok = out.filter(o => o.st === 'ok'), bad = out.length - ok.length;
   const lab = { ok: '<span class="chip in">مطابق</span>', nomatch: '<span class="chip out">صنف غير معرّف</span>', nodate: '<span class="chip out">تاريخ غير صالح</span>', nowh: '<span class="chip out">مستودع غير معروف</span>', noqty: '<span class="chip">كمية صفر — تخطي</span>' };
-  const itemSel = o => `<select class="in" data-fix="${o.k}" style="min-height:32px;padding:4px 8px"><option value="">— اختر الصنف المقابل —</option>${activeItems().map(i => `<option value="${i.id}">${esc(i.name)} (${esc(i.code)})</option>`).join('')}</select>`;
+  const itemSel = o => `<select class="in" data-fix="${o.k}" style="min-height:32px;padding:4px 8px"><option value="">— اختر الصنف المقابل —</option>${activeItems().map(i => `<option value="${i.id}">${esc(i.name)} (${esc(i.code)}${i.code2 ? '/' + esc(i.code2) : ''})</option>`).join('')}</select>`;
   const dup = S.imports.find(im => im.file === slWB._fileName && out.some(o => o.date === im.date));
+  const tS = round3(ok.reduce((s, o) => s + o.qty, 0)), tB = round3(ok.reduce((s, o) => s + o.buy, 0));
   host.innerHTML = `${dup ? `<div class="hint warn">تنبيه: ملف بنفس الاسم "${esc(dup.file)}" سبق ترحيله بتاريخ ${esc(dup.date)} (${esc(dup.docs.join('، '))}). تأكد من عدم تكرار الترحيل.</div>` : ''}
-    <div class="row between" style="margin:10px 0"><div class="row"><span class="chip in">${ok.length} سطر جاهز</span>${bad ? `<span class="chip out">${bad} سطر يحتاج معالجة</span>` : ''}<span class="chip muted">إجمالي الكمية الجاهزة: ${fmt(round3(ok.reduce((s, o) => s + o.qty, 0)))}</span></div>
-    <div class="row">${out.some(o => o.st === 'nomatch') ? `<button class="btn sm" id="slCreateMissing">إنشاء الأصناف غير المعرّفة تلقائياً</button>` : ''}<button class="btn primary" id="slPost" ${ok.length ? '' : 'disabled'}>ترحيل ${ok.length} سطر كمبيعات</button></div></div>
-    <div class="tbl-wrap" style="max-height:48vh"><table class="tbl"><thead><tr><th>#</th><th>الحالة</th><th>الكود بالملف</th><th>الاسم بالملف</th><th>الصنف المطابق</th><th>التاريخ</th><th>المستودع</th><th class="num">الكمية</th></tr></thead><tbody>${out.map(o => `<tr><td class="muted">${o.k}${o.n > 1 ? `<span class="sub">${o.n} أسطر</span>` : ''}</td><td>${lab[o.st]}</td><td class="code">${esc(o.code)}</td><td>${esc(o.name)}</td><td>${o.itemId ? `<b>${esc(itemLabel(o.itemId))}</b>` : o.st === 'nomatch' ? itemSel(o) : ''}</td><td class="mono">${esc(o.date)}</td><td>${o.wh ? esc(whName(o.wh)) : `<span class="neg">${esc(o.whTxt)}</span>`}</td><td class="num">${fmt(o.qty)}</td></tr>`).join('')}</tbody></table></div>`;
-  host.querySelectorAll('[data-fix]').forEach(sel => sel.onchange = () => { const o = out.find(x => String(x.k) === sel.dataset.fix); if (!o || !sel.value) return; o.itemId = sel.value; o.st = o.qty > 0 ? 'ok' : 'noqty'; if (o.name) S.aliases[normName(o.name)] = sel.value; save(); slRenderPreview(); toast('تم ربط الاسم بالصنف وسيُستخدم تلقائياً في المرات القادمة', 'ok'); });
+    <div class="row between" style="margin:10px 0"><div class="row"><span class="chip in">${ok.length} سطر جاهز</span>${bad ? `<span class="chip out">${bad} سطر يحتاج معالجة</span>` : ''}<span class="chip out">إجمالي البيع: ${fmt(tS)}</span>${useBuy ? `<span class="chip in">إجمالي الشراء: ${fmt(tB)}</span>` : ''}</div>
+    <div class="row">${out.some(o => o.st === 'nomatch') ? `<button class="btn sm" id="slCreateMissing">إنشاء الأصناف غير المعرّفة تلقائياً</button>` : ''}<button class="btn primary" id="slPost" ${ok.length ? '' : 'disabled'}>ترحيل ${ok.length} سطر${useBuy && tB ? ' (مبيعات + مشتريات)' : ' كمبيعات'}</button></div></div>
+    <div class="tbl-wrap" style="max-height:48vh"><table class="tbl"><thead><tr><th>#</th><th>الحالة</th><th>رمز المادة</th><th>رمز الوحدة</th><th>الوصف بالملف</th><th>الصنف المطابق</th><th>التاريخ</th><th>المستودع</th><th class="num cout">كمية البيع</th>${useBuy ? '<th class="num cin">كمية الشراء</th>' : ''}</tr></thead><tbody>${out.map(o => `<tr><td class="muted">${o.k}${o.n > 1 ? `<span class="sub">${o.n} أسطر</span>` : ''}</td><td>${lab[o.st]}</td><td class="code">${esc(o.code)}</td><td class="code">${esc(o.code2)}</td><td>${esc(o.name)}</td><td>${o.itemId ? `<b>${esc(itemLabel(o.itemId))}</b><span class="sub mono">${esc(itemById(o.itemId).code)}${itemById(o.itemId).code2 ? ' / ' + esc(itemById(o.itemId).code2) : ''}</span>` : o.st === 'nomatch' ? itemSel(o) : ''}</td><td class="mono">${esc(o.date)}</td><td>${o.wh ? esc(whName(o.wh)) : `<span class="neg">${esc(o.whTxt)}</span>`}</td><td class="num cout">${o.qty ? fmt(o.qty) : '<span class="muted">0</span>'}</td>${useBuy ? `<td class="num cin">${o.buy ? fmt(o.buy) : '<span class="muted">0</span>'}</td>` : ''}</tr>`).join('')}</tbody></table></div>`;
+  host.querySelectorAll('[data-fix]').forEach(sel => sel.onchange = () => { const o = out.find(x => String(x.k) === sel.dataset.fix); if (!o || !sel.value) return; o.itemId = sel.value; o.st = (o.qty > 0 || o.buy > 0) ? 'ok' : 'noqty'; if (o.code2 && !itemById(sel.value).code2) { itemById(sel.value).code2 = o.code2; } else if (o.name) S.aliases[normName(o.name)] = sel.value; save(); slRenderPreview(); toast('تم ربط السطر بالصنف وسيُطابَق تلقائياً في المرات القادمة', 'ok'); });
   const cm = host.querySelector('#slCreateMissing'); if (cm) cm.onclick = () => {
-    const miss = out.filter(o => o.st === 'nomatch' && (o.name || o.code)); if (!confirm(`سيتم إنشاء ${miss.length} صنف جديد بالأسماء الواردة في الملف (الوحدة: حبة، النوع: منتج جاهز). متابعة؟`)) return;
+    const miss = out.filter(o => o.st === 'nomatch' && (o.name || o.code || o.code2)); const units = {}; for (const i of S.items) units[i.unit] = (units[i.unit] || 0) + 1; const defUnit = Object.entries(units).sort((a, b) => b[1] - a[1])[0]?.[0] || 'kg';
+    if (!confirm(`سيتم إنشاء ${miss.length} صنف جديد بالرموز والأوصاف الواردة في الملف (الوحدة: ${defUnit}، النوع: مادة خام). متابعة؟`)) return;
     let nn = +suggestItemCode();
-    for (const o of miss) { let it = matchItem(o.code, o.name); if (!it) { const code = o.code && !S.items.some(i => normCode(i.code) === normCode(o.code)) ? o.code : String(nn++).padStart(4, '0'); it = { id: uid(), code, name: o.name || ('صنف ' + code), unit: 'حبة', type: 'finished', cat: '', min: 0, barcode: '', active: true, createdAt: new Date().toISOString() }; S.items.push(it); } o.itemId = it.id; o.st = o.qty > 0 ? 'ok' : 'noqty'; }
+    for (const o of miss) { let it = matchItem(o.code, o.name, o.code2); if (!it) { let code = o.code || String(nn++).padStart(4, '0'); if (S.items.some(i => normCode(i.code) === normCode(code))) code = o.code2 ? `${o.code}/${o.code2}` : String(nn++).padStart(4, '0'); it = { id: uid(), code, code2: o.code2 || '', name: o.name || ('صنف ' + code), unit: defUnit, type: 'raw', cat: '', min: 0, barcode: '', active: true, createdAt: new Date().toISOString() }; S.items.push(it); } o.itemId = it.id; o.st = (o.qty > 0 || o.buy > 0) ? 'ok' : 'noqty'; }
     save(); refreshLookups(); slRenderPreview(); toast('تم إنشاء الأصناف', 'ok');
   };
   const pb = host.querySelector('#slPost'); if (pb) pb.onclick = slPost;
 }
 function slPost() {
   const ok = (slOut || []).filter(o => o.st === 'ok'); if (!ok.length) return;
-  // تجميع في سندات حسب (التاريخ، المستودع)
-  const groups = new Map(); for (const o of ok) { const key = o.date + '|' + o.wh; if (!groups.has(key)) groups.set(key, { date: o.date, wh: o.wh, lines: new Map() }); const g = groups.get(key); g.lines.set(o.itemId, round3((g.lines.get(o.itemId) || 0) + o.qty)); }
+  // تجميع في سندات حسب (التاريخ، المستودع): مشتريات (إدخال) ثم مبيعات (إخراج)
+  const groups = new Map(); for (const o of ok) { const key = o.date + '|' + o.wh; if (!groups.has(key)) groups.set(key, { date: o.date, wh: o.wh, s: new Map(), b: new Map() }); const g = groups.get(key); if (o.qty > 0) g.s.set(o.itemId, round3((g.s.get(o.itemId) || 0) + o.qty)); if (o.buy > 0) g.b.set(o.itemId, round3((g.b.get(o.itemId) || 0) + o.buy)); }
   if (!S.settings.allowNegative) {
-    const M = balanceMatrix(); const errs = []; const need = new Map();
-    for (const g of groups.values()) for (const [id, q] of g.lines) { const k = id + '|' + g.wh; need.set(k, (need.get(k) || 0) + q); }
-    for (const [k, q] of need) { const [id, wh] = k.split('|'); const b = balanceOf(M, id, wh); if (q > b + 1e-9) errs.push(`${itemLabel(id)} في ${whName(wh)}: المطلوب ${fmt(q)} والمتاح ${fmt(b)}`); }
-    if (errs.length) { $('#slPreview').insertAdjacentHTML('afterbegin', `<div class="hint bad"><b>الرصيد غير كافٍ لترحيل المبيعات (يمكن السماح بالرصيد السالب من الإعدادات):</b><ul style="margin:4px 0 0;padding-inline-start:18px">${errs.slice(0, 15).map(e => `<li>${esc(e)}</li>`).join('')}${errs.length > 15 ? `<li>… و${errs.length - 15} أخرى</li>` : ''}</ul></div>`); $('#slPreview').scrollIntoView({ block: 'start' }); return; }
+    const M = balanceMatrix(); const errs = []; const net = new Map();
+    for (const g of groups.values()) { for (const [id, q] of g.s) { const k = id + '|' + g.wh; net.set(k, (net.get(k) || 0) - q); } for (const [id, q] of g.b) { const k = id + '|' + g.wh; net.set(k, (net.get(k) || 0) + q); } }
+    for (const [k, d] of net) { const [id, wh] = k.split('|'); const b = balanceOf(M, id, wh); if (b + d < -1e-9) errs.push(`${itemLabel(id)} في ${whName(wh)}: الرصيد ${fmt(b)} والصافي بعد الترحيل ${fmt(round3(b + d))}`); }
+    if (errs.length) { $('#slPreview').insertAdjacentHTML('afterbegin', `<div class="hint bad"><b>الرصيد غير كافٍ لترحيل المبيعات (يمكن السماح بالرصيد السالب من الإعدادات، أو أدخل الأرصدة الافتتاحية أولاً):</b><ul style="margin:4px 0 0;padding-inline-start:18px">${errs.slice(0, 15).map(e => `<li>${esc(e)}</li>`).join('')}${errs.length > 15 ? `<li>… و${errs.length - 15} أخرى</li>` : ''}</ul></div>`); $('#slPreview').scrollIntoView({ block: 'start' }); return; }
   }
-  const ref = $('#slRef').value.trim() || `استيراد مبيعات — ${slWB._fileName}`; const docs = [];
+  const ref = $('#slRef').value.trim() || `استيراد — ${slWB._fileName}`; const docs = []; let tS = 0, tB = 0;
   for (const g of [...groups.values()].sort((a, b) => a.date < b.date ? -1 : 1)) {
-    const doc = { id: uid(), no: nextNo('sales'), type: 'sales', date: g.date, wh: g.wh, party: '', ref, notes: `ملف: ${slWB._fileName}`, lines: [...g.lines].map(([itemId, qty]) => ({ itemId, qty, note: '' })), createdAt: new Date().toISOString(), source: 'import' }; commitNo('sales'); S.docs.push(doc); docs.push(doc.no);
+    if (g.b.size) { const doc = { id: uid(), no: nextNo('purchase'), type: 'purchase', date: g.date, wh: g.wh, party: '', ref, notes: `ملف: ${slWB._fileName} (كمية الشراء)`, lines: [...g.b].map(([itemId, qty]) => ({ itemId, qty, note: '' })), createdAt: new Date().toISOString(), source: 'import' }; commitNo('purchase'); S.docs.push(doc); docs.push(doc.no); for (const q of g.b.values()) tB += q; }
+    if (g.s.size) { const doc = { id: uid(), no: nextNo('sales'), type: 'sales', date: g.date, wh: g.wh, party: '', ref, notes: `ملف: ${slWB._fileName} (كمية البيع)`, lines: [...g.s].map(([itemId, qty]) => ({ itemId, qty, note: '' })), createdAt: new Date(Date.now() + 1).toISOString(), source: 'import' }; commitNo('sales'); S.docs.push(doc); docs.push(doc.no); for (const q of g.s.values()) tS += q; }
   }
-  S.imports.unshift({ id: uid(), at: new Date().toISOString(), file: slWB._fileName, date: ok[0].date, rows: ok.length, qty: round3(ok.reduce((s, o) => s + o.qty, 0)), docs });
-  save(); slOut = null; slWB = null; $('#slPreview').innerHTML = `<div class="hint good">تم ترحيل المبيعات بنجاح في ${docs.length} سند: ${docs.map(esc).join('، ')}</div>`; $('#slMapWrap').style.display = 'none'; $('#slFile').value = ''; $('#slPaste').value = ''; slStep(4);
-  refreshLookups(); renderSalesLog(); toast('تم ترحيل المبيعات', 'ok');
+  S.imports.unshift({ id: uid(), at: new Date().toISOString(), file: slWB._fileName, date: ok[0].date, rows: ok.length, qty: round3(tS), buy: round3(tB), docs });
+  save(); slOut = null; slWB = null; $('#slPreview').innerHTML = `<div class="hint good">تم الترحيل بنجاح في ${docs.length} سند: ${docs.map(esc).join('، ')} — مبيعات ${fmt(round3(tS))}${tB ? `، مشتريات ${fmt(round3(tB))}` : ''}</div>`; $('#slMapWrap').style.display = 'none'; $('#slFile').value = ''; $('#slPaste').value = ''; slStep(4);
+  refreshLookups(); renderSalesLog(); toast('تم ترحيل الملف', 'ok');
 }
 function renderSales() { if (!$('#slDate').value) $('#slDate').value = todayISO(); if (!$('#slWh').value) $('#slWh').value = S.settings.defaultWh || activeWhs()[0]?.id || ''; renderSalesLog(); }
 function renderSalesLog() {
   const host = $('#slLog'); if (!S.imports.length) { host.innerHTML = emptyHTML('لم يتم استيراد أي ملف بعد'); return; }
-  host.innerHTML = `<table class="tbl"><thead><tr><th>وقت الترحيل</th><th>الملف</th><th>تاريخ المبيعات</th><th class="num">الأسطر</th><th class="num">الكمية</th><th>السندات</th></tr></thead><tbody>${S.imports.map(im => `<tr><td class="small">${new Date(im.at).toLocaleString('ar-JO')}</td><td>${esc(im.file)}</td><td class="mono">${esc(im.date)}</td><td class="num">${im.rows}</td><td class="num">${fmt(im.qty)}</td><td>${im.docs.map(n => { const d = S.docs.find(x => x.no === n); return d ? `<a href="#" data-view="${d.id}" class="mono">${esc(n)}</a>` : `<span class="mono muted" title="محذوف">${esc(n)}</span>`; }).join('، ')}</td></tr>`).join('')}</tbody></table>`;
+  host.innerHTML = `<table class="tbl"><thead><tr><th>وقت الترحيل</th><th>الملف</th><th>تاريخ الحركة</th><th class="num">الأسطر</th><th class="num cout">كمية البيع</th><th class="num cin">كمية الشراء</th><th>السندات</th></tr></thead><tbody>${S.imports.map(im => `<tr><td class="small">${new Date(im.at).toLocaleString('ar-JO')}</td><td>${esc(im.file)}</td><td class="mono">${esc(im.date)}</td><td class="num">${im.rows}</td><td class="num">${fmt(im.qty)}</td><td class="num">${im.buy ? fmt(im.buy) : '<span class="muted">—</span>'}</td><td>${im.docs.map(n => { const d = S.docs.find(x => x.no === n); return d ? `<a href="#" data-view="${d.id}" class="mono">${esc(n)}</a>` : `<span class="mono muted" title="محذوف">${esc(n)}</span>`; }).join('، ')}</td></tr>`).join('')}</tbody></table>`;
   host.querySelectorAll('[data-view]').forEach(a => a.onclick = e => { e.preventDefault(); viewDoc(a.dataset.view); });
 }
-function salesTemplate() { exportXlsx('قالب_المبيعات_اليومية.xlsx', [{ name: 'المبيعات', aoa: [['التاريخ', 'كود الصنف', 'اسم الصنف', 'الكمية', 'المستودع'], [todayISO(), '2001', 'كعك سمسم 500غ', 12, activeWhs()[0]?.name || 'المستودع الرئيسي']] }]); }
+function salesTemplate() { exportXlsx('قالب_المبيعات_اليومية.xlsx', [{ name: 'المبيعات', aoa: [['رمز المادة', 'رمز الوحدة', 'وصف المادة', 'نسبة الضريبة', 'كمية الشراء', 'كمية البيع', 'الكلفة'], ['59', '92', 'Angus Brisket Prime 2011-6215', 0, 0, 38.342, 8.166], ['67', '101', 'Flank Steak Angus Longfed 6218-2014', 0, 94.9, 53.402, 13.128]] }]); }
 
 /* =========================================================
    التقارير
@@ -1780,7 +1802,7 @@ function init() {
   // sales
   bindFile('slDrop', 'slFile', async f => { try { slLoad(await readWorkbook(f), f.name); } catch (x) { toast('تعذر قراءة الملف: ' + x.message, 'bad'); } });
   $('#slPasteBtn').onclick = () => { const t = $('#slPaste').value.trim(); if (!t) return; slLoad(readPasted(t), 'لصق ' + todayISO()); };
-  $('#slSheet').onchange = () => slParseSheet(true); $('#slHeaderRow').onchange = () => slParseSheet(false); $('#slPreviewBtn').onclick = slPreview;
+  $('#slSheet').onchange = () => slParseSheet(true); $('#mBuy').onchange = () => { $('#slBuyWrap').style.display = $('#mBuy').value !== '' ? '' : 'none'; }; $('#slHeaderRow').onchange = () => slParseSheet(false); $('#slPreviewBtn').onclick = slPreview;
   $('#slDrop').insertAdjacentHTML('afterend', `<div class="row small muted" style="margin-top:-6px"><span>ليس لديك ملف بالتنسيق المناسب؟</span><a href="#" id="slTemplate">تنزيل قالب المبيعات</a></div>`); $('#slTemplate').onclick = e => { e.preventDefault(); salesTemplate(); };
   // reports
   $$('#repTabs button').forEach(b => b.onclick = () => showRep(b.dataset.rep));
