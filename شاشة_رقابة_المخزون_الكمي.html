@@ -453,11 +453,12 @@ kbd{font-family:ui-monospace,Menlo,monospace;font-size:11px;background:var(--car
       <section class="page" data-page="items">
         <div class="card">
           <div class="filters">
-            <div class="field w2"><label>بحث</label><div class="search"><svg><use href="#i-search"/></svg><input class="in" id="ifQ" placeholder="كود أو اسم الصنف…"></div></div>
+            <div class="field w2"><label>بحث</label><div class="search"><svg><use href="#i-search"/></svg><input class="in" id="ifQ" placeholder="رمز المادة أو رمز الوحدة أو الاسم…"></div></div>
             <div class="field sm"><label>النوع</label><select class="in" id="ifType"><option value="">الكل</option></select></div>
             <div class="field sm"><label>التصنيف</label><select class="in" id="ifCat"><option value="">الكل</option></select></div>
             <label class="toggle" style="padding-bottom:9px"><input type="checkbox" id="ifInactive">إظهار الموقوفة</label>
             <div class="row" style="margin-inline-start:auto">
+              <button class="btn" id="itemsCatalog" title="إضافة أصناف القائمة المعتمدة الناقصة"><svg><use href="#i-box"/></svg>القائمة المعتمدة</button>
               <button class="btn" id="itemsTemplate"><svg><use href="#i-dl"/></svg>قالب إكسل</button>
               <button class="btn" id="itemsImport"><svg><use href="#i-up"/></svg>استيراد</button>
               <button class="btn" id="itemsExport"><svg><use href="#i-xls"/></svg>تصدير</button>
@@ -644,7 +645,8 @@ kbd{font-family:ui-monospace,Menlo,monospace;font-size:11px;background:var(--car
     <div class="mh"><div><h2 id="imTitle">صنف جديد</h2></div><button class="x" id="imClose">✕</button></div>
     <div class="mb">
       <div class="grid g2">
-        <div class="field"><label>كود الصنف <span class="req">*</span></label><input class="in mono" id="imCode"></div>
+        <div class="field"><label>رمز المادة <span class="req">*</span></label><input class="in mono" id="imCode"></div>
+        <div class="field"><label>رمز الوحدة</label><input class="in mono" id="imCode2" placeholder="الرمز الثاني في نظام الشركة"></div>
         <div class="field"><label>الوحدة <span class="req">*</span></label><input class="in" id="imUnit" list="unitsList" placeholder="كغم، كرتون، حبة…"><datalist id="unitsList"></datalist></div>
         <div class="field" style="grid-column:span 2"><label>اسم الصنف <span class="req">*</span></label><input class="in" id="imName"></div>
         <div class="field"><label>نوع الصنف</label><select class="in" id="imType"></select></div>
@@ -695,13 +697,14 @@ kbd{font-family:ui-monospace,Menlo,monospace;font-size:11px;background:var(--car
 <!-- ===== Items import modal ===== -->
 <div class="ov" id="impModal">
   <div class="modal">
-    <div class="mh"><div><h2>استيراد الأصناف من إكسل</h2><p>الأعمدة المتوقعة: الكود، الاسم، الوحدة، النوع، التصنيف، الحد الأدنى، الباركود (يتم التعرف عليها من العناوين تلقائياً)</p></div><button class="x" id="ipClose">✕</button></div>
+    <div class="mh"><div><h2>استيراد الأصناف من إكسل</h2><p>الأعمدة المتوقعة: رمز المادة، رمز الوحدة، الوصف/الاسم، الوحدة، النوع، التصنيف، الحد الأدنى، الباركود (يتم التعرف عليها من العناوين تلقائياً)</p></div><button class="x" id="ipClose">✕</button></div>
     <div class="mb">
       <div class="file-drop" id="ipDrop"><b>اسحب ملف الأصناف هنا أو انقر للاختيار</b>Excel أو CSV<input type="file" id="ipFile" accept=".xlsx,.xls,.csv,.txt" hidden></div>
       <details><summary class="small muted" style="cursor:pointer">أو لصق الجدول مباشرة (مع صف العناوين)</summary>
         <div class="row" style="margin-top:8px;align-items:flex-start"><textarea class="in" id="ipPaste" style="flex:1"></textarea><button class="btn" id="ipPasteBtn">قراءة</button></div></details>
       <div id="ipMap" style="display:none" class="grid g4">
-        <div class="field"><label>الكود</label><select class="in" id="ipCode"></select></div>
+        <div class="field"><label>رمز المادة</label><select class="in" id="ipCode"></select></div>
+        <div class="field"><label>رمز الوحدة</label><select class="in" id="ipCode2"></select></div>
         <div class="field"><label>الاسم <span class="req">*</span></label><select class="in" id="ipName"></select></div>
         <div class="field"><label>الوحدة</label><select class="in" id="ipUnit"></select></div>
         <div class="field"><label>النوع</label><select class="in" id="ipType"></select></div>
@@ -724,7 +727,7 @@ kbd{font-family:ui-monospace,Menlo,monospace;font-size:11px;background:var(--car
 /* =========================================================
    رقابة المخزون الكمي — منطق الشاشة
    ========================================================= */
-const APP_VER = '1.0.1';
+const APP_VER = '1.1.0';
 const DB_KEY = 'kinv_ctrl_v1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -759,6 +762,138 @@ const DT = {
 const SIDE_LABEL = { opening: 'رصيد افتتاحي', purchase: 'مشتريات', receipt: 'إدخال', mfgIn: 'تصنيع (إنتاج)', transferIn: 'تحويل وارد', sales: 'مبيعات', issue: 'إخراج', mfgOut: 'تصنيع (استهلاك)', transferOut: 'تحويل صادر' };
 const ITEM_TYPES = { raw: 'مادة خام', finished: 'منتج جاهز', semi: 'نصف مصنّع', packaging: 'مواد تعبئة', trade: 'بضاعة تجارية', other: 'أخرى' };
 
+/* ---------- قائمة الأصناف المعتمدة (تُحمَّل عند أول تشغيل) ----------
+   [رمز المادة، رمز الوحدة، الوصف، الوحدة، التصنيف، النوع، نشط] */
+const CATALOG = [
+["12635", "5048", "Russian Striploin Angus Beef Prime - 17268", "kg", "لحم بقري روسي", "raw", 1],
+["12632", "5045", "Russian Rib Eye Angus Beef Prime - 34000", "kg", "لحم بقري روسي", "raw", 1],
+["12634", "5047", "Russian Rib Eye Angus Beef Signature - 33925", "kg", "لحم بقري روسي", "raw", 1],
+["12629", "5043", "Russian Tenderloin Angus Beef Choice - 21957", "kg", "لحم بقري روسي", "raw", 1],
+["12637", "5051", "Russian Striploin Angus Beef Signature - 32874", "kg", "لحم بقري روسي", "raw", 1],
+["12636", "5049", "Russian Striploin Angus Beef Choice - 23483", "kg", "لحم بقري روسي", "raw", 1],
+["13439", "5059", "Russian Chuck Roll Prime 23452", "kg", "لحم بقري روسي", "raw", 1],
+["12983", "5057", "Russian Flank Steak 23180", "kg", "لحم بقري روسي", "raw", 1],
+["12639", "5053", "Russian Chuck Roll Angus Beef Choice - 23487", "kg", "لحم بقري روسي", "raw", 1],
+["12628", "5041", "Russian Tenderloin Angus Beef Prime - 23451", "kg", "لحم بقري روسي", "raw", 1],
+["13438", "5058", "Russian Flap Meat Choice 23606", "kg", "لحم بقري روسي", "raw", 1],
+["13498", "5038", "Russian Rib Eye Beef Lip Off Prime - 21971", "kg", "لحم بقري روسي", "raw", 1],
+["13440", "5039", "Russian Tenderloin Chain On Prime - 23395", "kg", "لحم بقري روسي", "raw", 1],
+["12627", "5040", "Russian Tenderloin Angus Beef Signature - 33157", "kg", "لحم بقري روسي", "raw", 1],
+["12630", "5042", "Russian Tenderloin Angus Beef - 24652", "kg", "لحم بقري روسي", "raw", 1],
+["12633", "5046", "Russian Rib Eye Angus Beef Lip On Prime - 26802", "kg", "لحم بقري روسي", "raw", 1],
+["12638", "5052", "Russian Picania Angus Beef Prime - 33949", "kg", "لحم بقري روسي", "raw", 1],
+["13411", "2034", "Omaha Ribeye prime Lip on 523212", "kg", "لحم بقري أمريكي", "raw", 1],
+["9999", "1150", "Tomahawk Angus Long Fed Ribs Prepared 266723", "kg", "لحم بقري أمريكي", "raw", 1],
+["13416", "2039", "Omaha Striploin CAB USDA 124280", "kg", "لحم بقري أمريكي", "raw", 1],
+["13412", "2035", "Omaha Ribeye Lip on 123212", "kg", "لحم بقري أمريكي", "raw", 1],
+["13415", "2038", "Omaha Striploin Prime USDA 524280", "kg", "لحم بقري أمريكي", "raw", 1],
+["13413", "2036", "Omaha Tenderloin Bonless CAB 122289", "kg", "لحم بقري أمريكي", "raw", 1],
+["84", "138", "USDA Prime Porterhouse Steak", "kg", "لحم بقري أمريكي", "raw", 1],
+["2379", "2000", "USDA Prime Beef Tenderloin Whole", "kg", "لحم بقري أمريكي", "raw", 1],
+["2380", "2002", "USDA Prime Beef Rib Eye", "kg", "لحم بقري أمريكي", "raw", 1],
+["2381", "2003", "USDA Prime Beef Striploin", "kg", "لحم بقري أمريكي", "raw", 1],
+["13414", "2037", "Omaha Tenderloin Prime 522289", "kg", "لحم بقري أمريكي", "raw", 1],
+["728", "1015", "Frozen CAB Rib Eye", "kg", "لحم بقري أمريكي", "raw", 1],
+["2697", "1037", "US Beef Tenderloin Steak Portion - Choice", "kg", "لحم بقري أمريكي", "raw", 1],
+["86", "140", "Corn Fed US CAB Chuck Roll Roast", "kg", "لحم بقري أمريكي", "raw", 1],
+["11990", "484", "Grain Fed Dutch Veal Top Side", "kg", "عجل هولندي", "raw", 1],
+["11988", "177", "Dutch Veal Tenderloin", "kg", "عجل هولندي", "raw", 1],
+["11992", "163", "Dutch Veal Striploin", "kg", "عجل هولندي", "raw", 1],
+["505", "175", "Milk Fed Dutch Veal Pistola", "kg", "عجل هولندي", "raw", 1],
+["11991", "169", "Dutch Veal Osso Bocco", "kg", "عجل هولندي", "raw", 1],
+["4733", "903", "Dutch Rose Veal loin 4R Frozen", "kg", "عجل هولندي", "raw", 1],
+["11963", "161", "Milk Fed Dutch Veal Pistola", "kg", "عجل هولندي", "raw", 1],
+["11989", "162", "Milk Fed Dutch Veal Pistola", "kg", "عجل هولندي", "raw", 1],
+["59", "92", "Angus Brisket Prime 2011-6215", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["63", "96*", "Days G.F Aust Angus Top Sirloin", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 0],
+["64", "97", "250 Days Aust Angus Porterhouse", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["854", "181", "Rib Eye Angus Long Fed 6704-6211", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["12579", "419", "Aust .Outside Flat Long Fed 262005", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["784", "87", "Angus Bolar Blade Long Fed 6214-2010", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["709", "89", "Angus Ribs Prepared Long Fed -Prime Rib 6717", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["855", "182", "Angus Prime Tenderloin Longfed 6680-6210", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["853", "180", "Striploin Angus Prime Longfed 6209", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["293", "109", "Angus Topside Long Fed 266202-2003", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["608", "105", "6772 Days Grain Fed Aust Short Ribs", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["785", "86", "Days GF Aust Tritip", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["9929", "104", "Angus Pecania- Rump Cap Longfed 6488-2018", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["1242", "48", "Flap Meat Angus Long Fed 6216-6774-2012", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["67", "101", "Flank Steak Angus Longfed 6218-2014", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["12621", "1363", "Eye Round Long Fed - 2004", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["10021", "1056", "Aust Grass Fed Beef Rump Cap", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["888", "49", "Angus Inside Skirt Longfed 6217-2013-6779", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["291", "102", "150 D.G.F Angus Tenderloin", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["12620", "1362", "Beef D Rump Full Tritip - 6639", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["1823", "1911", "Aust Grass Fed Oyster Blade", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["9927", "248", "Oyster Blade Longfed 6213-6734-2009", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["12294", "5012", "KILCOY CUBE ROLL LIP ON MB2+ GF ANGUS 224307", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["9903", "57", "Premium N.Z Beef Strips", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["9901", "68", "Premium N.Z Beef Chuck Roll", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["9922", "82", "Premium N.Z Beef Short Ribs", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["9918", "84", "Premium N.Z Beef Tenderloin", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["9919", "85", "N.Z Beef Tenderloin", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["710", "88", "6252-266400-2015 Angus Chuck Roll", "kg", "لحم بقري أسترالي / نيوزلندي", "raw", 1],
+["859", "610", "Wagyu Striploin M.S5 6857-6224", "kg", "واغيو MS5", "raw", 1],
+["860", "611", "Wagyu Ribeye Red M.S5 3646-6238", "kg", "واغيو MS5", "raw", 1],
+["861", "612", "Wagyu Tenderloin Red M.S5 6878-6225", "kg", "واغيو MS5", "raw", 1],
+["9954", "1264", "Purebred Wagyu Beef Rost Biff", "kg", "واغيو MS5", "raw", 1],
+["9949", "1209", "Purebred Wagyu Beef D Rump", "kg", "واغيو MS5", "raw", 1],
+["768", "121", "M.S 7 Wagyu Brisket", "kg", "واغيو MS7", "raw", 1],
+["9946", "1206", "Flank Wagyu Steak M.S7 5984", "kg", "واغيو MS7", "raw", 1],
+["68", "110", "Wagyu Striploin M.S7 6861-6235", "kg", "واغيو MS7", "raw", 1],
+["9942", "118", "Topside Wagyu Silver M.S.7 6220", "kg", "واغيو MS7", "raw", 1],
+["9959", "1269", "Flap Wagyu Steak M.S.7 5993", "kg", "واغيو MS7", "raw", 1],
+["69", "111", "Rib Eye Wagyu M.S.7 3647-6239", "kg", "واغيو MS7", "raw", 1],
+["767", "120", "Wagyu Tenderloin M.S.7 6882-6226", "kg", "واغيو MS7", "raw", 1],
+["9947", "1207", "MBS 7 Wagyu Cheek Meat", "kg", "واغيو MS7", "raw", 1],
+["9944", "115", "Marble Score 7 Wgyu Beef Minced", "kg", "واغيو MS7", "raw", 1],
+["9941", "117", "Marble Score 7 Wgyu Beef Rump", "kg", "واغيو MS7", "raw", 1],
+["9952", "1262", "Wagyu P.Tender M.S7- Beef Shoulder 6943-7056", "kg", "واغيو MS7", "raw", 1],
+["9958", "1268", "D Rump Wagyu M.S.7 555", "kg", "واغيو MS7", "raw", 1],
+["856", "600", "M.S 9+ Kiwami Wagyu Striploin 6237-6234", "kg", "واغيو MS9+", "raw", 1],
+["10006", "605", "Kiwami Wagyu Rib Eye M.S+9 3491-6241", "kg", "واغيو MS9+", "raw", 1],
+["857", "601", "M.S 9+ Kiwami Wagyu Tenderloin 6234", "kg", "واغيو MS9+", "raw", 1],
+["9950", "1260", "MBS 9 + Wagyu Beef Rump Roast", "kg", "واغيو MS9+", "raw", 1],
+["10010", "705", "M.S 9+ Kiwami Wagyu Rib Eye", "kg", "واغيو MS9+", "raw", 1],
+["10018", "1051", "African Beef D Rump", "kg", "لحم بقري متنوع ومنتجات", "raw", 1],
+["9994", "617", "African Beef Tenderloin", "kg", "لحم بقري متنوع ومنتجات", "raw", 1],
+["12151", "622", "African Beef Striploin", "kg", "لحم بقري متنوع ومنتجات", "raw", 1],
+["705", "107", "Brazilian Beef Striploin", "kg", "لحم بقري متنوع ومنتجات", "raw", 1],
+["743", "108", "Brazilian Chuck Beef", "kg", "لحم بقري متنوع ومنتجات", "raw", 1],
+["704", "106", "Brazilian Beef Tenderloin", "kg", "لحم بقري متنوع ومنتجات", "raw", 1],
+["12893", "11012", "Barazilan Brisket Frozen", "kg", "لحم بقري متنوع ومنتجات", "raw", 1],
+["1379", "1200", "Brazilian Rump", "kg", "لحم بقري متنوع ومنتجات", "raw", 1],
+["288", "25", "Local Beef", "kg", "لحم بقري متنوع ومنتجات", "raw", 1],
+["12391", "2202", "Wagyu Beef Fat Frozen -Kaylani", "kg", "لحم بقري متنوع ومنتجات", "raw", 1],
+["9915", "155", "Uruguayan Angus Fat", "kg", "لحم بقري متنوع ومنتجات", "raw", 1],
+["8805", "66", "Australian Beef Minced-Rest", "kg", "لحم بقري متنوع ومنتجات", "raw", 1],
+["13560", "9112", "Sausage Production", "kg", "لحم بقري متنوع ومنتجات", "finished", 1],
+["229", "364", "Beef Ox Tail", "kg", "لحم بقري متنوع ومنتجات", "raw", 1],
+["5365", "1151", "Beef Marinated Item", "kg", "لحم بقري متنوع ومنتجات", "finished", 1],
+["221", "346", "Smoked Beef Brisket", "kg", "لحم بقري متنوع ومنتجات", "finished", 1],
+["445", "369", "Beef Liver", "kg", "لحم بقري متنوع ومنتجات", "raw", 1],
+["8808", "904", "Bone marrow", "kg", "لحم بقري متنوع ومنتجات", "raw", 1],
+["12697", "905", "Femur Bone Australlian Grain Fed", "kg", "لحم بقري متنوع ومنتجات", "raw", 1],
+["1997", "902", "Veal Bones - Frozen", "kg", "لحم بقري متنوع ومنتجات", "raw", 1],
+["465", "820", "Romanian Lamb", "kg", "لحم غنم", "raw", 1],
+["1400", "1201", "N.Z Lamb Whole - Chilled", "kg", "لحم غنم", "raw", 1],
+["109", "186", "Fresh Local Lamb - خروف بلدي", "kg", "لحم غنم", "raw", 1],
+["3271", "9001", "Beef&Lamb Burger Production", "kg", "لحم غنم", "finished", 1],
+["1403", "1204", "N.Z Lamb Tenderloin - Chilled", "kg", "لحم غنم", "raw", 1],
+["10011", "239", "Aust Lamb Tenderloin Chilled", "kg", "لحم غنم", "raw", 1],
+["226", "361", "Lamb Spleen", "kg", "لحم غنم", "raw", 1],
+["227", "362", "Lamb Kidneys", "kg", "لحم غنم", "raw", 1],
+["228", "363", "Lamb Liver", "kg", "لحم غنم", "raw", 1],
+["405", "800", "Aust Lamb-Dubai", "kg", "لحم غنم", "raw", 1],
+["2439", "840", "Assaf- Grain Fed Lamb Whole", "kg", "لحم غنم", "raw", 1]
+];
+function catalogItems() { return CATALOG.map(r => ({ id: uid(), code: r[0], code2: r[1], name: r[2], unit: r[3], cat: r[4], type: r[5], min: 0, barcode: '', notes: '', active: !!r[6], createdAt: new Date().toISOString() })); }
+function addCatalogMissing() {
+  const have = new Set(S.items.map(i => normCode(i.code))); const add = catalogItems().filter(i => !have.has(normCode(i.code)));
+  if (!add.length) { toast('كل أصناف القائمة المعتمدة موجودة مسبقاً'); return 0; }
+  S.items.push(...add); S.catalogSeeded = true; save(); refreshLookups(); toast(`تمت إضافة ${add.length} صنف من القائمة المعتمدة`, 'ok'); return add.length;
+}
+
 /* ---------- state ---------- */
 let S;
 function defaultState() {
@@ -772,6 +907,7 @@ function load() {
   try { const r = localStorage.getItem(DB_KEY); if (r) { const o = JSON.parse(r); const d = defaultState(); return Object.assign(d, o, { settings: Object.assign(d.settings, o.settings || {}) }); } } catch (e) { console.warn('load failed', e); }
   return defaultState();
 }
+function seedCatalogIfEmpty() { if (!S.items.length && !S.catalogSeeded) { S.items = catalogItems(); S.catalogSeeded = true; save(); } }
 let _ledger = null;
 function save() {
   S.updatedAt = new Date().toISOString();
@@ -875,7 +1011,7 @@ function makeCombo(host, { placeholder = 'ابحث بالكود أو الاسم�
   let hl = 0, cur = [];
   function render(q) {
     const nq = normName(q), cq = normCode(q);
-    cur = source().filter(i => !q || normName(i.name).includes(nq) || normCode(i.code).includes(cq) || (i.barcode && normCode(i.barcode) === cq)).slice(0, 40);
+    cur = source().filter(i => !q || normName(i.name).includes(nq) || normCode(i.code).includes(cq) || (i.code2 && normCode(i.code2).includes(cq)) || (i.barcode && normCode(i.barcode) === cq)).slice(0, 40);
     hl = 0;
     list.innerHTML = cur.length ? cur.map((i, k) => `<div data-k="${k}" class="${k === 0 ? 'hl' : ''}"><span>${esc(i.name)}</span><small>${esc(i.code)}</small></div>`).join('') : `<div class="none">لا توجد نتائج</div>`;
     host.classList.add('open');
@@ -952,16 +1088,16 @@ let itemsSort = { k: 'code', d: 1 };
 function renderItems() {
   const q = $('#ifQ').value.trim(), nq = normName(q), cq = normCode(q), ty = $('#ifType').value, cat = $('#ifCat').value, inac = $('#ifInactive').checked;
   const M = balanceMatrix();
-  let rows = S.items.filter(i => (inac || i.active !== false) && (!ty || i.type === ty) && (!cat || i.cat === cat) && (!q || normName(i.name).includes(nq) || normCode(i.code).includes(cq) || normCode(i.barcode || '').includes(cq)));
+  let rows = S.items.filter(i => (inac || i.active !== false) && (!ty || i.type === ty) && (!cat || i.cat === cat) && (!q || normName(i.name).includes(nq) || normCode(i.code).includes(cq) || normCode(i.code2 || '').includes(cq) || normCode(i.barcode || '').includes(cq)));
   rows = rows.map(i => ({ i, bal: balanceOf(M, i.id) }));
   const k = itemsSort.k, d = itemsSort.d;
   rows.sort((a, b) => { const va = k === 'bal' ? a.bal : (a.i[k] ?? ''), vb = k === 'bal' ? b.bal : (b.i[k] ?? ''); return (va < vb ? -1 : va > vb ? 1 : 0) * d; });
   const host = $('#itemsTable');
   if (!S.items.length) { host.innerHTML = emptyHTML('لا توجد أصناف بعد', 'أضف صنفاً جديداً أو استورد قائمة الأصناف من ملف إكسل'); return; }
   if (!rows.length) { host.innerHTML = emptyHTML('لا توجد نتائج مطابقة'); return; }
-  const H = [['code', 'الكود'], ['name', 'الاسم'], ['unit', 'الوحدة'], ['type', 'النوع'], ['cat', 'التصنيف'], ['min', 'الحد الأدنى', 1], ['bal', 'الرصيد الإجمالي', 1]];
+  const H = [['code', 'رمز المادة'], ['code2', 'رمز الوحدة'], ['name', 'الاسم'], ['unit', 'الوحدة'], ['type', 'النوع'], ['cat', 'التصنيف'], ['min', 'الحد الأدنى', 1], ['bal', 'الرصيد الإجمالي', 1]];
   host.innerHTML = `<table class="tbl sortable"><thead><tr>${H.map(h => `<th data-sort="${h[0]}" class="${h[2] ? 'num' : ''}">${h[1]} ${k === h[0] ? (d > 0 ? '▲' : '▼') : ''}</th>`).join('')}<th>الحالة</th><th></th></tr></thead><tbody>${rows.map(({ i, bal }) => `<tr>
-    <td class="code">${esc(i.code)}</td><td><b>${esc(i.name)}</b>${i.barcode ? `<span class="sub mono">${esc(i.barcode)}</span>` : ''}</td><td>${esc(i.unit)}</td><td>${esc(ITEM_TYPES[i.type] || i.type || '')}</td><td>${esc(i.cat || '')}</td>
+    <td class="code">${esc(i.code)}</td><td class="code">${esc(i.code2 || '')}</td><td><b>${esc(i.name)}</b>${i.barcode ? `<span class="sub mono">${esc(i.barcode)}</span>` : ''}</td><td>${esc(i.unit)}</td><td>${esc(ITEM_TYPES[i.type] || i.type || '')}</td><td>${esc(i.cat || '')}</td>
     <td class="num">${i.min ? fmt(i.min) : '<span class="muted">—</span>'}</td><td class="num ${bal < 0 ? 'neg' : ''} ${i.min && bal <= i.min ? 'neg' : ''}">${fmt(bal)}</td>
     <td>${i.active === false ? '<span class="chip">موقوف</span>' : '<span class="chip in">نشط</span>'}</td>
     <td class="nowrap"><button class="btn xs ghost" data-card="${i.id}" title="كرت الصنف"><svg><use href="#i-eye"/></svg></button><button class="btn xs ghost" data-edit="${i.id}" title="تعديل"><svg><use href="#i-edit"/></svg></button><button class="btn xs ghost" data-del="${i.id}" title="حذف"><svg><use href="#i-trash"/></svg></button></td></tr>`).join('')}</tbody></table>`;
@@ -979,7 +1115,7 @@ function suggestItemCode() {
 function openItemModal(id = null) {
   editingItem = id ? itemById(id) : null;
   $('#imTitle').textContent = editingItem ? 'تعديل صنف' : 'صنف جديد';
-  $('#imCode').value = editingItem ? editingItem.code : suggestItemCode();
+  $('#imCode').value = editingItem ? editingItem.code : suggestItemCode(); $('#imCode2').value = editingItem?.code2 || '';
   $('#imName').value = editingItem?.name || ''; $('#imUnit').value = editingItem?.unit || ''; $('#imType').value = editingItem?.type || 'raw';
   $('#imCat').value = editingItem?.cat || ''; $('#imMin').value = editingItem?.min || 0; $('#imBarcode').value = editingItem?.barcode || ''; $('#imNotes').value = editingItem?.notes || '';
   $('#imActive').checked = editingItem ? editingItem.active !== false : true;
@@ -990,10 +1126,11 @@ function saveItem(andNew = false) {
   const code = $('#imCode').value.trim(), name = $('#imName').value.trim(), unit = $('#imUnit').value.trim();
   const errs = [];
   if (!code) errs.push('كود الصنف مطلوب'); if (!name) errs.push('اسم الصنف مطلوب'); if (!unit) errs.push('الوحدة مطلوبة');
-  if (code && S.items.some(i => i !== editingItem && normCode(i.code) === normCode(code))) errs.push('كود الصنف مستخدم لصنف آخر');
+  if (code && S.items.some(i => i !== editingItem && normCode(i.code) === normCode(code))) errs.push('رمز المادة مستخدم لصنف آخر');
+  const c2 = $('#imCode2').value.trim(); if (c2 && S.items.some(i => i !== editingItem && normCode(i.code2 || '') === normCode(c2))) errs.push('رمز الوحدة مستخدم لصنف آخر');
   if (name && S.items.some(i => i !== editingItem && normName(i.name) === normName(name))) errs.push('يوجد صنف آخر بنفس الاسم');
   if (errs.length) return errBox($('#imErr'), errs);
-  const data = { code, name, unit, type: $('#imType').value, cat: $('#imCat').value.trim(), min: num($('#imMin').value), barcode: $('#imBarcode').value.trim(), notes: $('#imNotes').value.trim(), active: $('#imActive').checked };
+  const data = { code, code2: $('#imCode2').value.trim(), name, unit, type: $('#imType').value, cat: $('#imCat').value.trim(), min: num($('#imMin').value), barcode: $('#imBarcode').value.trim(), notes: $('#imNotes').value.trim(), active: $('#imActive').checked };
   if (editingItem) Object.assign(editingItem, data, { updatedAt: new Date().toISOString() }); else S.items.push({ id: uid(), createdAt: new Date().toISOString(), ...data });
   save(); refreshLookups(); toast(editingItem ? 'تم تعديل الصنف' : 'تمت إضافة الصنف', 'ok');
   if (andNew) { const u = unit, t = $('#imType').value, c = $('#imCat').value; openItemModal(null); $('#imUnit').value = u; $('#imType').value = t; $('#imCat').value = c; } else closeModal('itemModal');
@@ -1007,10 +1144,10 @@ function deleteItem(id) {
 }
 function exportItems() {
   const M = balanceMatrix();
-  exportXlsx('الأصناف.xlsx', [{ name: 'الأصناف', aoa: [['الكود', 'الاسم', 'الوحدة', 'النوع', 'التصنيف', 'الحد الأدنى', 'الباركود', 'الحالة', 'الرصيد الإجمالي', ...activeWhs().map(w => w.name)], ...S.items.map(i => [i.code, i.name, i.unit, ITEM_TYPES[i.type] || '', i.cat || '', i.min || 0, i.barcode || '', i.active === false ? 'موقوف' : 'نشط', balanceOf(M, i.id), ...activeWhs().map(w => balanceOf(M, i.id, w.id))])] }]);
+  exportXlsx('الأصناف.xlsx', [{ name: 'الأصناف', aoa: [['رمز المادة', 'رمز الوحدة', 'الاسم', 'الوحدة', 'النوع', 'التصنيف', 'الحد الأدنى', 'الباركود', 'الحالة', 'الرصيد الإجمالي', ...activeWhs().map(w => w.name)], ...S.items.map(i => [i.code, i.code2 || '', i.name, i.unit, ITEM_TYPES[i.type] || '', i.cat || '', i.min || 0, i.barcode || '', i.active === false ? 'موقوف' : 'نشط', balanceOf(M, i.id), ...activeWhs().map(w => balanceOf(M, i.id, w.id))])] }]);
 }
 function itemsTemplate() {
-  exportXlsx('قالب_الأصناف.xlsx', [{ name: 'الأصناف', aoa: [['الكود', 'الاسم', 'الوحدة', 'النوع', 'التصنيف', 'الحد الأدنى', 'الباركود'], ['1001', 'طحين', 'كغم', 'مادة خام', 'مواد أولية', 100, ''], ['2001', 'كعك سمسم 500غ', 'كرتون', 'منتج جاهز', 'مخبوزات', 20, '']] }, { name: 'أنواع الأصناف', aoa: [['القيمة'], ...Object.values(ITEM_TYPES).map(v => [v])] }]);
+  exportXlsx('قالب_الأصناف.xlsx', [{ name: 'الأصناف', aoa: [['رمز المادة', 'رمز الوحدة', 'وصف المادة', 'الوحدة', 'النوع', 'التصنيف', 'الحد الأدنى', 'الباركود'], ['12635', '5048', 'Russian Striploin Angus Beef Prime - 17268', 'kg', 'مادة خام', 'لحم بقري روسي', 20, ''], ['13560', '9112', 'Sausage Production', 'kg', 'منتج جاهز', 'منتجات', 0, '']] }, { name: 'أنواع الأصناف', aoa: [['القيمة'], ...Object.values(ITEM_TYPES).map(v => [v])] }]);
 }
 
 /* ---------- قراءة ملفات الإكسل ---------- */
@@ -1036,19 +1173,19 @@ const typeFromText = t => { const n = normName(t); for (const [k, v] of Object.e
 let ipWB = null, ipRows = null;
 function ipLoad(wb) {
   ipWB = wb; const aoa = sheetAOA(wb, wb.SheetNames[0]); const hr = detectHeaderRow(aoa); const headers = (aoa[hr] || []).map(h => String(h).trim()); ipRows = aoa.slice(hr + 1).filter(r => r.some(c => String(c).trim() !== ''));
-  const map = { ipCode: ['الكود', 'كود', 'رقم الصنف', 'code', 'item code', 'sku'], ipName: ['الاسم', 'اسم الصنف', 'الصنف', 'name', 'item', 'description', 'البيان'], ipUnit: ['الوحدة', 'وحدة', 'unit', 'uom'], ipType: ['النوع', 'نوع', 'type'], ipCat: ['التصنيف', 'المجموعة', 'الفئة', 'category', 'group'], ipMin: ['الحد الأدنى', 'حد أدنى', 'min', 'minimum'], ipBarcode: ['الباركود', 'باركود', 'barcode'] };
+  const map = { ipCode: ['رمز المادة', 'الكود', 'كود', 'رقم الصنف', 'code', 'item code', 'sku'], ipCode2: ['رمز الوحدة', 'كود الوحدة', 'unit code', 'code2'], ipName: ['الاسم', 'اسم الصنف', 'الصنف', 'name', 'item', 'description', 'البيان'], ipUnit: ['الوحدة', 'وحدة', 'unit', 'uom'], ipType: ['النوع', 'نوع', 'type'], ipCat: ['التصنيف', 'المجموعة', 'الفئة', 'category', 'group'], ipMin: ['الحد الأدنى', 'حد أدنى', 'min', 'minimum'], ipBarcode: ['الباركود', 'باركود', 'barcode'] };
   for (const [id, keys] of Object.entries(map)) { fillSelect($('#' + id), colOpts(headers)); const g = guessCol(headers, keys); $('#' + id).value = g >= 0 ? String(g) : ''; }
   $('#ipMap').style.display = ''; ipPreview();
 }
 function ipPreview() {
   const c = k => { const v = $('#' + k).value; return v === '' ? -1 : +v; };
-  const C = { code: c('ipCode'), name: c('ipName'), unit: c('ipUnit'), type: c('ipType'), cat: c('ipCat'), min: c('ipMin'), bc: c('ipBarcode') }, defU = $('#ipDefUnit').value.trim() || 'حبة', upd = $('#ipUpdate').checked;
+  const C = { code: c('ipCode'), code2: c('ipCode2'), name: c('ipName'), unit: c('ipUnit'), type: c('ipType'), cat: c('ipCat'), min: c('ipMin'), bc: c('ipBarcode') }, defU = $('#ipDefUnit').value.trim() || 'حبة', upd = $('#ipUpdate').checked;
   const host = $('#ipPreview'); if (!ipRows) { host.innerHTML = ''; return; }
   if (C.name < 0) { host.innerHTML = '<div class="hint warn">حدد عمود الاسم للمتابعة.</div>'; $('#ipSave').disabled = true; return; }
   let nextN = +suggestItemCode(); const seenCodes = new Set(), seenNames = new Set();
   const out = ipRows.map(r => {
     const g = i => i >= 0 ? String(r[i] ?? '').trim() : '';
-    const rec = { code: g(C.code), name: g(C.name), unit: g(C.unit) || defU, type: C.type >= 0 ? typeFromText(g(C.type)) : 'raw', cat: g(C.cat), min: num(g(C.min)), barcode: g(C.bc) };
+    const rec = { code: g(C.code), code2: g(C.code2), name: g(C.name), unit: g(C.unit) || defU, type: C.type >= 0 ? typeFromText(g(C.type)) : 'raw', cat: g(C.cat), min: num(g(C.min)), barcode: g(C.bc) };
     if (!rec.code) rec.code = String(nextN++).padStart(4, '0');
     let st = 'new', ex = S.items.find(i => normCode(i.code) === normCode(rec.code));
     if (!rec.name) st = 'skip-noname';
@@ -1061,13 +1198,13 @@ function ipPreview() {
   ipRows._out = out;
   const lab = { new: '<span class="chip in">جديد</span>', update: '<span class="chip acc">تحديث</span>', 'skip-noname': '<span class="chip out">بدون اسم</span>', 'skip-exists': '<span class="chip muted">موجود — تخطي</span>', 'skip-name': '<span class="chip out">اسم مكرر لصنف آخر</span>', 'skip-dup': '<span class="chip out">مكرر في الملف</span>' };
   const n = out.filter(o => o.st === 'new').length, u = out.filter(o => o.st === 'update').length;
-  host.innerHTML = `<div class="tbl-wrap" style="max-height:40vh">${tableHTML([{ l: 'الحالة' }, { l: 'الكود' }, { l: 'الاسم' }, { l: 'الوحدة' }, { l: 'النوع' }, { l: 'التصنيف' }, { l: 'الحد الأدنى', num: 1 }], out.map(o => [lab[o.st], `<span class="code mono">${esc(o.rec.code)}</span>`, esc(o.rec.name), esc(o.rec.unit), ITEM_TYPES[o.rec.type], esc(o.rec.cat), fmt(o.rec.min)]))}</div>`;
+  host.innerHTML = `<div class="tbl-wrap" style="max-height:40vh">${tableHTML([{ l: 'الحالة' }, { l: 'رمز المادة' }, { l: 'رمز الوحدة' }, { l: 'الاسم' }, { l: 'الوحدة' }, { l: 'النوع' }, { l: 'التصنيف' }, { l: 'الحد الأدنى', num: 1 }], out.map(o => [lab[o.st], `<span class="code mono">${esc(o.rec.code)}</span>`, `<span class="code mono">${esc(o.rec.code2)}</span>`, esc(o.rec.name), esc(o.rec.unit), ITEM_TYPES[o.rec.type], esc(o.rec.cat), fmt(o.rec.min)]))}</div>`;
   $('#ipCount').textContent = `${out.length} سطر — ${n} جديد، ${u} تحديث، ${out.length - n - u} تخطي`;
   $('#ipSave').disabled = !(n + u);
 }
 function ipSave() {
   const out = ipRows?._out || []; let n = 0, u = 0;
-  for (const o of out) { if (o.st === 'new') { S.items.push({ id: uid(), createdAt: new Date().toISOString(), active: true, ...o.rec }); n++; } else if (o.st === 'update') { Object.assign(o.ex, { name: o.rec.name, unit: o.rec.unit, type: o.rec.type, cat: o.rec.cat, min: o.rec.min, barcode: o.rec.barcode, updatedAt: new Date().toISOString() }); u++; } }
+  for (const o of out) { if (o.st === 'new') { S.items.push({ id: uid(), createdAt: new Date().toISOString(), active: true, ...o.rec }); n++; } else if (o.st === 'update') { Object.assign(o.ex, { code2: o.rec.code2 || o.ex.code2 || '', name: o.rec.name, unit: o.rec.unit, type: o.rec.type, cat: o.rec.cat, min: o.rec.min, barcode: o.rec.barcode, updatedAt: new Date().toISOString() }); u++; } }
   save(); refreshLookups(); closeModal('impModal'); toast(`تم استيراد ${n} صنف جديد وتحديث ${u}`, 'ok'); if (currentPage === 'items') renderItems();
 }
 
@@ -1345,13 +1482,13 @@ function slParseSheet(autoHeader = false) {
   const aoa = sheetAOA(slWB, $('#slSheet').value); if (autoHeader) $('#slHeaderRow').value = detectHeaderRow(aoa) + 1;
   const hr = Math.max(0, (+$('#slHeaderRow').value || 1) - 1); slHeaders = (aoa[hr] || []).map(h => String(h).trim()); slRows = aoa.slice(hr + 1).filter(r => r.some(c => String(c).trim() !== ''));
   const saved = S.settings.salesMap || {};
-  const guesses = { mCode: ['كود الصنف', 'الكود', 'كود', 'رقم الصنف', 'code', 'item code', 'sku', 'رقم المادة'], mName: ['اسم الصنف', 'الصنف', 'الاسم', 'المادة', 'البيان', 'name', 'item', 'description', 'product'], mQty: ['الكمية', 'كمية', 'الكمية المباعة', 'qty', 'quantity', 'العدد'], mDate: ['التاريخ', 'تاريخ', 'date', 'يوم'], mWh: ['المستودع', 'مستودع', 'الفرع', 'فرع', 'warehouse', 'branch', 'store', 'المخزن'] };
+  const guesses = { mCode: ['رمز المادة', 'كود الصنف', 'الكود', 'كود', 'رقم الصنف', 'رمز الوحدة', 'code', 'item code', 'sku', 'رقم المادة'], mName: ['اسم الصنف', 'الصنف', 'الاسم', 'المادة', 'البيان', 'name', 'item', 'description', 'product'], mQty: ['الكمية', 'كمية', 'الكمية المباعة', 'qty', 'quantity', 'العدد'], mDate: ['التاريخ', 'تاريخ', 'date', 'يوم'], mWh: ['المستودع', 'مستودع', 'الفرع', 'فرع', 'warehouse', 'branch', 'store', 'المخزن'] };
   for (const [id, keys] of Object.entries(guesses)) { fillSelect($('#' + id), colOpts(slHeaders)); let v = ''; if (saved[id] && slHeaders.includes(saved[id])) v = String(slHeaders.indexOf(saved[id])); else { const g = guessCol(slHeaders, keys); if (g >= 0) v = String(g); } $('#' + id).value = v; }
 }
 function matchItem(code, name) {
   const cc = normCode(code), nn = normName(name);
-  if (cc) { const i = S.items.find(x => normCode(x.code) === cc || (x.barcode && normCode(x.barcode) === cc)); if (i) return i; }
-  if (nn) { const a = S.aliases[nn]; if (a && itemById(a)) return itemById(a); const i = S.items.find(x => normName(x.name) === nn); if (i) return i; const j = S.items.find(x => normCode(x.code) === normCode(name)); if (j) return j; }
+  if (cc) { const i = S.items.find(x => normCode(x.code) === cc) || S.items.find(x => x.code2 && normCode(x.code2) === cc) || S.items.find(x => x.barcode && normCode(x.barcode) === cc); if (i) return i; }
+  if (nn) { const a = S.aliases[nn]; if (a && itemById(a)) return itemById(a); const i = S.items.find(x => normName(x.name) === nn); if (i) return i; const j = S.items.find(x => normCode(x.code) === normCode(name) || (x.code2 && normCode(x.code2) === normCode(name))); if (j) return j; }
   return null;
 }
 function matchWh(text) { const n = normName(text), c = normCode(text); return S.warehouses.find(w => normName(w.name) === n || normCode(w.code) === c) || S.warehouses.find(w => n && normName(w.name).includes(n)) || null; }
@@ -1583,7 +1720,7 @@ function backupImport(file) {
 function exportAllExcel() {
   const M = balanceMatrix();
   exportXlsx(`بيانات_المخزون_${todayISO()}.xlsx`, [
-    { name: 'الأصناف', aoa: [['الكود', 'الاسم', 'الوحدة', 'النوع', 'التصنيف', 'الحد الأدنى', 'الباركود', 'الحالة'], ...S.items.map(i => [i.code, i.name, i.unit, ITEM_TYPES[i.type] || '', i.cat || '', i.min || 0, i.barcode || '', i.active === false ? 'موقوف' : 'نشط'])] },
+    { name: 'الأصناف', aoa: [['رمز المادة', 'رمز الوحدة', 'الاسم', 'الوحدة', 'النوع', 'التصنيف', 'الحد الأدنى', 'الباركود', 'الحالة'], ...S.items.map(i => [i.code, i.code2 || '', i.name, i.unit, ITEM_TYPES[i.type] || '', i.cat || '', i.min || 0, i.barcode || '', i.active === false ? 'موقوف' : 'نشط'])] },
     { name: 'المستودعات', aoa: [['الكود', 'الاسم', 'الموقع', 'الحالة'], ...S.warehouses.map(w => [w.code, w.name, w.loc || '', w.active === false ? 'موقوف' : 'نشط'])] },
     { name: 'الأرصدة', aoa: [['الكود', 'الصنف', 'الوحدة', ...activeWhs().map(w => w.name), 'الإجمالي'], ...S.items.map(i => [i.code, i.name, i.unit, ...activeWhs().map(w => balanceOf(M, i.id, w.id)), balanceOf(M, i.id)])] },
     { name: 'الحركات', aoa: [['التاريخ', 'رقم السند', 'نوع السند', 'نوع الحركة', 'الكود', 'الصنف', 'المستودع', 'وارد', 'صادر'], ...ledger().map(e => { const i = itemById(e.itemId) || {}; return [e.date, e.docNo, DT[e.type].label, SIDE_LABEL[e.side], i.code || '', i.name || '', whName(e.wh), e.qin || '', e.qout || '']; })] },
@@ -1602,7 +1739,7 @@ function bindFile(dropId, inputId, handler) {
   drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) handler(f); };
 }
 function init() {
-  S = load(); $('#verFoot').textContent = APP_VER; applyTheme(); refreshLookups(); updateSaveStamp();
+  S = load(); seedCatalogIfEmpty(); $('#verFoot').textContent = APP_VER; applyTheme(); refreshLookups(); updateSaveStamp();
   // nav
   $$('#nav button').forEach(b => b.onclick = () => go(b.dataset.page));
   $$('[data-go]').forEach(b => { if (!b.classList.contains('kpi')) b.onclick = () => go(b.dataset.go); });
@@ -1626,12 +1763,12 @@ function init() {
   ['ifType', 'ifCat', 'ifInactive'].forEach(id => $('#' + id).onchange = renderItems); $('#ifQ').oninput = renderItems;
   $('#itemAdd').onclick = () => openItemModal(); $('#imClose').onclick = $('#imCancel').onclick = () => closeModal('itemModal'); $('#imSave').onclick = () => saveItem(false); $('#imSaveNew').onclick = () => saveItem(true);
   $('#itemModal').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); saveItem(false); } });
-  $('#itemsExport').onclick = exportItems; $('#itemsTemplate').onclick = itemsTemplate;
+  $('#itemsExport').onclick = exportItems; $('#itemsCatalog').onclick = () => { if (confirm('إضافة أصناف القائمة المعتمدة (121 صنف) غير الموجودة حالياً؟')) { addCatalogMissing(); renderItems(); } }; $('#itemsTemplate').onclick = itemsTemplate;
   $('#itemsImport').onclick = () => { ipWB = ipRows = null; $('#ipMap').style.display = 'none'; $('#ipPreview').innerHTML = ''; $('#ipCount').textContent = ''; $('#ipSave').disabled = true; $('#ipFile').value = ''; $('#ipPaste').value = ''; openModal('impModal'); };
   $('#ipClose').onclick = $('#ipCancel').onclick = () => closeModal('impModal'); $('#ipSave').onclick = ipSave;
   bindFile('ipDrop', 'ipFile', async f => { try { ipLoad(await readWorkbook(f)); } catch (x) { toast('تعذر قراءة الملف: ' + x.message, 'bad'); } });
   $('#ipPasteBtn').onclick = () => { const t = $('#ipPaste').value.trim(); if (!t) return; ipLoad(readPasted(t)); };
-  ['ipCode', 'ipName', 'ipUnit', 'ipType', 'ipCat', 'ipMin', 'ipBarcode', 'ipUpdate'].forEach(id => $('#' + id).onchange = ipPreview); $('#ipDefUnit').oninput = ipPreview;
+  ['ipCode', 'ipCode2', 'ipName', 'ipUnit', 'ipType', 'ipCat', 'ipMin', 'ipBarcode', 'ipUpdate'].forEach(id => $('#' + id).onchange = ipPreview); $('#ipDefUnit').oninput = ipPreview;
   // warehouses
   $('#whAdd').onclick = () => openWhModal(); $('#wmClose').onclick = $('#wmCancel').onclick = () => closeModal('whModal'); $('#wmSave').onclick = saveWh;
   $('#whModal').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); saveWh(); } });
@@ -1666,7 +1803,7 @@ function init() {
   window.addEventListener('afterprint', () => { $('#printArea').innerHTML = ''; });
   go('dashboard');
 }
-window.INV = { get S() { return S; }, save, ledger, balanceMatrix, balanceOf, go, openDocModal, viewDoc, dailyData, refreshAll, matchItem, normName };
+window.INV = { get S() { return S; }, save, addCatalogMissing, ledger, balanceMatrix, balanceOf, go, openDocModal, viewDoc, dailyData, refreshAll, matchItem, normName };
 document.addEventListener('DOMContentLoaded', init);
 </script>
 </body>
