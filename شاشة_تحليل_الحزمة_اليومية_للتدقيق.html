@@ -1452,7 +1452,7 @@ const QDEF=[
  {id:'q16',n:"فصل المهام التفصيلي مستنداً بمستند",short:"فصل المهام التفصيلي",g:CHECKS[15],doc:"رقم المستند",date:"تاريخ المستند",dims:["اسم المستخدم", "نوع الحركة", "اسم الطرف"],ms:["المبلغ"],flags:["الملاحظات"],text:[],cols:["فتح المستخدم", "رمز المستخدم", "اسم المستخدم", "نوع الحركة", "رقم المستند", "فتح فاتورة", "فتح اشعار دائن", "فتح سند قبض", "فتح امر شراء", "فتح فاتورة شراء", "فتح سند صرف", "فتح القيد", "فتح ادخال مخزون", "فتح اخراج مخزون", "فتح الطرف", "اسم الطرف", "تاريخ المستند", "تاريخ الادخال", "ايام التأخير", "المبلغ", "درجة الخطورة", "الملاحظات"]},
 ];
 /* ================= utils ================= */
-const VERSION='v1.3';
+const VERSION='v1.4';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nf0=new Intl.NumberFormat('en-US',{maximumFractionDigits:0,minimumFractionDigits:0});
@@ -2152,14 +2152,18 @@ function renderAging(T){const main=$('main'),S=T.S;T.last=T.last||{};if(!T.A||!T
   (AGV[S.view]||AGV.ov)(T,$('view'));}
 async function agInit(T){T.S=agState();T.ts={};try{const o=JSON.parse(localStorage.getItem('kap_aging')||'{}');if(o.snap!=null)T.S.snap=o.snap;if(o.mode)T.S.mode=o.mode;}catch(e){}
   if(T.S.snap==null)T.S.snap=Math.floor(Date.now()/DAY);
-  try{const o=JSON.parse(localStorage.getItem('kap_aging_bands')||'{}');if(o.bands)T.S.bands=o.bands;if(o.basis)T.S.basis=o.basis;}catch(e){}
+  try{const o=JSON.parse(localStorage.getItem('kap_aging_bands')||'{}');if(o.bands)T.S.bands=o.bands;if(o.basis)T.S.basis=o.basis;if(o.nMonths)T.S.nMonths=o.nMonths;}catch(e){}
   const D=await IDB.get('aging'),D2=await IDB.get('aging_chk');if(D&&D.rows&&D.rows.length)T.D=D;if(D2&&D2.rows&&D2.rows.length)T.D2=D2;
   try{agBuild(T);agCompute(T);}catch(e){console.error(e);T.A=null;T.P=null;}}
 /* ---- تقرير الفترات (أعمار بالأيام يحددها المستخدم) ---- */
 function agBandsParse(s){const a=String(s||'').split(/[,\s،]+/).map(x=>parseInt(x,10)).filter(x=>x>0);const u=[...new Set(a)].sort((x,y)=>x-y);return u.length?u:[30,60,90,120,180,365];}
-function agBandLabels(lim,basis){const L=[];if(basis==='due')L.push('لم يستحق بعد');let prev=0;for(const u of lim){L.push((prev+1)+'-'+u);prev=u;}L.push('أكثر من '+prev);return L;}
+function agMonthName(snap,k){const d=new Date(snap*DAY);const mo=d.getUTCMonth()-k;const y=d.getUTCFullYear()+Math.floor(mo/12),m=((mo%12)+12)%12;return (m+1)+'/'+y+' '+AR_M[m];}
+function agBandLabels(lim,basis,T){if(basis==='cal'){const n=T.S.nMonths||6,snap=T.S.snap,L=[];for(let k=0;k<n;k++)L.push(k===0?'الشهر الحالي '+(snap!=null?'1-'+new Date(snap*DAY).getUTCDate()+'/'+(new Date(snap*DAY).getUTCMonth()+1):''):(snap!=null?agMonthName(snap,k):'شهر -'+k));L.push('أقدم من ذلك');return L;}
+  const L=[];if(basis==='due')L.push('لم يستحق بعد');let prev=0;for(const u of lim){L.push((prev+1)+'-'+u);prev=u;}L.push('أكثر من '+prev);return L;}
 function agBandIdx(lim,basis,age){let off=0;if(basis==='due'){if(age<=0)return 0;off=1;}for(let j=0;j<lim.length;j++)if(age<=lim[j])return j+off;return lim.length+off;}
-function agBandsOf(T,c,lim,basis){const S=T.S,snap=S.snap,nB=lim.length+1+(basis==='due'?1:0),out=new Array(nB).fill(0);if(snap==null||c.bal<=0.01)return out;
+function agBandsOf(T,c,lim,basis){const S=T.S,snap=S.snap;
+  if(basis==='cal'){const n=S.nMonths||6,out=new Array(n+1).fill(0);if(c.bal<=0.01)return out;for(let k=0;k<13;k++){if(c.alloc[k]>0)out[k<n?k:n]+=c.alloc[k];}if(c.uncovered>0)out[n]+=c.uncovered;return out;}
+  const nB=lim.length+1+(basis==='due'?1:0),out=new Array(nB).fill(0);if(snap==null||c.bal<=0.01)return out;
   for(let k=0;k<13;k++){const a=c.alloc[k];if(a<=0)continue;
     if(basis==='due'){out[agBandIdx(lim,basis,snap-agReqDue(agMonthEnd(snap,k),c.ex))]+=a;continue;}
     if(basis==='me'){out[agBandIdx(lim,basis,k===0?0:Math.max(0,snap-agMonthEnd(snap,k)))]+=a;continue;}
@@ -2168,14 +2172,14 @@ function agBandsOf(T,c,lim,basis){const S=T.S,snap=S.snap,nB=lim.length+1+(basis
     const nDays=Math.max(1,end-start+1),p=c.m[k]>0?Math.min(1,a/c.m[k]):1,span=Math.max(1,Math.round(p*nDays)),per=a/span;
     for(let d=end;d>end-span;d--){out[agBandIdx(lim,basis,Math.max(0,snap-d))]+=per;}}
   if(c.uncovered>0)out[nB-1]+=c.uncovered;return out;}
-AGV.bands=(T,el)=>{const S=T.S;if(!S.bands)S.bands='30,60,90,120,180,365';if(!S.basis)S.basis='inv';const lim=agBandsParse(S.bands),L=agBandLabels(lim,S.basis),rows=agRows(T);
-  const BASIS={inv:'تاريخ الفاتورة (تقريبي: مبيعات الشهر موزعة على أيامه، والمستهلك أحدثها)',me:'نهاية شهر الفاتورة (كامل مبلغ الشهر بعمر واحد = أيام من نهاية شهره حتى اللقطة)',due:'الاستحقاق المفروض (أيام التأخير بعد نهاية الشهر + المهلة؛ ما لم يستحق يُفرد بعمود)'};
-  el.innerHTML='<div class="card"><h3>كشف أعمار الذمم حسب الفترات <span class="hint">الفترات التي تكتبها تصبح أعمدة الكشف · '+FI(rows.length)+' عميل</span><span class="sp"></span>'+expBtn(T,'agBC')+'</h3><div class="bar" style="margin:0 0 10px"><div class="fld"><label>حدود الفترات بالأيام (مفصولة بفواصل)</label><input type="text" id="agBandsIn" value="'+esc(S.bands)+'" style="width:260px;direction:ltr"></div><div class="fld"><label>احتساب الأيام من</label><select id="agBasis">'+Object.keys(BASIS).map(k=>'<option value="'+k+'"'+(S.basis===k?' selected':'')+'>'+BASIS[k]+'</option>').join('')+'</select></div><button class="btn pri" id="agBandsGo">تطبيق</button></div><div class="foot" style="margin:0 0 8px">الأعمدة: '+L.map(esc).join(' · ')+' — الرصيد يُوزَّع أولاً على الأشهر بالاستهلاك التنازلي (الأحدث فالأقدم) ثم يُحوَّل كل شهر إلى أيام حسب الأساس المختار. «أكثر من '+lim[lim.length-1]+'» تشمل الأرصدة الأقدم من 13 شهراً.</div><div id="agBC"></div></div>'+
+AGV.bands=(T,el)=>{const S=T.S;if(!S.bands)S.bands='30,60,90,120,180,365';if(!S.basis)S.basis='cal';if(!S.nMonths)S.nMonths=6;const lim=agBandsParse(S.bands),L=agBandLabels(lim,S.basis,T),rows=agRows(T);
+  const BASIS={cal:'الأشهر التقويمية (الشهر الحالي حتى تاريخ اللقطة، ثم كل شهر سابق بعمود، والأقدم مجمّع) — بلا أي افتراض',inv:'تاريخ الفاتورة (تقريبي: مبيعات الشهر موزعة على أيامه، والمستهلك أحدثها)',me:'نهاية شهر الفاتورة (كامل مبلغ الشهر بعمر واحد = أيام من نهاية شهره حتى اللقطة)',due:'الاستحقاق المفروض (أيام التأخير بعد نهاية الشهر + المهلة؛ ما لم يستحق يُفرد بعمود)'};
+  el.innerHTML='<div class="card"><h3>كشف أعمار الذمم حسب الفترات <span class="hint">الفترات التي تكتبها تصبح أعمدة الكشف · '+FI(rows.length)+' عميل</span><span class="sp"></span>'+expBtn(T,'agBC')+'</h3><div class="bar" style="margin:0 0 10px"><div class="fld"><label>أساس الأعمدة</label><select id="agBasis">'+Object.keys(BASIS).map(k=>'<option value="'+k+'"'+(S.basis===k?' selected':'')+'>'+BASIS[k]+'</option>').join('')+'</select></div>'+(S.basis==='cal'?'<div class="fld"><label>عدد الأشهر المنفصلة (1-13)</label><input type="number" id="agNM" value="'+S.nMonths+'" min="1" max="13" style="width:80px"></div>':'<div class="fld"><label>حدود الفترات بالأيام (مفصولة بفواصل)</label><input type="text" id="agBandsIn" value="'+esc(S.bands)+'" style="width:260px;direction:ltr"></div>')+'<button class="btn pri" id="agBandsGo">تطبيق</button></div><div class="foot" style="margin:0 0 8px">الأعمدة: '+L.map(esc).join(' · ')+' — الرصيد يُوزَّع على الأشهر بالاستهلاك التنازلي (الأحدث فالأقدم)'+(S.basis==='cal'?'؛ كل عمود هو ما بقي من ذلك الشهر غير مسدد. العمود الأخير يشمل الأرصدة الأقدم من 13 شهراً.':' ثم يُحوَّل كل شهر إلى أيام حسب الأساس المختار. «أكثر من '+lim[lim.length-1]+'» تشمل الأرصدة الأقدم من 13 شهراً.')+'</div><div id="agBC"></div></div>'+
     '<div class="grid2"><div class="card"><h3>ملخص الفترات '+expBtn(T,'agBS')+'</h3><div id="agBS"></div></div><div class="card"><h3>المندوبون × الفترات '+expBtn(T,'agBR')+'</h3><div id="agBR"></div></div></div>';
-  const apply=()=>{S.bands=$('agBandsIn').value;S.basis=$('agBasis').value;try{localStorage.setItem('kap_aging_bands',JSON.stringify({bands:S.bands,basis:S.basis}));}catch(e){}AGV.bands(T,el);};$('agBandsGo').onclick=apply;$('agBandsIn').onkeydown=e=>{if(e.key==='Enter')apply();};$('agBasis').onchange=apply;
+  const apply=()=>{const bi=$('agBandsIn'),nm=$('agNM');if(bi)S.bands=bi.value;if(nm)S.nMonths=Math.max(1,Math.min(13,+nm.value||6));S.basis=$('agBasis').value;try{localStorage.setItem('kap_aging_bands',JSON.stringify({bands:S.bands,basis:S.basis,nMonths:S.nMonths}));}catch(e){}AGV.bands(T,el);};$('agBandsGo').onclick=apply;el.querySelectorAll('#agBandsIn,#agNM').forEach(i=>i.onkeydown=e=>{if(e.key==='Enter')apply();});$('agBasis').onchange=apply;
   const nB=L.length,tot=new Array(nB).fill(0),cnt=new Array(nB).fill(0);const CR=rows.map(c=>{const b=agBandsOf(T,c,lim,S.basis);b.forEach((v,j)=>{tot[j]+=v;if(v>0.005)cnt[j]++;});return {c,b,sum:b.reduce((s,v)=>s+v,0)};});
   const T0=tot.reduce((s,v)=>s+v,0);
-  const bcols=L.map((l,j)=>({k:'b'+j,id:'b'+j,t:l,f:'n',get:r=>r.b[j]>0.005?r.b[j]:null,heat:true,red:S.basis==='due'?j>0:j>=2}));
+  const bcols=L.map((l,j)=>({k:'b'+j,id:'b'+j,t:l,f:'n',get:r=>r.b[j]>0.005?r.b[j]:null,heat:true,red:S.basis==='due'?j>0:S.basis==='cal'?j>=2:j>=2}));
   const cTot={name:'الإجمالي ('+FI(CR.filter(r=>r.sum>0.005).length)+' عميل)',sum:T0};tot.forEach((v,j)=>cTot['b'+j]=v);
   table(T,$('agBC'),'agBC',{name:'كشف_اعمار_الذمم',cols:[{k:'#',t:'#',nos:1},{k:'code',t:'رمز العميل',f:'t',get:r=>r.c.code},{k:'name',t:'اسم العميل',f:'t',cls:'nm',get:r=>r.c.name,h:r=>'<span class="lnk">'+esc(r.c.name)+'</span>'},{k:'rep',t:'المندوب',f:'t',cls:'nm',get:r=>r.c.rep},{k:'ex',t:'أيام السماح',f:'i',get:r=>r.c.ex},{k:'cl',t:'السقف',f:'n',get:r=>r.c.cl},{k:'sum',t:'الرصيد',f:'n'},...bcols,...(S.mode==='with'?[{k:'chk',t:'الشيكات المؤجلة',f:'n',get:r=>r.c.chk}]:[]),{k:'st',t:'الحالة',f:'t',get:r=>r.c.status,h:r=>agPill(r.c)}],rows:CR.filter(r=>r.sum>0.005),total:cTot,sort:'sum',dir:-1,onRow:r=>agModal(T,r.c)});
   const sumRows=L.map((l,j)=>({label:l,amt:tot[j],pct:sdiv(tot[j],T0),nc:cnt[j]}));
