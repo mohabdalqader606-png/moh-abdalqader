@@ -661,6 +661,8 @@ details[open]>summary::before{content:"▾ "}
           <div class="card">
             <div class="hd"><div><h2>النسخ الاحتياطي والبيانات</h2><p>البيانات محفوظة محلياً في هذا المتصفح. خذ نسخة احتياطية دورياً.</p></div></div>
             <div class="bd" style="display:flex;flex-direction:column;gap:12px">
+              <div class="row"><button class="btn primary" id="bkPortable"><svg><use href="#i-dl"/></svg>نسخة محمولة: الشاشة + البيانات في ملف واحد</button></div>
+              <div class="hint good">النسخة المحمولة ملف HTML واحد يحمل الشاشة وكل بياناتك الحالية. أرسله بالبريد أو واتساب أو انسخه لأي جهاز، ويفتح بالبيانات مباشرة بدون أي خطوة إضافية. مناسب لنقل العمل بين الأجهزة أو لإرسال نسخة لمراجع.</div>
               <div class="row"><button class="btn" id="bkExport"><svg><use href="#i-dl"/></svg>تنزيل نسخة احتياطية (JSON)</button><button class="btn" id="bkImport"><svg><use href="#i-up"/></svg>استرجاع نسخة احتياطية</button><input type="file" id="bkFile" accept=".json" hidden></div>
               <div class="row"><button class="btn" id="bkExcel"><svg><use href="#i-xls"/></svg>تصدير كل البيانات إلى إكسل</button></div>
               <div class="hint" id="bkInfo"></div>
@@ -806,7 +808,7 @@ details[open]>summary::before{content:"▾ "}
 /* =========================================================
    رقابة المخزون الكمي — منطق الشاشة
    ========================================================= */
-const APP_VER = '1.5.0';
+const APP_VER = '1.6.0';
 const DB_KEY = 'kinv_ctrl_v1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -995,6 +997,19 @@ function mergeState(o) { const d = defaultState(); return migrate(Object.assign(
 function load() {
   try { const r = localStorage.getItem(DB_KEY); if (r) return mergeState(JSON.parse(r)); } catch (e) { console.warn('load failed', e); }
   return defaultState();
+}
+/* ---------- النسخة المحمولة: شاشة + بيانات في ملف HTML واحد ---------- */
+let PRISTINE = ''; // نسخة نظيفة من كود الصفحة تُلتقط قبل أي عرض
+const EMB_RE = new RegExp('<scr' + 'ipt id="kinvData"[^>]*>[\\s\\S]*?<\\/scr' + 'ipt\\s*>\\s*'); // مُجزّأة حتى لا تطابق كود الصفحة نفسه
+function embeddedState() { const el = document.getElementById('kinvData'); if (!el) return null; try { const o = JSON.parse(el.textContent); return o && Array.isArray(o.items) && Array.isArray(o.docs) ? o : null; } catch (e) { return null; } }
+function exportPortable() {
+  if (!PRISTINE) return toast('تعذر إنشاء النسخة المحمولة', 'bad');
+  const json = JSON.stringify(S).replace(/</g, '\\u003c');
+  const tag = '<scr' + 'ipt id="kinvData" type="application/json">' + json + '</scr' + 'ipt>\n';
+  let html = PRISTINE.replace(EMB_RE, '');
+  html = /<\/body>\s*<\/html>\s*$/i.test(html) ? html.replace(/<\/body>\s*<\/html>\s*$/i, tag + '</body>\n</html>\n') : html + tag;
+  download(`شاشة_رقابة_المخزون_مع_البيانات_${todayISO()}.html`, new Blob([html], { type: 'text/html;charset=utf-8' }));
+  toast('تم تنزيل النسخة المحمولة — أرسلها لأي جهاز وتفتح بالبيانات مباشرة', 'ok');
 }
 function seedCatalogIfEmpty() { if (!S.items.length && !S.catalogSeeded) { S.items = catalogItems(); S.catalogSeeded = true; save(); } }
 let _ledger = null;
@@ -2059,7 +2074,11 @@ function bindFile(dropId, inputId, handler) {
   drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) handler(f); };
 }
 function init() {
-  storageCheck(); S = load(); seedCatalogIfEmpty(); $('#verFoot').textContent = APP_VER; applyTheme(); refreshLookups(); updateSaveStamp();
+  PRISTINE = '<!doctype html>\n' + document.documentElement.outerHTML;
+  storageCheck(); S = load();
+  const emb = embeddedState();
+  if (emb && ((emb.updatedAt || '') > (S.updatedAt || '') || (!S.items.length && !S.docs.length))) { S = mergeState(emb); try { localStorage.setItem(DB_KEY, JSON.stringify(S)); } catch (e) { } setTimeout(() => toast(`تم تحميل البيانات المضمّنة في هذا الملف: ${S.items.length} صنف، ${S.docs.length} سند`, 'ok'), 400); }
+  seedCatalogIfEmpty(); $('#verFoot').textContent = APP_VER; applyTheme(); refreshLookups(); updateSaveStamp();
   // nav
   $$('#nav button').forEach(b => b.onclick = () => go(b.dataset.page));
   $$('[data-go]').forEach(b => { if (!b.classList.contains('kpi')) b.onclick = () => go(b.dataset.go); });
@@ -2122,7 +2141,7 @@ function init() {
   $('#rmPrint').onclick = () => printHTML('تقرير الحركة التفصيلية', [$('#rmFrom').value ? 'من ' + $('#rmFrom').value : '', $('#rmTo').value ? 'إلى ' + $('#rmTo').value : '', $('#rmWh').value ? 'المستودع: ' + whName($('#rmWh').value) : 'كل المستودعات'].filter(Boolean), aoaTable(movesAOA(), 7)); $('#rmExport').onclick = () => exportXlsx(`الحركة_التفصيلية_${todayISO()}.xlsx`, [{ name: 'الحركات', aoa: movesAOA() }]);
   $('#rlPrint').onclick = () => printHTML('تقرير الأصناف تحت الحد الأدنى', [], aoaTable(lowAOA(), 3)); $('#rlExport').onclick = () => exportXlsx(`الحد_الأدنى_${todayISO()}.xlsx`, [{ name: 'الحد الأدنى', aoa: lowAOA() }]);
   // settings
-  $('#stSave').onclick = saveSettings; $('#bkExport').onclick = backupExport; $('#bkImport').onclick = () => $('#bkFile').click(); $('#bkFile').onchange = () => { if ($('#bkFile').files[0]) backupImport($('#bkFile').files[0]); $('#bkFile').value = ''; }; $('#bkExcel').onclick = exportAllExcel; $('#bkWipe').onclick = wipeAll;
+  $('#stSave').onclick = saveSettings; $('#bkExport').onclick = backupExport; $('#bkImport').onclick = () => $('#bkFile').click(); $('#bkFile').onchange = () => { if ($('#bkFile').files[0]) backupImport($('#bkFile').files[0]); $('#bkFile').value = ''; }; $('#bkExcel').onclick = exportAllExcel; $('#bkPortable').onclick = exportPortable; $('#bkWipe').onclick = wipeAll;
   // global
   document.addEventListener('keydown', e => { if (e.key === 'Escape') { const m = $$('.ov.on').pop(); if (m) closeModal(m.id); } if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && $('#docModal').classList.contains('on')) saveDoc(false); });
   $$('.ov').forEach(ov => ov.addEventListener('mousedown', e => { if (e.target === ov && ov.id !== 'docModal') closeModal(ov.id); }));
@@ -2133,7 +2152,7 @@ function init() {
   window.addEventListener('beforeunload', () => { if (fsDirty) fsWrite(); });
   go('dashboard'); fsInit();
 }
-window.INV = { get S() { return S; }, save, addCatalogMissing, fs: { link: fsLink, open: fsOpen, write: fsWrite, get state() { return fsState; }, get handle() { return fsHandle; } }, ledger, balanceMatrix, balanceOf, go, openDocModal, viewDoc, dailyData, refreshAll, matchItem, normName };
+window.INV = { get S() { return S; }, save, addCatalogMissing, exportPortable, fs: { link: fsLink, open: fsOpen, write: fsWrite, get state() { return fsState; }, get handle() { return fsHandle; } }, ledger, balanceMatrix, balanceOf, go, openDocModal, viewDoc, dailyData, refreshAll, matchItem, normName };
 document.addEventListener('DOMContentLoaded', init);
 </script>
 </body>
