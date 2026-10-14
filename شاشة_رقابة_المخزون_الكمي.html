@@ -383,7 +383,7 @@ details[open]>summary::before{content:"▾ "}
       <button data-page="reports"><svg><use href="#i-rep"/></svg>التقارير</button>
       <button data-page="settings"><svg><use href="#i-set"/></svg>الإعدادات</button>
     </nav>
-    <div class="foot">الإصدار <span id="verFoot"></span> · حفظ محلي تلقائي<br><span id="saveStamp"></span></div>
+    <div class="foot">الإصدار <span id="verFoot"></span> · <span id="fsFoot">حفظ محلي</span><br><span id="saveStamp"></span></div>
   </aside>
 
   <div class="main">
@@ -409,6 +409,7 @@ details[open]>summary::before{content:"▾ "}
     </header>
 
     <main class="content">
+      <div id="fsBanner"></div>
 
       <!-- ===== Dashboard ===== -->
       <section class="page on" data-page="dashboard">
@@ -638,6 +639,13 @@ details[open]>summary::before{content:"▾ "}
 
       <!-- ===== Settings ===== -->
       <section class="page" data-page="settings">
+        <div class="card">
+          <div class="hd"><div><h2>ملف البيانات على الجهاز</h2><p>الحفظ الآمن: تربط ملف JSON مرة واحدة، وبعدها يُحفظ كل تعديل فيه تلقائياً. الملف ملكك على الجهاز، ولا يتأثر بمسح بيانات المتصفح، ويمكن فتحه من أي نسخة من الشاشة أو نسخه لجهاز آخر.</p></div><div id="fsStatus"></div></div>
+          <div class="bd" style="display:flex;flex-direction:column;gap:12px">
+            <div class="row"><button class="btn primary" id="fsLink"><svg><use href="#i-plus"/></svg>ربط ملف بيانات جديد (حفظ باسم)</button><button class="btn" id="fsOpen"><svg><use href="#i-up"/></svg>فتح ملف بيانات موجود</button><button class="btn" id="fsReconnect">إعادة الاتصال بالملف</button><button class="btn" id="fsSaveNow"><svg><use href="#i-dl"/></svg>حفظ الآن</button><button class="btn ghost" id="fsUnlink">فصل الملف</button></div>
+            <div class="hint">كيف يعمل: اضغط "ربط ملف بيانات جديد" واختر مكان الملف (يفضَّل بجانب ملف الشاشة). عند فتح الشاشة لاحقاً قد يطلب المتصفح إذناً بنقرة واحدة للوصول إلى الملف، ثم يُقرأ منه ويُحفظ فيه تلقائياً. يعمل في Chrome وEdge. المتصفحات الأخرى تعتمد على الحفظ المحلي والنسخ الاحتياطي اليدوي.</div>
+          </div>
+        </div>
         <div class="grid g2">
           <div class="card">
             <div class="hd"><div><h2>بيانات الشركة والخيارات</h2></div></div>
@@ -798,7 +806,7 @@ details[open]>summary::before{content:"▾ "}
 /* =========================================================
    رقابة المخزون الكمي — منطق الشاشة
    ========================================================= */
-const APP_VER = '1.4.1';
+const APP_VER = '1.5.0';
 const DB_KEY = 'kinv_ctrl_v1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -993,8 +1001,8 @@ let _ledger = null;
 function save() {
   S.updatedAt = new Date().toISOString();
   _ledger = null;
-  try { localStorage.setItem(DB_KEY, JSON.stringify(S)); } catch (e) { toast('تعذر الحفظ المحلي: ' + e.message, 'bad'); }
-  updateSaveStamp();
+  try { localStorage.setItem(DB_KEY, JSON.stringify(S)); } catch (e) { if (fsState !== 'granted') toast('تعذر الحفظ المحلي: ' + e.message, 'bad'); }
+  updateSaveStamp(); fsQueue();
 }
 function updateSaveStamp() { const el = $('#saveStamp'); if (el) el.textContent = S.updatedAt ? 'آخر حفظ: ' + new Date(S.updatedAt).toLocaleString('ar-JO', { hour12: true }) : ''; }
 function nextNo(type) {
@@ -1047,6 +1055,90 @@ function balanceOf(M, itemId, whId) {
 }
 function itemUsed(itemId) { return ledger().some(e => e.itemId === itemId) || Object.values(S.boms).some(b => b.lines.some(l => l.itemId === itemId)) || !!S.boms[itemId]; }
 function whUsed(whId) { return ledger().some(e => e.wh === whId); }
+
+
+/* =========================================================
+   ملف البيانات على الجهاز (File System Access API)
+   يحفظ كل تعديل تلقائياً في ملف JSON يختاره المستخدم مرة واحدة،
+   فلا تضيع البيانات إذا مسح المتصفح تخزينه المحلي.
+   ========================================================= */
+const idb = {
+  open() { return new Promise((res, rej) => { const r = indexedDB.open('kinv_fs', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
+  async get(k) { const db = await this.open(); return new Promise((res, rej) => { const t = db.transaction('kv', 'readonly').objectStore('kv').get(k); t.onsuccess = () => res(t.result); t.onerror = () => rej(t.error); }); },
+  async set(k, v) { const db = await this.open(); return new Promise((res, rej) => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => res(); t.onerror = () => rej(t.error); }); },
+  async del(k) { const db = await this.open(); return new Promise((res, rej) => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').delete(k); t.oncomplete = () => res(); t.onerror = () => rej(t.error); }); },
+};
+const FS_OK = typeof window !== 'undefined' && 'showSaveFilePicker' in window && 'showOpenFilePicker' in window;
+const FS_TYPES = [{ description: 'ملف بيانات المخزون (JSON)', accept: { 'application/json': ['.json'] } }];
+let fsHandle = null, fsState = 'none', fsErr = '', fsLast = null, fsTimer = null, fsDirty = false; // none | prompt | granted | unsupported | error
+let lsOK = true;
+function storageCheck() { try { localStorage.setItem('__kinv_t', '1'); if (localStorage.getItem('__kinv_t') !== '1') throw 0; localStorage.removeItem('__kinv_t'); lsOK = true; } catch (e) { lsOK = false; } }
+async function fsInit() {
+  if (!FS_OK) { fsState = 'unsupported'; fsRender(); return; }
+  try { fsHandle = await idb.get('handle'); } catch (e) { fsHandle = null; }
+  if (!fsHandle || typeof fsHandle.queryPermission !== 'function') { fsHandle = null; fsState = 'none'; fsRender(); return; }
+  try { const p = await fsHandle.queryPermission({ mode: 'readwrite' }); fsState = p === 'granted' ? 'granted' : 'prompt'; } catch (e) { fsState = 'prompt'; }
+  if (fsState === 'granted') await fsLoadFromFile();
+  fsRender();
+}
+async function fsLoadFromFile() {
+  try {
+    const f = await fsHandle.getFile(); const txt = await f.text();
+    if (!txt.trim()) { await fsWrite(); return; }
+    const o = JSON.parse(txt); if (!o || !Array.isArray(o.items)) throw new Error('بنية ملف البيانات غير صحيحة');
+    const fileT = o.updatedAt || '', localT = S.updatedAt || '';
+    if (fileT > localT || (!S.items.length && !S.docs.length)) { S = mergeState(o); try { localStorage.setItem(DB_KEY, JSON.stringify(S)); } catch (e) { } applyTheme(); refreshAll(); updateSaveStamp(); }
+    else if (localT > fileT) await fsWrite();
+    fsLast = new Date(f.lastModified); fsErr = '';
+  } catch (e) { fsState = 'error'; fsErr = e.message; }
+}
+async function fsWrite() {
+  if (!fsHandle || fsState !== 'granted') return;
+  clearTimeout(fsTimer); fsTimer = null;
+  try { const w = await fsHandle.createWritable(); await w.write(JSON.stringify(S, null, 1)); await w.close(); fsLast = new Date(); fsDirty = false; fsErr = ''; }
+  catch (e) { fsState = 'error'; fsErr = e.message; }
+  fsRender();
+}
+function fsQueue() { if (fsState !== 'granted') return; fsDirty = true; clearTimeout(fsTimer); fsTimer = setTimeout(fsWrite, 600); }
+async function fsLink() {
+  if (!FS_OK) return toast('هذا المتصفح لا يدعم الحفظ المباشر في ملف — استخدم Chrome أو Edge', 'warn');
+  try {
+    const h = await window.showSaveFilePicker({ suggestedName: `بيانات_المخزون${S.company ? '_' + S.company : ''}.json`, types: FS_TYPES });
+    fsHandle = h; fsState = 'granted'; try { await idb.set('handle', h); } catch (e) { console.warn('idb', e); }
+    await fsWrite(); fsRender(); toast('تم ربط ملف البيانات — سيُحفظ كل تعديل فيه تلقائياً', 'ok');
+  } catch (e) { if (e.name !== 'AbortError') toast('تعذر ربط الملف: ' + e.message, 'bad'); }
+}
+async function fsOpen() {
+  if (!FS_OK) return toast('هذا المتصفح لا يدعم الحفظ المباشر في ملف — استخدم Chrome أو Edge', 'warn');
+  try {
+    const [h] = await window.showOpenFilePicker({ types: FS_TYPES, multiple: false });
+    const f = await h.getFile(); const o = JSON.parse(await f.text()); if (!o || !Array.isArray(o.items) || !Array.isArray(o.docs)) throw new Error('بنية ملف البيانات غير صحيحة');
+    if ((S.items.length || S.docs.length) && !confirm(`سيتم استبدال البيانات الحالية بمحتوى الملف "${f.name}" (${o.items.length} صنف، ${o.docs.length} سند)، وسيصبح هذا الملف هو ملف الحفظ التلقائي. متابعة؟`)) return;
+    const p = await h.requestPermission({ mode: 'readwrite' }); if (p !== 'granted') throw new Error('لم يُمنح إذن الكتابة على الملف');
+    fsHandle = h; fsState = 'granted'; try { await idb.set('handle', h); } catch (e) { console.warn('idb', e); }
+    S = mergeState(o); save(); applyTheme(); refreshAll(); fsLast = new Date(); fsRender(); toast(`تم فتح ملف البيانات: ${S.items.length} صنف، ${S.docs.length} سند`, 'ok');
+  } catch (e) { if (e.name !== 'AbortError') toast('تعذر فتح الملف: ' + e.message, 'bad'); }
+}
+async function fsReconnect() {
+  if (!fsHandle) return fsLink();
+  try { const p = await fsHandle.requestPermission({ mode: 'readwrite' }); if (p !== 'granted') return toast('لم يُمنح الإذن', 'warn'); fsState = 'granted'; await fsLoadFromFile(); fsRender(); if (fsState === 'granted') toast('تم الاتصال بملف البيانات', 'ok'); }
+  catch (e) { toast('تعذر الاتصال: ' + e.message, 'bad'); }
+}
+async function fsUnlink() { if (!confirm('فصل ملف البيانات؟ لن يُحذف الملف، لكن التعديلات القادمة لن تُحفظ فيه.')) return; fsHandle = null; fsState = 'none'; try { await idb.del('handle'); } catch (e) { } fsRender(); }
+function fsRender() {
+  const name = fsHandle?.name || '';
+  const st = { granted: `<span class="chip in dot">ملف البيانات متصل</span> <span class="mono small">${esc(name)}</span>${fsLast ? ` <span class="small muted">· آخر حفظ ${fsLast.toLocaleTimeString('ar-JO')}</span>` : ''}`, prompt: `<span class="chip mfg dot">ملف البيانات بانتظار الإذن</span> <span class="mono small">${esc(name)}</span>`, none: `<span class="chip out dot">لا يوجد ملف بيانات مرتبط</span>`, error: `<span class="chip out dot">خطأ في ملف البيانات</span> <span class="small">${esc(fsErr)}</span>`, unsupported: `<span class="chip muted">المتصفح لا يدعم الحفظ في ملف</span>` }[fsState];
+  const foot = $('#fsFoot'); if (foot) foot.innerHTML = { granted: `ملف البيانات: متصل ✓`, prompt: `ملف البيانات: بانتظار الإذن`, none: `ملف البيانات: غير مرتبط`, error: `ملف البيانات: خطأ`, unsupported: `حفظ محلي فقط` }[fsState];
+  const s = $('#fsStatus'); if (s) s.innerHTML = st;
+  const b = $('#fsBanner'); if (!b) return;
+  if (!lsOK) b.innerHTML = `<div class="hint bad"><b>تنبيه:</b> تخزين المتصفح المحلي معطّل أو ممتلئ في هذا المتصفح، لذلك لن تُحفظ البيانات بين الجلسات. اربط ملف بيانات على الجهاز من الزر التالي ليُحفظ كل تعديل في الملف مباشرة. <button class="btn sm primary" id="fsBannerLink">ربط ملف بيانات</button></div>`;
+  else if (fsState === 'prompt') b.innerHTML = `<div class="hint warn"><b>بياناتك محفوظة في الملف "${esc(name)}".</b> المتصفح يحتاج إذنك لقراءته والكتابة فيه في هذه الجلسة. <button class="btn sm primary" id="fsBannerReconnect">الاتصال بملف البيانات</button></div>`;
+  else if (fsState === 'error') b.innerHTML = `<div class="hint bad"><b>تعذر الحفظ في ملف البيانات "${esc(name)}":</b> ${esc(fsErr)}. <button class="btn sm" id="fsBannerReconnect">إعادة المحاولة</button> <button class="btn sm" id="fsBannerLink">ربط ملف آخر</button></div>`;
+  else if (fsState === 'none' && FS_OK && !localStorage.getItem('kinv_fs_dismiss')) b.innerHTML = `<div class="hint" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="flex:1"><b>احمِ بياناتك من مسح المتصفح:</b> اربط ملف بيانات على الجهاز وسيُحفظ كل تعديل فيه تلقائياً، ويمكن فتحه من أي نسخة من الشاشة.</span><button class="btn sm primary" id="fsBannerLink">ربط ملف بيانات</button><button class="btn sm ghost" id="fsBannerDismiss">لاحقاً</button></div>`;
+  else b.innerHTML = '';
+  b.querySelector('#fsBannerLink')?.addEventListener('click', fsLink); b.querySelector('#fsBannerReconnect')?.addEventListener('click', fsReconnect);
+  b.querySelector('#fsBannerDismiss')?.addEventListener('click', () => { try { localStorage.setItem('kinv_fs_dismiss', '1'); } catch (e) { } fsRender(); });
+}
 
 /* ---------- UI helpers ---------- */
 function toast(msg, kind = '') {
@@ -1937,7 +2029,7 @@ function renderChart14(days, agg) {
 function renderSettings() {
   $('#stCompany').value = S.company || ''; fillSelect($('#stDefWh'), whOpts(), { blank: 'بدون' }); $('#stDefWh').value = S.settings.defaultWh || ''; $('#stTheme').value = S.settings.theme || 'auto'; $('#stNeg').checked = !!S.settings.allowNegative;
   const size = Math.round((localStorage.getItem(DB_KEY) || '').length / 1024);
-  $('#bkInfo').innerHTML = `الحجم الحالي للبيانات: <b>${size} كيلوبايت</b> — ${S.items.length} صنف، ${S.warehouses.length} مستودع، ${S.docs.length} سند، ${S.counts.length} جرد، ${Object.keys(S.boms).length} وصفة${S.updatedAt ? ` — آخر تحديث ${new Date(S.updatedAt).toLocaleString('ar-JO')}` : ''}.`;
+  fsRender(); $('#bkInfo').innerHTML = `الحجم الحالي للبيانات: <b>${size} كيلوبايت</b> — ${S.items.length} صنف، ${S.warehouses.length} مستودع، ${S.docs.length} سند، ${S.counts.length} جرد، ${Object.keys(S.boms).length} وصفة${S.updatedAt ? ` — آخر تحديث ${new Date(S.updatedAt).toLocaleString('ar-JO')}` : ''}.`;
 }
 function saveSettings() { S.company = $('#stCompany').value.trim(); S.settings.defaultWh = $('#stDefWh').value; S.settings.theme = $('#stTheme').value; S.settings.allowNegative = $('#stNeg').checked; save(); applyTheme(); refreshLookups(); toast('تم حفظ الإعدادات', 'ok'); }
 function backupExport() { download(`نسخة_احتياطية_المخزون_${todayISO()}.json`, new Blob([JSON.stringify(S, null, 1)], { type: 'application/json' })); }
@@ -1967,7 +2059,7 @@ function bindFile(dropId, inputId, handler) {
   drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) handler(f); };
 }
 function init() {
-  S = load(); seedCatalogIfEmpty(); $('#verFoot').textContent = APP_VER; applyTheme(); refreshLookups(); updateSaveStamp();
+  storageCheck(); S = load(); seedCatalogIfEmpty(); $('#verFoot').textContent = APP_VER; applyTheme(); refreshLookups(); updateSaveStamp();
   // nav
   $$('#nav button').forEach(b => b.onclick = () => go(b.dataset.page));
   $$('[data-go]').forEach(b => { if (!b.classList.contains('kpi')) b.onclick = () => go(b.dataset.go); });
@@ -2035,9 +2127,13 @@ function init() {
   document.addEventListener('keydown', e => { if (e.key === 'Escape') { const m = $$('.ov.on').pop(); if (m) closeModal(m.id); } if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && $('#docModal').classList.contains('on')) saveDoc(false); });
   $$('.ov').forEach(ov => ov.addEventListener('mousedown', e => { if (e.target === ov && ov.id !== 'docModal') closeModal(ov.id); }));
   window.addEventListener('afterprint', () => { $('#printArea').innerHTML = ''; });
-  go('dashboard');
+  // ملف البيانات
+  $('#fsLink').onclick = fsLink; $('#fsOpen').onclick = fsOpen; $('#fsReconnect').onclick = fsReconnect; $('#fsUnlink').onclick = fsUnlink; $('#fsSaveNow').onclick = () => { if (fsState === 'granted') fsWrite(); else toast('لا يوجد ملف بيانات مرتبط', 'warn'); };
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && fsDirty) fsWrite(); });
+  window.addEventListener('beforeunload', () => { if (fsDirty) fsWrite(); });
+  go('dashboard'); fsInit();
 }
-window.INV = { get S() { return S; }, save, addCatalogMissing, ledger, balanceMatrix, balanceOf, go, openDocModal, viewDoc, dailyData, refreshAll, matchItem, normName };
+window.INV = { get S() { return S; }, save, addCatalogMissing, fs: { link: fsLink, open: fsOpen, write: fsWrite, get state() { return fsState; }, get handle() { return fsHandle; } }, ledger, balanceMatrix, balanceOf, go, openDocModal, viewDoc, dailyData, refreshAll, matchItem, normName };
 document.addEventListener('DOMContentLoaded', init);
 </script>
 </body>
