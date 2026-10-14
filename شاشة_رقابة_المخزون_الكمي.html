@@ -798,7 +798,7 @@ details[open]>summary::before{content:"▾ "}
 /* =========================================================
    رقابة المخزون الكمي — منطق الشاشة
    ========================================================= */
-const APP_VER = '1.4.0';
+const APP_VER = '1.4.1';
 const DB_KEY = 'kinv_ctrl_v1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -977,8 +977,15 @@ function defaultState() {
     settings: { allowNegative: false, theme: 'auto', defaultWh: '', salesMap: null },
   };
 }
+/** ترقية بيانات الإصدارات السابقة: ملاحظات الأسطر التي سُجّلت فيها الكمية نفسها بالخطأ (قبل 1.4.0) تُمسح */
+function migrate(o) {
+  if (!o || !Array.isArray(o.docs)) return o;
+  for (const d of o.docs) for (const l of d.lines || []) { if (l.note && /^[\d.,\s]+$/.test(String(l.note)) && Math.abs(num(l.note) - (+l.qty || 0)) < 1e-9) l.note = ''; }
+  return o;
+}
+function mergeState(o) { const d = defaultState(); return migrate(Object.assign(d, o, { settings: Object.assign(d.settings, o.settings || {}) })); }
 function load() {
-  try { const r = localStorage.getItem(DB_KEY); if (r) { const o = JSON.parse(r); const d = defaultState(); return Object.assign(d, o, { settings: Object.assign(d.settings, o.settings || {}) }); } } catch (e) { console.warn('load failed', e); }
+  try { const r = localStorage.getItem(DB_KEY); if (r) return mergeState(JSON.parse(r)); } catch (e) { console.warn('load failed', e); }
   return defaultState();
 }
 function seedCatalogIfEmpty() { if (!S.items.length && !S.catalogSeeded) { S.items = catalogItems(); S.catalogSeeded = true; save(); } }
@@ -1935,7 +1942,7 @@ function renderSettings() {
 function saveSettings() { S.company = $('#stCompany').value.trim(); S.settings.defaultWh = $('#stDefWh').value; S.settings.theme = $('#stTheme').value; S.settings.allowNegative = $('#stNeg').checked; save(); applyTheme(); refreshLookups(); toast('تم حفظ الإعدادات', 'ok'); }
 function backupExport() { download(`نسخة_احتياطية_المخزون_${todayISO()}.json`, new Blob([JSON.stringify(S, null, 1)], { type: 'application/json' })); }
 function backupImport(file) {
-  const fr = new FileReader(); fr.onload = e => { try { const o = JSON.parse(e.target.result); if (!o || !Array.isArray(o.items) || !Array.isArray(o.docs)) throw new Error('بنية الملف غير صحيحة'); if (!confirm(`سيتم استبدال كل البيانات الحالية بمحتوى النسخة (${o.items.length} صنف، ${o.docs.length} سند). متابعة؟`)) return; S = Object.assign(defaultState(), o, { settings: Object.assign(defaultState().settings, o.settings || {}) }); save(); applyTheme(); refreshAll(); toast('تم استرجاع النسخة الاحتياطية', 'ok'); } catch (x) { toast('تعذر قراءة الملف: ' + x.message, 'bad'); } }; fr.readAsText(file);
+  const fr = new FileReader(); fr.onload = e => { try { const o = JSON.parse(e.target.result); if (!o || !Array.isArray(o.items) || !Array.isArray(o.docs)) throw new Error('بنية الملف غير صحيحة'); if (!confirm(`سيتم استبدال كل البيانات الحالية بمحتوى النسخة (${o.items.length} صنف، ${o.docs.length} سند). متابعة؟`)) return; S = mergeState(o); save(); applyTheme(); refreshAll(); toast(`تم استرجاع النسخة الاحتياطية: ${S.items.length} صنف، ${S.warehouses.length} مستودع، ${S.docs.length} سند`, 'ok'); } catch (x) { toast('تعذر قراءة الملف: ' + x.message, 'bad'); } }; fr.readAsText(file);
 }
 function exportAllExcel() {
   const M = balanceMatrix();
