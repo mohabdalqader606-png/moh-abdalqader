@@ -131,7 +131,7 @@ pre.sql{background:#0f172a;color:#e2e8f0;border-radius:8px;padding:12px;font-siz
 .colpick label{display:inline-flex;align-items:center;gap:4px;font-size:12px;cursor:pointer}
 .empty{padding:30px;text-align:center;color:var(--muted)}
 footer{color:var(--muted);font-size:11px;text-align:center;padding:10px}
-#printHead{display:none}
+#printHead,#printExplain{display:none}
 @page{size:A4 landscape;margin:9mm 9mm 11mm}
 @media print{
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -141,7 +141,14 @@ footer{color:var(--muted);font-size:11px;text-align:center;padding:10px}
   header.top .sub,.tabs,.hbtn,.bar,.subtabs,.btn,.chips,.colpick,.more,footer,.tip,.toast{display:none!important}
   #printHead{display:block!important;font-size:10px;color:#333;border-bottom:1px solid #ccc;padding:4px 0;margin-bottom:6px}
   #printHead b{color:#000}
-  .thead{margin-bottom:4px}.thead h2{font-size:13px}.thead .m{font-size:9.5px}
+  header.top h1{display:none}header.top{border-bottom:0;padding:0}
+  .thead,.card h3 .hint,.foot,.card .foot,.card h3 select{display:none!important}
+  #printExplain{display:block!important;page-break-before:always;font-size:10px;line-height:1.6}
+  #printExplain h2{font-size:14px;color:#0d366b;margin:0 0 6px;border-bottom:2px solid #0d366b;padding-bottom:3px}
+  #printExplain h3{font-size:11.5px;color:#0d366b;margin:8px 0 3px}
+  #printExplain table{border-collapse:collapse;width:100%;font-size:9.5px}#printExplain td,#printExplain th{border:1px solid #ccc;padding:2px 5px;text-align:right;vertical-align:top}#printExplain th{background:#e9eef5}
+  #printExplain ul,#printExplain ol{margin:2px 0;padding-right:18px}
+  #printHead .ph1{font-size:13px;color:#0d366b}#printHead .ph2{font-size:10.5px;margin-top:2px}#printHead .ph3{font-size:9px;color:#666;margin-top:2px}
   main{padding:0}
   .tw{max-height:none!important;overflow:visible!important;border:0;border-radius:0}
   table.t{font-size:8.5px;width:100%}
@@ -176,6 +183,7 @@ footer{color:var(--muted);font-size:11px;text-align:center;padding:10px}
 </header>
 <div id="printHead"></div>
 <main id="main"></main>
+<div id="printExplain"></div>
 <footer id="ver"></footer>
 <div class="ov" id="ov"><div class="md" id="md"></div></div>
 <div class="tip" id="tip"></div>
@@ -1484,7 +1492,7 @@ const QDEF=[
  {id:'q16',n:"فصل المهام التفصيلي مستنداً بمستند",short:"فصل المهام التفصيلي",g:CHECKS[15],doc:"رقم المستند",date:"تاريخ المستند",dims:["اسم المستخدم", "نوع الحركة", "اسم الطرف"],ms:["المبلغ"],flags:["الملاحظات"],text:[],cols:["فتح المستخدم", "رمز المستخدم", "اسم المستخدم", "نوع الحركة", "رقم المستند", "فتح فاتورة", "فتح اشعار دائن", "فتح سند قبض", "فتح امر شراء", "فتح فاتورة شراء", "فتح سند صرف", "فتح القيد", "فتح ادخال مخزون", "فتح اخراج مخزون", "فتح الطرف", "اسم الطرف", "تاريخ المستند", "تاريخ الادخال", "ايام التأخير", "المبلغ", "درجة الخطورة", "الملاحظات"]},
 ];
 /* ================= utils ================= */
-const VERSION='v2.1';
+const VERSION='v2.3';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nf0=new Intl.NumberFormat('en-US',{maximumFractionDigits:0,minimumFractionDigits:0});
@@ -2032,16 +2040,43 @@ CUSTOM.q14_emp=(T,el)=>{const P=T.P,V=P.V,idx=filtered(T);
       onRow:r=>drillTo(T,cItem.i,r.label==='(بدون)'?'':r.label,'الصنف')});}
 };
 
+/* ================= شرح التقارير للطباعة ================= */
+const EXPL_COMMON=[['#','تسلسل السطر في التقرير'],['الأسطر','عدد أسطر ناتج الكويري الداخلة في هذا السطر'],['المستندات','عدد المستندات المختلفة (رقم المستند) الداخلة فيه'],['Σ (عمود)','مجموع العمود الرقمي المذكور عبر الأسطر الداخلة'],['% من (عمود)','حصة هذا السطر من إجمالي العمود عبر كل التقرير'],['أسطر ✖ / عليها تنبيه','عدد الأسطر التي يحمل تنبيهها علامة ✖ (مخالفة مؤكدة) أو أي تنبيه'],['أعلى درجة','أعلى درجة خطورة وردت في أسطر هذا السطر (كلما زادت وجب فحصها أولاً)']];
+const EXPL_VIEWS={
+ ov:{t:'نظرة عامة',d:'ملخص تنفيذي لناتج الكويري ضمن النطاق المحدد: مؤشرات رقمية (عدد الأسطر والمستندات، مجاميع المبالغ الرئيسية، عدد الأسطر التي عليها تنبيه مؤكد ✖، الأسطر بدرجة خطورة 2 فأكثر، ومتوسط أيام التأخير بين تاريخ المستند وتاريخ إدخاله)، ثم رسم بياني للمبلغ وعدد الأسطر حسب اليوم أو الأسبوع أو الشهر، ثم ملخص التنبيهات، وأعلى 10 قيم في أهم بُعدين (مثل العميل والمندوب)، وتوزيع درجة الخطورة إن وُجدت.',cols:[['الأسطر','عدد أسطر الكويري ضمن النطاق'],['عدد المستندات','عدد المستندات المختلفة'],['أسطر عليها ✖','أسطر فيها مخالفة مؤكدة في عمود التنبيه'],['متوسط أيام التأخير','متوسط الفرق بين تاريخ المستند وتاريخ إدخاله بالنظام؛ أكثر من يومين يستحق السؤال'],['ملخص التنبيهات','كل تنبيه وعدد أسطره ونسبتها ومستنداته ومجاميعه']]},
+ det:{t:'الكشف التفصيلي',d:'كل أسطر ناتج الكويري ضمن النطاق، بأعمدة الكويري نفسها كما وردت من النظام، مع عمود «التنبيهات» الذي يفكك عمود التنبيه إلى علامات منفصلة. صف Σ في الأعلى يجمع الأعمدة الرقمية. أعمدة «فتح ...» (أرقام الربط الداخلية للنظام) محذوفة من الطباعة ما لم تُظهرها.',cols:[['التنبيهات','العلامات المستخرجة من عمود التنبيه/السبب؛ ✖ = مخالفة مؤكدة، بدون علامة = للعلم']]},
+ fl:{t:'التنبيهات',d:'يجمع الأسطر حسب نوع التنبيه الوارد في الكويري، ثم مصفوفة تبيّن توزيع كل تنبيه على قيم البُعد المختار (مثل المندوب أو المستخدم) لمعرفة من يتكرر عنده كل نوع مخالفة.',cols:[['التنبيه','نص التنبيه كما يولّده الكويري (بعد حذف التفاصيل الرقمية المتغيرة)'],['الأسطر / % من الأسطر','عدد الأسطر التي تحمل هذا التنبيه ونسبتها من كل الأسطر'],['المستندات','عدد المستندات المختلفة التي ورد فيها'],['Σ (عمود)','مجموع المبالغ الرئيسية في أسطر هذا التنبيه']]},
+ tm:{t:'حسب الفترة',d:'تجميع الأسطر حسب اليوم أو الأسبوع أو الشهر على عمود التاريخ الرئيسي للكويري، مع رسم بياني ومجموع المبلغ الرئيسي وعدد الأسطر والمستندات والتنبيهات لكل فترة، ومتوسط أيام التأخير إن وُجد.',cols:[['الفترة','اليوم (مع اسم اليوم) أو بداية الأسبوع أو الشهر'],['متوسط أيام التأخير','متوسط الفرق بين تاريخ المستند وتاريخ الإدخال في تلك الفترة']]},
+ rk:{t:'درجة الخطورة',d:'توزيع الأسطر حسب درجة الخطورة التي يحسبها الكويري (عدد العلامات المؤكدة على السطر)، ثم توزيع الدرجات على قيم البُعد المختار. درجة 2 فأكثر تُفحص في نفس اليوم.',cols:[['الدرجة','عدد المخالفات المؤكدة على السطر كما يحسبها الكويري؛ 0 = للعلم فقط'],['درجة N (أعمدة)','عدد أسطر كل درجة لدى هذه القيمة']]},
+ q14_emp:{t:'تجميع الموظف',d:'يجمع مبيعات الموظفين لكل حساب موظف (أو حساب عام) ويقيسها مقابل سياسة البيع للموظفين بالكلفة + 10% كحد أدنى. الكلفة هي كلفة الباتش الحالية (أو تقديرية لغير المدلفر).',cols:[['الفواتير / الأسطر','عدد فواتير الموظف وأسطرها في الفترة'],['المشتريات','مجموع صافي البيع للموظف'],['الكلفة / الربح','مجموع الكلفة ومجموع (صافي البيع - الكلفة)'],['الزيادة على الكلفة','الربح ÷ الكلفة؛ السياسة 10% كحد أدنى؛ الأحمر = أقل من الكلفة، الأصفر = أقل من 10%'],['الحد الأدنى','الكلفة × 1.10'],['التنازل','ما نقص عن الحد الأدنى فقط (لا يُحتسب ما زاد عنه)'],['% التنازل من المشتريات','التنازل ÷ المشتريات'],['أسطر < الكلفة+10% / تحت الكلفة','عدد الأسطر المخالفة للسياسة، ومنها ما بيع بأقل من الكلفة نفسها'],['عدد المُدخلين / المُدخلون','من أدخل فواتير هذا الموظف وكم فاتورة لكل مُدخل: هل المُدخل هو المشتري أو زميل مقرّب؟'],['غير مسمّى','فاتورة على حساب عام (مبيعات نقدية) بمندوب «موظفين» فلا يُعرف المشتري'],['بالفترة (كويري)','الأرقام كما يجمعها الكويري نفسه على كامل الفترة بغض النظر عن الفلاتر']]}
+};
+function explainView(T){const v=T.view;let e=EXPL_VIEWS[v];if(!e&&v.startsWith('g')&&v!=='guide'){const c=T.P.cols[+v.slice(1)];e={t:'حسب '+dimLabel(c),d:'تجميع كل أسطر الكويري حسب قيم «'+c.t+'»: لكل قيمة عدد الأسطر والمستندات ومجاميع المبالغ ونسبتها من الإجمالي وعدد الأسطر التي عليها تنبيه مؤكد وأعلى درجة خطورة. الجدول الثاني تفصيل ثنائي مع بُعد آخر.',cols:[]};}
+  if(!e)e={t:v,d:'',cols:[]};return e;}
+function printExplain(T){const g=T.def.g;if(T.def.kind==='aging')return agExplain(T);const e=explainView(T);
+  let h='<h2>شرح التقرير — '+esc(T.def.n)+' — '+esc(e.t)+'</h2>';
+  h+='<h3>الهدف من هذا الكويري</h3><p>'+esc(g.goal)+'</p>';
+  h+='<h3>مصدر البيانات</h3><p>ناتج الكويري المعتمد «'+esc(g.t)+'» من نظام SAP Business One عبر Query Manager ('+esc(g.m)+'). الفلترة الأصلية للكويري على تاريخ إدخال الحركة في النظام وليس تاريخ المستند، لذلك قد تظهر حركة أُدخلت اليوم بتاريخ سابق، ويبيّنها عمود «أيام التأخير».</p>';
+  h+='<h3>ما يعرضه هذا العرض</h3><p>'+esc(e.d)+'</p>';
+  const cols=[...e.cols,...EXPL_COMMON];h+='<h3>معنى الأعمدة</h3><table><thead><tr><th style="width:26%">العمود</th><th>المعنى</th></tr></thead><tbody>'+cols.map(r=>'<tr><td>'+esc(r[0])+'</td><td>'+esc(r[1])+'</td></tr>').join('')+'</tbody></table>';
+  h+='<h3>ماذا يعرض الكويري (البنود والعلامات)</h3><table><thead><tr><th style="width:30%">البند</th><th>المعنى</th></tr></thead><tbody>'+g.shows.map(r=>'<tr><td>'+esc(r[0])+'</td><td>'+esc(r[1])+'</td></tr>').join('')+'</tbody></table>';
+  h+='<h3>كيف تقرأ النتيجة</h3><p>'+esc(g.read)+'</p><h3>ماذا تفعل</h3><ol>'+g.act.map(a=>'<li>'+esc(a)+'</li>').join('')+'</ol>';
+  h+='<h3>ملاحظات عامة</h3><ul><li>✖ في التنبيه = مخالفة مؤكدة تحتاج إجراء؛ التنبيه بلا علامة = للعلم.</li><li>«أيام التأخير» = الفرق بين تاريخ المستند وتاريخ إدخاله؛ أكثر من يومين يستحق السؤال.</li><li>الأرقام بالدينار الأردني ما لم يُذكر غير ذلك؛ الكميات بالوحدة الواردة في الكويري.</li><li>التقرير مطبوع ضمن النطاق المذكور في ترويسته فقط؛ الأسطر خارج النطاق غير مشمولة في المجاميع.</li></ul>';
+  return h;}
 /* ================= طباعة A4 ================= */
-function printFilters(){const out=[];const bar=document.querySelector('#fbar .bar, #agbar');if(bar){bar.querySelectorAll('.fld').forEach(f=>{const lab=(f.querySelector('label')||{}).textContent||'';const inp=f.querySelector('select,input');if(!inp)return;
-    if(inp.tagName==='SELECT'){if(inp.selectedIndex>0||(inp.id==='fMode'||inp.id==='agMode'))out.push(lab.trim()+': '+inp.options[inp.selectedIndex].textContent.trim());}
-    else if(inp.type==='checkbox'){if(inp.checked)out.push(lab.trim());}else if(inp.value&&inp.value!=='0')out.push(lab.trim()+': '+inp.value);});
-  bar.querySelectorAll('label.chk').forEach(l=>{const c=l.querySelector('input');if(c&&c.checked)out.push(l.textContent.trim());});}
+const PRINT_SKIP=new Set(['الحد الأدنى للتعرض','دمج الفروع','تاريخ اللقطة','الشيكات']);
+/* فلاتر النطاق فقط (بدون الإعدادات التقنية) */
+function printFilters(){const out=[];const bar=document.querySelector('#fbar .bar, #agbar');if(bar){bar.querySelectorAll('.fld').forEach(f=>{const lab=((f.querySelector('label')||{}).textContent||'').trim();const inp=f.querySelector('select,input');if(!inp||PRINT_SKIP.has(lab))return;
+    if(inp.tagName==='SELECT'){if(inp.selectedIndex>0)out.push(lab+': '+inp.options[inp.selectedIndex].textContent.trim());}
+    else if(inp.type==='checkbox'){if(inp.checked)out.push(lab);}else if(inp.type==='date'){if(inp.value)out.push(lab+': '+fmtDay(fromISO(inp.value)));}else if(inp.value&&inp.value!=='0')out.push(lab+': '+inp.value);});
+  bar.querySelectorAll('label.chk').forEach(l=>{const c=l.querySelector('input');const t=l.textContent.trim();if(c&&c.checked&&!PRINT_SKIP.has(t))out.push(t);});}
   document.querySelectorAll('.chips .chip').forEach(c=>out.push(c.textContent.replace(/×$/,'').trim()));return out;}
 function doPrint(){const T=TABS[ACTIVE];if(!T)return;const modal=$('ov').classList.contains('on');
   if(!modal){window.PRINT_ALL=true;try{renderTab(T);}catch(e){console.error(e);}}
-  const view=(document.querySelector('#subtabs .stab.on')||{}).textContent||'';const meta=(document.querySelector('.thead .m')||{}).textContent||'';const fl=printFilters();
-  $('printHead').innerHTML='<b>'+esc(T.def.n)+'</b>'+(view?' — '+esc(view):'')+(meta?'<br>'+esc(meta):'')+(fl.length?'<br>الفلاتر: '+esc(fl.join(' · ')):'<br>بدون فلاتر')+'<br>تاريخ الطباعة: '+new Date().toLocaleString('en-GB')+' — مركز الكيلاني للأغذية';
+  const view=((document.querySelector('#subtabs .stab.on')||{}).textContent||'').trim();const fl=printFilters();
+  let basis='';if(T.def.kind==='aging'){basis='تاريخ اللقطة: '+(T.S.snap!=null?fmtDay(T.S.snap):'—')+' · '+(T.S.mode==='with'?'الرصيد الدفتري + الشيكات المؤجلة':'الرصيد الدفتري فقط');}
+  else if(T.P&&T.P.cDate&&T.P.dMin!=null){const d1=T.S.d1!=null?T.S.d1:T.P.dMin,d2=T.S.d2!=null?T.S.d2:T.P.dMax;basis='الفترة: '+fmtDay(d1)+(d2>d1?' إلى '+fmtDay(d2):'');}
+  $('printHead').innerHTML='<div class="ph1"><b>مركز الكيلاني للأغذية</b> — <b>'+esc(T.def.n)+'</b>'+(view?' — '+esc(view):'')+(modal?' — تفاصيل':'')+'</div><div class="ph2">'+[basis,fl.length?'النطاق: '+fl.join(' · '):''].filter(Boolean).map(esc).join(' | ')+'</div><div class="ph3">تاريخ الطباعة: '+new Date().toLocaleString('en-GB')+'</div>';
+  try{$('printExplain').innerHTML=modal?'':printExplain(T);}catch(e){console.error(e);$('printExplain').innerHTML='';}
   document.body.classList.toggle('print-modal',modal);
   const done=()=>{window.PRINT_ALL=false;document.body.classList.remove('print-modal');if(!modal)try{renderTab(T);}catch(e){}window.onafterprint=null;};
   window.onafterprint=done;setTimeout(()=>{window.print();setTimeout(()=>{if(window.PRINT_ALL||document.body.classList.contains('print-modal'))done();},1500);},200);}
@@ -2267,6 +2302,33 @@ async function agInit(T){T.S=agState();T.ts={};try{const o=JSON.parse(localStora
   try{const o=JSON.parse(localStorage.getItem('kap_aging_bands')||'{}');if(o.bands)T.S.bands=o.bands;if(o.basis)T.S.basis=o.basis;if(o.nMonths)T.S.nMonths=o.nMonths;}catch(e){}
   const D=await IDB.get('aging'),D2=await IDB.get('aging_chk');if(D&&D.rows&&D.rows.length)T.D=D;if(D2&&D2.rows&&D2.rows.length)T.D2=D2;
   try{agBuild(T);agCompute(T);}catch(e){console.error(e);T.A=null;T.P=null;}}
+/* ---- شرح تقارير عمر الذمة للطباعة ---- */
+function agExplain(T){const S=T.S,v=S.view,w=S.mode==='with';
+  const method='<h3>طريقة الاحتساب</h3><ol>'+
+   '<li><b>مصدر البيانات:</b> كويري الأرصدة والأعمار بتاريخ اللقطة '+(S.snap!=null?fmtDay(S.snap):'')+' (رصيد كل عميل من دفتر الأستاذ، الشيكات المستلمة التي استحقاقها بعد اللقطة، وصافي مبيعات كل شهر من آخر 13 شهراً = فواتير ناقص مرتجعات)'+(T.D2?'، وكويري الشيكات التفصيلي (رقم السند وتاريخ الاستحقاق والبنك لكل شيك)':'')+'.</li>'+
+   '<li><b>المبلغ المعتمد للأعمار:</b> '+(w?'الرصيد الدفتري + الشيكات المؤجلة، لأن الشيك المستلم غير المحصَّل ما زال ذمة قائمة على العميل.':'الرصيد الدفتري فقط (بدون الشيكات المؤجلة).')+'</li>'+
+   '<li><b>توزيع المبلغ على الأشهر (الاستهلاك التنازلي):</b> يُفترض أن المدفوعات سدّدت الأقدم أولاً، فيُغطّى المبلغ من مبيعات الشهر الأحدث ثم الذي قبله وهكذا حتى ينفد. شهر صافيه سالب (مرتجعات أكثر من مبيعات) يُتخطى. باقٍ 50 ديناراً فأقل لا يُنقل إلى شهر أقدم (تقريب). ما يتجاوز مبيعات 13 شهراً يُسمّى «بيانات غير كافية» (رصيد افتتاحي أو أقدم) ويُعامل كأقدم ذمة.</li>'+
+   '<li><b>الاستحقاق المفروض:</b> لأقدم جزء من المبلغ. مهلة 30 يوماً فأكثر: نهاية شهر البيع + (المهلة ÷ 30) شهراً + الباقي أياماً. مهلة أقل من 30 يوماً أو عميل كاش فان (فئة Cash Van أو اسمه يحوي «كاش فان»): تاريخ الفاتورة + المهلة، وتاريخ الفاتورة يُقدَّر بتوزيع مبيعات الشهر على أيامه بانتظام مع اعتبار غير المسدد أحدثها.</li>'+
+   '<li><b>الحالة:</b> «متأخر فعلياً» = تاريخ اللقطة تجاوز الاستحقاق المفروض والمبلغ أكثر من 50 ديناراً؛ «غير مؤثر مادياً» = متأخر لكن المبلغ 50 ديناراً فأقل؛ «يستحق خلال 15 يوماً»؛ «ضمن المهلة»؛ «بيانات غير كافية»؛ «بدون رصيد»؛ «رصيد دائن» = الشركة مدينة للعميل.</li>'+
+   '<li><b>المبلغ المتأخر:</b> مجموع الأجزاء الموزعة على أشهر تجاوز استحقاقها المفروض تاريخ اللقطة (وليس كامل الرصيد).</li>'+
+   '<li><b>تجاوز السقف:</b> المبلغ المعتمد أكبر من السقف الائتماني المسجل على البطاقة (سقف صفر = لا سقف محدد فلا يُقارن).</li>'+
+   (w?'<li><b>حالة الشيكات:</b> بعد استهلاك الرصيد تُكمل الشيكات (بترتيب استحقاقها) استهلاك الأشهر الأقدم، ويُقارن تاريخ استحقاق كل شيك بالاستحقاق المفروض للشهر الذي يغطيه؛ شيك استحقاقه بعده = «شيك متأخر» أي مُنح العميل مهلة أطول من شروطه.</li>':'')+
+   (S.merge?'<li><b>دمج الفروع:</b> مفعّل — فروع العميل الواحد مجمّعة كياناً واحداً (الرصيد والشيكات والمبيعات مجموع الفروع، السقف مجموع السقوف، المهلة أعلى مهلة)، ويظهر عدد الفروع بجانب الاسم.</li>':'')+'</ol>';
+  const colsCommon=[['رمز العميل / اسم العميل','كما في بطاقة العميل بالنظام (C = عميل شركة، E = موظف)'],['المندوب / المدير','مندوب المبيعات على البطاقة، والمدير المرتبط به'],['الفئة','تصنيف العميل (Cash Van، Restaurants، SUPER MARKET...)'],['أيام السماح','مهلة السداد على البطاقة بالأيام؛ علامة «ف» = يُحتسب استحقاقه من تاريخ الفاتورة'],['السقف','السقف الائتماني على البطاقة'],['الرصيد الدفتري','رصيد العميل في دفتر الأستاذ حتى تاريخ اللقطة'],['الشيكات المؤجلة','مجموع الشيكات المستلمة التي استحقاقها بعد تاريخ اللقطة'],['الرصيد + الشيكات','المبلغ المعتمد للأعمار (مع شيكات)'],['الحالة','انظر طريقة الاحتساب، البند 5']];
+  const V={
+   ov:{t:'نظرة عامة',d:'مؤشرات النطاق المحدد (عدد العملاء، الأرصدة، الشيكات، المتأخرون والمبلغ المتأخر، تجاوز السقف)، توزيع المبلغ حسب عمر الذمة شهراً بشهر ومنه المتأخر، توزيع العملاء حسب الحالة، وأعلى 15 عميلاً بالمبلغ المتأخر وبالمبلغ المعتمد.',cols:[['الرصيد الموزع (شهر)','مجموع ما خُصّص لذلك الشهر من أرصدة كل العملاء'],['منه متأخر','الجزء الذي تجاوز استحقاقه المفروض']]},
+   cust:{t:'كشف العملاء',d:'سطر لكل عميل ضمن النطاق بكل بيانات بطاقته ورصيده ونتيجة التحليل.',cols:[['تجاوز السقف','المبلغ الزائد عن السقف إن وجد'],['عمر الذمة','أقدم شهر وصل إليه الاستهلاك: M0 الشهر الحالي، M1 الشهر السابق... 12+ أقدم من 12 شهراً'],['الاستحقاق المفروض','تاريخ استحقاق أقدم جزء من المبلغ حسب سياسة الشركة'],['أيام التأخير / المتبقية','بالأحمر وسالب = أيام التأخير عن الاستحقاق؛ بالأخضر = الأيام المتبقية له'],['المبلغ المتأخر / % المتأخر','الجزء المتأخر من المبلغ ونسبته'],['حالة الشيكات','نتيجة مقارنة استحقاق الشيكات بالاستحقاق المفروض'],['أعمدة M0..M12plus','(عند إظهار توزيع الأشهر) المبلغ المخصص لكل شهر']]},
+   bands:{t:'كشف الأعمار حسب الفترات',d:(S.basis==='cal'?'الأعمدة أشهر تقويمية: الشهر الحالي من أول الشهر حتى تاريخ اللقطة، ثم كل شهر سابق بعمود، والأقدم من ذلك مجمّع في عمود واحد. كل عمود = ما بقي غير مسدد من مبيعات ذلك الشهر بعد الاستهلاك التنازلي، بلا أي افتراض داخل الشهر.':S.basis==='me'?'الأعمدة فترات بالأيام محسوبة من نهاية شهر الفاتورة حتى تاريخ اللقطة؛ كامل مبلغ الشهر بعمر واحد.':S.basis==='due'?'الأعمدة فترات بالأيام محسوبة من الاستحقاق المفروض (أيام التأخير الفعلية بعد المهلة)؛ ما لم يستحق بعد في عمود مستقل.':'الأعمدة فترات بالأيام محسوبة من تاريخ الفاتورة تقريبياً: مبيعات الشهر موزعة بانتظام على أيامه، والمستهلك (غير المسدد) أحدثها.')+' مجموع أعمدة الفترات يساوي المبلغ المعتمد لكل عميل. يليه ملخص الفترات وتوزيعها حسب المندوب أو المدير.',cols:[['الفترات (أعمدة)','الجزء من المبلغ الذي يقع عمره ضمن تلك الفترة'],['أقدم من ذلك / أكثر من N','ما تجاوز آخر فترة، ويشمل الأرصدة الأقدم من 13 شهراً']]},
+   rep:{t:'حسب المندوب / المدير',d:'تجميع عملاء النطاق لكل مندوب أو مدير: عدد العملاء ومن عليهم رصيد، الأرصدة والشيكات والمبلغ المعتمد، عدد المتأخرين والمبلغ المتأخر ونسبته، متوسط عمر الذمة بالأشهر (مرجّح بالمبلغ)، من يستحق قريباً، ومن تجاوز السقف.',cols:[['متوسط العمر (شهر)','مجموع (عمر الذمة × المبلغ) ÷ مجموع المبالغ'],['شيكات متأخرة','عدد العملاء الذين لديهم شيك استحقاقه بعد الاستحقاق المفروض']]},
+   chk:{t:'الشيكات المؤجلة',d:'الشيكات المستلمة التي استحقاقها بعد تاريخ اللقطة من الكشف التفصيلي، مع حالة العميل، موزعة حسب شهر الاستحقاق والبنك.',cols:[['أيام حتى الاستحقاق','من تاريخ اللقطة إلى استحقاق الشيك'],['تأخير عن المفروض','كم يوماً يتجاوز استحقاق الشيك الاستحقاق المفروض للشهر الذي يغطيه']]}
+  };
+  const e=V[v]||{t:v,d:'',cols:[]};
+  let h='<h2>شرح التقرير — عمر الذمة — '+esc(e.t)+'</h2>';
+  h+='<h3>الهدف</h3><p>'+esc(T.def.g.goal)+'</p><h3>ما يعرضه هذا العرض</h3><p>'+esc(e.d)+'</p>'+method;
+  h+='<h3>معنى الأعمدة</h3><table><thead><tr><th style="width:26%">العمود</th><th>المعنى</th></tr></thead><tbody>'+[...e.cols,...colsCommon].map(r=>'<tr><td>'+esc(r[0])+'</td><td>'+esc(r[1])+'</td></tr>').join('')+'</tbody></table>';
+  h+='<h3>كيف تقرأ النتيجة</h3><p>'+esc(T.def.g.read)+'</p><h3>ماذا تفعل</h3><ol>'+T.def.g.act.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ol>';
+  h+='<h3>ملاحظات</h3><ul><li>الأرقام بالدينار الأردني بتاريخ اللقطة؛ الأعمار تقديرية مبنية على مجاميع شهرية لا على فواتير فردية، فللتحقق الدقيق من عميل بعينه يُطلب كشف حسابه التفصيلي.</li><li>التقرير مطبوع ضمن النطاق المذكور في ترويسته؛ العملاء بلا رصيد مكشوف (صفر أو دائن) لا يظهرون في كشف الأعمار.</li></ul>';
+  return h;}
 /* ---- تقرير الفترات (أعمار بالأيام يحددها المستخدم) ---- */
 function agBandsParse(s){const a=String(s||'').split(/[,\s،]+/).map(x=>parseInt(x,10)).filter(x=>x>0);const u=[...new Set(a)].sort((x,y)=>x-y);return u.length?u:[30,60,90,120,180,365];}
 function agMonthName(snap,k){const d=new Date(snap*DAY);const mo=d.getUTCMonth()-k;const y=d.getUTCFullYear()+Math.floor(mo/12),m=((mo%12)+12)%12;return (m+1)+'/'+y+' '+AR_M[m];}
