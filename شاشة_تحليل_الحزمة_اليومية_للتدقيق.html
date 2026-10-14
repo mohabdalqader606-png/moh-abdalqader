@@ -1452,7 +1452,7 @@ const QDEF=[
  {id:'q16',n:"فصل المهام التفصيلي مستنداً بمستند",short:"فصل المهام التفصيلي",g:CHECKS[15],doc:"رقم المستند",date:"تاريخ المستند",dims:["اسم المستخدم", "نوع الحركة", "اسم الطرف"],ms:["المبلغ"],flags:["الملاحظات"],text:[],cols:["فتح المستخدم", "رمز المستخدم", "اسم المستخدم", "نوع الحركة", "رقم المستند", "فتح فاتورة", "فتح اشعار دائن", "فتح سند قبض", "فتح امر شراء", "فتح فاتورة شراء", "فتح سند صرف", "فتح القيد", "فتح ادخال مخزون", "فتح اخراج مخزون", "فتح الطرف", "اسم الطرف", "تاريخ المستند", "تاريخ الادخال", "ايام التأخير", "المبلغ", "درجة الخطورة", "الملاحظات"]},
 ];
 /* ================= utils ================= */
-const VERSION='v1.2';
+const VERSION='v1.3';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nf0=new Intl.NumberFormat('en-US',{maximumFractionDigits:0,minimumFractionDigits:0});
@@ -2140,7 +2140,7 @@ function agLoad(T,w,fn){try{const D=fn();if(w===1){T.D=D;IDB.put('aging',D);}els
 function S_view(T,v){T.S.view=v;}
 function agSave(T){try{localStorage.setItem('kap_aging',JSON.stringify({snap:T.S.snap,mode:T.S.mode}));}catch(e){}agCompute(T);renderAging(T);}
 function renderAging(T){const main=$('main'),S=T.S;T.last=T.last||{};if(!T.A||!T.A.C.length)S.view=(S.view==='guide')?'guide':'up';
-  const views=[['ov','نظرة عامة'],['cust','كشف العملاء'],['bands','حسب الفترات'],['rep','حسب المندوب'],['chk','الشيكات المؤجلة'],['guide','الكويريان والدليل'],['up','تحميل الكشوف']];
+  const views=[['ov','نظرة عامة'],['cust','كشف العملاء'],['bands','كشف الأعمار حسب الفترات'],['rep','حسب المندوب'],['chk','الشيكات المؤجلة'],['guide','الكويريان والدليل'],['up','تحميل الكشوف']];
   const ready=T.A&&T.A.C.length;
   main.innerHTML='<div class="thead"><h2>'+esc(T.def.n)+'</h2><span class="m">'+(ready?esc(T.D.src)+' — '+FI(T.A.C.length)+' عميل'+(T.D2?' · شيكات: '+FI(T.A.kAll.length)+' سطر':' · بدون كشف شيكات تفصيلي')+' — لقطة '+(S.snap!=null?fmtDay(S.snap):'(حدد التاريخ)')+' — '+(S.mode==='with'?'مع شيكات':'بدون شيكات'):esc(T.def.g.m))+'</span></div>'+
     '<div class="subtabs" id="subtabs">'+views.filter(v=>ready||v[0]==='up'||v[0]==='guide').map(v=>'<button class="stab'+(S.view===v[0]?' on':'')+'" data-v="'+v[0]+'">'+v[1]+'</button>').join('')+'</div>'+
@@ -2162,25 +2162,27 @@ function agBandIdx(lim,basis,age){let off=0;if(basis==='due'){if(age<=0)return 0
 function agBandsOf(T,c,lim,basis){const S=T.S,snap=S.snap,nB=lim.length+1+(basis==='due'?1:0),out=new Array(nB).fill(0);if(snap==null||c.bal<=0.01)return out;
   for(let k=0;k<13;k++){const a=c.alloc[k];if(a<=0)continue;
     if(basis==='due'){out[agBandIdx(lim,basis,snap-agReqDue(agMonthEnd(snap,k),c.ex))]+=a;continue;}
+    if(basis==='me'){out[agBandIdx(lim,basis,k===0?0:Math.max(0,snap-agMonthEnd(snap,k)))]+=a;continue;}
     if(k===12){out[nB-1]+=a;continue;}
     const me=agMonthEnd(snap,k),end=k===0?snap:me,d0=new Date(me*DAY),start=Math.round(Date.UTC(d0.getUTCFullYear(),d0.getUTCMonth(),1)/DAY);
     const nDays=Math.max(1,end-start+1),p=c.m[k]>0?Math.min(1,a/c.m[k]):1,span=Math.max(1,Math.round(p*nDays)),per=a/span;
     for(let d=end;d>end-span;d--){out[agBandIdx(lim,basis,Math.max(0,snap-d))]+=per;}}
   if(c.uncovered>0)out[nB-1]+=c.uncovered;return out;}
 AGV.bands=(T,el)=>{const S=T.S;if(!S.bands)S.bands='30,60,90,120,180,365';if(!S.basis)S.basis='inv';const lim=agBandsParse(S.bands),L=agBandLabels(lim,S.basis),rows=agRows(T);
-  el.innerHTML='<div class="card"><h3>تقرير أعمار الذمة حسب الفترات <span class="hint">يُوزَّع رصيد كل عميل على الأشهر بالاستهلاك التنازلي، ثم على فتراتك بالأيام (داخل الشهر تُفترض المبيعات موزعة بانتظام والمستهلك هو الأحدث)</span></h3><div class="bar" style="margin:0 0 10px"><div class="fld"><label>حدود الفترات بالأيام (مفصولة بفواصل)</label><input type="text" id="agBandsIn" value="'+esc(S.bands)+'" style="width:260px;direction:ltr"></div><div class="fld"><label>احتساب الأيام من</label><select id="agBasis"><option value="inv"'+(S.basis==='inv'?' selected':'')+'>تاريخ الفاتورة (عمر الذمة)</option><option value="due"'+(S.basis==='due'?' selected':'')+'>الاستحقاق المفروض (أيام التأخير)</option></select></div><button class="btn pri" id="agBandsGo">تطبيق</button><span class="sp"></span><span class="hint" style="color:var(--muted)">الفترات الحالية: '+L.map(esc).join(' · ')+'</span></div><div class="grid2"><div><div id="agBS"></div></div><div><div id="agBH"></div></div></div></div><div class="card"><h3>العملاء × الفترات '+expBtn(T,'agBC')+'</h3><div id="agBC"></div></div><div class="card"><h3>المندوبون × الفترات '+expBtn(T,'agBR')+'</h3><div id="agBR"></div></div>';
+  const BASIS={inv:'تاريخ الفاتورة (تقريبي: مبيعات الشهر موزعة على أيامه، والمستهلك أحدثها)',me:'نهاية شهر الفاتورة (كامل مبلغ الشهر بعمر واحد = أيام من نهاية شهره حتى اللقطة)',due:'الاستحقاق المفروض (أيام التأخير بعد نهاية الشهر + المهلة؛ ما لم يستحق يُفرد بعمود)'};
+  el.innerHTML='<div class="card"><h3>كشف أعمار الذمم حسب الفترات <span class="hint">الفترات التي تكتبها تصبح أعمدة الكشف · '+FI(rows.length)+' عميل</span><span class="sp"></span>'+expBtn(T,'agBC')+'</h3><div class="bar" style="margin:0 0 10px"><div class="fld"><label>حدود الفترات بالأيام (مفصولة بفواصل)</label><input type="text" id="agBandsIn" value="'+esc(S.bands)+'" style="width:260px;direction:ltr"></div><div class="fld"><label>احتساب الأيام من</label><select id="agBasis">'+Object.keys(BASIS).map(k=>'<option value="'+k+'"'+(S.basis===k?' selected':'')+'>'+BASIS[k]+'</option>').join('')+'</select></div><button class="btn pri" id="agBandsGo">تطبيق</button></div><div class="foot" style="margin:0 0 8px">الأعمدة: '+L.map(esc).join(' · ')+' — الرصيد يُوزَّع أولاً على الأشهر بالاستهلاك التنازلي (الأحدث فالأقدم) ثم يُحوَّل كل شهر إلى أيام حسب الأساس المختار. «أكثر من '+lim[lim.length-1]+'» تشمل الأرصدة الأقدم من 13 شهراً.</div><div id="agBC"></div></div>'+
+    '<div class="grid2"><div class="card"><h3>ملخص الفترات '+expBtn(T,'agBS')+'</h3><div id="agBS"></div></div><div class="card"><h3>المندوبون × الفترات '+expBtn(T,'agBR')+'</h3><div id="agBR"></div></div></div>';
   const apply=()=>{S.bands=$('agBandsIn').value;S.basis=$('agBasis').value;try{localStorage.setItem('kap_aging_bands',JSON.stringify({bands:S.bands,basis:S.basis}));}catch(e){}AGV.bands(T,el);};$('agBandsGo').onclick=apply;$('agBandsIn').onkeydown=e=>{if(e.key==='Enter')apply();};$('agBasis').onchange=apply;
   const nB=L.length,tot=new Array(nB).fill(0),cnt=new Array(nB).fill(0);const CR=rows.map(c=>{const b=agBandsOf(T,c,lim,S.basis);b.forEach((v,j)=>{tot[j]+=v;if(v>0.005)cnt[j]++;});return {c,b,sum:b.reduce((s,v)=>s+v,0)};});
   const T0=tot.reduce((s,v)=>s+v,0);
+  const bcols=L.map((l,j)=>({k:'b'+j,id:'b'+j,t:l,f:'n',get:r=>r.b[j]>0.005?r.b[j]:null,heat:true,red:S.basis==='due'?j>0:j>=2}));
+  const cTot={name:'الإجمالي ('+FI(CR.filter(r=>r.sum>0.005).length)+' عميل)',sum:T0};tot.forEach((v,j)=>cTot['b'+j]=v);
+  table(T,$('agBC'),'agBC',{name:'كشف_اعمار_الذمم',cols:[{k:'#',t:'#',nos:1},{k:'code',t:'رمز العميل',f:'t',get:r=>r.c.code},{k:'name',t:'اسم العميل',f:'t',cls:'nm',get:r=>r.c.name,h:r=>'<span class="lnk">'+esc(r.c.name)+'</span>'},{k:'rep',t:'المندوب',f:'t',cls:'nm',get:r=>r.c.rep},{k:'ex',t:'أيام السماح',f:'i',get:r=>r.c.ex},{k:'cl',t:'السقف',f:'n',get:r=>r.c.cl},{k:'sum',t:'الرصيد',f:'n'},...bcols,...(S.mode==='with'?[{k:'chk',t:'الشيكات المؤجلة',f:'n',get:r=>r.c.chk}]:[]),{k:'st',t:'الحالة',f:'t',get:r=>r.c.status,h:r=>agPill(r.c)}],rows:CR.filter(r=>r.sum>0.005),total:cTot,sort:'sum',dir:-1,onRow:r=>agModal(T,r.c)});
   const sumRows=L.map((l,j)=>({label:l,amt:tot[j],pct:sdiv(tot[j],T0),nc:cnt[j]}));
   table(T,$('agBS'),'agBS',{name:'ملخص_الفترات',short:true,cols:[{k:'label',t:'الفترة (يوم)',f:'t'},{k:'nc',t:'عملاء',f:'i'},{k:'amt',t:'الرصيد',f:'n',heat:true},{k:'pct',t:'%',f:'pc'}],rows:sumRows,total:{label:'الإجمالي',amt:T0,pct:1,nc:''},sort:null});
-  $('agBH').innerHTML=hbars(sumRows.map(r=>({l:r.label,v:r.amt,s:PC(r.pct)})),{fmt:F2});
-  const bcols=L.map((l,j)=>({k:'b'+j,id:'b'+j,t:l,f:'n',get:r=>r.b[j]>0.005?r.b[j]:null,heat:true,red:S.basis==='due'?j>0:j>=2}));
-  const cTot={name:'الإجمالي ('+FI(CR.length)+')',sum:T0};tot.forEach((v,j)=>cTot['b'+j]=v);
-  table(T,$('agBC'),'agBC',{name:'العملاء_حسب_الفترات',cols:[{k:'#',t:'#',nos:1},{k:'name',t:'العميل',f:'t',cls:'nm',get:r=>r.c.name,h:r=>'<span class="lnk">'+esc(r.c.name)+'</span><span class="code" style="margin-inline-start:6px">'+esc(r.c.code)+'</span>'},{k:'rep',t:'المندوب',f:'t',cls:'nm',get:r=>r.c.rep},{k:'ex',t:'أيام السماح',f:'i',get:r=>r.c.ex},{k:'sum',t:'الرصيد',f:'n'},...bcols,{k:'st',t:'الحالة',f:'t',get:r=>r.c.status,h:r=>agPill(r.c)}],rows:CR.filter(r=>r.sum>0.005),total:cTot,sort:'sum',dir:-1,onRow:r=>agModal(T,r.c)});
   const RM=new Map();for(const r of CR){let g=RM.get(r.c.rep);if(!g){g={label:r.c.rep,n:0,sum:0,b:new Array(nB).fill(0)};RM.set(r.c.rep,g);}if(r.sum>0.005)g.n++;g.sum+=r.sum;r.b.forEach((v,j)=>g.b[j]+=v);}
   const rTot={label:'الإجمالي',sum:T0,n:''};tot.forEach((v,j)=>rTot['b'+j]=v);
-  table(T,$('agBR'),'agBR',{name:'المندوبون_حسب_الفترات',cols:[{k:'#',t:'#',nos:1},{k:'label',t:'المندوب',f:'t',cls:'nm',h:g=>'<span class="lnk">'+esc(g.label)+'</span>'},{k:'n',t:'عملاء برصيد',f:'i'},{k:'sum',t:'الرصيد',f:'n'},...bcols.map(c=>Object.assign({},c,{get:g=>g.b[+c.k.slice(1)]>0.005?g.b[+c.k.slice(1)]:null}))],rows:[...RM.values()],total:rTot,sort:'sum',dir:-1,onRow:g=>{S.rep=g.label;renderAging(T);}});
+  table(T,$('agBR'),'agBR',{name:'المندوبون_حسب_الفترات',short:true,cols:[{k:'#',t:'#',nos:1},{k:'label',t:'المندوب',f:'t',cls:'nm',h:g=>'<span class="lnk">'+esc(g.label)+'</span>'},{k:'n',t:'عملاء برصيد',f:'i'},{k:'sum',t:'الرصيد',f:'n'},...bcols.map(c=>Object.assign({},c,{get:g=>g.b[+c.k.slice(1)]>0.005?g.b[+c.k.slice(1)]:null}))],rows:[...RM.values()],total:rTot,sort:'sum',dir:-1,onRow:g=>{S.rep=g.label;renderAging(T);}});
 };
 
 /* ================= boot ================= */
