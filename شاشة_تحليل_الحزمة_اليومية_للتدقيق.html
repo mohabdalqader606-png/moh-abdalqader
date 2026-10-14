@@ -1484,7 +1484,7 @@ const QDEF=[
  {id:'q16',n:"فصل المهام التفصيلي مستنداً بمستند",short:"فصل المهام التفصيلي",g:CHECKS[15],doc:"رقم المستند",date:"تاريخ المستند",dims:["اسم المستخدم", "نوع الحركة", "اسم الطرف"],ms:["المبلغ"],flags:["الملاحظات"],text:[],cols:["فتح المستخدم", "رمز المستخدم", "اسم المستخدم", "نوع الحركة", "رقم المستند", "فتح فاتورة", "فتح اشعار دائن", "فتح سند قبض", "فتح امر شراء", "فتح فاتورة شراء", "فتح سند صرف", "فتح القيد", "فتح ادخال مخزون", "فتح اخراج مخزون", "فتح الطرف", "اسم الطرف", "تاريخ المستند", "تاريخ الادخال", "ايام التأخير", "المبلغ", "درجة الخطورة", "الملاحظات"]},
 ];
 /* ================= utils ================= */
-const VERSION='v1.7';
+const VERSION='v1.8';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nf0=new Intl.NumberFormat('en-US',{maximumFractionDigits:0,minimumFractionDigits:0});
@@ -2062,6 +2062,8 @@ function agState(){return {snap:null,mode:'with',q:'',rep:'',mgr:'',type:'',st:'
 let AG_MGR={};try{AG_MGR=JSON.parse(localStorage.getItem('kap_aging_mgr')||'{}')||{};}catch(e){AG_MGR={};}
 function agSaveMgr(){try{localStorage.setItem('kap_aging_mgr',JSON.stringify(AG_MGR));}catch(e){}}
 const agMgrOf=r=>AG_MGR[r]||'(بدون مدير)';
+let AG_GRP={};try{AG_GRP=JSON.parse(localStorage.getItem('kap_aging_grp')||'{}')||{};}catch(e){AG_GRP={};}
+function agSaveGrp(){try{localStorage.setItem('kap_aging_grp',JSON.stringify(AG_GRP));}catch(e){}}
 const agTypeOf=code=>{const ch=String(code||'').charAt(0).toUpperCase();return ch==='C'?'C':ch==='E'?'E':'O';};
 const AG_TYPES={C:'عملاء الشركة (C)',E:'الموظفون (E)',O:'أخرى'};
 /* اسم أساسي لدمج الفروع (نفس منطق شاشة المبيعات والخصومات) */
@@ -2071,10 +2073,10 @@ function agBaseName(s){s=norm(s).replace(/["'“”]/g,' ').replace(/كاش\s*ف
 /* بناء قائمة العملاء الفعلية (مدمجة أو لا) من القائمة الخام */
 function agMerge(T){const A=T.A;if(!A)return;const S=T.S;
   if(!S.merge){A.C=A.raw.map(c=>{c.members=null;return c;});}
-  else{const G=new Map();for(const c of A.raw){const key=agTypeOf(c.code)+'|'+agBaseName(c.name||c.code);let g=G.get(key);if(!g){g=[];G.set(key,g);}g.push(c);}
+  else{const G=new Map();for(const c of A.raw){const grp=(AG_GRP[c.code]||'').trim();const key=grp?'G|'+agTypeOf(c.code)+'|'+norm(grp):'S|'+c.code;let g=G.get(key);if(!g){g=[];g.grp=grp;G.set(key,g);}g.push(c);}
     A.C=[];for(const g of G.values()){if(g.length===1){g[0].members=null;A.C.push(g[0]);continue;}
       const lead=g.slice().sort((a,b)=>b.bal-a.bal)[0];const reps=new Map();for(const c of g)reps.set(c.rep,(reps.get(c.rep)||0)+1);
-      const m={code:lead.code,name:agBaseName(lead.name||lead.code)||lead.name,rep:[...reps.entries()].sort((a,b)=>b[1]-a[1])[0][0],phone:lead.phone,email:lead.email,cl:g.reduce((s,c)=>s+c.cl,0),ex:Math.max(...g.map(c=>c.ex)),bal:g.reduce((s,c)=>s+c.bal,0),chkAgg:g.reduce((s,c)=>s+c.chkAgg,0),m:g[0].m.map((_,k)=>g.reduce((s,c)=>s+c.m[k],0)),members:g};
+      const m={code:lead.code,name:g.grp||lead.name,rep:[...reps.entries()].sort((a,b)=>b[1]-a[1])[0][0],phone:lead.phone,email:lead.email,cl:g.reduce((s,c)=>s+c.cl,0),ex:Math.max(...g.map(c=>c.ex)),bal:g.reduce((s,c)=>s+c.bal,0),chkAgg:g.reduce((s,c)=>s+c.chkAgg,0),m:g[0].m.map((_,k)=>g.reduce((s,c)=>s+c.m[k],0)),members:g};
       A.C.push(m);}}
   A.byCode=new Map();for(const c of A.C){A.byCode.set(c.code,c);if(c.members)for(const x of c.members)A.byCode.set(x.code,c);}}
 function agMonthEnd(snap,k){const d=new Date(snap*DAY);return Math.round(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()-k+1,0)/DAY);}
@@ -2182,6 +2184,22 @@ AGV.rep=(T,el)=>{const S=T.S,rows=agRows(T),by=S.grpBy==='mgr'?'mgr':'rep',lab=b
   const tot={label:'الإجمالي',n:0,nb:0,bal:0,chk:0,exp:0,over:0,overAmt:0,overCL:0,soon:0,late:0,nr:''};for(const x of g){for(const k of ['n','nb','bal','chk','exp','over','overAmt','overCL','soon','late'])tot[k]+=x[k];}tot.overPct=sdiv(tot.overAmt,tot.bal);
   table(T,$('agR'),'agR',{name:'حسب_'+lab,cols:[{k:'#',t:'#',nos:1},{k:'label',t:lab,f:'t',cls:'nm',h:x=>'<span class="lnk">'+esc(x.label)+'</span>'},...(by==='mgr'?[{k:'nr',t:'المندوبون',f:'i'}]:[]),{k:'n',t:'العملاء',f:'i'},{k:'nb',t:'عليهم رصيد',f:'i'},{k:'bal',t:'الأرصدة',f:'n',heat:true},...(S.mode==='with'?[{k:'chk',t:'الشيكات',f:'n'},{k:'exp',t:'التعرض',f:'n'}]:[]),{k:'over',t:'متأخرون',f:'i',heat:true,red:true},{k:'overAmt',t:'المبلغ المتأخر',f:'n',heat:true,red:true},{k:'overPct',t:'% المتأخر',f:'pc'},{k:'age',t:'متوسط العمر (شهر)',f:'n'},{k:'soon',t:'يستحق قريباً',f:'i'},{k:'overCL',t:'فوق السقف',f:'i'},...(S.mode==='with'&&T.D2?[{k:'late',t:'شيكات متأخرة',f:'i'}]:[])],rows:g,total:tot,sort:'overAmt',dir:-1,onRow:x=>{if(by==='mgr')S.mgr=x.label;else S.rep=x.label;S.view='cust';renderAging(T);}});
 };
+/* ربط الفروع بالعميل الأم (يدوي) */
+AGV.grp=(T,el)=>{const S=T.S;if(S.grpQ==null)S.grpQ='';const groups=[...new Set(Object.values(AG_GRP).map(v=>String(v).trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ar'));
+  const qn=norm(S.grpQ);let rows=T.A.raw.filter(c=>!qn||norm(c.code+' '+c.name+' '+c.rep+' '+(AG_GRP[c.code]||'')).indexOf(qn)>=0);if(S.grpOnly)rows=rows.filter(c=>AG_GRP[c.code]);
+  const assigned=T.A.raw.filter(c=>AG_GRP[c.code]).length;const lim=S.grpLim||300;
+  el.innerHTML='<div class="card"><h3>ربط الفروع بالعميل الأم <span class="hint">اكتب اسم العميل الأم (أو اسم المجموعة) أمام كل فرع — نفس الاسم لأكثر من عميل = يُدمجون كياناً واحداً عند تفعيل «دمج الفروع». يُحفظ على هذا الجهاز.</span><span class="sp"></span><button class="btn sm" id="agGrpSug">اقتراح تلقائي بالاسم للفارغ</button> <button class="btn sm" id="agGrpExp">تصدير</button> <button class="btn sm" id="agGrpImp">استيراد</button> <button class="btn sm warn" id="agGrpClr">مسح الكل</button></h3>'+
+    '<div class="bar" style="margin:0 0 8px"><div class="fld"><label>بحث</label><input type="text" id="agGrpQ" value="'+esc(S.grpQ)+'" placeholder="عميل / رمز / مندوب / مجموعة"></div><label class="chk'+(S.grpOnly?' hl':'')+'"><input type="checkbox" id="agGrpOnly"'+(S.grpOnly?' checked':'')+'> المربوطون فقط</label><span class="hint" style="color:var(--muted)">مربوط: '+FI(assigned)+' من '+FI(T.A.raw.length)+' · مجموعات: '+FI(groups.length)+'</span></div>'+
+    '<datalist id="agGrpList">'+groups.map(m=>'<option value="'+esc(m)+'">').join('')+'</datalist><div class="tw"><table class="t"><thead><tr><th>#</th><th>الرمز</th><th class="tx">اسم العميل</th><th class="tx">المندوب</th><th>الرصيد</th><th class="tx">العميل الأم / المجموعة</th></tr></thead><tbody>'+rows.slice(0,lim).map((c,i)=>'<tr><td>'+(i+1)+'</td><td>'+esc(c.code)+'</td><td class="tx nm">'+esc(c.name)+'</td><td class="tx">'+esc(c.rep)+'</td><td>'+F2(c.bal)+'</td><td class="tx"><input type="text" list="agGrpList" data-code="'+esc(c.code)+'" value="'+esc(AG_GRP[c.code]||'')+'" placeholder="—" style="border:1px solid var(--line2);border-radius:6px;padding:4px 8px;width:260px"></td></tr>').join('')+'</tbody></table></div>'+(rows.length>lim?'<button class="btn more" id="agGrpMore">عرض المزيد ('+FI(rows.length-lim)+' متبقٍ)</button>':'')+'</div>';
+  const refresh=()=>{agMerge(T);agCompute(T);T.ts={};};
+  el.querySelectorAll('input[data-code]').forEach(i=>i.onchange=e=>{const v=e.target.value.trim();if(v)AG_GRP[e.target.dataset.code]=v;else delete AG_GRP[e.target.dataset.code];agSaveGrp();refresh();setTimeout(()=>{if(T.S.view==='grp'){const dl=$('agGrpList');if(dl)dl.innerHTML=[...new Set(Object.values(AG_GRP).filter(Boolean))].map(m=>'<option value="'+esc(m)+'">').join('');}},0);});
+  let t;$('agGrpQ').oninput=e=>{clearTimeout(t);t=setTimeout(()=>{S.grpQ=e.target.value;S.grpLim=300;AGV.grp(T,el);},250);};$('agGrpOnly').onchange=e=>{S.grpOnly=e.target.checked;AGV.grp(T,el);};
+  const more=$('agGrpMore');if(more)more.onclick=()=>{S.grpLim=lim+500;AGV.grp(T,el);};
+  $('agGrpSug').onclick=()=>{const B=new Map();for(const c of T.A.raw){const k=agTypeOf(c.code)+'|'+agBaseName(c.name||c.code);if(!B.has(k))B.set(k,[]);B.get(k).push(c);}let n=0;for(const arr of B.values()){if(arr.length<2)continue;const nm=agBaseName(arr[0].name||arr[0].code);for(const c of arr)if(!AG_GRP[c.code]){AG_GRP[c.code]=nm;n++;}}agSaveGrp();refresh();toast('اقتُرح ربط '+n+' عميل — راجع وعدّل ما يلزم');AGV.grp(T,el);};
+  $('agGrpExp').onclick=()=>dl('ربط_الفروع.csv',['رمز العميل,اسم العميل,العميل الأم',...T.A.raw.filter(c=>AG_GRP[c.code]).map(c=>'"'+c.code+'","'+String(c.name).replace(/"/g,'""')+'","'+String(AG_GRP[c.code]).replace(/"/g,'""')+'"')].join('\r\n'),'text/csv;charset=utf-8');
+  $('agGrpImp').onclick=()=>{const t=prompt('الصق سطور بصيغة: رمز العميل,العميل الأم (أو رمز,اسم,العميل الأم) — سطر لكل فرع');if(!t)return;let n=0;for(const L of t.split(/\r?\n/)){const p=splitCSV(L.trim(),L.indexOf('\t')>=0?'\t':',').map(x=>x.replace(/^"|"$/g,'').trim());if(p.length<2||!p[0]||hnorm(p[0])==='رمز العميل')continue;const v=p[p.length-1];if(v){AG_GRP[p[0]]=v;n++;}}agSaveGrp();refresh();toast('تم استيراد '+n+' سطر');AGV.grp(T,el);};
+  $('agGrpClr').onclick=()=>{if(!confirm('مسح كل ربط الفروع؟'))return;AG_GRP={};agSaveGrp();refresh();AGV.grp(T,el);};
+};
 /* إدارة ربط المندوبين بالمديرين */
 AGV.mgr=(T,el)=>{const reps=[...new Set(T.A.raw.map(c=>c.rep))].sort((a,b)=>a.localeCompare(b,'ar'));const mgrs=[...new Set(Object.values(AG_MGR).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ar'));
   el.innerHTML='<div class="card"><h3>ربط المندوبين بالمديرين <span class="hint">اكتب اسم المدير أمام كل مندوب (يُحفظ على هذا الجهاز ويُستخدم في التجميع والتصفية حسب المدير)</span><span class="sp"></span><button class="btn sm" id="agMgrExp">تصدير الربط</button> <button class="btn sm" id="agMgrImp">استيراد ربط</button> <button class="btn sm warn" id="agMgrClr">مسح الكل</button></h3><datalist id="agMgrList">'+mgrs.map(m=>'<option value="'+esc(m)+'">').join('')+'</datalist><div class="tw short"><table class="t"><thead><tr><th class="tx">المندوب</th><th>العملاء</th><th>الأرصدة</th><th class="tx">المدير</th></tr></thead><tbody>'+reps.map(r=>{const cs=T.A.raw.filter(c=>c.rep===r);return '<tr><td class="tx">'+esc(r)+'</td><td>'+FI(cs.length)+'</td><td>'+F2(cs.reduce((s,c)=>s+c.bal,0))+'</td><td class="tx"><input type="text" list="agMgrList" data-rep="'+esc(r)+'" value="'+esc(AG_MGR[r]||'')+'" placeholder="اسم المدير" style="border:1px solid var(--line2);border-radius:6px;padding:4px 8px;width:220px"></td></tr>';}).join('')+'</tbody></table></div><div class="foot">المديرون الحاليون: '+(mgrs.length?mgrs.map(esc).join('، '):'لا يوجد بعد')+'</div></div>';
@@ -2223,7 +2241,7 @@ function agLoad(T,w,fn){try{const D=fn();if(w===1){T.D=D;IDB.put('aging',D);}els
 function S_view(T,v){T.S.view=v;}
 function agSave(T){try{localStorage.setItem('kap_aging',JSON.stringify({snap:T.S.snap,mode:T.S.mode}));}catch(e){}agCompute(T);renderAging(T);}
 function renderAging(T){const main=$('main'),S=T.S;T.last=T.last||{};if(!T.A||!T.A.C.length)S.view=(S.view==='guide')?'guide':'up';
-  const views=[['ov','نظرة عامة'],['cust','كشف العملاء'],['bands','كشف الأعمار حسب الفترات'],['rep','حسب المندوب / المدير'],['chk','الشيكات المؤجلة'],['mgr','المديرون'],['guide','الكويريان والدليل'],['up','تحميل الكشوف']];
+  const views=[['ov','نظرة عامة'],['cust','كشف العملاء'],['bands','كشف الأعمار حسب الفترات'],['rep','حسب المندوب / المدير'],['chk','الشيكات المؤجلة'],['grp','الفروع'],['mgr','المديرون'],['guide','الكويريان والدليل'],['up','تحميل الكشوف']];
   const ready=T.A&&T.A.C.length;
   main.innerHTML='<div class="thead"><h2>'+esc(T.def.n)+'</h2><span class="m">'+(ready?esc(T.D.src)+' — '+FI(T.A.C.length)+' عميل'+(S.merge?' (بعد دمج الفروع من '+FI(T.A.raw.length)+')':'')+(T.D2?' · شيكات: '+FI(T.A.kAll.length)+' سطر':' · بدون كشف شيكات تفصيلي')+' — لقطة '+(S.snap!=null?fmtDay(S.snap):'(حدد التاريخ)')+' — '+(S.mode==='with'?'مع شيكات':'بدون شيكات'):esc(T.def.g.m))+'</span></div>'+
     '<div class="subtabs" id="subtabs">'+views.filter(v=>ready||v[0]==='up'||v[0]==='guide').map(v=>'<button class="stab'+(S.view===v[0]?' on':'')+'" data-v="'+v[0]+'">'+v[1]+'</button>').join('')+'</div>'+
