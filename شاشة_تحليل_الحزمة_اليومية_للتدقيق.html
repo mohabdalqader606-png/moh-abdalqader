@@ -137,7 +137,7 @@ footer{color:var(--muted);font-size:11px;text-align:center;padding:10px}
 <body>
 <header class="top">
   <div class="row">
-    <div><h1>شاشة تحليل الحزمة اليومية للتدقيق</h1><div class="sub" id="hsub">16 كويري معتمد · مركز الكيلاني للأغذية · كل تبويب مستقل ببياناته وفلاتره وتقاريره</div></div>
+    <div><h1>شاشة تحليل الحزمة اليومية للتدقيق</h1><div class="sub" id="hsub">16 كويري معتمد + عمر الذمة · مركز الكيلاني للأغذية · كل تبويب مستقل ببياناته وفلاتره وتقاريره</div></div>
     <span class="sp"></span>
     <button class="hbtn" id="printBtn" onclick="window.print()">طباعة</button>
   </div>
@@ -1218,6 +1218,123 @@ LEFT JOIN OCRD B0 ON B0."CardCode"=W."Card"
 WHERE W."F1"+W."F2"+W."F3"+W."F4"+W."F5">0
 ORDER BY U0."U_NAME",W."F1"+W."F2"+W."F3"+W."F4"+W."F5" DESC,W."C"
 </script>
+<script type="text/plain" id="sql_aging1">
+/* SELECT C."CardCode" FROM OCRD C WHERE C."CreateDate" < [%0] */
+SELECT
+    C."CardCode"                       AS "رمز العميل",
+    C."CardName"                       AS "اسم العميل",
+    S."SlpName"                        AS "المندوب",
+    C."Phone1"                         AS "رقم الهاتف",
+    C."E_Mail"                         AS "البريد الإلكتروني",
+    C."CreditLine"                     AS "السقف الائتماني",
+    IFNULL(TG."ExtraDays", 0)          AS "أيام السماح",
+
+    IFNULL((
+        SELECT SUM(J1."Debit" - J1."Credit")
+        FROM JDT1 J1
+        WHERE J1."ShortName" = C."CardCode" AND J1."ShortName" <> J1."Account"
+          AND J1."RefDate" <= '[%0]'
+    ), 0)                               AS "الرصيد حتى تاريخ اللقطة",
+
+    IFNULL((
+        SELECT SUM(K."CheckSum")
+        FROM RCT1 K INNER JOIN ORCT R ON K."DocNum" = R."DocEntry"
+        WHERE R."Canceled" = 'N' AND R."CardCode" = C."CardCode"
+          AND R."DocDate" <= '[%0]' AND K."DueDate" > '[%0]'
+    ), 0)                               AS "الشيكات المؤجلة",
+
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" <= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-0
+    ), 0)                                AS "M0 الشهر الحالي (حتى تاريخ اللقطة)",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" <= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-1
+    ), 0)                                AS "M1 شهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" <= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-2
+    ), 0)                                AS "M2 شهرين قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" <= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-3
+    ), 0)                                AS "M3 3 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" <= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-4
+    ), 0)                                AS "M4 4 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" <= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-5
+    ), 0)                                AS "M5 5 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" <= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-6
+    ), 0)                                AS "M6 6 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" <= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-7
+    ), 0)                                AS "M7 7 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" <= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-8
+    ), 0)                                AS "M8 8 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" <= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-9
+    ), 0)                                AS "M9 9 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" <= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-10
+    ), 0)                                AS "M10 10 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" <= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR('[%0]')*12+MONTH('[%0]')-11
+    ), 0)                                AS "M11 11 أشهر قبل",
+    IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+        FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+              UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+        WHERE X."CardCode"=C."CardCode" AND X."DocDate" <= '[%0]'
+          AND YEAR(X."DocDate")*12+MONTH(X."DocDate") <= YEAR('[%0]')*12+MONTH('[%0]')-12
+    ), 0)                                AS "M12plus أقدم من 12 شهر"
+
+FROM "OCRD" C
+LEFT JOIN "OSLP" S  ON C."SlpCode" = S."SlpCode"
+LEFT JOIN "OCTG" TG ON C."GroupNum" = TG."GroupNum"
+WHERE C."CardType" = 'C'
+ORDER BY C."CardName"
+</script>
+<script type="text/plain" id="sql_aging2">
+SELECT R."CardCode" AS "رمز العميل", R."DocNum" AS "رقم السند", R."DocDate" AS "تاريخ تسجيل السند",
+K."DueDate" AS "تاريخ الاستحقاق", K."CheckSum" AS "قيمة الشيك", K."BankCode" AS "البنك"
+FROM RCT1 K INNER JOIN ORCT R ON K."DocNum"=R."DocEntry"
+WHERE R."Canceled"='N'
+ORDER BY R."CardCode", K."DueDate"
+</script>
 <script>
 "use strict";
 const CHECKS=[
@@ -1330,12 +1447,12 @@ const QDEF=[
  {id:'q11',n:"المبيعات من باتشات منتهية أو قريبة الانتهاء",short:"الباتشات المنتهية",g:CHECKS[10],doc:"رقم المستند",date:"تاريخ البيع",dims:["نوع المستند", "اسم العميل", "المندوب", "اسم الصنف", "المستودع", "الباتش", "الوحدة", "المستخدم"],ms:["صافي البيع للباتش", "قيمة الكلفة", "الربح", "الكمية بوحدة المخزون", "أيام متبقية عند البيع"],flags:["التنبيه"],text:["المستودع", "الباتش"],cols:["فتح الفاتورة", "فتح سند التسليم", "نوع المستند", "رقم المستند", "تاريخ البيع", "تاريخ الادخال", "ايام التأخير", "رمز العميل", "اسم العميل", "المندوب", "فتح الصنف", "اسم الصنف", "المستودع", "الباتش", "تاريخ الانتاج", "تاريخ الانتهاء", "أيام متبقية عند البيع", "نسبة العمر المتبقي", "الكمية بوحدة المخزون", "سعر البيع", "الوحدة", "صافي سعر وحدة المخزون", "كلفة وحدة المخزون", "صافي البيع للباتش", "قيمة الكلفة", "الربح", "نسبة الربح", "اقدم انتهاء متوفر بالمستودع الان", "درجة الخطورة", "التنبيه", "المستخدم"]},
  {id:'q12',n:"الشيكات المرتجعة وتصحيح سندات القبض",short:"الشيكات المرتجعة",g:CHECKS[11],doc:"رقم القيد",date:"تاريخ القيد",dims:["نوع القيد", "اسم العميل", "المندوب", "البنك", "حالة العميل", "سبب الارتداد", "المستخدم"],ms:["مبلغ الشيك", "قيمة البيع بعد القيد", "فواتير بعد القيد", "الرصيد الحالي", "حد الائتمان", "شيكات مرتجعة للعميل اخر سنة"],flags:["التنبيه"],text:["رقم الشيك", "سند القبض"],cols:["فتح القيد", "رقم القيد", "تاريخ القيد", "تاريخ الادخال", "ايام التأخير", "نوع القيد", "فتح العميل", "اسم العميل", "المندوب", "مبلغ الشيك", "رقم الشيك", "تاريخ استحقاق الشيك", "البنك", "فتح سند القبض", "سند القبض", "تاريخ القبض", "أيام من الاستحقاق للقيد", "سبب الارتداد", "شيكات مرتجعة للعميل اخر سنة", "فواتير بعد القيد", "قيمة البيع بعد القيد", "الرصيد الحالي", "حد الائتمان", "حالة العميل", "درجة الخطورة", "التنبيه", "بيان سطر العميل", "بيان القيد", "المستخدم"]},
  {id:'q13',n:"فواتير الشراء: السعر والاستلام وتكاليف الاستيراد",short:"فواتير الشراء",g:CHECKS[12],doc:"رقم الفاتورة",date:"التاريخ",dims:["المورد", "اسم الصنف", "نوع الفاتورة", "العملة", "مورد اخر شراء", "المستخدم"],ms:["قيمة المنشأ بالدينار", "اجمالي تكاليف الاستيراد بالدينار", "اثر التغير بالدينار", "الكمية المفوترة", "الكمية المستلمة", "مصاريف الفاتورة المحملة بالدينار"],flags:["التنبيه"],text:[],cols:["فتح فاتورة الشراء", "رقم الفاتورة", "التاريخ", "تاريخ الادخال", "ايام التأخير", "نوع الفاتورة", "فتح المورد", "المورد", "فتح الصنف", "اسم الصنف", "الكمية المفوترة", "الوحدة", "العملة", "سعر الصرف", "السعر بعملة الفاتورة", "سعر المنشأ للوحدة بالعملة", "اخر سعر منشأ بنفس العملة", "سعر صرف اخر شراء", "نسبة التغير بالعملة", "اثر التغير بالعملة", "اثر التغير بالدينار", "فتح اخر فاتورة شراء", "تاريخ اخر شراء", "مورد اخر شراء", "فتح امر الشراء", "سعر امر الشراء", "كمية امر الشراء", "فتح سند الاستلام", "الكمية المستلمة", "تاريخ الاستلام", "فتح اخر تكاليف استيراد", "تاريخ اخر تكاليف استيراد", "قيمة المنشأ بالدينار", "مصاريف الفاتورة المحملة بالدينار", "تكاليف مستند الاستيراد بالدينار", "اجمالي تكاليف الاستيراد بالدينار", "نسبة تكاليف الاستيراد", "الكلفة الواصلة للوحدة بالدينار", "ايام منذ الفاتورة", "درجة الخطورة", "التنبيه", "المستخدم"]},
- {id:'q14',n:"مبيعات الموظفين مقابل سياسة الكلفة + 10%",short:"مبيعات الموظفين",g:CHECKS[13],doc:"رقم الفاتورة",date:"التاريخ",dims:["اسم العميل", "المندوب", "اسم الصنف", "مصدر الكلفة", "المستخدم"],ms:["قيمة التنازل", "صافي البيع", "الربح", "الكلفة", "الكمية"],flags:["التنبيه"],text:["الباتش"],cols:["فتح الفاتورة", "رقم الفاتورة", "التاريخ", "تاريخ الادخال", "ايام التأخير", "فتح العميل", "اسم العميل", "المندوب", "فتح الصنف", "اسم الصنف", "الكمية", "الوحدة", "سعر البيع", "الباتش", "الكلفة", "مصدر الكلفة", "الحد الادنى المسموح", "صافي البيع", "الربح", "نسبة الزيادة على الكلفة", "قيمة التنازل", "فواتير العميل بالفترة", "مشتريات العميل بالفترة", "اجمالي التنازل للعميل بالفترة", "التنبيه", "المستخدم"]},
+ {id:'q14',n:"مبيعات الموظفين مقابل سياسة الكلفة + 10%",short:"مبيعات الموظفين",g:CHECKS[13],custom:[['q14_emp','تجميع الموظف']],doc:"رقم الفاتورة",date:"التاريخ",dims:["اسم العميل", "المندوب", "اسم الصنف", "مصدر الكلفة", "المستخدم"],ms:["قيمة التنازل", "صافي البيع", "الربح", "الكلفة", "الكمية"],flags:["التنبيه"],text:["الباتش"],cols:["فتح الفاتورة", "رقم الفاتورة", "التاريخ", "تاريخ الادخال", "ايام التأخير", "فتح العميل", "اسم العميل", "المندوب", "فتح الصنف", "اسم الصنف", "الكمية", "الوحدة", "سعر البيع", "الباتش", "الكلفة", "مصدر الكلفة", "الحد الادنى المسموح", "صافي البيع", "الربح", "نسبة الزيادة على الكلفة", "قيمة التنازل", "فواتير العميل بالفترة", "مشتريات العميل بالفترة", "اجمالي التنازل للعميل بالفترة", "التنبيه", "المستخدم"]},
  {id:'q15',n:"فصل المهام ونشاط المستخدمين",short:"فصل المهام",g:CHECKS[14],doc:"رمز المستخدم",date:null,dims:["اسم المستخدم", "مدير نظام", "الحالة"],ms:["عدد التعارضات", "فواتير مبيعات", "اشعارات دائنة", "سندات قبض", "اوامر شراء", "فواتير شراء", "سندات صرف", "قيود يدوية", "تسويات مخزون", "تعديلات بطاقات"],flags:["التعارضات"],text:[],cols:["فتح المستخدم", "رمز المستخدم", "اسم المستخدم", "مدير نظام", "الحالة", "فواتير مبيعات", "اشعارات دائنة", "سندات قبض", "اوامر شراء", "فواتير شراء", "سندات صرف", "قيود يدوية", "تسويات مخزون", "تعديلات بطاقات", "عدد التعارضات", "التعارضات"]},
  {id:'q16',n:"فصل المهام التفصيلي مستنداً بمستند",short:"فصل المهام التفصيلي",g:CHECKS[15],doc:"رقم المستند",date:"تاريخ المستند",dims:["اسم المستخدم", "نوع الحركة", "اسم الطرف"],ms:["المبلغ"],flags:["الملاحظات"],text:[],cols:["فتح المستخدم", "رمز المستخدم", "اسم المستخدم", "نوع الحركة", "رقم المستند", "فتح فاتورة", "فتح اشعار دائن", "فتح سند قبض", "فتح امر شراء", "فتح فاتورة شراء", "فتح سند صرف", "فتح القيد", "فتح ادخال مخزون", "فتح اخراج مخزون", "فتح الطرف", "اسم الطرف", "تاريخ المستند", "تاريخ الادخال", "ايام التأخير", "المبلغ", "درجة الخطورة", "الملاحظات"]},
 ];
 /* ================= utils ================= */
-const VERSION='v1.0';
+const VERSION='v1.2';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nf0=new Intl.NumberFormat('en-US',{maximumFractionDigits:0,minimumFractionDigits:0});
@@ -1635,6 +1752,7 @@ function viewList(T){const P=T.P,v=[['ov','نظرة عامة'],['det','الكش�
   for(const c of P.dims)v.push(['g'+c.i,'حسب '+dimLabel(c)]);
   if(P.cDate)v.push(['tm','حسب الفترة']);
   if(P.cRisk)v.push(['rk','درجة الخطورة']);
+  for(const c of (T.def.custom||[]))if(CUSTOM[c[0]])v.push([c[0],c[1]]);
   v.push(['guide','الكويري والدليل'],['up','تحميل كشف جديد']);return v;}
 function drillTo(T,col,val,label){T.S.drill.push({col,val,label});invalidate(T);T.view='det';renderTab(T);}
 function rowModal(T,i){const P=T.P,V=P.V;let h='<h2>سطر '+(i+1)+' — '+esc(T.def.short)+'<span class="sp"></span><button class="btn sm" onclick="closeModal()">إغلاق</button></h2><div class="rec">';
@@ -1809,7 +1927,7 @@ function bindFilters(T,root){const S=T.S;const re=()=>{invalidate(T);renderTab(T
   const fdl=root.querySelector('#fdl');if(fdl){let t2;fdl.oninput=e=>{clearTimeout(t2);t2=setTimeout(()=>{S.delay=+e.target.value||0;re();},400);};}
   root.querySelector('#fclr').onclick=()=>{T.S=newState();re();};
   root.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{S.drill.splice(+b.dataset.rm,1);re();});}
-function renderTab(T){const main=$('main');T.last=T.last||{};
+function renderTab(T){if(T.def.kind==='aging')return renderAging(T);const main=$('main');T.last=T.last||{};
   if(!T.P||T.view==='up'){main.innerHTML='<div class="thead"><h2>'+esc(T.def.n)+'</h2><span class="m">'+esc(T.def.g.m)+'</span></div><div class="subtabs" id="subtabs"></div><div id="view"></div>';
     if(T.P)$('subtabs').innerHTML=viewList(T).map(v=>'<button class="stab'+(T.view===v[0]?' on':'')+'" data-v="'+v[0]+'">'+v[1]+'</button>').join('');
     else $('subtabs').innerHTML=[['up','تحميل الكشف'],['guide','الكويري والدليل']].map(v=>'<button class="stab'+((T.view==='guide'?'guide':'up')===v[0]?' on':'')+'" data-v="'+v[0]+'">'+v[1]+'</button>').join('');
@@ -1822,13 +1940,253 @@ function renderTab(T){const main=$('main');T.last=T.last||{};
   $('subtabs').querySelectorAll('.stab').forEach(b=>b.onclick=()=>{T.view=b.dataset.v;renderTab(T);window.scrollTo(0,0);});
   const fb=$('fbar');if(fb)bindFilters(T,fb);
   renderView(T);}
-function renderView(T){const el=$('view');const v=T.view;const fn=v.startsWith('g')&&v!=='guide'?makeGroupView(+v.slice(1)):V[v];
+function renderView(T){const el=$('view');const v=T.view;const fn=CUSTOM[v]||(v.startsWith('g')&&v!=='guide'?makeGroupView(+v.slice(1)):V[v]);
   if(!fn){T.view='ov';return renderView(T);}fn(T,el);}
+
+/* ================= custom views (per query) ================= */
+const CUSTOM={};
+/* q14 — تجميع الموظف: مبيعات الموظفين مقابل سياسة الكلفة + 10% */
+CUSTOM.q14_emp=(T,el)=>{const P=T.P,V=P.V,idx=filtered(T);
+  const C=n=>P.cols.find(c=>c.k===hnorm(n))||null;
+  const cName=C('اسم العميل'),cCode=C('فتح العميل'),cDoc=C('رقم الفاتورة'),cNet=C('صافي البيع'),cCost=C('الكلفة'),cProfit=C('الربح'),cMin=C('الحد الادنى المسموح'),cCon=C('قيمة التنازل'),cUser=C('المستخدم'),cItem=C('اسم الصنف'),cQty=C('الكمية'),cRep=C('المندوب');
+  const cFI=C('فواتير العميل بالفترة'),cFP=C('مشتريات العميل بالفترة'),cFC=C('اجمالي التنازل للعميل بالفترة');
+  if(!cName||!cNet||!cCon){el.innerHTML='<div class="card"><div class="empty">هذا التحليل يحتاج أعمدة: اسم العميل، صافي البيع، قيمة التنازل</div></div>';return;}
+  const num=(c,i)=>c?(V[c.i][i]||0):0, str=(c,i)=>c?(V[c.i][i]||''):'';
+  const isUnder=f=>/تحت الكلفة/.test(f), isBelow=f=>/اقل من الكلفة|أقل من الكلفة|تحت الكلفة/.test(f), isAnon=f=>/غير مسم/.test(f);
+  /* per-employee aggregation */
+  const M=new Map();
+  for(const i of idx){const k=str(cName,i)||'(بدون)';let g=M.get(k);
+    if(!g){g={label:k,code:str(cCode,i),n:0,docs:new Set(),net:0,cost:0,profit:0,min:0,con:0,below:0,under:0,anon:0,users:new Map(),reps:new Set(),fi:0,fp:0,fc:0,rows:[]};M.set(k,g);}
+    g.n++;g.rows.push(i);const d=str(cDoc,i);if(d)g.docs.add(d);
+    g.net+=num(cNet,i);g.cost+=num(cCost,i);g.profit+=num(cProfit,i);g.min+=num(cMin,i);g.con+=num(cCon,i);
+    const fl=P.FL[i];if(fl.some(isBelow))g.below++;if(fl.some(isUnder))g.under++;if(fl.some(isAnon))g.anon++;
+    const u=str(cUser,i)||'(بدون)';g.users.set(u,(g.users.get(u)||0)+1);const r=str(cRep,i);if(r)g.reps.add(r);
+    g.fi=Math.max(g.fi,num(cFI,i));g.fp=Math.max(g.fp,num(cFP,i));g.fc=Math.max(g.fc,num(cFC,i));}
+  const rows=[...M.values()].map(g=>{g.nd=g.docs.size;g.markup=sdiv(g.profit,g.cost);g.conPct=sdiv(g.con,g.net);g.nu=g.users.size;
+    g.usersTxt=[...g.users.entries()].sort((a,b)=>b[1]-a[1]).map(e=>e[0]+' ('+e[1]+')').join('، ');g.repsTxt=[...g.reps].join('، ');delete g.docs;return g;}).sort((a,b)=>b.con-a.con);
+  const tot={label:'الإجمالي ('+FI(rows.length)+' موظف)',n:0,nd:0,net:0,cost:0,profit:0,min:0,con:0,below:0,under:0,anon:0};
+  for(const g of rows){tot.n+=g.n;tot.nd+=g.nd;tot.net+=g.net;tot.cost+=g.cost;tot.profit+=g.profit;tot.min+=g.min;tot.con+=g.con;tot.below+=g.below;tot.under+=g.under;tot.anon+=g.anon;}
+  tot.markup=sdiv(tot.profit,tot.cost);tot.conPct=sdiv(tot.con,tot.net);
+  const withCon=rows.filter(g=>g.con>0.0005).length, anonRows=rows.filter(g=>g.anon>0);
+  let h=kpis([
+    ['عدد الموظفين (حسابات)',FI(rows.length),withCon+' عليهم تنازل'],
+    ['إجمالي المشتريات',F2(tot.net),FI(tot.nd)+' فاتورة · '+FI(tot.n)+' سطر','gold'],
+    ['إجمالي التنازل تحت الحد الأدنى',F2(tot.con),PC(tot.conPct)+' من المشتريات','red'],
+    ['الزيادة الفعلية على الكلفة',PC(tot.markup),'السياسة: 10% كحد أدنى',tot.markup!=null&&tot.markup<0.10?'red':'green'],
+    ['أسطر أقل من الكلفة + 10%',FI(tot.below),PC(sdiv(tot.below,tot.n))+' من الأسطر · منها '+FI(tot.under)+' تحت الكلفة','red'],
+    ['أسطر على حساب غير مسمّى',FI(tot.anon),anonRows.length?anonRows.map(g=>g.label).slice(0,2).join('، '):'لا يوجد',tot.anon?'red':'']]);
+  h+='<div class="card"><h3>تجميع الموظف <span class="hint">كل سطر = حساب موظف (أو حساب عام) — اضغط عليه لعرض فواتيره · الأعمدة «بالفترة» كما يحسبها الكويري نفسه على كامل الفترة</span><span class="sp"></span>'+expBtn(T,'empT')+'</h3><div id="empT"></div></div>';
+  h+='<div class="grid2"><div class="card"><h3>أعلى الموظفين تنازلاً</h3><div id="empB"></div></div><div class="card"><h3>من يُدخل فواتير كل موظف <span class="hint">هل المُدخل هو المشتري أو زميل مقرّب؟</span> '+expBtn(T,'empU')+'</h3><div id="empU"></div></div></div>';
+  h+='<div class="card"><h3>الأصناف الأكثر تنازلاً <span class="hint">اضغط على صنف لعرض أسطره</span> '+expBtn(T,'empI')+'</h3><div id="empI"></div></div>';
+  el.innerHTML=h;
+  const cols=[{k:'#',t:'#',nos:1},{k:'label',t:'الموظف / الحساب',f:'t',cls:'nm',h:r=>'<span class="lnk">'+esc(r.label)+'</span>'+(r.code?'<span class="code" style="margin-inline-start:6px">'+esc(r.code)+'</span>':'')+(r.anon?'<span class="pill r">غير مسمّى</span>':'')},
+    {k:'nd',t:'الفواتير',f:'i'},{k:'n',t:'الأسطر',f:'i'},{k:'net',t:'المشتريات',f:'n',heat:true},{k:'cost',t:'الكلفة',f:'n'},{k:'profit',t:'الربح',f:'n'},{k:'markup',t:'الزيادة على الكلفة',f:'pc',h:r=>r.markup==null?'<span class="z">—</span>':'<span class="'+(r.markup<0?'dn':r.markup<0.10?'pill w':'up')+'">'+PC(r.markup)+'</span>'},
+    {k:'min',t:'الحد الأدنى (الكلفة×1.10)',f:'n'},{k:'con',t:'التنازل',f:'n',heat:true,red:true},{k:'conPct',t:'% التنازل من المشتريات',f:'pc'},{k:'below',t:'أسطر < الكلفة+10%',f:'i',heat:true,red:true},{k:'under',t:'أسطر تحت الكلفة',f:'i',heat:true,red:true},
+    {k:'nu',t:'عدد المُدخلين',f:'i'},{k:'usersTxt',t:'المُدخلون',f:'t',cls:'nm'},{k:'repsTxt',t:'المندوب',f:'t',cls:'nm'},{k:'fi',t:'فواتير بالفترة (كويري)',f:'i'},{k:'fp',t:'مشتريات بالفترة (كويري)',f:'n'},{k:'fc',t:'تنازل بالفترة (كويري)',f:'n'}];
+  table(T,$('empT'),'empT',{name:'تجميع_الموظف',cols,rows,total:tot,sort:'con',dir:-1,onRow:r=>drillTo(T,cName.i,r.label==='(بدون)'?'':r.label,'الموظف')});
+  const top=rows.filter(g=>g.con>0).slice(0,12);$('empB').innerHTML=hbars(top.map(g=>({l:g.label,v:g.con,s:PC(g.conPct)})),{click:true,fmt:F2});
+  $('empB').onclick=e=>{const i=e.target.dataset.hb;if(i!=null)drillTo(T,cName.i,top[+i].label,'الموظف');};
+  /* employee × user */
+  const MU=new Map();for(const i of idx){const k=(str(cName,i)||'(بدون)')+'\u0001'+(str(cUser,i)||'(بدون)');let g=MU.get(k);if(!g){const p=k.split('\u0001');g={emp:p[0],user:p[1],n:0,docs:new Set(),net:0,con:0,below:0};MU.set(k,g);}
+    g.n++;const d=str(cDoc,i);if(d)g.docs.add(d);g.net+=num(cNet,i);g.con+=num(cCon,i);if(P.FL[i].some(isBelow))g.below++;}
+  const ru=[...MU.values()].map(g=>{g.nd=g.docs.size;delete g.docs;g.share=sdiv(g.net,(M.get(g.emp)||{net:0}).net);return g;}).sort((a,b)=>b.con-a.con||b.net-a.net);
+  table(T,$('empU'),'empU',{name:'الموظف_والمدخل',short:true,cols:[{k:'#',t:'#',nos:1},{k:'emp',t:'الموظف',f:'t',cls:'nm'},{k:'user',t:'المُدخل',f:'t',cls:'nm'},{k:'nd',t:'الفواتير',f:'i'},{k:'n',t:'الأسطر',f:'i'},{k:'net',t:'المشتريات',f:'n'},{k:'share',t:'% من مشتريات الموظف',f:'pc'},{k:'con',t:'التنازل',f:'n',heat:true,red:true},{k:'below',t:'أسطر < الكلفة+10%',f:'i'}],rows:ru,
+    onRow:r=>{T.S.drill.push({col:cName.i,val:r.emp==='(بدون)'?'':r.emp,label:'الموظف'});if(cUser)drillTo(T,cUser.i,r.user==='(بدون)'?'':r.user,'المُدخل');else{invalidate(T);T.view='det';renderTab(T);}}});
+  /* items */
+  if(cItem){const MI=new Map();for(const i of idx){const k=str(cItem,i)||'(بدون)';let g=MI.get(k);if(!g){g={label:k,n:0,qty:0,net:0,cost:0,con:0,below:0,emps:new Set()};MI.set(k,g);}
+      g.n++;g.qty+=num(cQty,i);g.net+=num(cNet,i);g.cost+=num(cCost,i);g.con+=num(cCon,i);if(P.FL[i].some(isBelow))g.below++;const e=str(cName,i);if(e)g.emps.add(e);}
+    const ri=[...MI.values()].map(g=>{g.ne=g.emps.size;delete g.emps;g.markup=sdiv(g.net-g.cost,g.cost);return g;}).sort((a,b)=>b.con-a.con||b.net-a.net);
+    table(T,$('empI'),'empI',{name:'الاصناف_الاكثر_تنازلا',short:true,cols:[{k:'#',t:'#',nos:1},{k:'label',t:'الصنف',f:'t',cls:'nm',h:r=>'<span class="lnk">'+esc(r.label)+'</span>'},{k:'ne',t:'عدد الموظفين',f:'i'},{k:'n',t:'الأسطر',f:'i'},{k:'qty',t:'الكمية',f:'n'},{k:'net',t:'المشتريات',f:'n'},{k:'cost',t:'الكلفة',f:'n'},{k:'markup',t:'الزيادة على الكلفة',f:'pc'},{k:'con',t:'التنازل',f:'n',heat:true,red:true},{k:'below',t:'أسطر < الكلفة+10%',f:'i'}],rows:ri,
+      onRow:r=>drillTo(T,cItem.i,r.label==='(بدون)'?'':r.label,'الصنف')});}
+};
+
+/* ================= تبويب عمر الذمة (كويريان: أرصدة وأعمار + شيكات) ================= */
+const AG_M_LABELS=['M0 الشهر الحالي (حتى تاريخ اللقطة)','M1 شهر قبل','M2 شهرين قبل','M3 3 أشهر قبل','M4 4 أشهر قبل','M5 5 أشهر قبل','M6 6 أشهر قبل','M7 7 أشهر قبل','M8 8 أشهر قبل','M9 9 أشهر قبل','M10 10 أشهر قبل','M11 11 أشهر قبل','M12plus أقدم من 12 شهر'];
+const AG_DEF={id:'aging',kind:'aging',n:'عمر الذمة — أرصدة العملاء والشيكات المؤجلة',short:'عمر الذمة',
+  cols:['رمز العميل','اسم العميل','المندوب','رقم الهاتف','البريد الإلكتروني','السقف الائتماني','أيام السماح','الرصيد حتى تاريخ اللقطة','الشيكات المؤجلة',...AG_M_LABELS],
+  cols2:['رمز العميل','رقم السند','تاريخ تسجيل السند','تاريخ الاستحقاق','قيمة الشيك','البنك'],
+  g:{t:'عمر الذمة — أرصدة العملاء والشيكات المؤجلة',m:'كويري الأرصدة والأعمار (لقطة بتاريخ) + كويري الشيكات التفصيلي · خيار مع شيكات / بدون شيكات',open:'—',
+    goal:'تحديد عمر رصيد كل عميل بتاريخ اللقطة ومقارنته بمهلة السداد الممنوحة له، وكشف المتأخرين فعلياً ومتجاوزي السقف الائتماني. يُوزَّع الرصيد تنازلياً على صافي مبيعات الأشهر من الأحدث للأقدم (استهلاك FIFO)، ويُحسب لأقدم جزء منه تاريخ الاستحقاق المفروض حسب سياسة الشركة. بخيار «مع شيكات» تُكمل الشيكات المؤجلة (حسب تاريخ استحقاقها) استهلاك الأشهر بعد الرصيد ويُقارن استحقاق كل شيك بالاستحقاق المفروض، ويُحسب السقف على التعرض الكلي (رصيد + شيكات).',
+    shows:[['الرصيد حتى تاريخ اللقطة','صافي ذمة العميل بتاريخ اللقطة (من دفتر الأستاذ)'],['الشيكات المؤجلة','شيكات مستلمة استحقاقها بعد تاريخ اللقطة'],['M0 … M12plus','صافي مبيعات كل شهر (فواتير ناقص مرتجعات) رجوعاً من شهر اللقطة'],['عمر الذمة','أقدم شهر وصل إليه استهلاك الرصيد'],['الاستحقاق المفروض','≥30 يوم مهلة: نهاية شهر البيع + (المهلة÷30) شهر + الباقي أيام · <30: نهاية الشهر + المهلة'],['المبلغ المتأخر','مجموع الأجزاء الموزعة على أشهر تجاوز استحقاقها المفروض تاريخ اللقطة'],['غير مؤثر مادياً','رصيد متأخر لكنه 50 دينار فأقل'],['بيانات غير كافية','الرصيد أكبر من مبيعات 13 شهراً (رصيد افتتاحي أو أقدم)']],
+    read:'ابدأ بالمتأخرين فعلياً مرتبين بالمبلغ المتأخر، ثم متجاوزي السقف، ثم الشيكات المتأخرة عن الاستحقاق المفروض. خيار «بدون شيكات» يقيس الذمة الدفترية وحدها، و«مع شيكات» يقيس التعرض الكلي ومدى مطابقة تواريخ الشيكات لسياسة السداد.',
+    act:['متأخر فعلياً: كشف حساب وتأكيد رصيد مع العميل، وإيقاف البيع الآجل حتى التسوية.','تجاوز السقف: من وافق؟ قارن بالكويري 4 (البيع لعملاء متجاوزين).','شيك متأخر عن الاستحقاق المفروض: مخالفة لشروط الدفع، تُسجَّل على المندوب.','بيانات غير كافية: اطلب كشف حساب تفصيلياً للعميل لتحديد الأرصدة القديمة.']}};
+QDEF.push(AG_DEF);
+const AG_TOL=50, AG_MAT=50;
+function agState(){return {snap:null,mode:'with',q:'',rep:'',st:'',over:false,min:0,view:'ov',showM:false};}
+function agMonthEnd(snap,k){const d=new Date(snap*DAY);return Math.round(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()-k+1,0)/DAY);}
+function agReqDue(monthEnd,extra){if(extra>=30){const nM=Math.floor(extra/30),rem=extra%30;const d=new Date(monthEnd*DAY);const e=Math.round(Date.UTC(d.getUTCFullYear(),d.getUTCMonth()+nM+1,0)/DAY);return e+rem;}return monthEnd+extra;}
+function agParse(text,src,which){const def=which===2?{n:'الشيكات التفصيلية',cols:AG_DEF.cols2,doc:'رقم السند'}:{n:'الأرصدة والأعمار',cols:AG_DEF.cols,doc:'رمز العميل'};return parseText(text,src,def);}
+function agBuild(T){const D=T.D;if(!D){T.A=null;T.P=null;return;}
+  const H=D.head.map(hnorm);const ci=n=>H.indexOf(hnorm(n));
+  const iCode=ci('رمز العميل'),iName=ci('اسم العميل'),iRep=ci('المندوب'),iPh=ci('رقم الهاتف'),iEm=ci('البريد الإلكتروني'),iCL=ci('السقف الائتماني'),iEx=ci('أيام السماح'),iBal=ci('الرصيد حتى تاريخ اللقطة'),iChk=ci('الشيكات المؤجلة');
+  const iM=AG_M_LABELS.map(l=>{let j=ci(l);if(j<0){const p=l.split(' ')[0].toLowerCase();j=H.findIndex(h=>h.startsWith(p+' ')||h===p);}return j;});
+  if(iCode<0||iBal<0)throw new Error('كشف الأرصدة ينقصه عمود «رمز العميل» أو «الرصيد حتى تاريخ اللقطة»');
+  const g=(r,i)=>i<0?'':(r[i]||''),nz=(r,i)=>{const v=i<0?null:pnum(r[i]);return v==null?0:v;};
+  const C=D.rows.map(r=>({code:g(r,iCode),name:g(r,iName),rep:g(r,iRep)||'(بدون)',phone:g(r,iPh),email:g(r,iEm),cl:nz(r,iCL),ex:nz(r,iEx),bal:nz(r,iBal),chkAgg:nz(r,iChk),m:iM.map(j=>nz(r,j))})).filter(c=>c.code);
+  /* checks file */
+  const K=new Map();let kAll=[];
+  if(T.D2){const H2=T.D2.head.map(hnorm);const c2=n=>H2.indexOf(hnorm(n));const jC=c2('رمز العميل'),jDoc=c2('رقم السند'),jReg=c2('تاريخ تسجيل السند'),jDue=c2('تاريخ الاستحقاق'),jSum=c2('قيمة الشيك'),jBank=c2('البنك');
+    const pd=makeDateParser(T.D2.rows.slice(0,400).map(r=>r[jDue]).filter(Boolean));
+    for(const r of T.D2.rows){const code=g(r,jC);if(!code)continue;const k={code,doc:g(r,jDoc),reg:jReg<0?null:pd(r[jReg]||''),due:jDue<0?null:pd(r[jDue]||''),sum:nz(r,jSum),bank:g(r,jBank)};kAll.push(k);if(!K.has(code))K.set(code,[]);K.get(code).push(k);}}
+  T.A={C,K,kAll,byCode:new Map(C.map(c=>[c.code,c]))};T.P={n:C.length,cols:[],missing:[]};
+}
+function agCompute(T){const A=T.A,S=T.S;if(!A)return;const snap=S.snap;const withChk=S.mode==='with';
+  for(const c of A.C){
+    const ks=(A.K.get(c.code)||[]).filter(k=>k.due!=null&&snap!=null&&k.due>snap).sort((a,b)=>a.due-b.due);
+    c.ks=ks;c.chk=T.D2?ks.reduce((s,k)=>s+k.sum,0):c.chkAgg;c.exp=c.bal+(withChk?c.chk:0);
+    const alloc=new Array(13).fill(0),rem0=c.m.slice();let idx=0,rem=c.bal,beyond=false;
+    if(c.bal>0.01){while(rem>AG_TOL){if(idx>=13){beyond=true;break;}const av=rem0[idx];if(av<-0.01){idx++;continue;}const take=Math.min(rem,av);rem0[idx]-=take;rem-=take;alloc[idx]+=take;if(rem<=AG_TOL)break;if(rem0[idx]<=0.01)idx++;else break;}
+      if(!beyond&&rem>0){alloc[Math.min(idx,12)]+=rem;rem=0;}}
+    c.alloc=alloc;c.beyond=beyond;c.uncovered=beyond?rem:0;c.oldest=beyond?12:Math.min(idx,12);
+    c.due=null;c.overAmt=0;c.status='ok';c.label='ضمن المهلة';c.days=0;
+    if(snap!=null){for(let k=0;k<13;k++){if(alloc[k]<=0)continue;const d=agReqDue(agMonthEnd(snap,k),c.ex);if(snap>d)c.overAmt+=alloc[k];}if(beyond)c.overAmt+=c.uncovered;
+      if(c.bal<=0.01){c.status=c.bal<-0.01?'credit':'none';c.label=c.bal<-0.01?'رصيد دائن':'لا يوجد رصيد مكشوف';}
+      else if(beyond){c.status='beyond';c.label='بيانات غير كافية (رصيد أكبر من نطاق 13 شهراً)';}
+      else{c.due=agReqDue(agMonthEnd(snap,c.oldest),c.ex);
+        if(snap>c.due){c.days=snap-c.due;if(c.bal<=AG_MAT){c.status='immaterial';c.label='غير مؤثر مادياً — متأخر '+c.days+' يوم';}else{c.status='overdue';c.label='متأخر '+c.days+' يوم عن الاستحقاق';}}
+        else{c.days=c.due-snap;c.status=c.days<=15?'soon':'ok';c.label='باقي له '+c.days+' يوم';}}}
+    else{c.status='nodate';c.label='حدد تاريخ اللقطة';}
+    /* checks continue consumption */
+    c.cst='none';c.clabel=T.D2?'لا شيكات مؤجلة':(c.chkAgg>0?'إجمالي فقط (بدون تواريخ)':'—');c.cdelay=0;c.lateChecks=[];
+    if(withChk&&ks.length&&snap!=null){let cIdx=idx,anyV=false,maxD=0,anyC=false;
+      for(const k of ks){let crem=k.sum;while(crem>AG_TOL&&cIdx<13){const av=rem0[cIdx];if(av<-0.01){cIdx++;continue;}const take=Math.min(crem,av);
+          if(take>0.005){anyC=true;const rd=agReqDue(agMonthEnd(snap,cIdx),c.ex);if(k.due>rd){anyV=true;const d=k.due-rd;k.late=d;if(d>maxD)maxD=d;c.lateChecks.push(k);}else k.late=0;}
+          rem0[cIdx]-=take;crem-=take;if(crem<=AG_TOL)break;if(rem0[cIdx]<=0.01)cIdx++;else break;}
+        if(crem>AG_TOL)cIdx=13;}
+      c.cst=anyV?'late':'ok';c.cdelay=maxD;c.clabel=anyV?'شيك متأخر '+maxD+' يوم عن الاستحقاق المفروض':(anyC?'ضمن المهلة':'ضمن المهلة');}
+    c.overCL=c.cl>0&&c.exp>c.cl;c.overAmtCL=c.overCL?c.exp-c.cl:0;
+  }
+}
+const AG_ST={overdue:['متأخر فعلياً','r'],soon:['يستحق خلال 15 يوماً','w'],ok:['ضمن المهلة','g'],immaterial:['غير مؤثر مادياً','n'],beyond:['بيانات غير كافية','r'],none:['بدون رصيد','n'],credit:['رصيد دائن','b'],nodate:['حدد تاريخ اللقطة','n']};
+function agRows(T){const S=T.S,qn=S.q?norm(S.q):'';return T.A.C.filter(c=>{if(S.rep&&c.rep!==S.rep)return false;if(S.st&&c.status!==S.st)return false;if(S.over&&!c.overCL)return false;if(S.min>0&&Math.abs(c.exp)<S.min)return false;if(qn&&norm(c.code+' '+c.name+' '+c.rep+' '+c.phone).indexOf(qn)<0)return false;return true;});}
+function agPill(c){const s=AG_ST[c.status]||['',''];return '<span class="pill '+s[1]+'" title="'+esc(c.label)+'">'+s[0]+'</span>';}
+function agModal(T,c){const S=T.S;let h='<h2>'+esc(c.name)+' <span class="code">'+esc(c.code)+'</span> '+agPill(c)+'<span class="sp"></span><button class="btn sm" onclick="closeModal()">إغلاق</button></h2>';
+  h+='<div class="rec"><div><span>المندوب</span><span>'+esc(c.rep)+'</span></div><div><span>الهاتف</span><span>'+esc(c.phone)+'</span></div><div><span>أيام السماح</span><span>'+FI(c.ex)+'</span></div><div><span>السقف الائتماني</span><span>'+F2(c.cl)+'</span></div><div><span>الرصيد</span><span>'+F2(c.bal)+'</span></div><div><span>الشيكات المؤجلة</span><span>'+F2(c.chk)+'</span></div><div><span>التعرض ('+(S.mode==='with'?'مع':'بدون')+' شيكات)</span><span>'+F2(c.exp)+'</span></div><div><span>عمر الذمة</span><span>'+(c.beyond?'أقدم من 12 شهراً':c.bal>0.01?'M'+c.oldest:'—')+'</span></div><div><span>الاستحقاق المفروض</span><span>'+(c.due?fmtDay(c.due):'—')+'</span></div><div><span>الحالة</span><span>'+esc(c.label)+'</span></div><div><span>المبلغ المتأخر</span><span>'+F2(c.overAmt)+'</span></div><div><span>حالة الشيكات</span><span>'+esc(c.clabel)+'</span></div></div>';
+  h+='<h3 style="margin:12px 0 6px;font-size:13px;color:var(--accent2)">توزيع الرصيد على الأشهر</h3><div class="tw short"><table class="t"><thead><tr><th class="tx">الشهر</th><th>نهاية الشهر</th><th>صافي مبيعات الشهر</th><th>المستهلك من الرصيد</th><th>الاستحقاق المفروض</th><th class="tx">الوضع</th></tr></thead><tbody>';
+  for(let k=0;k<13;k++){const me=S.snap!=null?agMonthEnd(S.snap,k):null,rd=me!=null?agReqDue(me,c.ex):null;const late=rd!=null&&c.alloc[k]>0&&S.snap>rd;
+    h+='<tr><td class="tx">'+esc(AG_M_LABELS[k])+'</td><td>'+(me!=null?fmtDay(me):'')+'</td><td>'+F2(c.m[k])+'</td><td'+(c.alloc[k]>0?' style="background:var(--goldSoft);font-weight:700"':'')+'>'+(c.alloc[k]>0?F2(c.alloc[k]):'<span class="z">—</span>')+'</td><td>'+(rd!=null?fmtDay(rd):'')+'</td><td class="tx">'+(c.alloc[k]>0?(late?'<span class="dn">متأخر '+(S.snap-rd)+' يوم</span>':'<span class="up">ضمن المهلة</span>'):'')+'</td></tr>';}
+  if(c.beyond)h+='<tr><td class="tx" colspan="3"><b>غير مغطى بمبيعات 13 شهراً</b></td><td><b>'+F2(c.uncovered)+'</b></td><td></td><td class="tx"><span class="dn">بيانات غير كافية</span></td></tr>';
+  h+='</tbody></table></div>';
+  if(c.ks&&c.ks.length){h+='<h3 style="margin:12px 0 6px;font-size:13px;color:var(--accent2)">الشيكات المؤجلة ('+c.ks.length+')</h3><div class="tw short"><table class="t"><thead><tr><th>رقم السند</th><th>تاريخ التسجيل</th><th>تاريخ الاستحقاق</th><th>أيام حتى الاستحقاق</th><th>القيمة</th><th class="tx">البنك</th><th class="tx">مقابل الاستحقاق المفروض</th></tr></thead><tbody>';
+    for(const k of c.ks)h+='<tr><td>'+esc(k.doc)+'</td><td>'+fmtDay(k.reg)+'</td><td>'+fmtDay(k.due)+'</td><td>'+FI(k.due-S.snap)+'</td><td>'+F2(k.sum)+'</td><td class="tx">'+esc(k.bank)+'</td><td class="tx">'+(k.late>0?'<span class="dn">متأخر '+k.late+' يوم</span>':k.late===0?'<span class="up">ضمن المهلة</span>':'<span class="z">—</span>')+'</td></tr>';
+    h+='</tbody></table></div>';}
+  $('md').innerHTML=h;$('ov').classList.add('on');}
+const AGV={};
+AGV.ov=(T,el)=>{const S=T.S,rows=agRows(T);const n=rows.length;const sum=(f)=>rows.reduce((s,c)=>s+f(c),0);
+  const bal=sum(c=>c.bal),chk=sum(c=>c.chk),exp=sum(c=>c.exp),overA=sum(c=>c.overAmt);const cnt=k=>rows.filter(c=>c.status===k).length;const overCL=rows.filter(c=>c.overCL);const lateChk=rows.filter(c=>c.cst==='late');
+  let h=kpis([['عدد العملاء',FI(n),FI(rows.filter(c=>c.bal>0.01).length)+' عليهم رصيد مكشوف'],['إجمالي الأرصدة',F2(bal),'حتى '+(S.snap!=null?fmtDay(S.snap):'—'),'gold'],
+    ...(S.mode==='with'?[['الشيكات المؤجلة',F2(chk),T.D2?'من الكشف التفصيلي':'من عمود الكويري'],['التعرض الكلي',F2(exp),'رصيد + شيكات','gold']]:[]),
+    ['متأخرون فعلياً',FI(cnt('overdue')),PC(sdiv(cnt('overdue'),n))+' من العملاء','red'],['المبلغ المتأخر',F2(overA),PC(sdiv(overA,bal))+' من الأرصدة','red'],['يستحق خلال 15 يوماً',FI(cnt('soon')),'',''],['تجاوزوا السقف',FI(overCL.length),'بمجموع '+F2(overCL.reduce((s,c)=>s+c.overAmtCL,0)),'red'],
+    ...(S.mode==='with'&&T.D2?[['شيكات متأخرة عن المفروض',FI(lateChk.length),'عميل','red']]:[]),['بيانات غير كافية',FI(cnt('beyond')),'رصيد أقدم من 13 شهراً'],['غير مؤثر مادياً',FI(cnt('immaterial')),'≤ '+AG_MAT+' دينار']]);
+  h+='<div class="grid2"><div class="card"><h3>توزيع الأرصدة حسب عمر الذمة '+expBtn(T,'agB')+'</h3><div id="agB"></div></div><div class="card"><h3>توزيع العملاء حسب الحالة</h3><div id="agS"></div></div></div>';
+  h+='<div class="grid2"><div class="card"><h3>أعلى 15 عميلاً بالمبلغ المتأخر</h3><div id="agT1"></div></div><div class="card"><h3>أعلى 15 عميلاً بالتعرض</h3><div id="agT2"></div></div></div>';
+  el.innerHTML=h;
+  const B=AG_M_LABELS.map((l,k)=>({label:l,k,amt:0,nc:0,over:0}));B.push({label:'غير مغطى (أقدم من 13 شهراً)',k:13,amt:0,nc:0,over:0});
+  for(const c of rows){for(let k=0;k<13;k++)if(c.alloc[k]>0){B[k].amt+=c.alloc[k];B[k].nc++;if(S.snap!=null&&S.snap>agReqDue(agMonthEnd(S.snap,k),c.ex))B[k].over+=c.alloc[k];}if(c.uncovered>0){B[13].amt+=c.uncovered;B[13].nc++;B[13].over+=c.uncovered;}}
+  const tb=B.reduce((s,b)=>s+b.amt,0);for(const b of B)b.pct=sdiv(b.amt,tb);
+  table(T,$('agB'),'agB',{name:'توزيع_الاعمار',short:true,cols:[{k:'label',t:'الشهر',f:'t',cls:'nm'},{k:'nc',t:'عملاء',f:'i'},{k:'amt',t:'الرصيد الموزع',f:'n',heat:true},{k:'pct',t:'%',f:'pc'},{k:'over',t:'منه متأخر',f:'n',heat:true,red:true}],rows:B,sort:null});
+  const st=Object.keys(AG_ST).map(k=>({l:AG_ST[k][0],v:cnt(k),s:F2(rows.filter(c=>c.status===k).reduce((s,c)=>s+c.bal,0))})).filter(x=>x.v>0);$('agS').innerHTML=hbars(st,{fmt:FI});
+  const t1=rows.filter(c=>c.overAmt>0).sort((a,b)=>b.overAmt-a.overAmt).slice(0,15);$('agT1').innerHTML=hbars(t1.map(c=>({l:c.name,v:c.overAmt,s:c.days+' يوم'})),{click:true,fmt:F2});$('agT1').onclick=e=>{const i=e.target.dataset.hb;if(i!=null)agModal(T,t1[+i]);};
+  const t2=rows.slice().sort((a,b)=>b.exp-a.exp).slice(0,15);$('agT2').innerHTML=hbars(t2.map(c=>({l:c.name,v:c.exp,s:c.overCL?'فوق السقف':''})),{click:true,fmt:F2});$('agT2').onclick=e=>{const i=e.target.dataset.hb;if(i!=null)agModal(T,t2[+i]);};
+};
+AGV.cust=(T,el)=>{const S=T.S,rows=agRows(T);
+  el.innerHTML='<div class="card"><h3>كشف العملاء <span class="hint">'+FI(rows.length)+' عميل — اضغط على العميل لعرض توزيع الأشهر وشيكاته</span><span class="sp"></span><label class="chk'+(S.showM?' hl':'')+'" id="agShowM"><input type="checkbox"'+(S.showM?' checked':'')+'> إظهار توزيع الأشهر</label> '+expBtn(T,'agC')+'</h3><div id="agC"></div></div>';
+  $('agShowM').querySelector('input').onchange=e=>{S.showM=e.target.checked;AGV.cust(T,el);};
+  const cols=[{k:'#',t:'#',nos:1},{k:'name',t:'العميل',f:'t',cls:'nm',h:c=>'<span class="lnk">'+esc(c.name)+'</span><span class="code" style="margin-inline-start:6px">'+esc(c.code)+'</span>'},{k:'rep',t:'المندوب',f:'t',cls:'nm'},{k:'phone',t:'الهاتف',f:'t'},{k:'ex',t:'أيام السماح',f:'i'},{k:'cl',t:'السقف',f:'n'},{k:'bal',t:'الرصيد',f:'n',heat:true},
+    ...(S.mode==='with'?[{k:'chk',t:'الشيكات المؤجلة',f:'n'},{k:'exp',t:'التعرض',f:'n'}]:[]),{k:'overCL',t:'تجاوز السقف',f:'t',h:c=>c.overCL?'<span class="pill r">+'+F2(c.overAmtCL)+'</span>':'<span class="z">—</span>'},
+    {k:'oldest',t:'عمر الذمة',f:'t',h:c=>c.bal>0.01?(c.beyond?'<span class="pill r">12+</span>':'M'+c.oldest):'<span class="z">—</span>'},{k:'due',t:'الاستحقاق المفروض',f:'d'},{k:'status',t:'الحالة',f:'t',h:c=>agPill(c)},{k:'days',t:'أيام التأخير / المتبقية',f:'i',h:c=>c.status==='overdue'||c.status==='immaterial'?'<span class="dn">'+FI(c.days)+'-</span>':(c.status==='ok'||c.status==='soon')?'<span class="up">'+FI(c.days)+'</span>':'<span class="z">—</span>'},
+    {k:'overAmt',t:'المبلغ المتأخر',f:'n',heat:true,red:true},{k:'overPct',t:'% المتأخر من الرصيد',f:'pc',get:c=>sdiv(c.overAmt,c.bal)},...(S.mode==='with'?[{k:'cst',t:'حالة الشيكات',f:'t',h:c=>c.cst==='late'?'<span class="pill r">'+esc(c.clabel)+'</span>':c.cst==='ok'?'<span class="pill g">ضمن المهلة</span>':'<span class="z">'+esc(c.clabel)+'</span>'}]:[])];
+  if(S.showM)for(let k=0;k<13;k++)cols.push({k:'a'+k,id:'a'+k,t:AG_M_LABELS[k].split(' ')[0],f:'n',get:c=>c.alloc[k]||null,heat:true});
+  const tot={name:'الإجمالي ('+FI(rows.length)+')',bal:0,chk:0,exp:0,overAmt:0,cl:0};for(const c of rows){tot.bal+=c.bal;tot.chk+=c.chk;tot.exp+=c.exp;tot.overAmt+=c.overAmt;tot.cl+=c.cl;}
+  table(T,$('agC'),'agC',{name:'كشف_العملاء',cols,rows,total:tot,sort:'overAmt',dir:-1,onRow:c=>agModal(T,c)});
+};
+AGV.rep=(T,el)=>{const S=T.S,rows=agRows(T);const M=new Map();
+  for(const c of rows){let g=M.get(c.rep);if(!g){g={label:c.rep,n:0,nb:0,bal:0,chk:0,exp:0,over:0,overAmt:0,overCL:0,soon:0,late:0,w:0};M.set(c.rep,g);}g.n++;if(c.bal>0.01)g.nb++;g.bal+=c.bal;g.chk+=c.chk;g.exp+=c.exp;if(c.status==='overdue')g.over++;g.overAmt+=c.overAmt;if(c.overCL)g.overCL++;if(c.status==='soon')g.soon++;if(c.cst==='late')g.late++;if(c.bal>0.01&&!c.beyond)g.w+=c.oldest*c.bal;}
+  const g=[...M.values()].map(x=>{x.age=sdiv(x.w,x.bal);x.overPct=sdiv(x.overAmt,x.bal);return x;});
+  el.innerHTML='<div class="card"><h3>حسب المندوب <span class="hint">اضغط على المندوب لتصفية العملاء</span> '+expBtn(T,'agR')+'</h3><div id="agR"></div></div>';
+  const tot={label:'الإجمالي',n:0,nb:0,bal:0,chk:0,exp:0,over:0,overAmt:0,overCL:0,soon:0,late:0};for(const x of g){for(const k of ['n','nb','bal','chk','exp','over','overAmt','overCL','soon','late'])tot[k]+=x[k];}tot.overPct=sdiv(tot.overAmt,tot.bal);
+  table(T,$('agR'),'agR',{name:'حسب_المندوب',cols:[{k:'#',t:'#',nos:1},{k:'label',t:'المندوب',f:'t',cls:'nm',h:x=>'<span class="lnk">'+esc(x.label)+'</span>'},{k:'n',t:'العملاء',f:'i'},{k:'nb',t:'عليهم رصيد',f:'i'},{k:'bal',t:'الأرصدة',f:'n',heat:true},...(S.mode==='with'?[{k:'chk',t:'الشيكات',f:'n'},{k:'exp',t:'التعرض',f:'n'}]:[]),{k:'over',t:'متأخرون',f:'i',heat:true,red:true},{k:'overAmt',t:'المبلغ المتأخر',f:'n',heat:true,red:true},{k:'overPct',t:'% المتأخر',f:'pc'},{k:'age',t:'متوسط العمر (شهر)',f:'n'},{k:'soon',t:'يستحق قريباً',f:'i'},{k:'overCL',t:'فوق السقف',f:'i'},...(S.mode==='with'&&T.D2?[{k:'late',t:'شيكات متأخرة',f:'i'}]:[])],rows:g,total:tot,sort:'overAmt',dir:-1,onRow:x=>{S.rep=x.label;S.view='cust';renderAging(T);}});
+};
+AGV.chk=(T,el)=>{const S=T.S;if(!T.D2){el.innerHTML='<div class="card"><div class="empty">لم يُحمَّل كشف الشيكات التفصيلي بعد — حمّله من «تحميل الكشوف»</div></div>';return;}
+  const snap=S.snap;const all=T.A.kAll.filter(k=>k.due!=null&&(snap==null||k.due>snap)).map(k=>{const c=T.A.byCode.get(k.code);k.name=c?c.name:'';k.rep=c?c.rep:'';k.cst=c?c.status:'';k.daysTo=snap!=null?k.due-snap:null;return k;});
+  const rows=all.filter(k=>{const qn=S.q?norm(S.q):'';if(S.rep&&k.rep!==S.rep)return false;if(qn&&norm(k.code+' '+k.name+' '+k.bank+' '+k.doc).indexOf(qn)<0)return false;return true;});
+  const sum=rows.reduce((s,k)=>s+k.sum,0),late=rows.filter(k=>k.late>0);
+  let h=kpis([['الشيكات المؤجلة',FI(rows.length),'لـ '+FI(new Set(rows.map(k=>k.code)).size)+' عميل'],['قيمتها',F2(sum),'استحقاقها بعد '+(snap!=null?fmtDay(snap):'اللقطة'),'gold'],['تستحق خلال 30 يوماً',F2(rows.filter(k=>k.daysTo!=null&&k.daysTo<=30).reduce((s,k)=>s+k.sum,0)),FI(rows.filter(k=>k.daysTo!=null&&k.daysTo<=30).length)+' شيك'],['متأخرة عن الاستحقاق المفروض',FI(late.length),F2(late.reduce((s,k)=>s+k.sum,0)),'red']]);
+  h+='<div class="grid2"><div class="card"><h3>حسب شهر الاستحقاق '+expBtn(T,'agKM')+'</h3><div id="agKM"></div></div><div class="card"><h3>حسب البنك '+expBtn(T,'agKB')+'</h3><div id="agKB"></div></div></div>';
+  h+='<div class="card"><h3>كشف الشيكات المؤجلة '+expBtn(T,'agK')+'</h3><div id="agK"></div></div>';el.innerHTML=h;
+  const grp=(fn,lab)=>{const M=new Map();for(const k of rows){const key=fn(k);let g=M.get(key);if(!g){g={key,label:lab?lab(key):key,n:0,sum:0,late:0,cs:new Set()};M.set(key,g);}g.n++;g.sum+=k.sum;if(k.late>0)g.late+=k.sum;g.cs.add(k.code);}return [...M.values()].map(g=>{g.nc=g.cs.size;delete g.cs;return g;});};
+  table(T,$('agKM'),'agKM',{name:'الشيكات_حسب_الشهر',short:true,cols:[{k:'label',t:'شهر الاستحقاق',f:'t'},{k:'n',t:'شيكات',f:'i'},{k:'nc',t:'عملاء',f:'i'},{k:'sum',t:'القيمة',f:'n',heat:true},{k:'late',t:'منها متأخرة عن المفروض',f:'n',heat:true,red:true}],rows:grp(k=>monthKey(k.due),monthLabel).sort((a,b)=>a.key-b.key),sort:null});
+  table(T,$('agKB'),'agKB',{name:'الشيكات_حسب_البنك',short:true,cols:[{k:'label',t:'البنك',f:'t',cls:'nm'},{k:'n',t:'شيكات',f:'i'},{k:'nc',t:'عملاء',f:'i'},{k:'sum',t:'القيمة',f:'n',heat:true},{k:'late',t:'منها متأخرة',f:'n',red:true,heat:true}],rows:grp(k=>k.bank||'(بدون)'),sort:'sum',dir:-1});
+  table(T,$('agK'),'agK',{name:'كشف_الشيكات',cols:[{k:'#',t:'#',nos:1},{k:'name',t:'العميل',f:'t',cls:'nm',h:k=>'<span class="lnk">'+esc(k.name||k.code)+'</span><span class="code" style="margin-inline-start:6px">'+esc(k.code)+'</span>'},{k:'rep',t:'المندوب',f:'t',cls:'nm'},{k:'doc',t:'رقم السند',f:'t'},{k:'reg',t:'تاريخ التسجيل',f:'d'},{k:'due',t:'تاريخ الاستحقاق',f:'d'},{k:'daysTo',t:'أيام حتى الاستحقاق',f:'i'},{k:'sum',t:'القيمة',f:'n',heat:true},{k:'bank',t:'البنك',f:'t'},{k:'late',t:'تأخير عن المفروض (يوم)',f:'i',h:k=>k.late>0?'<span class="dn">'+FI(k.late)+'</span>':k.late===0?'<span class="up">ضمن المهلة</span>':'<span class="z">—</span>'},{k:'cst',t:'حالة العميل',f:'t',h:k=>{const c=T.A.byCode.get(k.code);return c?agPill(c):'';}}],rows,sort:'due',dir:1,onRow:k=>{const c=T.A.byCode.get(k.code);if(c)agModal(T,c);}});
+};
+AGV.guide=(T,el)=>{const c=T.def.g,s1=($('sql_aging1')||{textContent:''}).textContent.trim(),s2=($('sql_aging2')||{textContent:''}).textContent.trim();
+  el.innerHTML='<div class="card guide"><h3>'+esc(c.t)+' <span class="hint">'+esc(c.m)+'</span></h3><p><b>الهدف:</b> '+esc(c.goal)+'</p><h4>ماذا يعرض</h4><table><thead><tr><th>البند</th><th>المعنى</th></tr></thead><tbody>'+c.shows.map(r=>'<tr><td>'+esc(r[0])+'</td><td>'+esc(r[1])+'</td></tr>').join('')+'</tbody></table><h4>كيف تقرأ النتيجة</h4><p>'+esc(c.read)+'</p><h4>ماذا تفعل</h4><ul>'+c.act.map(a=>'<li>'+esc(a)+'</li>').join('')+'</ul>'+
+    '<h4>كويري 1 — الأرصدة والأعمار (البارامتر [%0] = تاريخ اللقطة) <button class="btn sm" id="cp1">نسخ</button></h4><pre class="sql">'+esc(s1)+'</pre><h4>كويري 2 — الشيكات التفصيلية <button class="btn sm" id="cp2">نسخ</button></h4><pre class="sql">'+esc(s2)+'</pre></div>';
+  $('cp1').onclick=()=>copyText(forQM(s1));$('cp2').onclick=()=>copyText(forQM(s2));};
+AGV.up=(T,el)=>{const S=T.S;const box=(which,title,sub,D)=>'<div class="card"><h3>'+title+' <span class="hint">'+sub+'</span></h3>'+(D?'<div style="margin-bottom:8px;color:var(--good);font-weight:600">محمّل: '+esc(D.src)+' — '+FI(D.rows.length)+' سطر <button class="btn sm warn" data-del="'+which+'">حذف</button></div>':'')+
+    '<div class="drop" data-w="'+which+'"><div class="big">اسحب الملف هنا أو اضغط للاختيار</div><div style="color:var(--ink2)">txt من Query Manager أو CSV / TSV</div><input type="file" accept=".txt,.csv,.tsv,.tab" style="display:none"></div><textarea class="paste" data-w="'+which+'" placeholder="أو الصق النتيجة هنا..." style="margin-top:8px;min-height:60px"></textarea><div style="margin-top:6px"><button class="btn pri" data-go="'+which+'">تحليل النص الملصوق</button> <button class="btn" data-cp="'+which+'">نسخ الكويري</button></div><div class="msg" id="agmsg'+which+'"></div></div>';
+  el.innerHTML='<div class="card"><h3>إعدادات التحليل</h3><div class="bar" style="margin:0"><div class="fld"><label>تاريخ اللقطة (نفس [%0] في كويري 1)</label><input type="date" id="agSnap" value="'+isoDay(S.snap)+'"></div><div class="fld"><label>الشيكات المؤجلة</label><select id="agMode"><option value="with"'+(S.mode==='with'?' selected':'')+'>مع شيكات — التعرض الكلي وتدقيق تواريخ الشيكات</option><option value="without"'+(S.mode==='without'?' selected':'')+'>بدون شيكات — الذمة الدفترية فقط</option></select></div></div></div>'+
+    box(1,'1) كشف الأرصدة والأعمار','مطلوب — ناتج كويري 1 بتاريخ اللقطة',T.D)+box(2,'2) كشف الشيكات التفصيلي','اختياري — ناتج كويري 2، يُفلتر تلقائياً على الاستحقاق بعد تاريخ اللقطة',T.D2);
+  $('agSnap').onchange=e=>{S.snap=fromISO(e.target.value);agSave(T);};$('agMode').onchange=e=>{S.mode=e.target.value;agSave(T);};
+  el.querySelectorAll('.drop').forEach(d=>{const w=+d.dataset.w,inp=d.querySelector('input');d.onclick=e=>{if(e.target.closest('button'))return;inp.click();};d.ondragover=e=>{e.preventDefault();d.classList.add('ov');};d.ondragleave=()=>d.classList.remove('ov');
+    d.ondrop=e=>{e.preventDefault();d.classList.remove('ov');if(e.dataTransfer.files[0])agFile(T,w,e.dataTransfer.files[0]);};inp.onchange=e=>{if(e.target.files[0])agFile(T,w,e.target.files[0]);e.target.value='';};});
+  el.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{const w=+b.dataset.go;const t=el.querySelector('textarea[data-w="'+w+'"]').value;if(!t.trim())return;agLoad(T,w,()=>agParse(t,'نص ملصوق',w));});
+  el.querySelectorAll('[data-cp]').forEach(b=>b.onclick=()=>{const s=$('sql_aging'+b.dataset.cp);if(s)copyText(forQM(s.textContent.trim()));});
+  el.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{const w=+b.dataset.del;if(!confirm('حذف هذا الكشف من الجهاز؟'))return;if(w===1){T.D=null;IDB.del('aging');}else{T.D2=null;IDB.del('aging_chk');}try{agBuild(T);agCompute(T);}catch(e){T.A=null;T.P=null;}renderTabs();renderAging(T);});
+  if(T.msg){const m=$('agmsg'+(T.msgW||1));if(m){m.textContent=T.msg;m.className='msg err';}T.msg='';}};
+function agFile(T,w,f){const rd=new FileReader();rd.onload=()=>agLoad(T,w,()=>agParse(decodeBuf(rd.result),f.name.replace(/\.[^.]+$/,''),w));rd.readAsArrayBuffer(f);}
+function agLoad(T,w,fn){try{const D=fn();if(w===1){T.D=D;IDB.put('aging',D);}else{T.D2=D;IDB.put('aging_chk',D);}agBuild(T);agCompute(T);T.ts={};if(T.D)S_view(T,'ov');renderTabs();renderAging(T);}
+  catch(e){console.error(e);T.msg=e.message||String(e);T.msgW=w;T.S.view='up';renderAging(T);}}
+function S_view(T,v){T.S.view=v;}
+function agSave(T){try{localStorage.setItem('kap_aging',JSON.stringify({snap:T.S.snap,mode:T.S.mode}));}catch(e){}agCompute(T);renderAging(T);}
+function renderAging(T){const main=$('main'),S=T.S;T.last=T.last||{};if(!T.A||!T.A.C.length)S.view=(S.view==='guide')?'guide':'up';
+  const views=[['ov','نظرة عامة'],['cust','كشف العملاء'],['bands','حسب الفترات'],['rep','حسب المندوب'],['chk','الشيكات المؤجلة'],['guide','الكويريان والدليل'],['up','تحميل الكشوف']];
+  const ready=T.A&&T.A.C.length;
+  main.innerHTML='<div class="thead"><h2>'+esc(T.def.n)+'</h2><span class="m">'+(ready?esc(T.D.src)+' — '+FI(T.A.C.length)+' عميل'+(T.D2?' · شيكات: '+FI(T.A.kAll.length)+' سطر':' · بدون كشف شيكات تفصيلي')+' — لقطة '+(S.snap!=null?fmtDay(S.snap):'(حدد التاريخ)')+' — '+(S.mode==='with'?'مع شيكات':'بدون شيكات'):esc(T.def.g.m))+'</span></div>'+
+    '<div class="subtabs" id="subtabs">'+views.filter(v=>ready||v[0]==='up'||v[0]==='guide').map(v=>'<button class="stab'+(S.view===v[0]?' on':'')+'" data-v="'+v[0]+'">'+v[1]+'</button>').join('')+'</div>'+
+    (ready&&S.view!=='up'&&S.view!=='guide'?'<div class="bar" id="agbar"><div class="fld"><label>تاريخ اللقطة</label><input type="date" id="fSnap" value="'+isoDay(S.snap)+'"></div><div class="fld"><label>الشيكات</label><select id="fMode"><option value="with"'+(S.mode==='with'?' selected':'')+'>مع شيكات</option><option value="without"'+(S.mode==='without'?' selected':'')+'>بدون شيكات</option></select></div><div class="fld"><label>بحث (عميل / رمز / هاتف)</label><input type="text" id="fq" value="'+esc(S.q)+'" placeholder="ابحث..."></div><div class="fld"><label>المندوب</label><select id="fRep"><option value="">الكل</option>'+[...new Set(T.A.C.map(c=>c.rep))].sort((a,b)=>a.localeCompare(b,'ar')).map(r=>'<option value="'+esc(r)+'"'+(S.rep===r?' selected':'')+'>'+esc(r)+'</option>').join('')+'</select></div><div class="fld"><label>الحالة</label><select id="fSt"><option value="">الكل</option>'+Object.keys(AG_ST).filter(k=>k!=='nodate').map(k=>'<option value="'+k+'"'+(S.st===k?' selected':'')+'>'+AG_ST[k][0]+'</option>').join('')+'</select></div><label class="chk'+(S.over?' hl':'')+'" id="fOverL"><input type="checkbox" id="fOver"'+(S.over?' checked':'')+'> فوق السقف فقط</label><div class="fld"><label>الحد الأدنى للتعرض</label><input type="number" id="fMin" value="'+(S.min||'')+'" style="width:90px" placeholder="0"></div><span class="sp"></span><button class="btn" id="fclr">مسح الفلاتر</button></div>':'')+'<div id="view"></div>';
+  $('subtabs').querySelectorAll('.stab').forEach(b=>b.onclick=()=>{S.view=b.dataset.v;renderAging(T);window.scrollTo(0,0);});
+  const bar=$('agbar');if(bar){const re=()=>renderAging(T);$('fSnap').onchange=e=>{S.snap=fromISO(e.target.value);agSave(T);};$('fMode').onchange=e=>{S.mode=e.target.value;agSave(T);};
+    let t;$('fq').oninput=e=>{clearTimeout(t);t=setTimeout(()=>{S.q=e.target.value.trim();AGV[S.view](T,$('view'));},250);};$('fRep').onchange=e=>{S.rep=e.target.value;re();};$('fSt').onchange=e=>{S.st=e.target.value;re();};$('fOver').onchange=e=>{S.over=e.target.checked;re();};
+    let t2;$('fMin').oninput=e=>{clearTimeout(t2);t2=setTimeout(()=>{S.min=+e.target.value||0;re();},400);};$('fclr').onclick=()=>{S.q='';S.rep='';S.st='';S.over=false;S.min=0;re();};}
+  (AGV[S.view]||AGV.ov)(T,$('view'));}
+async function agInit(T){T.S=agState();T.ts={};try{const o=JSON.parse(localStorage.getItem('kap_aging')||'{}');if(o.snap!=null)T.S.snap=o.snap;if(o.mode)T.S.mode=o.mode;}catch(e){}
+  if(T.S.snap==null)T.S.snap=Math.floor(Date.now()/DAY);
+  try{const o=JSON.parse(localStorage.getItem('kap_aging_bands')||'{}');if(o.bands)T.S.bands=o.bands;if(o.basis)T.S.basis=o.basis;}catch(e){}
+  const D=await IDB.get('aging'),D2=await IDB.get('aging_chk');if(D&&D.rows&&D.rows.length)T.D=D;if(D2&&D2.rows&&D2.rows.length)T.D2=D2;
+  try{agBuild(T);agCompute(T);}catch(e){console.error(e);T.A=null;T.P=null;}}
+/* ---- تقرير الفترات (أعمار بالأيام يحددها المستخدم) ---- */
+function agBandsParse(s){const a=String(s||'').split(/[,\s،]+/).map(x=>parseInt(x,10)).filter(x=>x>0);const u=[...new Set(a)].sort((x,y)=>x-y);return u.length?u:[30,60,90,120,180,365];}
+function agBandLabels(lim,basis){const L=[];if(basis==='due')L.push('لم يستحق بعد');let prev=0;for(const u of lim){L.push((prev+1)+'-'+u);prev=u;}L.push('أكثر من '+prev);return L;}
+function agBandIdx(lim,basis,age){let off=0;if(basis==='due'){if(age<=0)return 0;off=1;}for(let j=0;j<lim.length;j++)if(age<=lim[j])return j+off;return lim.length+off;}
+function agBandsOf(T,c,lim,basis){const S=T.S,snap=S.snap,nB=lim.length+1+(basis==='due'?1:0),out=new Array(nB).fill(0);if(snap==null||c.bal<=0.01)return out;
+  for(let k=0;k<13;k++){const a=c.alloc[k];if(a<=0)continue;
+    if(basis==='due'){out[agBandIdx(lim,basis,snap-agReqDue(agMonthEnd(snap,k),c.ex))]+=a;continue;}
+    if(k===12){out[nB-1]+=a;continue;}
+    const me=agMonthEnd(snap,k),end=k===0?snap:me,d0=new Date(me*DAY),start=Math.round(Date.UTC(d0.getUTCFullYear(),d0.getUTCMonth(),1)/DAY);
+    const nDays=Math.max(1,end-start+1),p=c.m[k]>0?Math.min(1,a/c.m[k]):1,span=Math.max(1,Math.round(p*nDays)),per=a/span;
+    for(let d=end;d>end-span;d--){out[agBandIdx(lim,basis,Math.max(0,snap-d))]+=per;}}
+  if(c.uncovered>0)out[nB-1]+=c.uncovered;return out;}
+AGV.bands=(T,el)=>{const S=T.S;if(!S.bands)S.bands='30,60,90,120,180,365';if(!S.basis)S.basis='inv';const lim=agBandsParse(S.bands),L=agBandLabels(lim,S.basis),rows=agRows(T);
+  el.innerHTML='<div class="card"><h3>تقرير أعمار الذمة حسب الفترات <span class="hint">يُوزَّع رصيد كل عميل على الأشهر بالاستهلاك التنازلي، ثم على فتراتك بالأيام (داخل الشهر تُفترض المبيعات موزعة بانتظام والمستهلك هو الأحدث)</span></h3><div class="bar" style="margin:0 0 10px"><div class="fld"><label>حدود الفترات بالأيام (مفصولة بفواصل)</label><input type="text" id="agBandsIn" value="'+esc(S.bands)+'" style="width:260px;direction:ltr"></div><div class="fld"><label>احتساب الأيام من</label><select id="agBasis"><option value="inv"'+(S.basis==='inv'?' selected':'')+'>تاريخ الفاتورة (عمر الذمة)</option><option value="due"'+(S.basis==='due'?' selected':'')+'>الاستحقاق المفروض (أيام التأخير)</option></select></div><button class="btn pri" id="agBandsGo">تطبيق</button><span class="sp"></span><span class="hint" style="color:var(--muted)">الفترات الحالية: '+L.map(esc).join(' · ')+'</span></div><div class="grid2"><div><div id="agBS"></div></div><div><div id="agBH"></div></div></div></div><div class="card"><h3>العملاء × الفترات '+expBtn(T,'agBC')+'</h3><div id="agBC"></div></div><div class="card"><h3>المندوبون × الفترات '+expBtn(T,'agBR')+'</h3><div id="agBR"></div></div>';
+  const apply=()=>{S.bands=$('agBandsIn').value;S.basis=$('agBasis').value;try{localStorage.setItem('kap_aging_bands',JSON.stringify({bands:S.bands,basis:S.basis}));}catch(e){}AGV.bands(T,el);};$('agBandsGo').onclick=apply;$('agBandsIn').onkeydown=e=>{if(e.key==='Enter')apply();};$('agBasis').onchange=apply;
+  const nB=L.length,tot=new Array(nB).fill(0),cnt=new Array(nB).fill(0);const CR=rows.map(c=>{const b=agBandsOf(T,c,lim,S.basis);b.forEach((v,j)=>{tot[j]+=v;if(v>0.005)cnt[j]++;});return {c,b,sum:b.reduce((s,v)=>s+v,0)};});
+  const T0=tot.reduce((s,v)=>s+v,0);
+  const sumRows=L.map((l,j)=>({label:l,amt:tot[j],pct:sdiv(tot[j],T0),nc:cnt[j]}));
+  table(T,$('agBS'),'agBS',{name:'ملخص_الفترات',short:true,cols:[{k:'label',t:'الفترة (يوم)',f:'t'},{k:'nc',t:'عملاء',f:'i'},{k:'amt',t:'الرصيد',f:'n',heat:true},{k:'pct',t:'%',f:'pc'}],rows:sumRows,total:{label:'الإجمالي',amt:T0,pct:1,nc:''},sort:null});
+  $('agBH').innerHTML=hbars(sumRows.map(r=>({l:r.label,v:r.amt,s:PC(r.pct)})),{fmt:F2});
+  const bcols=L.map((l,j)=>({k:'b'+j,id:'b'+j,t:l,f:'n',get:r=>r.b[j]>0.005?r.b[j]:null,heat:true,red:S.basis==='due'?j>0:j>=2}));
+  const cTot={name:'الإجمالي ('+FI(CR.length)+')',sum:T0};tot.forEach((v,j)=>cTot['b'+j]=v);
+  table(T,$('agBC'),'agBC',{name:'العملاء_حسب_الفترات',cols:[{k:'#',t:'#',nos:1},{k:'name',t:'العميل',f:'t',cls:'nm',get:r=>r.c.name,h:r=>'<span class="lnk">'+esc(r.c.name)+'</span><span class="code" style="margin-inline-start:6px">'+esc(r.c.code)+'</span>'},{k:'rep',t:'المندوب',f:'t',cls:'nm',get:r=>r.c.rep},{k:'ex',t:'أيام السماح',f:'i',get:r=>r.c.ex},{k:'sum',t:'الرصيد',f:'n'},...bcols,{k:'st',t:'الحالة',f:'t',get:r=>r.c.status,h:r=>agPill(r.c)}],rows:CR.filter(r=>r.sum>0.005),total:cTot,sort:'sum',dir:-1,onRow:r=>agModal(T,r.c)});
+  const RM=new Map();for(const r of CR){let g=RM.get(r.c.rep);if(!g){g={label:r.c.rep,n:0,sum:0,b:new Array(nB).fill(0)};RM.set(r.c.rep,g);}if(r.sum>0.005)g.n++;g.sum+=r.sum;r.b.forEach((v,j)=>g.b[j]+=v);}
+  const rTot={label:'الإجمالي',sum:T0,n:''};tot.forEach((v,j)=>rTot['b'+j]=v);
+  table(T,$('agBR'),'agBR',{name:'المندوبون_حسب_الفترات',cols:[{k:'#',t:'#',nos:1},{k:'label',t:'المندوب',f:'t',cls:'nm',h:g=>'<span class="lnk">'+esc(g.label)+'</span>'},{k:'n',t:'عملاء برصيد',f:'i'},{k:'sum',t:'الرصيد',f:'n'},...bcols.map(c=>Object.assign({},c,{get:g=>g.b[+c.k.slice(1)]>0.005?g.b[+c.k.slice(1)]:null}))],rows:[...RM.values()],total:rTot,sort:'sum',dir:-1,onRow:g=>{S.rep=g.label;renderAging(T);}});
+};
 
 /* ================= boot ================= */
 (async()=>{
   for(const d of QDEF)TABS[d.id]=mkTab(d);
-  for(const d of QDEF){const D=await IDB.get(d.id);if(D&&D.rows&&D.rows.length){const T=TABS[d.id];T.D=D;try{build(T);}catch(e){console.error(e);T.D=null;T.P=null;}}}
+  for(const d of QDEF){if(d.kind==='aging'){await agInit(TABS[d.id]);continue;}const D=await IDB.get(d.id);if(D&&D.rows&&D.rows.length){const T=TABS[d.id];T.D=D;try{build(T);}catch(e){console.error(e);T.D=null;T.P=null;}}}
   let a=null;try{a=localStorage.getItem('kap_active');}catch(e){}
   ACTIVE=(a&&TABS[a])?a:QDEF[0].id;
   $('ver').textContent='شاشة تحليل الحزمة اليومية للتدقيق — '+VERSION+' — مركز الكيلاني للأغذية';
