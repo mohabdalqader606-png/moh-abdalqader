@@ -170,14 +170,23 @@ footer{color:var(--muted);font-size:11px;text-align:center;padding:10px}
   body.print-modal .md{box-shadow:none;width:100%;padding:0;border-radius:0}
   .md h2{font-size:13px}.rec div{padding:2px 0;font-size:9.5px}
 }
+
+.gate{max-width:420px;margin:60px auto;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:24px;box-shadow:0 10px 30px rgba(0,0,0,.08)}
+.gate h2{margin:0 0 4px;font-size:17px;color:var(--accent2)}.gate .sub{color:var(--ink2);font-size:12.5px;margin-bottom:16px}
+.gate .fld{margin-bottom:10px}.gate input{width:100%;border:1px solid var(--line2);border-radius:7px;padding:8px}
+.gate .err{color:var(--bad);font-weight:700;margin-top:10px}.gate .note{color:var(--muted);font-size:11.5px;margin-top:12px}
+.ubox{display:flex;align-items:center;gap:8px;font-size:12px;opacity:.95}.ubox b{font-weight:600}
+@media print{.ubox{display:none!important}}
 </style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 </head>
 <body>
 <header class="top">
   <div class="row">
     <div><h1>شاشة تحليل الحزمة اليومية للتدقيق</h1><div class="sub" id="hsub">16 كويري معتمد + عمر الذمة · مركز الكيلاني للأغذية · كل تبويب مستقل ببياناته وفلاتره وتقاريره</div></div>
     <span class="sp"></span>
-    <button class="hbtn" id="printBtn" onclick="doPrint()">طباعة A4</button>
+    <span class="ubox" id="ubox" style="display:none"><b id="uEmail"></b><button class="hbtn" onclick="doLogout()">خروج</button></span>
+    <button class="hbtn" id="printBtn" onclick="doPrint()" style="display:none">طباعة A4</button>
   </div>
   <div class="tabs" id="qtabs"></div>
 </header>
@@ -1492,7 +1501,7 @@ const QDEF=[
  {id:'q16',n:"فصل المهام التفصيلي مستنداً بمستند",short:"فصل المهام التفصيلي",g:CHECKS[15],doc:"رقم المستند",date:"تاريخ المستند",dims:["اسم المستخدم", "نوع الحركة", "اسم الطرف"],ms:["المبلغ"],flags:["الملاحظات"],text:[],cols:["فتح المستخدم", "رمز المستخدم", "اسم المستخدم", "نوع الحركة", "رقم المستند", "فتح فاتورة", "فتح اشعار دائن", "فتح سند قبض", "فتح امر شراء", "فتح فاتورة شراء", "فتح سند صرف", "فتح القيد", "فتح ادخال مخزون", "فتح اخراج مخزون", "فتح الطرف", "اسم الطرف", "تاريخ المستند", "تاريخ الادخال", "ايام التأخير", "المبلغ", "درجة الخطورة", "الملاحظات"]},
 ];
 /* ================= utils ================= */
-const VERSION='v2.5';
+const VERSION='v2.6';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nf0=new Intl.NumberFormat('en-US',{maximumFractionDigits:0,minimumFractionDigits:0});
@@ -1542,12 +1551,21 @@ const weekKey=n=>Math.floor((n-3)/7);   /* weeks starting Sunday */
 const monthLabel=k=>AR_M[k%12]+' '+Math.floor(k/12);
 const weekLabel=k=>'أسبوع '+fmtDay(k*7+3);
 
-/* ================= cache (IndexedDB, key per tab) ================= */
-const IDB={db:null,
+/* ================= تسجيل الدخول والفصل بين المستخدمين ================= */
+const SUPABASE_URL='https://fxjdmqqmcgccocfbgopm.supabase.co';
+const SUPABASE_KEY='sb_publishable_NGtGX9SN8hXSoq-JRidGcQ_NfAyYCP5'; /* مفتاح عام — الحماية عبر RLS ومصفوفة الصلاحيات */
+const SCREEN_ID='daily-audit-pack';
+let sb=null,UID=null,UEMAIL=null,UPERM=null;
+/* كل ما يُحفظ على الجهاز (الكشوف، الإعدادات، الربط) مفصول باسم المستخدم المسجّل */
+const LS={key:k=>(UID?UID+'|':'')+k,get(k){try{return localStorage.getItem(LS.key(k));}catch(e){return null;}},set(k,v){try{localStorage.setItem(LS.key(k),v);}catch(e){}},del(k){try{localStorage.removeItem(LS.key(k));}catch(e){}}};
+
+/* ================= cache (IndexedDB, key per user + tab) ================= */
+const IDB={db:null,k:key=>(UID?UID+'|':'')+key,
   open(){return new Promise(res=>{try{const r=indexedDB.open('kaylani_audit_pack',1);r.onupgradeneeded=()=>r.result.createObjectStore('d');r.onsuccess=()=>{this.db=r.result;res(this.db);};r.onerror=()=>res(null);}catch(e){res(null);}});},
-  async put(k,v){try{const db=this.db||await this.open();if(!db)return;await new Promise(res=>{const tx=db.transaction('d','readwrite');tx.objectStore('d').put(v,k);tx.oncomplete=res;tx.onerror=res;});}catch(e){}},
-  async get(k){try{const db=this.db||await this.open();if(!db)return null;return await new Promise(res=>{const tx=db.transaction('d','readonly');const r=tx.objectStore('d').get(k);r.onsuccess=()=>res(r.result||null);r.onerror=()=>res(null);});}catch(e){return null;}},
-  async del(k){try{const db=this.db||await this.open();if(!db)return;db.transaction('d','readwrite').objectStore('d').delete(k);}catch(e){}}
+  async putRaw(k,v){try{const db=this.db||await this.open();if(!db)return;await new Promise(res=>{const tx=db.transaction('d','readwrite');tx.objectStore('d').put(v,k);tx.oncomplete=res;tx.onerror=res;});}catch(e){}},
+  async getRaw(k){try{const db=this.db||await this.open();if(!db)return null;return await new Promise(res=>{const tx=db.transaction('d','readonly');const r=tx.objectStore('d').get(k);r.onsuccess=()=>res(r.result||null);r.onerror=()=>res(null);});}catch(e){return null;}},
+  async delRaw(k){try{const db=this.db||await this.open();if(!db)return;await new Promise(res=>{const tx=db.transaction('d','readwrite');tx.objectStore('d').delete(k);tx.oncomplete=res;tx.onerror=res;});}catch(e){}},
+  put(k,v){return this.putRaw(this.k(k),v);},get(k){return this.getRaw(this.k(k));},del(k){return this.delRaw(this.k(k));}
 };
 
 /* ================= parsing ================= */
@@ -1946,7 +1964,7 @@ function runParse(T,fn){
 
 /* ================= tab rendering ================= */
 function renderTabs(){$('qtabs').innerHTML=QDEF.map((d,i)=>{const T=TABS[d.id];return '<button class="tab'+(ACTIVE===d.id?' on':'')+(T.P?' has':'')+'" data-t="'+d.id+'" title="'+esc(d.n)+'"><span class="n">'+(i+1)+'</span>'+esc(d.short)+(T.P?'<span class="cnt">'+FI(T.P.n)+'</span>':'')+'</button>';}).join('');
-  $('qtabs').querySelectorAll('.tab').forEach(b=>b.onclick=()=>{ACTIVE=b.dataset.t;try{localStorage.setItem('kap_active',ACTIVE);}catch(e){}renderTabs();renderTab(TABS[ACTIVE]);});}
+  $('qtabs').querySelectorAll('.tab').forEach(b=>b.onclick=()=>{ACTIVE=b.dataset.t;LS.set('kap_active',ACTIVE);renderTabs();renderTab(TABS[ACTIVE]);});}
 function filterBar(T){const P=T.P,S=T.S;let h='<div class="bar">';
   h+='<div class="fld"><label>بحث في كل الأعمدة النصية</label><input type="text" id="fq" value="'+esc(S.q)+'" placeholder="ابحث..."></div>';
   if(P.cDate)h+='<div class="fld"><label>'+esc(P.cDate.t)+' من</label><input type="date" id="fd1" value="'+isoDay(S.d1)+'" min="'+isoDay(P.dMin)+'" max="'+isoDay(P.dMax)+'"></div><div class="fld"><label>إلى</label><input type="date" id="fd2" value="'+isoDay(S.d2)+'" min="'+isoDay(P.dMin)+'" max="'+isoDay(P.dMax)+'"></div>';
@@ -2096,12 +2114,12 @@ const AG_DEF={id:'aging',kind:'aging',n:'عمر الذمة — أرصدة الع
 QDEF.push(AG_DEF);
 const AG_TOL=50, AG_MAT=50;
 function agState(){return {snap:null,mode:'with',rate:8.5,q:'',rep:'',mgr:'',type:'',cat:'',st:'',over:false,min:0,view:'ov',showM:false,merge:false,grpBy:'rep'};}
-let AG_MGR={};try{AG_MGR=JSON.parse(localStorage.getItem('kap_aging_mgr')||'{}')||{};}catch(e){AG_MGR={};}
-function agSaveMgr(){try{localStorage.setItem('kap_aging_mgr',JSON.stringify(AG_MGR));}catch(e){}}
+let AG_MGR={};
+function agSaveMgr(){LS.set('kap_aging_mgr',JSON.stringify(AG_MGR));}
 const agMgrOf=r=>AG_MGR[r]||'(بدون مدير)';
 /* ربط الفروع: افتراضي مضمّن من ملف دمج الفروع (AG_DEFAULT) + تعديلات المستخدم تغلبه (قيمة فارغة = فكّ الربط صراحةً) */
-let AG_GRP_USER={};try{AG_GRP_USER=JSON.parse(localStorage.getItem('kap_aging_grp')||'{}')||{};}catch(e){AG_GRP_USER={};}
-function agSaveGrp(){try{localStorage.setItem('kap_aging_grp',JSON.stringify(AG_GRP_USER));}catch(e){}}
+let AG_GRP_USER={};
+function agSaveGrp(){LS.set('kap_aging_grp',JSON.stringify(AG_GRP_USER));}
 const agGrpOf=code=>(code in AG_GRP_USER)?String(AG_GRP_USER[code]||'').trim():((AG_DEFAULT[code]&&AG_DEFAULT[code][0])||'');
 const agGrpAll=T=>{const m={};for(const c of T.A.raw){const v=agGrpOf(c.code);if(v)m[c.code]=v;}return m;};
 const agCatOf=code=>{const d=AG_DEFAULT[code];return d&&d[1]>=0?AG_CATS[d[1]]:'';};
@@ -2289,7 +2307,7 @@ function agFile(T,w,f){const rd=new FileReader();rd.onload=()=>agLoad(T,w,()=>ag
 function agLoad(T,w,fn){try{const D=fn();if(w===1){T.D=D;IDB.put('aging',D);}else{T.D2=D;IDB.put('aging_chk',D);}agBuild(T);agCompute(T);T.ts={};if(T.D)S_view(T,'ov');renderTabs();renderAging(T);}
   catch(e){console.error(e);T.msg=e.message||String(e);T.msgW=w;T.S.view='up';renderAging(T);}}
 function S_view(T,v){T.S.view=v;}
-function agSave(T){try{localStorage.setItem('kap_aging',JSON.stringify({snap:T.S.snap,mode:T.S.mode,rate:T.S.rate}));}catch(e){}agCompute(T);renderAging(T);}
+function agSave(T){LS.set('kap_aging',JSON.stringify({snap:T.S.snap,mode:T.S.mode,rate:T.S.rate}));agCompute(T);renderAging(T);}
 function renderAging(T){const main=$('main'),S=T.S;T.last=T.last||{};if(!T.A||!T.A.C.length)S.view=(S.view==='guide')?'guide':'up';
   const views=[['ov','نظرة عامة'],['cust','كشف العملاء'],['bands','كشف الأعمار حسب الفترات'],['rep','حسب المندوب / المدير'],['chk','الشيكات المؤجلة'],['grp','الفروع'],['mgr','المديرون'],['guide','الكويريان والدليل'],['up','تحميل الكشوف']];
   const ready=T.A&&T.A.C.length;
@@ -2298,13 +2316,14 @@ function renderAging(T){const main=$('main'),S=T.S;T.last=T.last||{};if(!T.A||!T
     (ready&&S.view!=='up'&&S.view!=='guide'?'<div class="bar" id="agbar"><div class="fld"><label>تاريخ اللقطة</label><input type="date" id="fSnap" value="'+isoDay(S.snap)+'"></div><div class="fld"><label>الشيكات</label><select id="fMode"><option value="with"'+(S.mode==='with'?' selected':'')+'>مع شيكات</option><option value="without"'+(S.mode==='without'?' selected':'')+'>بدون شيكات</option></select></div><div class="fld"><label>بحث (عميل / رمز / هاتف)</label><input type="text" id="fq" value="'+esc(S.q)+'" placeholder="ابحث..."></div><div class="fld"><label>نوع العميل</label><select id="fType"><option value="">الجميع</option>'+Object.keys(AG_TYPES).filter(k=>k!=='O'||T.A.raw.some(c=>agTypeOf(c.code)==='O')).map(k=>'<option value="'+k+'"'+(S.type===k?' selected':'')+'>'+AG_TYPES[k]+'</option>').join('')+'</select></div><div class="fld"><label>فئة العميل</label><select id="fCat"><option value="">الكل</option>'+[...new Set(T.A.C.map(c=>c.cat||'(بدون)'))].sort((a,b)=>a.localeCompare(b,'ar')).map(r=>'<option value="'+esc(r)+'"'+(S.cat===r?' selected':'')+'>'+esc(r)+'</option>').join('')+'</select></div><div class="fld"><label>المدير</label><select id="fMgr"><option value="">الكل</option>'+[...new Set(T.A.C.map(c=>c.mgr))].sort((a,b)=>a.localeCompare(b,'ar')).map(r=>'<option value="'+esc(r)+'"'+(S.mgr===r?' selected':'')+'>'+esc(r)+'</option>').join('')+'</select></div><div class="fld"><label>المندوب</label><select id="fRep"><option value="">الكل</option>'+[...new Set(T.A.C.map(c=>c.rep))].sort((a,b)=>a.localeCompare(b,'ar')).map(r=>'<option value="'+esc(r)+'"'+(S.rep===r?' selected':'')+'>'+esc(r)+'</option>').join('')+'</select></div><label class="chk'+(S.merge?' hl':'')+'" id="fMergeL"><input type="checkbox" id="fMerge"'+(S.merge?' checked':'')+'> دمج الفروع</label><div class="fld"><label>الحالة</label><select id="fSt"><option value="">الكل</option>'+Object.keys(AG_ST).filter(k=>k!=='nodate').map(k=>'<option value="'+k+'"'+(S.st===k?' selected':'')+'>'+AG_ST[k][0]+'</option>').join('')+'</select></div><label class="chk'+(S.over?' hl':'')+'" id="fOverL"><input type="checkbox" id="fOver"'+(S.over?' checked':'')+'> فوق السقف فقط</label><div class="fld"><label>الحد الأدنى للتعرض</label><input type="number" id="fMin" value="'+(S.min||'')+'" style="width:90px" placeholder="0"></div><span class="sp"></span><button class="btn" id="fclr">مسح الفلاتر</button></div>':'')+'<div id="view"></div>';
   $('subtabs').querySelectorAll('.stab').forEach(b=>b.onclick=()=>{S.view=b.dataset.v;renderAging(T);window.scrollTo(0,0);});
   const bar=$('agbar');if(bar){const re=()=>renderAging(T);$('fSnap').onchange=e=>{S.snap=fromISO(e.target.value);agSave(T);};$('fMode').onchange=e=>{S.mode=e.target.value;agSave(T);};
-    let t;$('fq').oninput=e=>{clearTimeout(t);t=setTimeout(()=>{S.q=e.target.value.trim();AGV[S.view](T,$('view'));},250);};$('fRep').onchange=e=>{S.rep=e.target.value;re();};$('fMgr').onchange=e=>{S.mgr=e.target.value;re();};$('fType').onchange=e=>{S.type=e.target.value;re();};$('fCat').onchange=e=>{S.cat=e.target.value;re();};$('fMerge').onchange=e=>{S.merge=e.target.checked;try{localStorage.setItem('kap_aging_merge',S.merge?'1':'0');}catch(x){}agMerge(T);agCompute(T);T.ts={};re();};$('fSt').onchange=e=>{S.st=e.target.value;re();};$('fOver').onchange=e=>{S.over=e.target.checked;re();};
+    let t;$('fq').oninput=e=>{clearTimeout(t);t=setTimeout(()=>{S.q=e.target.value.trim();AGV[S.view](T,$('view'));},250);};$('fRep').onchange=e=>{S.rep=e.target.value;re();};$('fMgr').onchange=e=>{S.mgr=e.target.value;re();};$('fType').onchange=e=>{S.type=e.target.value;re();};$('fCat').onchange=e=>{S.cat=e.target.value;re();};$('fMerge').onchange=e=>{S.merge=e.target.checked;LS.set('kap_aging_merge',S.merge?'1':'0');agMerge(T);agCompute(T);T.ts={};re();};$('fSt').onchange=e=>{S.st=e.target.value;re();};$('fOver').onchange=e=>{S.over=e.target.checked;re();};
     let t2;$('fMin').oninput=e=>{clearTimeout(t2);t2=setTimeout(()=>{S.min=+e.target.value||0;re();},400);};$('fclr').onclick=()=>{S.q='';S.rep='';S.mgr='';S.type='';S.cat='';S.st='';S.over=false;S.min=0;re();};}
   (AGV[S.view]||AGV.ov)(T,$('view'));}
-async function agInit(T){T.S=agState();T.ts={};try{const o=JSON.parse(localStorage.getItem('kap_aging')||'{}');if(o.snap!=null)T.S.snap=o.snap;if(o.mode)T.S.mode=o.mode;if(o.rate>0)T.S.rate=o.rate;}catch(e){}
+async function agInit(T){T.S=agState();T.ts={};AG_MGR={};AG_GRP_USER={};try{AG_MGR=JSON.parse(LS.get('kap_aging_mgr')||'{}')||{};}catch(e){AG_MGR={};}try{AG_GRP_USER=JSON.parse(LS.get('kap_aging_grp')||'{}')||{};}catch(e){AG_GRP_USER={};}
+  try{const o=JSON.parse(LS.get('kap_aging')||'{}');if(o.snap!=null)T.S.snap=o.snap;if(o.mode)T.S.mode=o.mode;if(o.rate>0)T.S.rate=o.rate;}catch(e){}
   if(T.S.snap==null)T.S.snap=Math.floor(Date.now()/DAY);
-  try{T.S.merge=localStorage.getItem('kap_aging_merge')==='1';}catch(e){}
-  try{const o=JSON.parse(localStorage.getItem('kap_aging_bands')||'{}');if(o.bands)T.S.bands=o.bands;if(o.basis)T.S.basis=o.basis;if(o.nMonths)T.S.nMonths=o.nMonths;}catch(e){}
+  T.S.merge=LS.get('kap_aging_merge')==='1';
+  try{const o=JSON.parse(LS.get('kap_aging_bands')||'{}');if(o.bands)T.S.bands=o.bands;if(o.basis)T.S.basis=o.basis;if(o.nMonths)T.S.nMonths=o.nMonths;}catch(e){}
   const D=await IDB.get('aging'),D2=await IDB.get('aging_chk');if(D&&D.rows&&D.rows.length)T.D=D;if(D2&&D2.rows&&D2.rows.length)T.D2=D2;
   try{agBuild(T);agCompute(T);}catch(e){console.error(e);T.A=null;T.P=null;}}
 /* ---- شرح تقارير عمر الذمة للطباعة ---- */
@@ -2352,7 +2371,7 @@ AGV.bands=(T,el)=>{const S=T.S;if(!S.bands)S.bands='30,60,90,120,180,365';if(!S.
   el.innerHTML='<div class="card"><h3>كشف أعمار الذمم حسب الفترات <span class="hint">الفترات التي تكتبها تصبح أعمدة الكشف · '+FI(rows.length)+' عميل</span><span class="sp"></span>'+expBtn(T,'agBC')+'</h3><div class="bar" style="margin:0 0 10px"><div class="fld"><label>أساس الأعمدة</label><select id="agBasis">'+Object.keys(BASIS).map(k=>'<option value="'+k+'"'+(S.basis===k?' selected':'')+'>'+BASIS[k]+'</option>').join('')+'</select></div>'+(S.basis==='cal'?'<div class="fld"><label>عدد الأشهر المنفصلة (1-13)</label><input type="number" id="agNM" value="'+S.nMonths+'" min="1" max="13" style="width:80px"></div>':'<div class="fld"><label>حدود الفترات بالأيام (مفصولة بفواصل)</label><input type="text" id="agBandsIn" value="'+esc(S.bands)+'" style="width:260px;direction:ltr"></div>')+'<div class="fld"><label>الفائدة السنوية %</label><input type="number" id="agRate" value="'+(S.rate||0)+'" step="0.1" min="0" style="width:80px"></div><button class="btn pri" id="agBandsGo">تطبيق</button></div><div class="foot" style="margin:0 0 8px">الأعمدة: '+L.map(esc).join(' · ')+' — الرصيد يُوزَّع على الأشهر بالاستهلاك التنازلي (الأحدث فالأقدم)'+(S.basis==='cal'?'؛ كل عمود هو ما بقي من ذلك الشهر غير مسدد. العمود الأخير يشمل الأرصدة الأقدم من 13 شهراً.':' ثم يُحوَّل كل شهر إلى أيام حسب الأساس المختار. «أكثر من '+lim[lim.length-1]+'» تشمل الأرصدة الأقدم من 13 شهراً.')+'</div><div id="agBC"></div></div>'+
     '<div class="grid2"><div class="card"><h3>ملخص الفترات '+expBtn(T,'agBS')+'</h3><div id="agBS"></div></div><div class="card"><h3><select id="agBGrp"><option value="rep"'+(S.grpBy!=='mgr'?' selected':'')+'>المندوبون</option><option value="mgr"'+(S.grpBy==='mgr'?' selected':'')+'>المديرون</option></select> × الفترات '+expBtn(T,'agBR')+'</h3><div id="agBR"></div></div></div>';
   $('agBGrp').onchange=e=>{S.grpBy=e.target.value;AGV.bands(T,el);};
-  const apply=()=>{const bi=$('agBandsIn'),nm=$('agNM'),rt=$('agRate');if(bi)S.bands=bi.value;if(nm)S.nMonths=Math.max(1,Math.min(13,+nm.value||6));S.basis=$('agBasis').value;const nr=rt?Math.max(0,+rt.value||0):S.rate;const rc=nr!==S.rate;S.rate=nr;try{localStorage.setItem('kap_aging_bands',JSON.stringify({bands:S.bands,basis:S.basis,nMonths:S.nMonths}));localStorage.setItem('kap_aging',JSON.stringify({snap:S.snap,mode:S.mode,rate:S.rate}));}catch(e){}if(rc)agCompute(T);AGV.bands(T,el);};$('agBandsGo').onclick=apply;el.querySelectorAll('#agBandsIn,#agNM,#agRate').forEach(i=>i.onkeydown=e=>{if(e.key==='Enter')apply();});$('agBasis').onchange=apply;
+  const apply=()=>{const bi=$('agBandsIn'),nm=$('agNM'),rt=$('agRate');if(bi)S.bands=bi.value;if(nm)S.nMonths=Math.max(1,Math.min(13,+nm.value||6));S.basis=$('agBasis').value;const nr=rt?Math.max(0,+rt.value||0):S.rate;const rc=nr!==S.rate;S.rate=nr;try{LS.set('kap_aging_bands',JSON.stringify({bands:S.bands,basis:S.basis,nMonths:S.nMonths}));LS.set('kap_aging',JSON.stringify({snap:S.snap,mode:S.mode,rate:S.rate}));}catch(e){}if(rc)agCompute(T);AGV.bands(T,el);};$('agBandsGo').onclick=apply;el.querySelectorAll('#agBandsIn,#agNM,#agRate').forEach(i=>i.onkeydown=e=>{if(e.key==='Enter')apply();});$('agBasis').onchange=apply;
   const nB=L.length,tot=new Array(nB).fill(0),cnt=new Array(nB).fill(0);const CR=rows.map(c=>{const b=agBandsOf(T,c,lim,S.basis);b.forEach((v,j)=>{tot[j]+=v;if(v>0.005)cnt[j]++;});return {c,b,sum:b.reduce((s,v)=>s+v,0)};});
   const T0=tot.reduce((s,v)=>s+v,0);
   const bcols=L.map((l,j)=>({k:'b'+j,id:'b'+j,t:l,f:'n',get:r=>r.b[j]>0.005?r.b[j]:null,heat:true,red:S.basis==='due'?j>0:S.basis==='cal'?j>=2:j>=2}));
@@ -2368,13 +2387,45 @@ AGV.bands=(T,el)=>{const S=T.S;if(!S.bands)S.bands='30,60,90,120,180,365';if(!S.
 };
 
 /* ================= boot ================= */
-(async()=>{
+async function appBoot(){
   for(const d of QDEF)TABS[d.id]=mkTab(d);
   for(const d of QDEF){if(d.kind==='aging'){await agInit(TABS[d.id]);continue;}const D=await IDB.get(d.id);if(D&&D.rows&&D.rows.length){const T=TABS[d.id];T.D=D;try{build(T);}catch(e){console.error(e);T.D=null;T.P=null;}}}
-  let a=null;try{a=localStorage.getItem('kap_active');}catch(e){}
+  let a=LS.get('kap_active');
   ACTIVE=(a&&TABS[a])?a:QDEF[0].id;
-  $('ver').textContent='شاشة تحليل الحزمة اليومية للتدقيق — '+VERSION+' — مركز الكيلاني للأغذية';
+  $('qtabs').style.display='';$('printBtn').style.display='';
   renderTabs();renderTab(TABS[ACTIVE]);
+}
+/* نقل بيانات محفوظة قبل نظام الدخول (بدون اسم مستخدم) إلى أول مستخدم يسجّل دخوله على هذا الجهاز */
+async function migrateLegacy(){try{if(localStorage.getItem('kap_migrated_'+UID))return;
+  const keys=[...QDEF.map(d=>d.id),'aging','aging_chk'];
+  for(const k of keys){const old=await IDB.getRaw(k);if(old&&!(await IDB.get(k))){await IDB.put(k,old);}if(old)await IDB.delRaw(k);}
+  for(const k of ['kap_active','kap_aging','kap_aging_bands','kap_aging_merge','kap_aging_mgr','kap_aging_grp']){const v=localStorage.getItem(k);if(v!=null){if(LS.get(k)==null)LS.set(k,v);localStorage.removeItem(k);}}
+  localStorage.setItem('kap_migrated_'+UID,'1');}catch(e){console.error(e);}}
+function renderGate(err){$('qtabs').style.display='none';$('printBtn').style.display='none';$('ubox').style.display='none';
+  $('main').innerHTML='<div class="gate"><h2>تسجيل الدخول</h2><div class="sub">مركز الكيلاني للأغذية — شاشة تحليل الحزمة اليومية للتدقيق<br>نفس حساب بوابة الكيلاني. بيانات كل مستخدم (الكشوف والإعدادات) منفصلة عن غيره.</div><div class="fld"><label>البريد الإلكتروني</label><input type="email" id="lgEmail" autocomplete="username"></div><div class="fld"><label>كلمة المرور</label><input type="password" id="lgPass" autocomplete="current-password"></div><button class="btn pri" style="width:100%" id="lgBtn">دخول</button>'+(err?'<div class="err">'+esc(err)+'</div>':'')+'<div class="note">الكشوف التي ترفعها تُحفظ على هذا الجهاز باسم حسابك فقط، ولا تظهر لمستخدم آخر يسجّل دخوله على نفس الجهاز.</div></div>';
+  $('lgBtn').onclick=doLogin;$('lgPass').onkeydown=e=>{if(e.key==='Enter')doLogin();};$('lgEmail').onkeydown=e=>{if(e.key==='Enter')doLogin();};}
+function renderDenied(title,msg){$('main').innerHTML='<div class="gate"><h2>'+esc(title)+'</h2><div class="sub">'+esc(msg)+'</div><button class="btn" style="width:100%" onclick="doLogout()">تسجيل خروج</button></div>';}
+async function doLogin(){const email=($('lgEmail').value||'').trim(),password=$('lgPass').value;if(!email||!password){renderGate('أدخل البريد الإلكتروني وكلمة المرور');return;}
+  $('lgBtn').disabled=true;$('lgBtn').textContent='جارٍ الدخول...';
+  try{const {data,error}=await sb.auth.signInWithPassword({email,password});if(error){renderGate('فشل الدخول: '+error.message);return;}await afterLogin(data.session);}
+  catch(e){renderGate('تعذر الاتصال: '+(e.message||e));}}
+async function doLogout(){try{await sb.auth.signOut();}catch(e){}location.reload();}
+async function afterLogin(session){
+  $('main').innerHTML='<div class="gate"><h2>جارٍ التحقق من صلاحيتك...</h2></div>';
+  const {data:row,error}=await sb.from('user_screen_permissions').select('permission').eq('user_id',session.user.id).eq('screen_id',SCREEN_ID).maybeSingle();
+  if(error){renderDenied('تعذّر التحقق من صلاحيتك','حصل خطأ أثناء التحقق من صلاحيتك على هذه الشاشة. حدّث الصفحة وحاول مجدداً، وإذا تكرر راجع مدير الصلاحيات.');return;}
+  if(!row||!row.permission){renderDenied('لا تملك صلاحية الدخول','حسابك غير مخوَّل بالدخول على شاشة تحليل الحزمة اليومية للتدقيق. راجع مدير الصلاحيات لمنحك صلاحية من شاشة إدارة المستخدمين والصلاحيات.');return;}
+  UID=session.user.id;UEMAIL=session.user.email||'';UPERM=row.permission;
+  $('uEmail').textContent=UEMAIL;$('ubox').style.display='';
+  await migrateLegacy();
+  await appBoot();
+}
+(async()=>{
+  $('ver').textContent='شاشة تحليل الحزمة اليومية للتدقيق — '+VERSION+' — مركز الكيلاني للأغذية';
+  if(typeof supabase==='undefined'){$('main').innerHTML='<div class="gate"><h2>تعذّر تحميل مكتبة الدخول</h2><div class="sub">تأكد من الاتصال بالإنترنت ثم حدّث الصفحة.</div></div>';return;}
+  sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+  try{const {data:{session},error}=await sb.auth.getSession();if(error){renderGate('تعذّر التحقق من الجلسة: '+error.message);return;}if(!session){renderGate();return;}await afterLogin(session);}
+  catch(e){console.error(e);renderGate('تعذر الاتصال بخادم الدخول: '+(e.message||e));}
 })();
 </script>
 </body>
