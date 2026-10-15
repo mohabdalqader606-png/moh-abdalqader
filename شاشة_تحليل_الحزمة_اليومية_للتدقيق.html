@@ -185,7 +185,7 @@ footer{color:var(--muted);font-size:11px;text-align:center;padding:10px}
   <div class="row">
     <div><h1>شاشة تحليل الحزمة اليومية للتدقيق</h1><div class="sub" id="hsub">16 كويري معتمد + عمر الذمة · مركز الكيلاني للأغذية · كل تبويب مستقل ببياناته وفلاتره وتقاريره</div></div>
     <span class="sp"></span>
-    <span class="ubox" id="ubox" style="display:none"><b id="uEmail"></b><button class="hbtn" onclick="doLogout()">خروج</button></span>
+    <span class="ubox" id="ubox" style="display:none"><b id="uEmail"></b><span id="syncSt" style="font-size:11px;opacity:.9"></span><button class="hbtn" onclick="doLogout()">خروج</button></span>
     <button class="hbtn" id="printBtn" onclick="doPrint()" style="display:none">طباعة A4</button>
   </div>
   <div class="tabs" id="qtabs"></div>
@@ -1501,7 +1501,7 @@ const QDEF=[
  {id:'q16',n:"فصل المهام التفصيلي مستنداً بمستند",short:"فصل المهام التفصيلي",g:CHECKS[15],doc:"رقم المستند",date:"تاريخ المستند",dims:["اسم المستخدم", "نوع الحركة", "اسم الطرف"],ms:["المبلغ"],flags:["الملاحظات"],text:[],cols:["فتح المستخدم", "رمز المستخدم", "اسم المستخدم", "نوع الحركة", "رقم المستند", "فتح فاتورة", "فتح اشعار دائن", "فتح سند قبض", "فتح امر شراء", "فتح فاتورة شراء", "فتح سند صرف", "فتح القيد", "فتح ادخال مخزون", "فتح اخراج مخزون", "فتح الطرف", "اسم الطرف", "تاريخ المستند", "تاريخ الادخال", "ايام التأخير", "المبلغ", "درجة الخطورة", "الملاحظات"]},
 ];
 /* ================= utils ================= */
-const VERSION='v2.6';
+const VERSION='v2.7';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nf0=new Intl.NumberFormat('en-US',{maximumFractionDigits:0,minimumFractionDigits:0});
@@ -1557,7 +1557,38 @@ const SUPABASE_KEY='sb_publishable_NGtGX9SN8hXSoq-JRidGcQ_NfAyYCP5'; /* مفتا
 const SCREEN_ID='daily-audit-pack';
 let sb=null,UID=null,UEMAIL=null,UPERM=null;
 /* كل ما يُحفظ على الجهاز (الكشوف، الإعدادات، الربط) مفصول باسم المستخدم المسجّل */
-const LS={key:k=>(UID?UID+'|':'')+k,get(k){try{return localStorage.getItem(LS.key(k));}catch(e){return null;}},set(k,v){try{localStorage.setItem(LS.key(k),v);}catch(e){}},del(k){try{localStorage.removeItem(LS.key(k));}catch(e){}}};
+const LS={key:k=>(UID?UID+'|':'')+k,get(k){try{return localStorage.getItem(LS.key(k));}catch(e){return null;}},set(k,v){try{localStorage.setItem(LS.key(k),v);}catch(e){}if(typeof SYNC!=='undefined'&&k!=='kap_active')SYNC.schedulePrefs();},del(k){try{localStorage.removeItem(LS.key(k));}catch(e){}}};
+
+/* ================= المزامنة السحابية (Supabase — جدول audit_pack_data، صف لكل مستخدم × مفتاح) ================= */
+const SYNC_TABLE='audit_pack_data';
+const SYNC={on:false,busy:0,err:'',prefsTimer:null,
+  b64(buf){const u=new Uint8Array(buf);let s='';for(let i=0;i<u.length;i+=0x8000)s+=String.fromCharCode.apply(null,u.subarray(i,i+0x8000));return btoa(s);},
+  unb64(str){const bin=atob(str),u=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i);return u;},
+  async enc(obj){const txt=JSON.stringify(obj);if(typeof CompressionStream==='undefined')return {enc:'json',payload:txt};
+    const cs=new CompressionStream('gzip');const w=cs.writable.getWriter();w.write(new TextEncoder().encode(txt));w.close();return {enc:'gzip-b64',payload:this.b64(await new Response(cs.readable).arrayBuffer())};},
+  async dec(enc,payload){if(enc==='json')return JSON.parse(payload);const ds=new DecompressionStream('gzip');const w=ds.writable.getWriter();w.write(this.unb64(payload));w.close();return JSON.parse(await new Response(ds.readable).text());},
+  status(){const el=$('syncSt');if(!el)return;el.textContent=!this.on?'':this.busy>0?'⟳ جارٍ المزامنة...':this.err?'⚠ غير متزامن':'✓ متزامن';el.title=this.err||'';},
+  async put(key,obj,meta){if(!this.on||!UID)return;this.busy++;this.status();try{const e=await this.enc(obj);const row=Object.assign({user_id:UID,key,enc:e.enc,payload:e.payload,updated_at:new Date().toISOString()},meta||{});
+      const {error}=await sb.from(SYNC_TABLE).upsert(row,{onConflict:'user_id,key'});this.err=error?error.message:'';if(error)console.error('sync put',error);}
+    catch(e){this.err=e.message||String(e);console.error(e);}finally{this.busy--;this.status();}},
+  async get(key){if(!this.on||!UID)return null;try{const {data,error}=await sb.from(SYNC_TABLE).select('enc,payload').eq('user_id',UID).eq('key',key).maybeSingle();if(error||!data)return null;return await this.dec(data.enc,data.payload);}catch(e){console.error(e);return null;}},
+  async del(key){if(!this.on||!UID)return;this.busy++;this.status();try{const {error}=await sb.from(SYNC_TABLE).delete().eq('user_id',UID).eq('key',key);this.err=error?error.message:'';}catch(e){this.err=e.message||String(e);}finally{this.busy--;this.status();}},
+  async list(){if(!this.on||!UID)return null;try{const {data,error}=await sb.from(SYNC_TABLE).select('key,src,rows,loaded_at,updated_at').eq('user_id',UID);if(error){this.err=error.message;console.error('sync list',error);return null;}this.err='';return data||[];}catch(e){this.err=e.message||String(e);return null;}},
+  /* الإعدادات (تاريخ اللقطة، الفترات، ربط المديرين والفروع...) تُجمَع في مفتاح واحد */
+  prefsObj(){const o={};try{for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.startsWith(UID+'|kap_'))o[k.slice(UID.length+1)]=localStorage.getItem(k);}}catch(e){}return o;},
+  schedulePrefs(){if(!this.on||!UID)return;clearTimeout(this.prefsTimer);this.prefsTimer=setTimeout(()=>this.put('prefs',this.prefsObj(),{src:'prefs',rows:0,loaded_at:new Date().toISOString()}),1500);}
+};
+/* سحب بيانات المستخدم من السحابة عند الدخول (السحابة هي المرجع؛ ما هو محلي فقط يُرفع) */
+async function syncPull(){const L=await SYNC.list();if(L==null)return;const have=new Map(L.map(r=>[r.key,r]));
+  const keys=[...QDEF.map(d=>d.id),'aging','aging_chk'];
+  for(const k of keys){const srv=have.get(k),loc=await IDB.get(k);
+    if(srv){if(!loc||loc.loaded!==srv.loaded_at){const D=await SYNC.get(k);if(D&&D.rows){await IDB.put(k,D);}}}
+    else if(loc&&loc.rows&&loc.rows.length){await SYNC.put(k,loc,{src:loc.src||'',rows:loc.rows.length,loaded_at:loc.loaded||new Date().toISOString()});}}
+  if(have.get('prefs')){const p=await SYNC.get('prefs');if(p&&typeof p==='object')for(const k in p)LS.set(k,p[k]);}
+  else if(Object.keys(SYNC.prefsObj()).length)SYNC.schedulePrefs();}
+/* حفظ كشف: محلياً + سحابياً */
+function saveData(key,D){IDB.put(key,D);SYNC.put(key,D,{src:D.src||'',rows:D.rows?D.rows.length:0,loaded_at:D.loaded||new Date().toISOString()});}
+function deleteData(key){IDB.del(key);SYNC.del(key);}
 
 /* ================= cache (IndexedDB, key per user + tab) ================= */
 const IDB={db:null,k:key=>(UID?UID+'|':'')+key,
@@ -1949,7 +1980,7 @@ V.up=(T,el)=>{const def=T.def;
   fin.onchange=e=>{if(e.target.files[0])loadFile(T,e.target.files[0]);e.target.value='';};
   $('pasteGo').onclick=()=>{const t=$('paste').value;if(!t.trim())return;runParse(T,()=>parseText(t,'نص ملصوق',def));};
   $('cpQ').onclick=()=>copyText(forQM(qsql(def)));
-  if(T.P){$('backBtn').onclick=()=>{T.view='ov';renderTab(T);};$('delBtn').onclick=()=>{if(!confirm('حذف بيانات تبويب «'+def.short+'» من هذا الجهاز؟'))return;T.D=null;T.P=null;T.S=newState();T.ts={};T.hide=null;T.view='ov';IDB.del(def.id);renderTabs();renderTab(T);};}
+  if(T.P){$('backBtn').onclick=()=>{T.view='ov';renderTab(T);};$('delBtn').onclick=()=>{if(!confirm('حذف بيانات تبويب «'+def.short+'» من هذا الجهاز؟'))return;T.D=null;T.P=null;T.S=newState();T.ts={};T.hide=null;T.view='ov';deleteData(def.id);renderTabs();renderTab(T);};}
   if(T.msg){msg(T.msg,true);T.msg='';}
 };
 function msg(t,err){const m=$('upmsg');if(m){m.textContent=t;m.className='msg'+(err?' err':'');}}
@@ -1957,7 +1988,7 @@ function prog(p){const b=$('prog');if(!b)return;b.style.display=p==null?'none':'
 function loadFile(T,f){msg('جاري قراءة '+f.name+' ('+(f.size/1048576).toFixed(1)+' ميغابايت)...');prog(20);
   const rd=new FileReader();rd.onload=()=>{prog(55);setTimeout(()=>runParse(T,()=>parseText(decodeBuf(rd.result),f.name.replace(/\.[^.]+$/,''),T.def)),30);};rd.onerror=()=>{msg('تعذّرت قراءة الملف',1);prog(null);};rd.readAsArrayBuffer(f);}
 function runParse(T,fn){
-  try{const D=fn();prog(90);T.D=D;build(T);T.S=newState();T.ts={};T.hide=null;T.flt=null;T.view='ov';IDB.put(T.id,D);renderTabs();renderTab(T);
+  try{const D=fn();prog(90);T.D=D;build(T);T.S=newState();T.ts={};T.hide=null;T.flt=null;T.view='ov';saveData(T.id,D);renderTabs();renderTab(T);
     if(T.P.missing.length)toast('أعمدة غير موجودة بالكشف: '+T.P.missing.slice(0,4).join('، ')+(T.P.missing.length>4?'…':''));}
   catch(e){console.error(e);prog(null);T.msg=e.message||String(e);T.view='up';renderTab(T);}
 }
@@ -2301,10 +2332,10 @@ AGV.up=(T,el)=>{const S=T.S;const box=(which,title,sub,D)=>'<div class="card"><h
     d.ondrop=e=>{e.preventDefault();d.classList.remove('ov');if(e.dataTransfer.files[0])agFile(T,w,e.dataTransfer.files[0]);};inp.onchange=e=>{if(e.target.files[0])agFile(T,w,e.target.files[0]);e.target.value='';};});
   el.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{const w=+b.dataset.go;const t=el.querySelector('textarea[data-w="'+w+'"]').value;if(!t.trim())return;agLoad(T,w,()=>agParse(t,'نص ملصوق',w));});
   el.querySelectorAll('[data-cp]').forEach(b=>b.onclick=()=>{const s=$('sql_aging'+b.dataset.cp);if(s)copyText(forQM(s.textContent.trim()));});
-  el.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{const w=+b.dataset.del;if(!confirm('حذف هذا الكشف من الجهاز؟'))return;if(w===1){T.D=null;IDB.del('aging');}else{T.D2=null;IDB.del('aging_chk');}try{agBuild(T);agCompute(T);}catch(e){T.A=null;T.P=null;}renderTabs();renderAging(T);});
+  el.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{const w=+b.dataset.del;if(!confirm('حذف هذا الكشف من الجهاز؟'))return;if(w===1){T.D=null;deleteData('aging');}else{T.D2=null;deleteData('aging_chk');}try{agBuild(T);agCompute(T);}catch(e){T.A=null;T.P=null;}renderTabs();renderAging(T);});
   if(T.msg){const m=$('agmsg'+(T.msgW||1));if(m){m.textContent=T.msg;m.className='msg err';}T.msg='';}};
 function agFile(T,w,f){const rd=new FileReader();rd.onload=()=>agLoad(T,w,()=>agParse(decodeBuf(rd.result),f.name.replace(/\.[^.]+$/,''),w));rd.readAsArrayBuffer(f);}
-function agLoad(T,w,fn){try{const D=fn();if(w===1){T.D=D;IDB.put('aging',D);}else{T.D2=D;IDB.put('aging_chk',D);}agBuild(T);agCompute(T);T.ts={};if(T.D)S_view(T,'ov');renderTabs();renderAging(T);}
+function agLoad(T,w,fn){try{const D=fn();if(w===1){T.D=D;saveData('aging',D);}else{T.D2=D;saveData('aging_chk',D);}agBuild(T);agCompute(T);T.ts={};if(T.D)S_view(T,'ov');renderTabs();renderAging(T);}
   catch(e){console.error(e);T.msg=e.message||String(e);T.msgW=w;T.S.view='up';renderAging(T);}}
 function S_view(T,v){T.S.view=v;}
 function agSave(T){LS.set('kap_aging',JSON.stringify({snap:T.S.snap,mode:T.S.mode,rate:T.S.rate}));agCompute(T);renderAging(T);}
@@ -2418,7 +2449,10 @@ async function afterLogin(session){
   UID=session.user.id;UEMAIL=session.user.email||'';UPERM=row.permission;
   $('uEmail').textContent=UEMAIL;$('ubox').style.display='';
   await migrateLegacy();
-  await appBoot();
+  SYNC.on=true;SYNC.status();
+  $('main').innerHTML='<div class="gate"><h2>جارٍ تحميل بياناتك من السحابة...</h2><div class="sub">الكشوف والإعدادات المحفوظة باسم حسابك</div></div>';
+  try{await syncPull();}catch(e){console.error(e);SYNC.err=e.message||String(e);}
+  await appBoot();SYNC.status();
 }
 (async()=>{
   $('ver').textContent='شاشة تحليل الحزمة اليومية للتدقيق — '+VERSION+' — مركز الكيلاني للأغذية';
