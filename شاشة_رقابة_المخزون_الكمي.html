@@ -804,6 +804,7 @@ details[open]>summary::before{content:"▾ "}
       <label class="toggle"><input type="checkbox" id="wmActive" checked>مستودع نشط</label>
       <label class="toggle" title="لا يظهر هذا المستودع في اختيارات المبيعات (الاستيراد والسند اليدوي)"><input type="checkbox" id="wmNoSales">لا تُرحَّل منه المبيعات</label>
       <label class="toggle" title="مستودع افتراضي يُسمح برصيده السالب (مثل مستودع المبيعات الوهمي)، لا يُجرد ولا تظهر أرصدته السالبة في التنبيهات"><input type="checkbox" id="wmVirtual">مستودع وهمي (يُسمح بالرصيد السالب)</label>
+      <label class="toggle" title="رصيده الدفتري يُعدّ جرداً فعلياً في تقرير الحركة والجرد (مثل المستودع الرئيسي الذي لا يُجرد يومياً)"><input type="checkbox" id="wmTrusted">يُعتبر مجروداً دائماً (رصيده الدفتري = الفعلي)</label>
     </div><div id="wmErr"></div></div>
     <div class="mf"><span></span><div class="row"><button class="btn" id="wmCancel">إلغاء</button><button class="btn primary" id="wmSave">حفظ</button></div></div>
   </div>
@@ -861,7 +862,7 @@ details[open]>summary::before{content:"▾ "}
 /* =========================================================
    رقابة المخزون الكمي — منطق الشاشة
    ========================================================= */
-const APP_VER = '2.0.0';
+const APP_VER = '2.1.0';
 const DB_KEY = 'kinv_ctrl_v1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -1037,10 +1038,10 @@ function addCatalogMissing() {
 let S;
 const VIRTUAL_SALES_WH = () => ({ id: uid(), code: 'WH-SAL', name: 'مستودع المبيعات (وهمي)', loc: 'مستودع افتراضي تُرحَّل منه المبيعات ليبقى رصيد المستودعات الفعلية معلوماً؛ رصيده السالب = إجمالي المبيع', active: true, virtual: true, createdAt: new Date().toISOString() });
 function defaultState() {
-  const main = { id: uid(), code: 'WH-01', name: 'المستودع الرئيسي', loc: '', active: true, createdAt: new Date().toISOString() }, sal = VIRTUAL_SALES_WH();
+  const main = { id: uid(), code: 'WH-01', name: 'المستودع الرئيسي', loc: '', active: true, trusted: true, createdAt: new Date().toISOString() }, sal = VIRTUAL_SALES_WH();
   return {
     ver: 1, company: '', items: [], warehouses: [main, sal],
-    docs: [], boms: {}, aliases: {}, seq: {}, imports: [], counts: [], migrNoSalesMain: true, migrVirtualSales: true,
+    docs: [], boms: {}, aliases: {}, seq: {}, imports: [], counts: [], migrNoSalesMain: true, migrVirtualSales: true, migrTrustedMain: true,
     settings: { allowNegative: false, theme: 'auto', defaultWh: '', salesWh: sal.id, salesMap: null, codeMode: 'code' },
   };
 }
@@ -1050,11 +1051,13 @@ function migrate(o) {
   for (const d of o.docs) for (const l of d.lines || []) { if (l.note && /^[\d.,\s]+$/.test(String(l.note)) && Math.abs(num(l.note) - (+l.qty || 0)) < 1e-9) l.note = ''; }
   o.aliases = {}; // أُلغي الربط اليدوي للأوصاف نهائياً — المطابقة بالرموز ثم الوصف المطابق فقط
   o.migrNoSalesMain = true; // (خاصية "لا تُرحَّل منه المبيعات" اختيارية لكل مستودع ولا تُطبَّق تلقائياً)
+  // المستودع الرئيسي يُعتبر مجروداً دائماً (رصيده الدفتري = الفعلي) — يُطبَّق مرة واحدة ويمكن تغييره من تعريف المستودع
+  if (!o.migrTrustedMain && Array.isArray(o.warehouses)) { const main = o.warehouses.find(w => w.code === 'WH-01' || /الرئيسي/.test(w.name || '')); if (main) main.trusted = true; o.migrTrustedMain = true; }
   // مستودع وهمي للمبيعات يُنشأ مرة واحدة ويصبح مستودع المبيعات الافتراضي
   if (!o.migrVirtualSales && Array.isArray(o.warehouses)) { let v = o.warehouses.find(w => w.virtual); if (!v) { v = VIRTUAL_SALES_WH(); o.warehouses.push(v); } o.settings = o.settings || {}; if (!o.settings.salesWh || !o.warehouses.some(w => w.id === o.settings.salesWh && !w.noSales)) o.settings.salesWh = v.id; o.migrVirtualSales = true; }
   return o;
 }
-function mergeState(o) { const d = defaultState(); const m = Object.assign(d, o, { settings: Object.assign(d.settings, o.settings || {}) }); m.migrNoSalesMain = !!o.migrNoSalesMain; m.migrVirtualSales = !!o.migrVirtualSales; if (!o.settings || !o.settings.salesWh) m.settings.salesWh = ''; return migrate(m); }
+function mergeState(o) { const d = defaultState(); const m = Object.assign(d, o, { settings: Object.assign(d.settings, o.settings || {}) }); m.migrNoSalesMain = !!o.migrNoSalesMain; m.migrVirtualSales = !!o.migrVirtualSales; m.migrTrustedMain = !!o.migrTrustedMain; if (!o.settings || !o.settings.salesWh) m.settings.salesWh = ''; return migrate(m); }
 function load() {
   try { const r = localStorage.getItem(DB_KEY); if (r) return mergeState(JSON.parse(r)); } catch (e) { console.warn('load failed', e); }
   return defaultState();
@@ -1520,7 +1523,7 @@ function renderWhs() {
   const M = balanceMatrix(); const host = $('#whTable');
   host.innerHTML = `<table class="tbl"><thead><tr><th>الكود</th><th>المستودع</th><th>الموقع</th><th class="num">أصناف برصيد</th><th class="num">إجمالي الكميات</th><th class="num">أرصدة سالبة</th><th>الحالة</th><th></th></tr></thead><tbody>${S.warehouses.map(w => {
     let cnt = 0, tot = 0, neg = 0; for (const m of M.values()) { const v = m.get(w.id) || 0; if (v !== 0) cnt++; tot += v; if (v < 0) neg++; }
-    return `<tr><td class="code">${esc(w.code)}</td><td><b>${esc(w.name)}</b>${S.settings.defaultWh === w.id ? ' <span class="chip acc">افتراضي</span>' : ''}${w.noSales ? ' <span class="chip out" title="لا يظهر في اختيارات المبيعات">بدون مبيعات</span>' : ''}${w.virtual ? ' <span class="chip trf" title="مستودع افتراضي يُسمح برصيده السالب">وهمي</span>' : ''}${S.settings.salesWh === w.id ? ' <span class="chip in">مستودع المبيعات</span>' : ''}</td><td>${esc(w.loc || '')}</td><td class="num">${cnt}</td><td class="num">${fmt(round3(tot))}</td><td class="num ${neg ? 'neg' : ''}">${neg}</td><td>${w.active === false ? '<span class="chip">موقوف</span>' : '<span class="chip in">نشط</span>'}</td>
+    return `<tr><td class="code">${esc(w.code)}</td><td><b>${esc(w.name)}</b>${S.settings.defaultWh === w.id ? ' <span class="chip acc">افتراضي</span>' : ''}${w.noSales ? ' <span class="chip out" title="لا يظهر في اختيارات المبيعات">بدون مبيعات</span>' : ''}${w.virtual ? ' <span class="chip trf" title="مستودع افتراضي يُسمح برصيده السالب">وهمي</span>' : ''}${w.trusted ? ' <span class="chip in" title="يُعتبر مجروداً دائماً: رصيده الدفتري يُعدّ جرداً فعلياً في التقارير">مجرود دائماً</span>' : ''}${S.settings.salesWh === w.id ? ' <span class="chip in">مستودع المبيعات</span>' : ''}</td><td>${esc(w.loc || '')}</td><td class="num">${cnt}</td><td class="num">${fmt(round3(tot))}</td><td class="num ${neg ? 'neg' : ''}">${neg}</td><td>${w.active === false ? '<span class="chip">موقوف</span>' : '<span class="chip in">نشط</span>'}</td>
     <td class="nowrap"><button class="btn xs ghost" data-edit="${w.id}"><svg><use href="#i-edit"/></svg></button><button class="btn xs ghost" data-del="${w.id}"><svg><use href="#i-trash"/></svg></button></td></tr>`; }).join('')}</tbody></table>`;
   host.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openWhModal(b.dataset.edit));
   host.querySelectorAll('[data-del]').forEach(b => b.onclick = () => deleteWh(b.dataset.del));
@@ -1528,7 +1531,7 @@ function renderWhs() {
 let editingWh = null;
 function openWhModal(id = null) {
   editingWh = id ? whById(id) : null; $('#wmTitle').textContent = editingWh ? 'تعديل مستودع' : 'مستودع جديد';
-  $('#wmCode').value = editingWh ? editingWh.code : 'WH-' + pad2(S.warehouses.length + 1); $('#wmName').value = editingWh?.name || ''; $('#wmLoc').value = editingWh?.loc || ''; $('#wmActive').checked = editingWh ? editingWh.active !== false : true; $('#wmNoSales').checked = !!editingWh?.noSales; $('#wmVirtual').checked = !!editingWh?.virtual; errBox($('#wmErr'), []);
+  $('#wmCode').value = editingWh ? editingWh.code : 'WH-' + pad2(S.warehouses.length + 1); $('#wmName').value = editingWh?.name || ''; $('#wmLoc').value = editingWh?.loc || ''; $('#wmActive').checked = editingWh ? editingWh.active !== false : true; $('#wmNoSales').checked = !!editingWh?.noSales; $('#wmVirtual').checked = !!editingWh?.virtual; $('#wmTrusted').checked = !!editingWh?.trusted; errBox($('#wmErr'), []);
   openModal('whModal'); setTimeout(() => $('#wmName').focus(), 50);
 }
 function saveWh() {
@@ -1536,7 +1539,7 @@ function saveWh() {
   if (!code) errs.push('الكود مطلوب'); if (!name) errs.push('الاسم مطلوب');
   if (S.warehouses.some(w => w !== editingWh && (normCode(w.code) === normCode(code) || normName(w.name) === normName(name)))) errs.push('يوجد مستودع بنفس الكود أو الاسم');
   if (errs.length) return errBox($('#wmErr'), errs);
-  const data = { code, name, loc: $('#wmLoc').value.trim(), active: $('#wmActive').checked, noSales: $('#wmNoSales').checked, virtual: $('#wmVirtual').checked };
+  const data = { code, name, loc: $('#wmLoc').value.trim(), active: $('#wmActive').checked, noSales: $('#wmNoSales').checked, virtual: $('#wmVirtual').checked, trusted: $('#wmTrusted').checked };
   if (editingWh) Object.assign(editingWh, data); else S.warehouses.push({ id: uid(), createdAt: new Date().toISOString(), ...data });
   save(); refreshLookups(); closeModal('whModal'); renderWhs(); toast('تم حفظ المستودع', 'ok');
 }
@@ -2075,13 +2078,18 @@ function fullData() {
   // آخر جرد لكل (صنف، مستودع) ضمن الفترة — المستودعات الوهمية لا تُجرد
   const latest = new Map();
   for (const c of S.counts) { if (c.date < from || c.date > to || (wh && c.wh !== wh) || whById(c.wh)?.virtual) continue; for (const l of c.lines) { const k = l.itemId + '|' + c.wh; const cur = latest.get(k); if (!cur || c.date > cur.date || (c.date === cur.date && (c.createdAt || '') > (cur.createdAt || ''))) latest.set(k, { date: c.date, createdAt: c.createdAt, actual: l.actual, wh: c.wh }); } }
-  const byItem = new Map(); for (const [k, v] of latest) { const id = k.split('|')[0]; const a = byItem.get(id) || { actual: 0, whs: [], dates: new Set() }; a.actual += v.actual; a.whs.push(whName(v.wh)); a.dates.add(v.date); byItem.set(id, a); }
+  const byItem = new Map(); for (const [k, v] of latest) { const id = k.split('|')[0]; const a = byItem.get(id) || { actual: 0, whs: [], dates: new Set(), missing: [] }; a.actual += v.actual; a.whs.push(whName(v.wh)); a.dates.add(v.date); byItem.set(id, a); }
+  // المستودعات "المجرودة دائماً" (مثل الرئيسي): رصيدها الدفتري بنهاية الفترة يُعدّ جرداً فعلياً؛ وباقي المستودعات الحقيقية بلا جرد ضمن الفترة تُذكر كناقصة
+  const Mto = balanceMatrix({ asOf: to }); const realWhs = activeWhs().filter(w => !w.virtual && (!wh || w.id === wh));
+  for (const it of S.items) { let a = byItem.get(it.id); const counted = new Set([...latest.keys()].filter(k => k.startsWith(it.id + '|')).map(k => k.split('|')[1]));
+    for (const w of realWhs) { if (counted.has(w.id)) continue; const b = balanceOf(Mto, it.id, w.id); if (w.trusted) { if (!a) { a = { actual: 0, whs: [], dates: new Set(), missing: [] }; byItem.set(it.id, a); } a.actual += b; a.whs.push(w.name + ' (دفتري)'); } else if (b) { if (!a) { a = { actual: 0, whs: [], dates: new Set(), missing: [], onlyMissing: true }; byItem.set(it.id, a); } a.missing.push(w.name); } }
+    if (a && a.onlyMissing && !a.whs.length) byItem.delete(it.id); }
   const rows = [];
   for (const it of S.items) {
     if (ty && it.type !== ty) continue; if (q && !itemMatchesQ(it, q)) continue;
     const r = R.get(it.id) || mk(it.id); const cnt = byItem.get(it.id);
     r.close = round3(r.open + r.inn + r.pur - r.out - r.sal); r.open = round3(r.open); for (const k of ['inn', 'pur', 'out', 'sal']) r[k] = round3(r[k]);
-    r.actual = cnt ? round3(cnt.actual) : null; r.diff = cnt ? round3(cnt.actual - r.close) : null; r.cwhs = cnt ? cnt.whs : []; r.cdates = cnt ? [...cnt.dates] : [];
+    r.actual = cnt ? round3(cnt.actual) : null; r.diff = cnt ? round3(cnt.actual - r.close) : null; r.cwhs = cnt ? cnt.whs : []; r.cdates = cnt ? [...cnt.dates] : []; r.missing = cnt ? cnt.missing : [];
     if (onlyMoved && !r.inn && !r.pur && !r.out && !r.sal && !cnt) continue; if (it.active === false && !r.open && !r.close && !cnt) continue;
     r.item = it; rows.push(r);
   }
@@ -2090,13 +2098,13 @@ function fullData() {
 function renderRepFull() {
   if (!$('#rfFrom').value) $('#rfFrom').value = todayISO(); if (!$('#rfTo').value) $('#rfTo').value = $('#rfFrom').value;
   const { rows, from, to, wh } = fullData(); const host = $('#rfTable');
-  $('#rfHint').innerHTML = `<b>${from === to ? 'يوم ' + from : `من ${from} إلى ${to}`}</b> — ${wh ? 'مستودع: ' + esc(whName(wh)) : '<b>تجميعي</b> لكل المستودعات (التحويلات الداخلية تتعادل، ومبيعات المستودع الوهمي تُخصم من الإجمالي)'}. الرصيد الافتتاحي يشمل سندات الأرصدة الافتتاحية وكل الحركات قبل الفترة. الإدخال = سندات الإدخال وإنتاج التصنيع${wh ? ' والتحويل الوارد' : ''}، والإخراج = سندات الإخراج واستهلاك التصنيع${wh ? ' والتحويل الصادر' : ''}. الجرد الفعلي = آخر جرد محفوظ ضمن الفترة${wh ? '' : ' (مجموع المستودعات المجرودة)'}، والفرق = الجرد الفعلي − الرصيد الدفتري.`;
+  $('#rfHint').innerHTML = `<b>${from === to ? 'يوم ' + from : `من ${from} إلى ${to}`}</b> — ${wh ? 'مستودع: ' + esc(whName(wh)) : '<b>تجميعي</b> لكل المستودعات (التحويلات الداخلية تتعادل، ومبيعات المستودع الوهمي تُخصم من الإجمالي)'}. الرصيد الافتتاحي يشمل سندات الأرصدة الافتتاحية وكل الحركات قبل الفترة. الإدخال = سندات الإدخال وإنتاج التصنيع${wh ? ' والتحويل الوارد' : ''}، والإخراج = سندات الإخراج واستهلاك التصنيع${wh ? ' والتحويل الصادر' : ''}. الجرد الفعلي = آخر جرد محفوظ ضمن الفترة${wh ? '' : ' (مجموع المستودعات المجرودة)'}؛ والمستودعات المعلّمة "مجرود دائماً" (${esc(activeWhs().filter(w => w.trusted).map(w => w.name).join('، ') || 'لا يوجد')}) يُعدّ رصيدها الدفتري جرداً فعلياً. الفرق = الجرد الفعلي − الرصيد الدفتري.`;
   if (!rows.length) { host.innerHTML = emptyHTML('لا توجد بيانات للعرض'); return; }
   const T = rows.reduce((t, r) => { t.open += r.open; t.inn += r.inn; t.pur += r.pur; t.out += r.out; t.sal += r.sal; t.close += r.close; if (r.actual != null) { t.act += r.actual; t.diff += r.diff; t.n++; } return t; }, { open: 0, inn: 0, pur: 0, out: 0, sal: 0, close: 0, act: 0, diff: 0, n: 0 });
-  host.innerHTML = `<table class="tbl"><thead><tr><th>${codeLabel()}</th><th>الصنف</th><th>الوحدة</th><th class="num">الرصيد الافتتاحي</th><th class="num cin">الإدخال</th><th class="num cin">المشتريات</th><th class="num cout">الإخراج</th><th class="num cout">المبيعات</th><th class="num">الرصيد الدفتري</th><th class="num">الجرد الفعلي</th><th class="num">الفرق</th></tr></thead><tbody>${rows.map(r => `<tr><td class="code">${esc(codeOf(r.item))}</td>${nameCell(r.item)}<td class="muted">${esc(r.item.unit)}</td><td class="num">${fmtS(r.open)}</td><td class="num cin">${fmtS(r.inn)}</td><td class="num cin">${fmtS(r.pur)}</td><td class="num cout">${fmtS(r.out)}</td><td class="num cout">${fmtS(r.sal)}</td><td class="num"><b>${fmtS(r.close)}</b></td><td class="num">${r.actual == null ? '<span class="muted">—</span>' : `${fmt(r.actual)}${!wh && r.cwhs.length ? `<span class="sub">${esc(r.cwhs.join('، '))}</span>` : ''}`}</td><td class="num ${r.diff > 0 ? 'pos' : r.diff < 0 ? 'neg' : ''}">${r.diff == null ? '<span class="muted">—</span>' : `<b>${(r.diff > 0 ? '+' : '') + fmt(r.diff)}</b>`}</td></tr>`).join('')}
+  host.innerHTML = `<table class="tbl"><thead><tr><th>${codeLabel()}</th><th>الصنف</th><th>الوحدة</th><th class="num">الرصيد الافتتاحي</th><th class="num cin">الإدخال</th><th class="num cin">المشتريات</th><th class="num cout">الإخراج</th><th class="num cout">المبيعات</th><th class="num">الرصيد الدفتري</th><th class="num">الجرد الفعلي</th><th class="num">الفرق</th></tr></thead><tbody>${rows.map(r => `<tr><td class="code">${esc(codeOf(r.item))}</td>${nameCell(r.item)}<td class="muted">${esc(r.item.unit)}</td><td class="num">${fmtS(r.open)}</td><td class="num cin">${fmtS(r.inn)}</td><td class="num cin">${fmtS(r.pur)}</td><td class="num cout">${fmtS(r.out)}</td><td class="num cout">${fmtS(r.sal)}</td><td class="num"><b>${fmtS(r.close)}</b></td><td class="num">${r.actual == null ? '<span class="muted">—</span>' : `${fmt(r.actual)}${!wh && r.cwhs.length ? `<span class="sub">${esc(r.cwhs.join('، '))}</span>` : ''}${r.missing && r.missing.length ? `<span class="sub neg" title="مستودعات لها رصيد ولم تُجرد ضمن الفترة">بدون جرد: ${esc(r.missing.join('، '))}</span>` : ''}`}</td><td class="num ${r.diff > 0 ? 'pos' : r.diff < 0 ? 'neg' : ''}">${r.diff == null ? '<span class="muted">—</span>' : `<b>${(r.diff > 0 ? '+' : '') + fmt(r.diff)}</b>`}</td></tr>`).join('')}
     <tr class="tot"><td colspan="3">الإجمالي (${rows.length} صنف${T.n ? `، ${T.n} مجرود` : ''})</td><td class="num">${fmt(round3(T.open))}</td><td class="num">${fmt(round3(T.inn))}</td><td class="num">${fmt(round3(T.pur))}</td><td class="num">${fmt(round3(T.out))}</td><td class="num">${fmt(round3(T.sal))}</td><td class="num">${fmt(round3(T.close))}</td><td class="num">${T.n ? fmt(round3(T.act)) : '—'}</td><td class="num ${T.diff < 0 ? 'neg' : ''}">${T.n ? (T.diff > 0 ? '+' : '') + fmt(round3(T.diff)) : '—'}</td></tr></tbody></table>`;
 }
-function fullAOA() { const { rows } = fullData(); return [[codeLabel(), 'الصنف', 'الاسم المتعارف عليه', 'الوحدة', 'الرصيد الافتتاحي', 'الإدخال', 'المشتريات', 'الإخراج', 'المبيعات', 'الرصيد الدفتري', 'الجرد الفعلي', 'الفرق', 'مستودعات الجرد'], ...rows.map(r => [codeOf(r.item), r.item.name, r.item.name2 || '', r.item.unit, r.open, r.inn, r.pur, r.out, r.sal, r.close, r.actual ?? '', r.diff ?? '', r.cwhs.join('، ')])]; }
+function fullAOA() { const { rows } = fullData(); return [[codeLabel(), 'الصنف', 'الاسم المتعارف عليه', 'الوحدة', 'الرصيد الافتتاحي', 'الإدخال', 'المشتريات', 'الإخراج', 'المبيعات', 'الرصيد الدفتري', 'الجرد الفعلي', 'الفرق', 'مستودعات الجرد', 'بدون جرد'], ...rows.map(r => [codeOf(r.item), r.item.name, r.item.name2 || '', r.item.unit, r.open, r.inn, r.pur, r.out, r.sal, r.close, r.actual ?? '', r.diff ?? '', r.cwhs.join('، '), (r.missing || []).join('، ')])]; }
 
 /* --- فروقات الجرد --- */
 function countDiffData() {
