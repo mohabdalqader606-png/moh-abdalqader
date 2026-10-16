@@ -466,7 +466,7 @@ details[open]>summary::before{content:"▾ "}
           <div class="bd" style="gap:14px;display:flex;flex-direction:column">
             <div class="grid g3">
               <div class="field"><label>تاريخ المبيعات (إن لم يوجد عمود تاريخ) <span class="req">*</span></label><input type="date" class="in" id="slDate"></div>
-              <div class="field"><label>المستودع (إن لم يوجد عمود مستودع) <span class="req">*</span></label><select class="in" id="slWh"></select><span class="small muted" id="slWhHint"></span></div>
+              <div class="field"><label>المستودع الافتراضي للأسطر بدون مستودع <span class="req">*</span></label><select class="in" id="slWh"></select><span class="small muted" id="slWhHint">يمكن تغيير المستودع لكل سطر في المعاينة</span></div>
               <div class="field"><label>مرجع / وصف</label><input class="in" id="slRef" placeholder="مثال: مبيعات نقاط البيع"></div>
             </div>
             <div class="file-drop" id="slDrop"><b>اسحب ملف المبيعات هنا أو انقر للاختيار</b>Excel (xlsx / xls) أو CSV — أو الصق الجدول في المربع أدناه<input type="file" id="slFile" accept=".xlsx,.xls,.csv,.txt" hidden></div>
@@ -494,6 +494,11 @@ details[open]>summary::before{content:"▾ "}
             </div>
             <div id="slPreview"></div>
           </div>
+        </div>
+        <div class="card">
+          <div class="hd"><div><h2>توزيع مبيعات المستودع الوهمي على المستودعات</h2><p>كل بيع رُحّل بدون تحديد مستودع يخرج من المستودع الوهمي ويبقى رصيده سالباً. هنا تختار لكل صنف المستودع الذي خرج منه فعلياً، فيُنشأ سند تحويل من ذلك المستودع إلى الوهمي، ويظهر البيع على المستودع الحقيقي في التقارير ويعود رصيد الوهمي إلى الصفر.</p></div>
+            <div class="row" style="align-items:flex-end"><span class="small muted" id="allocCount"></span><div class="field sm"><label>تاريخ التوزيع</label><input type="date" class="in" id="allocDate"></div><button class="btn primary" id="allocPost"><svg><use href="#i-check"/></svg>ترحيل التوزيع</button></div></div>
+          <div class="bd tight"><div class="tbl-wrap" id="allocTable"></div></div>
         </div>
         <div class="card">
           <div class="hd"><div><h2>سجل عمليات الاستيراد</h2><p>كل ملف تم ترحيله وما نتج عنه من سندات</p></div></div>
@@ -585,6 +590,7 @@ details[open]>summary::before{content:"▾ "}
         <div class="card">
           <div class="tabs" id="repTabs">
             <button data-rep="daily" class="on">التقرير اليومي</button>
+            <button data-rep="full">الحركة والجرد</button>
             <button data-rep="balances">أرصدة المخزون</button>
             <button data-rep="card">كرت الصنف</button>
             <button data-rep="moves">حركة تفصيلية</button>
@@ -606,6 +612,20 @@ details[open]>summary::before{content:"▾ "}
             </div>
             <div class="bd" style="padding:10px 16px 0"><div class="hint" id="rdHint"></div></div>
             <div class="bd tight"><div class="tbl-wrap" id="rdTable"></div></div>
+          </div>
+
+          <div class="sub" data-rep="full">
+            <div class="filters" style="border-radius:0">
+              <div class="field sm"><label>من تاريخ</label><input type="date" class="in" id="rfFrom"></div>
+              <div class="field sm"><label>إلى تاريخ</label><input type="date" class="in" id="rfTo"></div>
+              <div class="field"><label>المستودع</label><select class="in" id="rfWh"><option value="">تجميعي — كل المستودعات</option></select></div>
+              <div class="field sm"><label>نوع الصنف</label><select class="in" id="rfType"><option value="">الكل</option></select></div>
+              <div class="field"><label>بحث</label><input class="in" id="rfQ" placeholder="رمز أو اسم"></div>
+              <label class="toggle" style="padding-bottom:9px"><input type="checkbox" id="rfMoved">الأصناف المتحركة أو المجرودة فقط</label>
+              <div class="row"><button class="btn" id="rfToday">اليوم</button><button class="btn" id="rfMonth">الشهر الحالي</button><button class="btn" id="rfPrint"><svg><use href="#i-print"/></svg>طباعة</button><button class="btn" id="rfExport"><svg><use href="#i-xls"/></svg>إكسل</button></div>
+            </div>
+            <div class="bd" style="padding:10px 16px 0"><div class="hint" id="rfHint"></div></div>
+            <div class="bd tight"><div class="tbl-wrap" id="rfTable"></div></div>
           </div>
 
           <div class="sub" data-rep="balances">
@@ -679,7 +699,7 @@ details[open]>summary::before{content:"▾ "}
               <div class="field"><label>اسم الشركة</label><input class="in" id="stCompany" placeholder="يظهر في الشاشة والتقارير المطبوعة"></div>
               <div class="field"><label>المستودع الافتراضي (للسندات)</label><select class="in" id="stDefWh"></select></div>
               <div class="field"><label>مستودع المبيعات الافتراضي (لرفع ملف المبيعات)</label><select class="in" id="stSalesWh"></select></div>
-              <div class="hint">المستودعات المعلّمة "لا تُرحَّل منه المبيعات" في تعريفها (المستودع الرئيسي افتراضياً) لا تظهر في اختيارات المبيعات، وإن ورد اسمها في عمود المستودع بملف المبيعات يُرفض السطر.</div>
+              <div class="hint">المبيعات بدون مستودع محدد تُرحَّل من المستودع الوهمي ثم تُوزَّع لاحقاً من صفحة الاستيراد. المستودعات المعلّمة "لا تُرحَّل منه المبيعات" في تعريفها لا تظهر في اختيارات المبيعات.</div>
               <div class="field"><label>الرمز المعروض في التقارير</label><select class="in" id="stCodeMode"><option value="code">رمز المادة</option><option value="code2">رمز الوحدة</option></select></div>
               <div class="field"><label>المظهر</label><select class="in" id="stTheme"><option value="auto">تلقائي حسب النظام</option><option value="light">فاتح</option><option value="dark">داكن</option></select></div>
               <label class="toggle"><input type="checkbox" id="stNeg">السماح بالرصيد السالب (صرف أكثر من المتاح)</label>
@@ -783,6 +803,7 @@ details[open]>summary::before{content:"▾ "}
       <div class="field" style="grid-column:span 2"><label>الموقع / الوصف</label><input class="in" id="wmLoc"></div>
       <label class="toggle"><input type="checkbox" id="wmActive" checked>مستودع نشط</label>
       <label class="toggle" title="لا يظهر هذا المستودع في اختيارات المبيعات (الاستيراد والسند اليدوي)"><input type="checkbox" id="wmNoSales">لا تُرحَّل منه المبيعات</label>
+      <label class="toggle" title="مستودع افتراضي يُسمح برصيده السالب (مثل مستودع المبيعات الوهمي)، لا يُجرد ولا تظهر أرصدته السالبة في التنبيهات"><input type="checkbox" id="wmVirtual">مستودع وهمي (يُسمح بالرصيد السالب)</label>
     </div><div id="wmErr"></div></div>
     <div class="mf"><span></span><div class="row"><button class="btn" id="wmCancel">إلغاء</button><button class="btn primary" id="wmSave">حفظ</button></div></div>
   </div>
@@ -840,7 +861,7 @@ details[open]>summary::before{content:"▾ "}
 /* =========================================================
    رقابة المخزون الكمي — منطق الشاشة
    ========================================================= */
-const APP_VER = '1.8.0';
+const APP_VER = '2.0.0';
 const DB_KEY = 'kinv_ctrl_v1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -875,6 +896,8 @@ const DT = {
   transfer:    { label: 'سند تحويل',      prefix: 'TRF', kind: 'transfer', cls: 'trf' },
   manufacture: { label: 'سند تصنيع',      prefix: 'MFG', kind: 'mfg',      cls: 'mfg' },
 };
+/** جهة الحركة كما تُصنَّف في التقارير: التحويل إلى مستودع وهمي = توزيع مبيعات، يُحتسب مبيعات على المستودع المصدر */
+const repSide = e => (e.side === 'transferOut' && whById(e.whTo)?.virtual) ? 'sales' : e.side;
 const SIDE_LABEL = { opening: 'رصيد افتتاحي', purchase: 'مشتريات', receipt: 'إدخال', mfgIn: 'تصنيع (إنتاج)', transferIn: 'تحويل وارد', sales: 'مبيعات', issue: 'إخراج', mfgOut: 'تصنيع (استهلاك)', transferOut: 'تحويل صادر' };
 const ITEM_TYPES = { raw: 'مادة خام', finished: 'منتج جاهز', semi: 'نصف مصنّع', packaging: 'مواد تعبئة', trade: 'بضاعة تجارية', other: 'أخرى' };
 
@@ -1012,11 +1035,13 @@ function addCatalogMissing() {
 
 /* ---------- state ---------- */
 let S;
+const VIRTUAL_SALES_WH = () => ({ id: uid(), code: 'WH-SAL', name: 'مستودع المبيعات (وهمي)', loc: 'مستودع افتراضي تُرحَّل منه المبيعات ليبقى رصيد المستودعات الفعلية معلوماً؛ رصيده السالب = إجمالي المبيع', active: true, virtual: true, createdAt: new Date().toISOString() });
 function defaultState() {
+  const main = { id: uid(), code: 'WH-01', name: 'المستودع الرئيسي', loc: '', active: true, createdAt: new Date().toISOString() }, sal = VIRTUAL_SALES_WH();
   return {
-    ver: 1, company: '', items: [], warehouses: [{ id: uid(), code: 'WH-01', name: 'المستودع الرئيسي', loc: '', active: true, noSales: true, createdAt: new Date().toISOString() }], migrNoSalesMain: true,
-    docs: [], boms: {}, aliases: {}, seq: {}, imports: [], counts: [],
-    settings: { allowNegative: false, theme: 'auto', defaultWh: '', salesWh: '', salesMap: null, codeMode: 'code' },
+    ver: 1, company: '', items: [], warehouses: [main, sal],
+    docs: [], boms: {}, aliases: {}, seq: {}, imports: [], counts: [], migrNoSalesMain: true, migrVirtualSales: true,
+    settings: { allowNegative: false, theme: 'auto', defaultWh: '', salesWh: sal.id, salesMap: null, codeMode: 'code' },
   };
 }
 /** ترقية بيانات الإصدارات السابقة: ملاحظات الأسطر التي سُجّلت فيها الكمية نفسها بالخطأ (قبل 1.4.0) تُمسح */
@@ -1024,11 +1049,12 @@ function migrate(o) {
   if (!o || !Array.isArray(o.docs)) return o;
   for (const d of o.docs) for (const l of d.lines || []) { if (l.note && /^[\d.,\s]+$/.test(String(l.note)) && Math.abs(num(l.note) - (+l.qty || 0)) < 1e-9) l.note = ''; }
   o.aliases = {}; // أُلغي الربط اليدوي للأوصاف نهائياً — المطابقة بالرموز ثم الوصف المطابق فقط
-  // المستودع الرئيسي لا تُرحَّل منه المبيعات (يُطبَّق مرة واحدة ويمكن تغييره من تعريف المستودع)
-  if (!o.migrNoSalesMain && Array.isArray(o.warehouses)) { const main = o.warehouses.find(w => w.code === 'WH-01' || /الرئيسي/.test(w.name || '')); if (main) main.noSales = true; o.migrNoSalesMain = true; }
+  o.migrNoSalesMain = true; // (خاصية "لا تُرحَّل منه المبيعات" اختيارية لكل مستودع ولا تُطبَّق تلقائياً)
+  // مستودع وهمي للمبيعات يُنشأ مرة واحدة ويصبح مستودع المبيعات الافتراضي
+  if (!o.migrVirtualSales && Array.isArray(o.warehouses)) { let v = o.warehouses.find(w => w.virtual); if (!v) { v = VIRTUAL_SALES_WH(); o.warehouses.push(v); } o.settings = o.settings || {}; if (!o.settings.salesWh || !o.warehouses.some(w => w.id === o.settings.salesWh && !w.noSales)) o.settings.salesWh = v.id; o.migrVirtualSales = true; }
   return o;
 }
-function mergeState(o) { const d = defaultState(); return migrate(Object.assign(d, o, { settings: Object.assign(d.settings, o.settings || {}) })); }
+function mergeState(o) { const d = defaultState(); const m = Object.assign(d, o, { settings: Object.assign(d.settings, o.settings || {}) }); m.migrNoSalesMain = !!o.migrNoSalesMain; m.migrVirtualSales = !!o.migrVirtualSales; if (!o.settings || !o.settings.salesWh) m.settings.salesWh = ''; return migrate(m); }
 function load() {
   try { const r = localStorage.getItem(DB_KEY); if (r) return mergeState(JSON.parse(r)); } catch (e) { console.warn('load failed', e); }
   return defaultState();
@@ -1083,7 +1109,7 @@ function ledger() {
   for (const d of S.docs) {
     const base = { date: d.date, docId: d.id, docNo: d.no, type: d.type, ts: d.createdAt || '', ref: d.ref || '', party: d.party || '' };
     if (d.type === 'transfer') {
-      for (const l of d.lines) { L.push({ ...base, itemId: l.itemId, wh: d.whFrom, qin: 0, qout: +l.qty, side: 'transferOut' }); L.push({ ...base, itemId: l.itemId, wh: d.whTo, qin: +l.qty, qout: 0, side: 'transferIn' }); }
+      for (const l of d.lines) { L.push({ ...base, itemId: l.itemId, wh: d.whFrom, qin: 0, qout: +l.qty, side: 'transferOut', whFrom: d.whFrom, whTo: d.whTo }); L.push({ ...base, itemId: l.itemId, wh: d.whTo, qin: +l.qty, qout: 0, side: 'transferIn', whFrom: d.whFrom, whTo: d.whTo }); }
     } else if (d.type === 'manufacture') {
       if (d.product && d.product.itemId) L.push({ ...base, itemId: d.product.itemId, wh: d.whTo, qin: +d.product.qty, qout: 0, side: 'mfgIn' });
       for (const l of d.lines) L.push({ ...base, itemId: l.itemId, wh: d.whFrom, qin: 0, qout: +l.qty, side: 'mfgOut' });
@@ -1342,10 +1368,10 @@ function renderPage(page) {
 }
 function refreshAll() { refreshLookups(); renderPage(currentPage); }
 function refreshLookups() {
-  for (const id of ['dfWh', 'rdWh', 'rcWh', 'rmWh', 'rcdWh']) fillSelect($('#' + id), whOpts(true), { blank: id === 'dfWh' || id === 'rmWh' || id === 'rcdWh' ? 'الكل' : 'كل المستودعات' });
+  for (const id of ['dfWh', 'rdWh', 'rcWh', 'rmWh', 'rcdWh', 'rfWh']) fillSelect($('#' + id), whOpts(true), { blank: id === 'dfWh' || id === 'rmWh' || id === 'rcdWh' ? 'الكل' : (id === 'rfWh' ? 'تجميعي — كل المستودعات' : 'كل المستودعات') });
   for (const id of ['omWh', 'stDefWh', 'dmWh', 'dmWhFrom', 'dmWhTo']) fillSelect($('#' + id), whOpts(), { blank: id === 'stDefWh' ? 'بدون' : null });
   fillSelect($('#slWh'), salesWhOpts()); fillSelect($('#stSalesWh'), salesWhOpts(), { blank: 'أول مستودع مسموح' });
-  for (const id of ['ifType', 'rdType', 'rbType']) fillSelect($('#' + id), typeOpts(), { blank: 'الكل' });
+  for (const id of ['ifType', 'rdType', 'rbType', 'rfType']) fillSelect($('#' + id), typeOpts(), { blank: 'الكل' });
   fillSelect($('#dfType'), docTypeOpts(), { blank: 'الكل' });
   fillSelect($('#rmType'), Object.entries(SIDE_LABEL).map(([v, l]) => ({ v, l })), { blank: 'الكل' });
   fillSelect($('#imType'), typeOpts());
@@ -1494,7 +1520,7 @@ function renderWhs() {
   const M = balanceMatrix(); const host = $('#whTable');
   host.innerHTML = `<table class="tbl"><thead><tr><th>الكود</th><th>المستودع</th><th>الموقع</th><th class="num">أصناف برصيد</th><th class="num">إجمالي الكميات</th><th class="num">أرصدة سالبة</th><th>الحالة</th><th></th></tr></thead><tbody>${S.warehouses.map(w => {
     let cnt = 0, tot = 0, neg = 0; for (const m of M.values()) { const v = m.get(w.id) || 0; if (v !== 0) cnt++; tot += v; if (v < 0) neg++; }
-    return `<tr><td class="code">${esc(w.code)}</td><td><b>${esc(w.name)}</b>${S.settings.defaultWh === w.id ? ' <span class="chip acc">افتراضي</span>' : ''}${w.noSales ? ' <span class="chip out" title="لا يظهر في اختيارات المبيعات">بدون مبيعات</span>' : ''}${S.settings.salesWh === w.id ? ' <span class="chip in">مستودع المبيعات</span>' : ''}</td><td>${esc(w.loc || '')}</td><td class="num">${cnt}</td><td class="num">${fmt(round3(tot))}</td><td class="num ${neg ? 'neg' : ''}">${neg}</td><td>${w.active === false ? '<span class="chip">موقوف</span>' : '<span class="chip in">نشط</span>'}</td>
+    return `<tr><td class="code">${esc(w.code)}</td><td><b>${esc(w.name)}</b>${S.settings.defaultWh === w.id ? ' <span class="chip acc">افتراضي</span>' : ''}${w.noSales ? ' <span class="chip out" title="لا يظهر في اختيارات المبيعات">بدون مبيعات</span>' : ''}${w.virtual ? ' <span class="chip trf" title="مستودع افتراضي يُسمح برصيده السالب">وهمي</span>' : ''}${S.settings.salesWh === w.id ? ' <span class="chip in">مستودع المبيعات</span>' : ''}</td><td>${esc(w.loc || '')}</td><td class="num">${cnt}</td><td class="num">${fmt(round3(tot))}</td><td class="num ${neg ? 'neg' : ''}">${neg}</td><td>${w.active === false ? '<span class="chip">موقوف</span>' : '<span class="chip in">نشط</span>'}</td>
     <td class="nowrap"><button class="btn xs ghost" data-edit="${w.id}"><svg><use href="#i-edit"/></svg></button><button class="btn xs ghost" data-del="${w.id}"><svg><use href="#i-trash"/></svg></button></td></tr>`; }).join('')}</tbody></table>`;
   host.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openWhModal(b.dataset.edit));
   host.querySelectorAll('[data-del]').forEach(b => b.onclick = () => deleteWh(b.dataset.del));
@@ -1502,7 +1528,7 @@ function renderWhs() {
 let editingWh = null;
 function openWhModal(id = null) {
   editingWh = id ? whById(id) : null; $('#wmTitle').textContent = editingWh ? 'تعديل مستودع' : 'مستودع جديد';
-  $('#wmCode').value = editingWh ? editingWh.code : 'WH-' + pad2(S.warehouses.length + 1); $('#wmName').value = editingWh?.name || ''; $('#wmLoc').value = editingWh?.loc || ''; $('#wmActive').checked = editingWh ? editingWh.active !== false : true; $('#wmNoSales').checked = !!editingWh?.noSales; errBox($('#wmErr'), []);
+  $('#wmCode').value = editingWh ? editingWh.code : 'WH-' + pad2(S.warehouses.length + 1); $('#wmName').value = editingWh?.name || ''; $('#wmLoc').value = editingWh?.loc || ''; $('#wmActive').checked = editingWh ? editingWh.active !== false : true; $('#wmNoSales').checked = !!editingWh?.noSales; $('#wmVirtual').checked = !!editingWh?.virtual; errBox($('#wmErr'), []);
   openModal('whModal'); setTimeout(() => $('#wmName').focus(), 50);
 }
 function saveWh() {
@@ -1510,7 +1536,7 @@ function saveWh() {
   if (!code) errs.push('الكود مطلوب'); if (!name) errs.push('الاسم مطلوب');
   if (S.warehouses.some(w => w !== editingWh && (normCode(w.code) === normCode(code) || normName(w.name) === normName(name)))) errs.push('يوجد مستودع بنفس الكود أو الاسم');
   if (errs.length) return errBox($('#wmErr'), errs);
-  const data = { code, name, loc: $('#wmLoc').value.trim(), active: $('#wmActive').checked, noSales: $('#wmNoSales').checked };
+  const data = { code, name, loc: $('#wmLoc').value.trim(), active: $('#wmActive').checked, noSales: $('#wmNoSales').checked, virtual: $('#wmVirtual').checked };
   if (editingWh) Object.assign(editingWh, data); else S.warehouses.push({ id: uid(), createdAt: new Date().toISOString(), ...data });
   save(); refreshLookups(); closeModal('whModal'); renderWhs(); toast('تم حفظ المستودع', 'ok');
 }
@@ -1708,7 +1734,7 @@ function dmCollect() {
   for (const [itemId, g] of groups) { const qty = round3(g.parts.reduce((a, b) => a + b, 0)); const brk = qtyNote(g.parts, qty); d.lines.push({ itemId, qty, note: [brk ? `دمج: ${brk}` : '', ...g.notes].filter(Boolean).join(' ؛ ') }); }
   if (!d.lines.length) errs.push(t === 'manufacture' ? 'أضف المواد المستهلكة (سطر واحد على الأقل)' : 'أضف صنفاً واحداً على الأقل');
   // فحص الرصيد السالب
-  if (!S.settings.allowNegative && D.kind !== 'in' && !errs.length) {
+  if (!S.settings.allowNegative && D.kind !== 'in' && !errs.length && !whById(d.wh || d.whFrom)?.virtual) {
     const M = balanceMatrix({ excludeDoc: dmEditing?.id || null }); const wh = d.wh || d.whFrom;
     for (const l of d.lines) { const b = balanceOf(M, l.itemId, wh); if (l.qty > b + 1e-9) errs.push(`"${itemLabel(l.itemId)}": المطلوب ${fmt(l.qty)} والمتاح في ${whName(wh)} هو ${fmt(b)}`); }
     if (errs.length) errs.unshift('الرصيد غير كافٍ (يمكن السماح بالرصيد السالب من الإعدادات):');
@@ -1824,7 +1850,8 @@ function slRenderPreview() {
   host.innerHTML = `${dup ? `<div class="hint warn">تنبيه: ملف بنفس الاسم "${esc(dup.file)}" سبق ترحيله بتاريخ ${esc(dup.date)} (${esc(dup.docs.join('، '))}). تأكد من عدم تكرار الترحيل.</div>` : ''}
     <div class="row between" style="margin:10px 0"><div class="row"><span class="chip in">${ok.length} سطر جاهز</span>${news.length ? `<span class="chip mfg">${news.length} صنف جديد سيُعرَّف تلقائياً عند الترحيل</span>` : ''}${bad ? `<span class="chip out">${bad} سطر يحتاج معالجة</span>` : ''}<span class="chip out">إجمالي البيع: ${fmt(tS)}</span>${useBuy ? `<span class="chip in">إجمالي الشراء: ${fmt(tB)}</span>` : ''}</div>
     <div class="row"><button class="btn primary" id="slPost" ${ok.length ? '' : 'disabled'}>ترحيل ${ok.length} سطر${useBuy && tB ? ' (مبيعات + مشتريات)' : ' كمبيعات'}</button></div></div>
-    <div class="tbl-wrap" style="max-height:48vh"><table class="tbl"><thead><tr><th>#</th><th>الحالة</th><th>رمز المادة</th><th>رمز الوحدة</th><th>الوصف بالملف</th><th>الصنف المطابق</th><th>التاريخ</th><th>المستودع</th><th class="num cout">كمية البيع</th>${useBuy ? '<th class="num cin">كمية الشراء</th>' : ''}</tr></thead><tbody>${out.map(o => `<tr><td class="muted">${o.k}${o.n > 1 ? `<span class="sub">${o.n} أسطر</span>` : ''}</td><td>${o.st === 'ok' ? okChip(o) : lab[o.st]}</td><td class="code">${esc(o.code)}</td><td class="code">${esc(o.code2)}</td><td>${esc(o.name)}</td><td>${o.itemId ? `<b>${esc(itemLabel(o.itemId))}</b><span class="sub mono">${esc(itemById(o.itemId).code)}${itemById(o.itemId).code2 ? ' / ' + esc(itemById(o.itemId).code2) : ''}</span><span class="sub">الأساس: ${esc(BASIS_LABEL[o.basis] || '—')}</span>` : o.st === 'new' ? `<span class="small muted">سيُضاف كصنف جديد برمزيه ووصفه كما في الملف</span>` : ''}</td><td class="mono">${esc(o.date)}</td><td>${o.wh ? (o.st === 'whblocked' ? `<span class="neg">${esc(whName(o.wh))}</span>` : esc(whName(o.wh))) : `<span class="neg">${esc(o.whTxt)}</span>`}</td><td class="num cout">${o.qty ? fmt(o.qty) : '<span class="muted">0</span>'}</td>${useBuy ? `<td class="num cin">${o.buy ? fmt(o.buy) : '<span class="muted">0</span>'}</td>` : ''}</tr>`).join('')}</tbody></table></div>`;
+    <div class="tbl-wrap" style="max-height:48vh"><table class="tbl"><thead><tr><th>#</th><th>الحالة</th><th>رمز المادة</th><th>رمز الوحدة</th><th>الوصف بالملف</th><th>الصنف المطابق</th><th>التاريخ</th><th>المستودع المباع منه</th><th class="num cout">كمية البيع</th>${useBuy ? '<th class="num cin">كمية الشراء</th>' : ''}</tr></thead><tbody>${out.map(o => `<tr><td class="muted">${o.k}${o.n > 1 ? `<span class="sub">${o.n} أسطر</span>` : ''}</td><td>${o.st === 'ok' ? okChip(o) : lab[o.st]}</td><td class="code">${esc(o.code)}</td><td class="code">${esc(o.code2)}</td><td>${esc(o.name)}</td><td>${o.itemId ? `<b>${esc(itemLabel(o.itemId))}</b><span class="sub mono">${esc(itemById(o.itemId).code)}${itemById(o.itemId).code2 ? ' / ' + esc(itemById(o.itemId).code2) : ''}</span><span class="sub">الأساس: ${esc(BASIS_LABEL[o.basis] || '—')}</span>` : o.st === 'new' ? `<span class="small muted">سيُضاف كصنف جديد برمزيه ووصفه كما في الملف</span>` : ''}</td><td class="mono">${esc(o.date)}</td><td>${(o.st === 'ok' || o.st === 'new') ? `<select class="in" data-rwh="${o.k}" style="min-height:30px;padding:3px 8px;min-width:150px">${salesWhOpts().map(w => `<option value="${w.v}" ${w.v === o.wh ? 'selected' : ''}>${esc(w.l)}</option>`).join('')}</select>` : o.wh ? (o.st === 'whblocked' ? `<span class="neg">${esc(whName(o.wh))}</span>` : esc(whName(o.wh))) : `<span class="neg">${esc(o.whTxt)}</span>`}</td><td class="num cout">${o.qty ? fmt(o.qty) : '<span class="muted">0</span>'}</td>${useBuy ? `<td class="num cin">${o.buy ? fmt(o.buy) : '<span class="muted">0</span>'}</td>` : ''}</tr>`).join('')}</tbody></table></div>`;
+  host.querySelectorAll('[data-rwh]').forEach(sel => sel.onchange = () => { const o = out.find(x => String(x.k) === sel.dataset.rwh); if (o) o.wh = sel.value; });
   const pb = host.querySelector('#slPost'); if (pb) pb.onclick = slPost;
 }
 /** تعريف الأصناف الجديدة الواردة في ملف المبيعات تلقائياً — يعيد قائمة الأصناف المضافة */
@@ -1843,7 +1870,7 @@ function slPost() {
   if (!S.settings.allowNegative) {
     const M = balanceMatrix(); const errs = []; const net = new Map();
     for (const g of groups.values()) { for (const [id, q] of g.s) { const k = id + '|' + g.wh; net.set(k, (net.get(k) || 0) - q); } for (const [id, q] of g.b) { const k = id + '|' + g.wh; net.set(k, (net.get(k) || 0) + q); } }
-    for (const [k, d] of net) { const [id, wh] = k.split('|'); if (newIds.has(id)) continue; const b = balanceOf(M, id, wh); if (b + d < -1e-9) errs.push(`${itemLabel(id)} في ${whName(wh)}: الرصيد ${fmt(b)} والصافي بعد الترحيل ${fmt(round3(b + d))}`); }
+    for (const [k, d] of net) { const [id, wh] = k.split('|'); if (newIds.has(id) || whById(wh)?.virtual) continue; const b = balanceOf(M, id, wh); if (b + d < -1e-9) errs.push(`${itemLabel(id)} في ${whName(wh)}: الرصيد ${fmt(b)} والصافي بعد الترحيل ${fmt(round3(b + d))}`); }
     if (errs.length) { $('#slPreview').insertAdjacentHTML('afterbegin', `<div class="hint bad"><b>الرصيد غير كافٍ لترحيل المبيعات (يمكن السماح بالرصيد السالب من الإعدادات، أو أدخل الأرصدة الافتتاحية أولاً):</b><ul style="margin:4px 0 0;padding-inline-start:18px">${errs.slice(0, 15).map(e => `<li>${esc(e)}</li>`).join('')}${errs.length > 15 ? `<li>… و${errs.length - 15} أخرى</li>` : ''}</ul></div>`); $('#slPreview').scrollIntoView({ block: 'start' }); return; }
   }
   const ref = $('#slRef').value.trim() || `استيراد — ${slWB._fileName}`; const docs = []; let tS = 0, tB = 0;
@@ -1855,7 +1882,37 @@ function slPost() {
   save(); slOut = null; slWB = null; $('#slPreview').innerHTML = `<div class="hint good">تم الترحيل بنجاح في ${docs.length} سند: ${docs.map(esc).join('، ')} — مبيعات ${fmt(round3(tS))}${tB ? `، مشتريات ${fmt(round3(tB))}` : ''}</div>` + (added.length ? `<div class="hint warn" style="margin-top:10px"><b>تنبيه: تم تعريف ${added.length} صنف جديد تلقائياً من الملف</b> (الوحدة والنوع افتراضيان — راجعها من صفحة الأصناف وأدخل أرصدتها الافتتاحية، فالبيع سُجّل عليها برصيد صفر):<ul style="margin:6px 0 0;padding-inline-start:18px">${added.map(i => `<li><span class="mono">${esc(i.code)}${i.code2 ? ' / ' + esc(i.code2) : ''}</span> — ${esc(i.name)}</li>`).join('')}</ul></div>` : ''); $('#slMapWrap').style.display = 'none'; $('#slFile').value = ''; $('#slPaste').value = ''; slStep(4);
   refreshLookups(); renderSalesLog(); toast(added.length ? `تم ترحيل الملف وإضافة ${added.length} صنف جديد` : 'تم ترحيل الملف', added.length ? 'warn' : 'ok');
 }
-function renderSales() { if (!$('#slDate').value) $('#slDate').value = todayISO(); fillSelect($('#slWh'), salesWhOpts()); if (!$('#slWh').value || !salesWhs().some(w => w.id === $('#slWh').value)) $('#slWh').value = (S.settings.salesWh && salesWhs().some(w => w.id === S.settings.salesWh)) ? S.settings.salesWh : (salesWhs()[0]?.id || ''); $('#slWhHint').textContent = salesWhs().length < activeWhs().length ? 'المستودعات المستبعدة من المبيعات (مثل الرئيسي) لا تظهر هنا' : ''; renderSalesLog(); }
+/* ---------- توزيع مبيعات المستودع الوهمي على المستودعات الحقيقية ---------- */
+const allocSel = new Map(); // itemId -> {wh, qty}
+function virtualWh() { return S.warehouses.find(w => w.virtual && w.active !== false) || null; }
+function renderAlloc() {
+  const host = $('#allocTable'); if (!host) return; if (!$('#allocDate').value) $('#allocDate').value = todayISO();
+  const vw = virtualWh(); if (!vw) { host.innerHTML = emptyHTML('لا يوجد مستودع وهمي معرّف', 'علّم أحد المستودعات "مستودع وهمي" من تعريف المستودعات'); return; }
+  const M = balanceMatrix(); const real = activeWhs().filter(w => !w.virtual);
+  const rows = S.items.map(i => ({ item: i, qty: round3(-balanceOf(M, i.id, vw.id)) })).filter(r => r.qty > 0).sort((a, b) => codeCmp(a.item, b.item));
+  $('#allocCount').textContent = rows.length ? `${rows.length} صنف غير موزّع — إجمالي ${fmt(round3(rows.reduce((s, r) => s + r.qty, 0)))}` : '';
+  if (!rows.length) { host.innerHTML = emptyHTML('لا توجد كميات غير موزعة', `رصيد ${vw.name} صفر لكل الأصناف`); return; }
+  host.innerHTML = `<table class="tbl"><thead><tr><th>${codeLabel()}</th><th>الصنف</th><th>الوحدة</th><th class="num">غير موزّع (مباع من الوهمي)</th><th>المستودع المباع منه فعلياً</th><th class="num">رصيده الحالي</th><th style="width:150px">كمية التوزيع</th></tr></thead><tbody>${rows.map(r => { const sel = allocSel.get(r.item.id) || {}; return `<tr><td class="code">${esc(codeOf(r.item))}</td>${nameCell(r.item)}<td class="muted">${esc(r.item.unit)}</td><td class="num neg"><b>${fmt(r.qty)}</b></td><td><select class="in" data-aw="${r.item.id}" style="min-height:32px;padding:4px 8px"><option value="">— اختر المستودع —</option>${real.map(w => `<option value="${w.id}" ${sel.wh === w.id ? 'selected' : ''}>${esc(w.name)} (${fmt(balanceOf(M, r.item.id, w.id))})</option>`).join('')}</select></td><td class="num" data-ab="${r.item.id}">${sel.wh ? fmt(balanceOf(M, r.item.id, sel.wh)) : ''}</td><td><input class="in qty" inputmode="decimal" data-aq="${r.item.id}" value="${esc(sel.qty ?? r.qty)}" style="min-height:32px;padding:4px 8px"></td></tr>`; }).join('')}</tbody></table>`;
+  host.querySelectorAll('[data-aw]').forEach(s => s.onchange = () => { const e = allocSel.get(s.dataset.aw) || {}; e.wh = s.value; allocSel.set(s.dataset.aw, e); const td = host.querySelector(`[data-ab="${s.dataset.aw}"]`); if (td) td.textContent = s.value ? fmt(balanceOf(M, s.dataset.aw, s.value)) : ''; });
+  host.querySelectorAll('[data-aq]').forEach(i => i.oninput = () => { const e = allocSel.get(i.dataset.aq) || {}; e.qty = i.value; allocSel.set(i.dataset.aq, e); });
+}
+function postAlloc() {
+  const vw = virtualWh(); if (!vw) return; const date = $('#allocDate').value || todayISO(); const M = balanceMatrix(); const groups = new Map(); const errs = [];
+  for (const [id, e] of allocSel) {
+    if (!e.wh || !itemById(id)) continue; const unalloc = round3(-balanceOf(M, id, vw.id)); if (unalloc <= 0) continue;
+    const q = (e.qty == null || String(e.qty).trim() === '') ? unalloc : sumExpr(e.qty).total; if (!(q > 0)) continue;
+    if (q > unalloc + 1e-9) { errs.push(`${itemLabel(id)}: كمية التوزيع ${fmt(q)} أكبر من غير الموزّع ${fmt(unalloc)}`); continue; }
+    if (!S.settings.allowNegative && q > balanceOf(M, id, e.wh) + 1e-9) { errs.push(`${itemLabel(id)}: رصيد ${whName(e.wh)} هو ${fmt(balanceOf(M, id, e.wh))} ولا يكفي لتوزيع ${fmt(q)}`); continue; }
+    const g = groups.get(e.wh) || []; g.push({ itemId: id, qty: round3(q), note: 'توزيع مبيعات' }); groups.set(e.wh, g);
+  }
+  if (errs.length) return toast(errs[0] + (errs.length > 1 ? ` (+${errs.length - 1} أخرى)` : ''), 'bad');
+  if (!groups.size) return toast('اختر المستودع المباع منه لصنف واحد على الأقل', 'warn');
+  if (!confirm(`سيتم إنشاء ${groups.size} سند تحويل من المستودعات المختارة إلى "${vw.name}" بتاريخ ${date}، فيظهر البيع على تلك المستودعات في التقارير. متابعة؟`)) return;
+  const docs = []; for (const [whFrom, lines] of groups) { const d = { id: uid(), no: nextNo('transfer'), type: 'transfer', date, whFrom, whTo: vw.id, party: '', ref: 'توزيع مبيعات من المستودع الوهمي', notes: '', lines, createdAt: new Date().toISOString(), source: 'alloc' }; commitNo('transfer'); S.docs.push(d); docs.push(d.no); }
+  allocSel.clear(); save(); refreshAll(); toast(`تم توزيع المبيعات: ${docs.join('، ')}`, 'ok');
+}
+let slWhUser = false;
+function renderSales() { if (!$('#slDate').value) $('#slDate').value = todayISO(); const cur = $('#slWh').value; fillSelect($('#slWh'), salesWhOpts()); const pref = (S.settings.salesWh && salesWhs().some(w => w.id === S.settings.salesWh)) ? S.settings.salesWh : (salesWhs().find(w => w.virtual)?.id || salesWhs()[0]?.id || ''); $('#slWh').value = (slWhUser && salesWhs().some(w => w.id === cur)) ? cur : pref; renderAlloc();  renderSalesLog(); }
 function renderSalesLog() {
   const host = $('#slLog'); if (!S.imports.length) { host.innerHTML = emptyHTML('لم يتم استيراد أي ملف بعد'); return; }
   host.innerHTML = `<table class="tbl"><thead><tr><th>وقت الترحيل</th><th>الملف</th><th>تاريخ الحركة</th><th class="num">الأسطر</th><th class="num cout">كمية البيع</th><th class="num cin">كمية الشراء</th><th class="num">أصناف أُضيفت</th><th>السندات</th><th></th></tr></thead><tbody>${S.imports.map(im => `<tr class="${im.undone ? 'muted' : ''}"><td class="small">${new Date(im.at).toLocaleString('ar-JO')}${im.undone ? '<span class="sub"><span class="chip out">تم التراجع عنه</span></span>' : ''}</td><td>${esc(im.file)}</td><td class="mono">${esc(im.date)}</td><td class="num">${im.rows}</td><td class="num">${fmt(im.qty)}</td><td class="num">${im.buy ? fmt(im.buy) : '<span class="muted">—</span>'}</td><td class="num">${im.newItems?.length ? `<span class="chip mfg" title="${esc(im.newItems.join('\n'))}">${im.newItems.length}</span>` : '<span class="muted">—</span>'}</td><td>${im.docs.map(n => { const d = S.docs.find(x => x.no === n); return d ? `<a href="#" data-view="${d.id}" class="mono">${esc(n)}</a>` : `<span class="mono muted" title="محذوف"><s>${esc(n)}</s></span>`; }).join('، ')}</td><td class="nowrap">${!im.undone && im.docs.some(n => S.docs.some(x => x.no === n)) ? `<button class="btn xs danger" data-undo="${im.id}" title="حذف كل سندات هذا الاستيراد (مبيعات ومشتريات) لإعادة رفع الملف"><svg><use href="#i-trash"/></svg>تراجع عن هذا الاستيراد</button>` : ''}</td></tr>`).join('')}</tbody></table>`;
@@ -2002,7 +2059,44 @@ let rcCombo;
 function syncCodePills() { $$('#codeModePills button').forEach(b => b.classList.toggle('on', b.dataset.cm === codeMode())); }
 function showRep(name) { $$('#repTabs button[data-rep]').forEach(b => b.classList.toggle('on', b.dataset.rep === name)); $$('[data-rep].sub').forEach(s => s.classList.toggle('on', s.dataset.rep === name)); renderRep(name); }
 function renderReports() { const cur = $('#repTabs button.on')?.dataset.rep || 'daily'; renderRep(cur); }
-function renderRep(name) { ({ daily: renderRepDaily, balances: renderRepBalances, card: renderRepCard, moves: renderRepMoves, low: renderRepLow, cdiff: renderRepCountDiff })[name](); }
+function renderRep(name) { ({ daily: renderRepDaily, full: renderRepFull, balances: renderRepBalances, card: renderRepCard, moves: renderRepMoves, low: renderRepLow, cdiff: renderRepCountDiff })[name](); }
+
+/* --- تقرير الحركة والجرد (تجميعي أو حسب المستودع) --- */
+function fullData() {
+  const from = $('#rfFrom').value || todayISO(), to = $('#rfTo').value || from, wh = $('#rfWh').value, ty = $('#rfType').value, q = $('#rfQ').value.trim(), onlyMoved = $('#rfMoved').checked;
+  const R = new Map(); const mk = id => ({ itemId: id, open: 0, inn: 0, pur: 0, out: 0, sal: 0 });
+  for (const e of ledger()) {
+    if (wh && e.wh !== wh) continue; if (e.date > to) continue;
+    let r = R.get(e.itemId); if (!r) { r = mk(e.itemId); R.set(e.itemId, r); }
+    if (e.side === 'opening' || e.date < from) { r.open += e.qin - e.qout; continue; }
+    if (!wh && e.side.startsWith('transfer')) continue;                      // التحويلات الداخلية تتعادل تجميعياً
+    const sd = repSide(e); if (sd === 'purchase') r.pur += e.qin; else if (sd === 'sales') r.sal += e.qout; else if (e.qin) r.inn += e.qin; else r.out += e.qout;
+  }
+  // آخر جرد لكل (صنف، مستودع) ضمن الفترة — المستودعات الوهمية لا تُجرد
+  const latest = new Map();
+  for (const c of S.counts) { if (c.date < from || c.date > to || (wh && c.wh !== wh) || whById(c.wh)?.virtual) continue; for (const l of c.lines) { const k = l.itemId + '|' + c.wh; const cur = latest.get(k); if (!cur || c.date > cur.date || (c.date === cur.date && (c.createdAt || '') > (cur.createdAt || ''))) latest.set(k, { date: c.date, createdAt: c.createdAt, actual: l.actual, wh: c.wh }); } }
+  const byItem = new Map(); for (const [k, v] of latest) { const id = k.split('|')[0]; const a = byItem.get(id) || { actual: 0, whs: [], dates: new Set() }; a.actual += v.actual; a.whs.push(whName(v.wh)); a.dates.add(v.date); byItem.set(id, a); }
+  const rows = [];
+  for (const it of S.items) {
+    if (ty && it.type !== ty) continue; if (q && !itemMatchesQ(it, q)) continue;
+    const r = R.get(it.id) || mk(it.id); const cnt = byItem.get(it.id);
+    r.close = round3(r.open + r.inn + r.pur - r.out - r.sal); r.open = round3(r.open); for (const k of ['inn', 'pur', 'out', 'sal']) r[k] = round3(r[k]);
+    r.actual = cnt ? round3(cnt.actual) : null; r.diff = cnt ? round3(cnt.actual - r.close) : null; r.cwhs = cnt ? cnt.whs : []; r.cdates = cnt ? [...cnt.dates] : [];
+    if (onlyMoved && !r.inn && !r.pur && !r.out && !r.sal && !cnt) continue; if (it.active === false && !r.open && !r.close && !cnt) continue;
+    r.item = it; rows.push(r);
+  }
+  rows.sort((a, b) => codeCmp(a.item, b.item)); return { rows, from, to, wh };
+}
+function renderRepFull() {
+  if (!$('#rfFrom').value) $('#rfFrom').value = todayISO(); if (!$('#rfTo').value) $('#rfTo').value = $('#rfFrom').value;
+  const { rows, from, to, wh } = fullData(); const host = $('#rfTable');
+  $('#rfHint').innerHTML = `<b>${from === to ? 'يوم ' + from : `من ${from} إلى ${to}`}</b> — ${wh ? 'مستودع: ' + esc(whName(wh)) : '<b>تجميعي</b> لكل المستودعات (التحويلات الداخلية تتعادل، ومبيعات المستودع الوهمي تُخصم من الإجمالي)'}. الرصيد الافتتاحي يشمل سندات الأرصدة الافتتاحية وكل الحركات قبل الفترة. الإدخال = سندات الإدخال وإنتاج التصنيع${wh ? ' والتحويل الوارد' : ''}، والإخراج = سندات الإخراج واستهلاك التصنيع${wh ? ' والتحويل الصادر' : ''}. الجرد الفعلي = آخر جرد محفوظ ضمن الفترة${wh ? '' : ' (مجموع المستودعات المجرودة)'}، والفرق = الجرد الفعلي − الرصيد الدفتري.`;
+  if (!rows.length) { host.innerHTML = emptyHTML('لا توجد بيانات للعرض'); return; }
+  const T = rows.reduce((t, r) => { t.open += r.open; t.inn += r.inn; t.pur += r.pur; t.out += r.out; t.sal += r.sal; t.close += r.close; if (r.actual != null) { t.act += r.actual; t.diff += r.diff; t.n++; } return t; }, { open: 0, inn: 0, pur: 0, out: 0, sal: 0, close: 0, act: 0, diff: 0, n: 0 });
+  host.innerHTML = `<table class="tbl"><thead><tr><th>${codeLabel()}</th><th>الصنف</th><th>الوحدة</th><th class="num">الرصيد الافتتاحي</th><th class="num cin">الإدخال</th><th class="num cin">المشتريات</th><th class="num cout">الإخراج</th><th class="num cout">المبيعات</th><th class="num">الرصيد الدفتري</th><th class="num">الجرد الفعلي</th><th class="num">الفرق</th></tr></thead><tbody>${rows.map(r => `<tr><td class="code">${esc(codeOf(r.item))}</td>${nameCell(r.item)}<td class="muted">${esc(r.item.unit)}</td><td class="num">${fmtS(r.open)}</td><td class="num cin">${fmtS(r.inn)}</td><td class="num cin">${fmtS(r.pur)}</td><td class="num cout">${fmtS(r.out)}</td><td class="num cout">${fmtS(r.sal)}</td><td class="num"><b>${fmtS(r.close)}</b></td><td class="num">${r.actual == null ? '<span class="muted">—</span>' : `${fmt(r.actual)}${!wh && r.cwhs.length ? `<span class="sub">${esc(r.cwhs.join('، '))}</span>` : ''}`}</td><td class="num ${r.diff > 0 ? 'pos' : r.diff < 0 ? 'neg' : ''}">${r.diff == null ? '<span class="muted">—</span>' : `<b>${(r.diff > 0 ? '+' : '') + fmt(r.diff)}</b>`}</td></tr>`).join('')}
+    <tr class="tot"><td colspan="3">الإجمالي (${rows.length} صنف${T.n ? `، ${T.n} مجرود` : ''})</td><td class="num">${fmt(round3(T.open))}</td><td class="num">${fmt(round3(T.inn))}</td><td class="num">${fmt(round3(T.pur))}</td><td class="num">${fmt(round3(T.out))}</td><td class="num">${fmt(round3(T.sal))}</td><td class="num">${fmt(round3(T.close))}</td><td class="num">${T.n ? fmt(round3(T.act)) : '—'}</td><td class="num ${T.diff < 0 ? 'neg' : ''}">${T.n ? (T.diff > 0 ? '+' : '') + fmt(round3(T.diff)) : '—'}</td></tr></tbody></table>`;
+}
+function fullAOA() { const { rows } = fullData(); return [[codeLabel(), 'الصنف', 'الاسم المتعارف عليه', 'الوحدة', 'الرصيد الافتتاحي', 'الإدخال', 'المشتريات', 'الإخراج', 'المبيعات', 'الرصيد الدفتري', 'الجرد الفعلي', 'الفرق', 'مستودعات الجرد'], ...rows.map(r => [codeOf(r.item), r.item.name, r.item.name2 || '', r.item.unit, r.open, r.inn, r.pur, r.out, r.sal, r.close, r.actual ?? '', r.diff ?? '', r.cwhs.join('، ')])]; }
 
 /* --- فروقات الجرد --- */
 function countDiffData() {
@@ -2027,7 +2121,7 @@ function dailyData() {
     let r = R.get(e.itemId); if (!r) { r = mk(e.itemId); R.set(e.itemId, r); }
     if (e.date < from) { r.open += e.qin - e.qout; continue; } if (e.date > to) continue;
     if (!wh && (e.side === 'transferIn' || e.side === 'transferOut')) continue; // التحويلات الداخلية تتعادل على مستوى كل المستودعات
-    if (e.qin) { r.i[e.side] += e.qin; r.tin += e.qin; } if (e.qout) { r.o[e.side] += e.qout; r.tout += e.qout; }
+    const sd = repSide(e); if (e.qin) { r.i[sd] += e.qin; r.tin += e.qin; } if (e.qout) { r.o[sd] += e.qout; r.tout += e.qout; }
   }
   const rows = [];
   for (const it of S.items) { if (ty && it.type !== ty) continue; if (q && !itemMatchesQ(it, q)) continue; const r = R.get(it.id) || mk(it.id); if (onlyMoved && !r.tin && !r.tout) continue; if (!R.has(it.id) && it.active === false) continue; if (!r.open && !r.tin && !r.tout && it.active === false) continue; r.item = it; r.close = round3(r.open + r.tin - r.tout); r.open = round3(r.open); r.tin = round3(r.tin); r.tout = round3(r.tout); rows.push(r); }
@@ -2065,7 +2159,7 @@ function balancesData() {
 function renderRepBalances() {
   const { rows, whs } = balancesData(); const host = $('#rbTable'); if (!rows.length) { host.innerHTML = emptyHTML('لا توجد أرصدة للعرض'); return; }
   const tot = whs.map((_, k) => round3(rows.reduce((s, r) => s + r.per[k], 0))), gt = round3(rows.reduce((s, r) => s + r.tot, 0));
-  host.innerHTML = `<table class="tbl"><thead><tr><th>${codeLabel()}</th><th>الصنف</th><th>الوحدة</th>${whs.map(w => `<th class="num">${esc(w.name)}</th>`).join('')}<th class="num">الإجمالي</th><th class="num">الحد الأدنى</th></tr></thead><tbody>${rows.map(r => `<tr><td class="code">${esc(codeOf(r.item))}</td>${nameCell(r.item)}<td class="muted">${esc(r.item.unit)}</td>${r.per.map(v => `<td class="num">${fmtS(v)}</td>`).join('')}<td class="num ${r.item.min && r.tot <= r.item.min ? 'neg' : ''}"><b>${fmtS(r.tot)}</b></td><td class="num muted">${r.item.min ? fmt(r.item.min) : '—'}</td></tr>`).join('')}<tr class="tot"><td colspan="3">الإجمالي (${rows.length} صنف)</td>${tot.map(v => `<td class="num">${fmt(v)}</td>`).join('')}<td class="num">${fmt(gt)}</td><td></td></tr></tbody></table>`;
+  host.innerHTML = `<table class="tbl"><thead><tr><th>${codeLabel()}</th><th>الصنف</th><th>الوحدة</th>${whs.map(w => `<th class="num" ${w.virtual ? 'title="مستودع وهمي: رصيده السالب يمثّل إجمالي المبيعات"' : ''}>${esc(w.name)}${w.virtual ? ' <span class="chip trf">وهمي</span>' : ''}</th>`).join('')}<th class="num">الإجمالي (تجميعي)</th><th class="num">الحد الأدنى</th></tr></thead><tbody>${rows.map(r => `<tr><td class="code">${esc(codeOf(r.item))}</td>${nameCell(r.item)}<td class="muted">${esc(r.item.unit)}</td>${r.per.map(v => `<td class="num">${fmtS(v)}</td>`).join('')}<td class="num ${r.item.min && r.tot <= r.item.min ? 'neg' : ''}"><b>${fmtS(r.tot)}</b></td><td class="num muted">${r.item.min ? fmt(r.item.min) : '—'}</td></tr>`).join('')}<tr class="tot"><td colspan="3">الإجمالي (${rows.length} صنف)</td>${tot.map(v => `<td class="num">${fmt(v)}</td>`).join('')}<td class="num">${fmt(gt)}</td><td></td></tr></tbody></table>`;
 }
 function balancesAOA() { const { rows, whs } = balancesData(); return [[codeLabel(), 'الصنف', 'الاسم المتعارف عليه', 'الوحدة', ...whs.map(w => w.name), 'الإجمالي'], ...rows.map(r => [codeOf(r.item), r.item.name, r.item.name2 || '', r.item.unit, ...r.per, r.tot])]; }
 
@@ -2104,7 +2198,7 @@ function movesAOA() { return [['التاريخ', 'رقم السند', 'نوع ا
 /* --- الحد الأدنى --- */
 function lowData() {
   const M = balanceMatrix(); const rows = [];
-  for (const i of activeItems()) { const tot = balanceOf(M, i.id); const negs = activeWhs().filter(w => balanceOf(M, i.id, w.id) < 0); if ((i.min > 0 && tot <= i.min) || negs.length) rows.push({ item: i, tot, negs, need: i.min > 0 ? round3(Math.max(0, i.min - tot)) : 0 }); }
+  for (const i of activeItems()) { const tot = balanceOf(M, i.id); const negs = activeWhs().filter(w => !w.virtual && balanceOf(M, i.id, w.id) < 0); if ((i.min > 0 && tot <= i.min) || negs.length) rows.push({ item: i, tot, negs, need: i.min > 0 ? round3(Math.max(0, i.min - tot)) : 0 }); }
   rows.sort((a, b) => (b.negs.length - a.negs.length) || (a.tot - a.item.min) - (b.tot - b.item.min)); return rows;
 }
 function renderRepLow() {
@@ -2197,7 +2291,7 @@ function bindFile(dropId, inputId, handler) {
 }
 function init() {
   // تفعيل الفرز والتصفية بعد كل عرض جدول (قبل ربط الأحداث حتى تلتقط النسخة المغلّفة)
-  for (const n of ['renderItems', 'renderWhs', 'renderDocs', 'renderRepDaily', 'renderRepBalances', 'renderRepCard', 'renderRepMoves', 'renderRepLow', 'renderRepCountDiff', 'renderCountGrid', 'renderCountHistory', 'renderSalesLog', 'renderBoms', 'renderOpeningGrid', 'slRenderPreview', 'ipPreview']) { const f = window[n]; if (typeof f === 'function') window[n] = function (...a) { const r = f.apply(this, a); enhanceAll(); return r; }; }
+  for (const n of ['renderItems', 'renderWhs', 'renderDocs', 'renderRepDaily', 'renderRepBalances', 'renderRepCard', 'renderRepMoves', 'renderRepLow', 'renderRepCountDiff', 'renderCountGrid', 'renderCountHistory', 'renderSalesLog', 'renderAlloc', 'renderBoms', 'renderOpeningGrid', 'slRenderPreview', 'ipPreview']) { const f = window[n]; if (typeof f === 'function') window[n] = function (...a) { const r = f.apply(this, a); enhanceAll(); return r; }; }
   PRISTINE = '<!doctype html>\n' + document.documentElement.outerHTML;
   storageCheck(); S = load();
   const emb = embeddedState();
@@ -2243,6 +2337,7 @@ function init() {
   // sales
   bindFile('slDrop', 'slFile', async f => { try { slLoad(await readWorkbook(f), f.name); } catch (x) { toast('تعذر قراءة الملف: ' + x.message, 'bad'); } });
   $('#slPasteBtn').onclick = () => { const t = $('#slPaste').value.trim(); if (!t) return; slLoad(readPasted(t), 'لصق ' + todayISO()); };
+  $('#slWh').onchange = () => { slWhUser = true; }; $('#allocPost').onclick = postAlloc;
   $('#slSheet').onchange = () => slParseSheet(true); $('#mBuy').onchange = () => { $('#slBuyWrap').style.display = $('#mBuy').value !== '' ? '' : 'none'; }; $('#slHeaderRow').onchange = () => slParseSheet(false); $('#slPreviewBtn').onclick = slPreview;
   $('#slDrop').insertAdjacentHTML('afterend', `<div class="row small muted" style="margin-top:-6px"><span>ليس لديك ملف بالتنسيق المناسب؟</span><a href="#" id="slTemplate">تنزيل قالب المبيعات</a></div>`); $('#slTemplate').onclick = e => { e.preventDefault(); salesTemplate(); };
   // count
@@ -2254,6 +2349,10 @@ function init() {
   // reports
   $$('#repTabs button[data-rep]').forEach(b => b.onclick = () => showRep(b.dataset.rep));
   $$('#codeModePills button').forEach(b => b.onclick = () => { S.settings.codeMode = b.dataset.cm; save(); syncCodePills(); renderReports(); }); syncCodePills();
+  ['rfFrom', 'rfTo', 'rfWh', 'rfType', 'rfMoved'].forEach(id => $('#' + id).onchange = renderRepFull); $('#rfQ').oninput = renderRepFull;
+  $('#rfToday').onclick = () => { $('#rfFrom').value = $('#rfTo').value = todayISO(); renderRepFull(); }; $('#rfMonth').onclick = () => { const t = todayISO(); $('#rfFrom').value = t.slice(0, 8) + '01'; $('#rfTo').value = t; renderRepFull(); };
+  $('#rfPrint').onclick = () => { const { from, to, wh } = fullData(); printHTML('تقرير الحركة والجرد' + (wh ? ' — ' + whName(wh) : ' — تجميعي'), [from === to ? 'التاريخ: ' + from : `من ${from} إلى ${to}`, wh ? 'المستودع: ' + whName(wh) : 'كل المستودعات (تجميعي)'], aoaTable(fullAOA().map(r => r.slice(0, 12)), 4)); };
+  $('#rfExport').onclick = () => exportXlsx(`تقرير_الحركة_والجرد_${$('#rfFrom').value}.xlsx`, [{ name: 'الحركة والجرد', aoa: fullAOA() }]);
   ['rcdFrom', 'rcdTo', 'rcdWh', 'rcdOnly'].forEach(id => $('#' + id).onchange = renderRepCountDiff); $('#rcdQ').oninput = renderRepCountDiff;
   $('#rcdPrint').onclick = () => printHTML('تقرير فروقات الجرد', [$('#rcdFrom').value ? 'من ' + $('#rcdFrom').value : '', $('#rcdTo').value ? 'إلى ' + $('#rcdTo').value : '', $('#rcdWh').value ? 'المستودع: ' + whName($('#rcdWh').value) : 'كل المستودعات'].filter(Boolean), aoaTable(countDiffAOA(), 6)); $('#rcdExport').onclick = () => exportXlsx(`فروقات_الجرد_${todayISO()}.xlsx`, [{ name: 'فروقات الجرد', aoa: countDiffAOA() }]);
   ['rdFrom', 'rdTo', 'rdWh', 'rdType', 'rdMoved', 'rdDetail'].forEach(id => $('#' + id).onchange = renderRepDaily); $('#rdQ').oninput = renderRepDaily;
