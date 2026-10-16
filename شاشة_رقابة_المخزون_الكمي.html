@@ -466,7 +466,7 @@ details[open]>summary::before{content:"▾ "}
           <div class="bd" style="gap:14px;display:flex;flex-direction:column">
             <div class="grid g3">
               <div class="field"><label>تاريخ المبيعات (إن لم يوجد عمود تاريخ) <span class="req">*</span></label><input type="date" class="in" id="slDate"></div>
-              <div class="field"><label>المستودع (إن لم يوجد عمود مستودع) <span class="req">*</span></label><select class="in" id="slWh"></select></div>
+              <div class="field"><label>المستودع (إن لم يوجد عمود مستودع) <span class="req">*</span></label><select class="in" id="slWh"></select><span class="small muted" id="slWhHint"></span></div>
               <div class="field"><label>مرجع / وصف</label><input class="in" id="slRef" placeholder="مثال: مبيعات نقاط البيع"></div>
             </div>
             <div class="file-drop" id="slDrop"><b>اسحب ملف المبيعات هنا أو انقر للاختيار</b>Excel (xlsx / xls) أو CSV — أو الصق الجدول في المربع أدناه<input type="file" id="slFile" accept=".xlsx,.xls,.csv,.txt" hidden></div>
@@ -677,7 +677,9 @@ details[open]>summary::before{content:"▾ "}
             <div class="hd"><div><h2>بيانات الشركة والخيارات</h2></div></div>
             <div class="bd" style="display:flex;flex-direction:column;gap:12px">
               <div class="field"><label>اسم الشركة</label><input class="in" id="stCompany" placeholder="يظهر في الشاشة والتقارير المطبوعة"></div>
-              <div class="field"><label>المستودع الافتراضي</label><select class="in" id="stDefWh"></select></div>
+              <div class="field"><label>المستودع الافتراضي (للسندات)</label><select class="in" id="stDefWh"></select></div>
+              <div class="field"><label>مستودع المبيعات الافتراضي (لرفع ملف المبيعات)</label><select class="in" id="stSalesWh"></select></div>
+              <div class="hint">المستودعات المعلّمة "لا تُرحَّل منه المبيعات" في تعريفها (المستودع الرئيسي افتراضياً) لا تظهر في اختيارات المبيعات، وإن ورد اسمها في عمود المستودع بملف المبيعات يُرفض السطر.</div>
               <div class="field"><label>الرمز المعروض في التقارير</label><select class="in" id="stCodeMode"><option value="code">رمز المادة</option><option value="code2">رمز الوحدة</option></select></div>
               <div class="field"><label>المظهر</label><select class="in" id="stTheme"><option value="auto">تلقائي حسب النظام</option><option value="light">فاتح</option><option value="dark">داكن</option></select></div>
               <label class="toggle"><input type="checkbox" id="stNeg">السماح بالرصيد السالب (صرف أكثر من المتاح)</label>
@@ -780,6 +782,7 @@ details[open]>summary::before{content:"▾ "}
       <div class="field"><label>اسم المستودع <span class="req">*</span></label><input class="in" id="wmName"></div>
       <div class="field" style="grid-column:span 2"><label>الموقع / الوصف</label><input class="in" id="wmLoc"></div>
       <label class="toggle"><input type="checkbox" id="wmActive" checked>مستودع نشط</label>
+      <label class="toggle" title="لا يظهر هذا المستودع في اختيارات المبيعات (الاستيراد والسند اليدوي)"><input type="checkbox" id="wmNoSales">لا تُرحَّل منه المبيعات</label>
     </div><div id="wmErr"></div></div>
     <div class="mf"><span></span><div class="row"><button class="btn" id="wmCancel">إلغاء</button><button class="btn primary" id="wmSave">حفظ</button></div></div>
   </div>
@@ -837,7 +840,7 @@ details[open]>summary::before{content:"▾ "}
 /* =========================================================
    رقابة المخزون الكمي — منطق الشاشة
    ========================================================= */
-const APP_VER = '1.7.2';
+const APP_VER = '1.8.0';
 const DB_KEY = 'kinv_ctrl_v1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -1011,9 +1014,9 @@ function addCatalogMissing() {
 let S;
 function defaultState() {
   return {
-    ver: 1, company: '', items: [], warehouses: [{ id: uid(), code: 'WH-01', name: 'المستودع الرئيسي', loc: '', active: true, createdAt: new Date().toISOString() }],
+    ver: 1, company: '', items: [], warehouses: [{ id: uid(), code: 'WH-01', name: 'المستودع الرئيسي', loc: '', active: true, noSales: true, createdAt: new Date().toISOString() }], migrNoSalesMain: true,
     docs: [], boms: {}, aliases: {}, seq: {}, imports: [], counts: [],
-    settings: { allowNegative: false, theme: 'auto', defaultWh: '', salesMap: null, codeMode: 'code' },
+    settings: { allowNegative: false, theme: 'auto', defaultWh: '', salesWh: '', salesMap: null, codeMode: 'code' },
   };
 }
 /** ترقية بيانات الإصدارات السابقة: ملاحظات الأسطر التي سُجّلت فيها الكمية نفسها بالخطأ (قبل 1.4.0) تُمسح */
@@ -1021,6 +1024,8 @@ function migrate(o) {
   if (!o || !Array.isArray(o.docs)) return o;
   for (const d of o.docs) for (const l of d.lines || []) { if (l.note && /^[\d.,\s]+$/.test(String(l.note)) && Math.abs(num(l.note) - (+l.qty || 0)) < 1e-9) l.note = ''; }
   o.aliases = {}; // أُلغي الربط اليدوي للأوصاف نهائياً — المطابقة بالرموز ثم الوصف المطابق فقط
+  // المستودع الرئيسي لا تُرحَّل منه المبيعات (يُطبَّق مرة واحدة ويمكن تغييره من تعريف المستودع)
+  if (!o.migrNoSalesMain && Array.isArray(o.warehouses)) { const main = o.warehouses.find(w => w.code === 'WH-01' || /الرئيسي/.test(w.name || '')); if (main) main.noSales = true; o.migrNoSalesMain = true; }
   return o;
 }
 function mergeState(o) { const d = defaultState(); return migrate(Object.assign(d, o, { settings: Object.assign(d.settings, o.settings || {}) })); }
@@ -1068,6 +1073,8 @@ const nameCell = i => `<td class="nm">${esc(i?.name || '— محذوف —')}${i
 const itemMatchesQ = (i, q) => { if (!q) return true; const nq = normName(q), cq = normCode(q); return normName(i.name).includes(nq) || normName(i.name2 || '').includes(nq) || normCode(i.code).includes(cq) || normCode(i.code2 || '').includes(cq) || normCode(i.barcode || '').includes(cq); };
 const activeItems = () => S.items.filter(i => i.active !== false);
 const activeWhs = () => S.warehouses.filter(w => w.active !== false);
+const salesWhs = () => activeWhs().filter(w => !w.noSales); // المستودعات المسموح ترحيل المبيعات منها
+const salesWhOpts = () => salesWhs().map(w => ({ v: w.id, l: w.name }));
 
 /* ---------- ledger ---------- */
 function ledger() {
@@ -1336,7 +1343,8 @@ function renderPage(page) {
 function refreshAll() { refreshLookups(); renderPage(currentPage); }
 function refreshLookups() {
   for (const id of ['dfWh', 'rdWh', 'rcWh', 'rmWh', 'rcdWh']) fillSelect($('#' + id), whOpts(true), { blank: id === 'dfWh' || id === 'rmWh' || id === 'rcdWh' ? 'الكل' : 'كل المستودعات' });
-  for (const id of ['slWh', 'omWh', 'stDefWh', 'dmWh', 'dmWhFrom', 'dmWhTo']) fillSelect($('#' + id), whOpts(), { blank: id === 'stDefWh' ? 'بدون' : null });
+  for (const id of ['omWh', 'stDefWh', 'dmWh', 'dmWhFrom', 'dmWhTo']) fillSelect($('#' + id), whOpts(), { blank: id === 'stDefWh' ? 'بدون' : null });
+  fillSelect($('#slWh'), salesWhOpts()); fillSelect($('#stSalesWh'), salesWhOpts(), { blank: 'أول مستودع مسموح' });
   for (const id of ['ifType', 'rdType', 'rbType']) fillSelect($('#' + id), typeOpts(), { blank: 'الكل' });
   fillSelect($('#dfType'), docTypeOpts(), { blank: 'الكل' });
   fillSelect($('#rmType'), Object.entries(SIDE_LABEL).map(([v, l]) => ({ v, l })), { blank: 'الكل' });
@@ -1486,7 +1494,7 @@ function renderWhs() {
   const M = balanceMatrix(); const host = $('#whTable');
   host.innerHTML = `<table class="tbl"><thead><tr><th>الكود</th><th>المستودع</th><th>الموقع</th><th class="num">أصناف برصيد</th><th class="num">إجمالي الكميات</th><th class="num">أرصدة سالبة</th><th>الحالة</th><th></th></tr></thead><tbody>${S.warehouses.map(w => {
     let cnt = 0, tot = 0, neg = 0; for (const m of M.values()) { const v = m.get(w.id) || 0; if (v !== 0) cnt++; tot += v; if (v < 0) neg++; }
-    return `<tr><td class="code">${esc(w.code)}</td><td><b>${esc(w.name)}</b>${S.settings.defaultWh === w.id ? ' <span class="chip acc">افتراضي</span>' : ''}</td><td>${esc(w.loc || '')}</td><td class="num">${cnt}</td><td class="num">${fmt(round3(tot))}</td><td class="num ${neg ? 'neg' : ''}">${neg}</td><td>${w.active === false ? '<span class="chip">موقوف</span>' : '<span class="chip in">نشط</span>'}</td>
+    return `<tr><td class="code">${esc(w.code)}</td><td><b>${esc(w.name)}</b>${S.settings.defaultWh === w.id ? ' <span class="chip acc">افتراضي</span>' : ''}${w.noSales ? ' <span class="chip out" title="لا يظهر في اختيارات المبيعات">بدون مبيعات</span>' : ''}${S.settings.salesWh === w.id ? ' <span class="chip in">مستودع المبيعات</span>' : ''}</td><td>${esc(w.loc || '')}</td><td class="num">${cnt}</td><td class="num">${fmt(round3(tot))}</td><td class="num ${neg ? 'neg' : ''}">${neg}</td><td>${w.active === false ? '<span class="chip">موقوف</span>' : '<span class="chip in">نشط</span>'}</td>
     <td class="nowrap"><button class="btn xs ghost" data-edit="${w.id}"><svg><use href="#i-edit"/></svg></button><button class="btn xs ghost" data-del="${w.id}"><svg><use href="#i-trash"/></svg></button></td></tr>`; }).join('')}</tbody></table>`;
   host.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openWhModal(b.dataset.edit));
   host.querySelectorAll('[data-del]').forEach(b => b.onclick = () => deleteWh(b.dataset.del));
@@ -1494,7 +1502,7 @@ function renderWhs() {
 let editingWh = null;
 function openWhModal(id = null) {
   editingWh = id ? whById(id) : null; $('#wmTitle').textContent = editingWh ? 'تعديل مستودع' : 'مستودع جديد';
-  $('#wmCode').value = editingWh ? editingWh.code : 'WH-' + pad2(S.warehouses.length + 1); $('#wmName').value = editingWh?.name || ''; $('#wmLoc').value = editingWh?.loc || ''; $('#wmActive').checked = editingWh ? editingWh.active !== false : true; errBox($('#wmErr'), []);
+  $('#wmCode').value = editingWh ? editingWh.code : 'WH-' + pad2(S.warehouses.length + 1); $('#wmName').value = editingWh?.name || ''; $('#wmLoc').value = editingWh?.loc || ''; $('#wmActive').checked = editingWh ? editingWh.active !== false : true; $('#wmNoSales').checked = !!editingWh?.noSales; errBox($('#wmErr'), []);
   openModal('whModal'); setTimeout(() => $('#wmName').focus(), 50);
 }
 function saveWh() {
@@ -1502,7 +1510,7 @@ function saveWh() {
   if (!code) errs.push('الكود مطلوب'); if (!name) errs.push('الاسم مطلوب');
   if (S.warehouses.some(w => w !== editingWh && (normCode(w.code) === normCode(code) || normName(w.name) === normName(name)))) errs.push('يوجد مستودع بنفس الكود أو الاسم');
   if (errs.length) return errBox($('#wmErr'), errs);
-  const data = { code, name, loc: $('#wmLoc').value.trim(), active: $('#wmActive').checked };
+  const data = { code, name, loc: $('#wmLoc').value.trim(), active: $('#wmActive').checked, noSales: $('#wmNoSales').checked };
   if (editingWh) Object.assign(editingWh, data); else S.warehouses.push({ id: uid(), createdAt: new Date().toISOString(), ...data });
   save(); refreshLookups(); closeModal('whModal'); renderWhs(); toast('تم حفظ المستودع', 'ok');
 }
@@ -1625,6 +1633,7 @@ function dmLayout() {
   $('#fWhFrom').style.display = $('#fWhTo').style.display = (D.kind === 'transfer' || D.kind === 'mfg') ? '' : 'none';
   $('#lWhFrom').innerHTML = (t === 'manufacture' ? 'مستودع المواد المستهلكة' : 'من مستودع') + ' <span class="req">*</span>'; $('#lWhTo').innerHTML = (t === 'manufacture' ? 'مستودع المنتج الجاهز' : 'إلى مستودع') + ' <span class="req">*</span>';
   $('#fParty').style.display = D.party ? '' : 'none'; $('#lParty').textContent = D.party || 'الطرف';
+  if (t === 'sales') { const cur = $('#dmWh').value; fillSelect($('#dmWh'), salesWhOpts()); const ok = salesWhs().some(w => w.id === cur); $('#dmWh').value = ok ? cur : (S.settings.salesWh && salesWhs().some(w => w.id === S.settings.salesWh) ? S.settings.salesWh : (salesWhs()[0]?.id || '')); } else if (!dmEditing || dmEditing.type !== 'sales') { const cur = $('#dmWh').value; fillSelect($('#dmWh'), whOpts(true)); if ([...$('#dmWh').options].some(o => o.value === cur)) $('#dmWh').value = cur; }
   $('#dmProduct').style.display = t === 'manufacture' ? '' : 'none';
   $('#dmLinesTitle').textContent = t === 'manufacture' ? 'المواد المستهلكة (إخراج)' : t === 'transfer' ? 'الأصناف المحوّلة' : D.kind === 'in' ? 'الأصناف الواردة' : 'الأصناف الصادرة';
   $('#thBal').textContent = D.kind === 'in' ? 'الرصيد الحالي' : 'الرصيد المتاح';
@@ -1800,7 +1809,7 @@ function slPreview() {
     const qty = C.qty >= 0 ? num(g(r, C.qty)) : 0, buy = useBuy ? num(g(r, C.buy)) : 0;
     const date = C.date >= 0 ? (excelDate(g(r, C.date)) || defDate) : defDate; const whTxt = C.wh >= 0 ? String(g(r, C.wh)).trim() : ''; const wh = C.wh >= 0 && whTxt ? matchWh(whTxt) : whById(defWh);
     const mx = matchItemEx(code, name, code2); const item = mx && mx.item;
-    let st = item ? 'ok' : ((name || code2 || code) ? 'new' : 'nomatch'); if (!date) st = 'nodate'; else if (!wh) st = 'nowh'; else if (!(qty > 0) && !(buy > 0)) st = 'noqty';
+    let st = item ? 'ok' : ((name || code2 || code) ? 'new' : 'nomatch'); if (!date) st = 'nodate'; else if (!wh) st = 'nowh'; else if (wh.noSales) st = 'whblocked'; else if (!(qty > 0) && !(buy > 0)) st = 'noqty';
     return { k: k + 1, code, code2, name, qty: round3(Math.max(0, qty)), buy: round3(Math.max(0, buy)), date, wh: wh?.id || '', whTxt, itemId: item?.id || '', basis: mx ? mx.basis : '', st };
   });
   if (agg) { const m = new Map(); for (const o of out) { if (o.st !== 'ok') { m.set('x' + o.k, o); continue; } const key = `${o.itemId}|${o.date}|${o.wh}`; const e = m.get(key); if (e) { e.qty = round3(e.qty + o.qty); e.buy = round3(e.buy + o.buy); e.n = (e.n || 1) + 1; } else m.set(key, { ...o, n: 1 }); } out = [...m.values()]; }
@@ -1809,13 +1818,13 @@ function slPreview() {
 function slRenderPreview() {
   const host = $('#slPreview'); const out = slOut; const useBuy = out._useBuy; const ok = out.filter(o => o.st === 'ok' || o.st === 'new'), news = out.filter(o => o.st === 'new'), bad = out.length - ok.length;
   const okChip = o => (o.basis === 'name' || o.basis === 'name2') ? '<span class="chip in">مطابق بالوصف</span>' : '<span class="chip in">مطابق</span>';
-  const lab = { ok: '', new: '<span class="chip mfg">صنف جديد — سيُضاف تلقائياً</span>', nomatch: '<span class="chip out">سطر بلا رمز أو وصف</span>', nodate: '<span class="chip out">تاريخ غير صالح</span>', nowh: '<span class="chip out">مستودع غير معروف</span>', noqty: '<span class="chip">كمية صفر — تخطي</span>' };
+  const lab = { ok: '', new: '<span class="chip mfg">صنف جديد — سيُضاف تلقائياً</span>', nomatch: '<span class="chip out">سطر بلا رمز أو وصف</span>', nodate: '<span class="chip out">تاريخ غير صالح</span>', nowh: '<span class="chip out">مستودع غير معروف</span>', whblocked: '<span class="chip out">مستودع لا تُرحَّل منه المبيعات</span>', noqty: '<span class="chip">كمية صفر — تخطي</span>' };
   const dup = S.imports.find(im => im.file === slWB._fileName && out.some(o => o.date === im.date));
   const tS = round3(ok.reduce((s, o) => s + o.qty, 0)), tB = round3(ok.reduce((s, o) => s + o.buy, 0));
   host.innerHTML = `${dup ? `<div class="hint warn">تنبيه: ملف بنفس الاسم "${esc(dup.file)}" سبق ترحيله بتاريخ ${esc(dup.date)} (${esc(dup.docs.join('، '))}). تأكد من عدم تكرار الترحيل.</div>` : ''}
     <div class="row between" style="margin:10px 0"><div class="row"><span class="chip in">${ok.length} سطر جاهز</span>${news.length ? `<span class="chip mfg">${news.length} صنف جديد سيُعرَّف تلقائياً عند الترحيل</span>` : ''}${bad ? `<span class="chip out">${bad} سطر يحتاج معالجة</span>` : ''}<span class="chip out">إجمالي البيع: ${fmt(tS)}</span>${useBuy ? `<span class="chip in">إجمالي الشراء: ${fmt(tB)}</span>` : ''}</div>
     <div class="row"><button class="btn primary" id="slPost" ${ok.length ? '' : 'disabled'}>ترحيل ${ok.length} سطر${useBuy && tB ? ' (مبيعات + مشتريات)' : ' كمبيعات'}</button></div></div>
-    <div class="tbl-wrap" style="max-height:48vh"><table class="tbl"><thead><tr><th>#</th><th>الحالة</th><th>رمز المادة</th><th>رمز الوحدة</th><th>الوصف بالملف</th><th>الصنف المطابق</th><th>التاريخ</th><th>المستودع</th><th class="num cout">كمية البيع</th>${useBuy ? '<th class="num cin">كمية الشراء</th>' : ''}</tr></thead><tbody>${out.map(o => `<tr><td class="muted">${o.k}${o.n > 1 ? `<span class="sub">${o.n} أسطر</span>` : ''}</td><td>${o.st === 'ok' ? okChip(o) : lab[o.st]}</td><td class="code">${esc(o.code)}</td><td class="code">${esc(o.code2)}</td><td>${esc(o.name)}</td><td>${o.itemId ? `<b>${esc(itemLabel(o.itemId))}</b><span class="sub mono">${esc(itemById(o.itemId).code)}${itemById(o.itemId).code2 ? ' / ' + esc(itemById(o.itemId).code2) : ''}</span><span class="sub">الأساس: ${esc(BASIS_LABEL[o.basis] || '—')}</span>` : o.st === 'new' ? `<span class="small muted">سيُضاف كصنف جديد برمزيه ووصفه كما في الملف</span>` : ''}</td><td class="mono">${esc(o.date)}</td><td>${o.wh ? esc(whName(o.wh)) : `<span class="neg">${esc(o.whTxt)}</span>`}</td><td class="num cout">${o.qty ? fmt(o.qty) : '<span class="muted">0</span>'}</td>${useBuy ? `<td class="num cin">${o.buy ? fmt(o.buy) : '<span class="muted">0</span>'}</td>` : ''}</tr>`).join('')}</tbody></table></div>`;
+    <div class="tbl-wrap" style="max-height:48vh"><table class="tbl"><thead><tr><th>#</th><th>الحالة</th><th>رمز المادة</th><th>رمز الوحدة</th><th>الوصف بالملف</th><th>الصنف المطابق</th><th>التاريخ</th><th>المستودع</th><th class="num cout">كمية البيع</th>${useBuy ? '<th class="num cin">كمية الشراء</th>' : ''}</tr></thead><tbody>${out.map(o => `<tr><td class="muted">${o.k}${o.n > 1 ? `<span class="sub">${o.n} أسطر</span>` : ''}</td><td>${o.st === 'ok' ? okChip(o) : lab[o.st]}</td><td class="code">${esc(o.code)}</td><td class="code">${esc(o.code2)}</td><td>${esc(o.name)}</td><td>${o.itemId ? `<b>${esc(itemLabel(o.itemId))}</b><span class="sub mono">${esc(itemById(o.itemId).code)}${itemById(o.itemId).code2 ? ' / ' + esc(itemById(o.itemId).code2) : ''}</span><span class="sub">الأساس: ${esc(BASIS_LABEL[o.basis] || '—')}</span>` : o.st === 'new' ? `<span class="small muted">سيُضاف كصنف جديد برمزيه ووصفه كما في الملف</span>` : ''}</td><td class="mono">${esc(o.date)}</td><td>${o.wh ? (o.st === 'whblocked' ? `<span class="neg">${esc(whName(o.wh))}</span>` : esc(whName(o.wh))) : `<span class="neg">${esc(o.whTxt)}</span>`}</td><td class="num cout">${o.qty ? fmt(o.qty) : '<span class="muted">0</span>'}</td>${useBuy ? `<td class="num cin">${o.buy ? fmt(o.buy) : '<span class="muted">0</span>'}</td>` : ''}</tr>`).join('')}</tbody></table></div>`;
   const pb = host.querySelector('#slPost'); if (pb) pb.onclick = slPost;
 }
 /** تعريف الأصناف الجديدة الواردة في ملف المبيعات تلقائياً — يعيد قائمة الأصناف المضافة */
@@ -1846,7 +1855,7 @@ function slPost() {
   save(); slOut = null; slWB = null; $('#slPreview').innerHTML = `<div class="hint good">تم الترحيل بنجاح في ${docs.length} سند: ${docs.map(esc).join('، ')} — مبيعات ${fmt(round3(tS))}${tB ? `، مشتريات ${fmt(round3(tB))}` : ''}</div>` + (added.length ? `<div class="hint warn" style="margin-top:10px"><b>تنبيه: تم تعريف ${added.length} صنف جديد تلقائياً من الملف</b> (الوحدة والنوع افتراضيان — راجعها من صفحة الأصناف وأدخل أرصدتها الافتتاحية، فالبيع سُجّل عليها برصيد صفر):<ul style="margin:6px 0 0;padding-inline-start:18px">${added.map(i => `<li><span class="mono">${esc(i.code)}${i.code2 ? ' / ' + esc(i.code2) : ''}</span> — ${esc(i.name)}</li>`).join('')}</ul></div>` : ''); $('#slMapWrap').style.display = 'none'; $('#slFile').value = ''; $('#slPaste').value = ''; slStep(4);
   refreshLookups(); renderSalesLog(); toast(added.length ? `تم ترحيل الملف وإضافة ${added.length} صنف جديد` : 'تم ترحيل الملف', added.length ? 'warn' : 'ok');
 }
-function renderSales() { if (!$('#slDate').value) $('#slDate').value = todayISO(); if (!$('#slWh').value) $('#slWh').value = S.settings.defaultWh || activeWhs()[0]?.id || ''; renderSalesLog(); }
+function renderSales() { if (!$('#slDate').value) $('#slDate').value = todayISO(); fillSelect($('#slWh'), salesWhOpts()); if (!$('#slWh').value || !salesWhs().some(w => w.id === $('#slWh').value)) $('#slWh').value = (S.settings.salesWh && salesWhs().some(w => w.id === S.settings.salesWh)) ? S.settings.salesWh : (salesWhs()[0]?.id || ''); $('#slWhHint').textContent = salesWhs().length < activeWhs().length ? 'المستودعات المستبعدة من المبيعات (مثل الرئيسي) لا تظهر هنا' : ''; renderSalesLog(); }
 function renderSalesLog() {
   const host = $('#slLog'); if (!S.imports.length) { host.innerHTML = emptyHTML('لم يتم استيراد أي ملف بعد'); return; }
   host.innerHTML = `<table class="tbl"><thead><tr><th>وقت الترحيل</th><th>الملف</th><th>تاريخ الحركة</th><th class="num">الأسطر</th><th class="num cout">كمية البيع</th><th class="num cin">كمية الشراء</th><th class="num">أصناف أُضيفت</th><th>السندات</th><th></th></tr></thead><tbody>${S.imports.map(im => `<tr class="${im.undone ? 'muted' : ''}"><td class="small">${new Date(im.at).toLocaleString('ar-JO')}${im.undone ? '<span class="sub"><span class="chip out">تم التراجع عنه</span></span>' : ''}</td><td>${esc(im.file)}</td><td class="mono">${esc(im.date)}</td><td class="num">${im.rows}</td><td class="num">${fmt(im.qty)}</td><td class="num">${im.buy ? fmt(im.buy) : '<span class="muted">—</span>'}</td><td class="num">${im.newItems?.length ? `<span class="chip mfg" title="${esc(im.newItems.join('\n'))}">${im.newItems.length}</span>` : '<span class="muted">—</span>'}</td><td>${im.docs.map(n => { const d = S.docs.find(x => x.no === n); return d ? `<a href="#" data-view="${d.id}" class="mono">${esc(n)}</a>` : `<span class="mono muted" title="محذوف"><s>${esc(n)}</s></span>`; }).join('، ')}</td><td class="nowrap">${!im.undone && im.docs.some(n => S.docs.some(x => x.no === n)) ? `<button class="btn xs danger" data-undo="${im.id}" title="حذف كل سندات هذا الاستيراد (مبيعات ومشتريات) لإعادة رفع الملف"><svg><use href="#i-trash"/></svg>تراجع عن هذا الاستيراد</button>` : ''}</td></tr>`).join('')}</tbody></table>`;
@@ -2155,11 +2164,11 @@ function renderChart14(days, agg) {
    الإعدادات والنسخ الاحتياطي
    ========================================================= */
 function renderSettings() {
-  $('#stCompany').value = S.company || ''; fillSelect($('#stDefWh'), whOpts(), { blank: 'بدون' }); $('#stDefWh').value = S.settings.defaultWh || ''; $('#stTheme').value = S.settings.theme || 'auto'; $('#stNeg').checked = !!S.settings.allowNegative; $('#stCodeMode').value = codeMode();
+  $('#stCompany').value = S.company || ''; fillSelect($('#stDefWh'), whOpts(), { blank: 'بدون' }); $('#stDefWh').value = S.settings.defaultWh || ''; $('#stTheme').value = S.settings.theme || 'auto'; $('#stNeg').checked = !!S.settings.allowNegative; $('#stCodeMode').value = codeMode(); fillSelect($('#stSalesWh'), salesWhOpts(), { blank: 'أول مستودع مسموح' }); $('#stSalesWh').value = S.settings.salesWh || '';
   const size = Math.round((localStorage.getItem(DB_KEY) || '').length / 1024);
   fsRender(); $('#bkInfo').innerHTML = `الحجم الحالي للبيانات: <b>${size} كيلوبايت</b> — ${S.items.length} صنف، ${S.warehouses.length} مستودع، ${S.docs.length} سند، ${S.counts.length} جرد، ${Object.keys(S.boms).length} وصفة${S.updatedAt ? ` — آخر تحديث ${new Date(S.updatedAt).toLocaleString('ar-JO')}` : ''}.`;
 }
-function saveSettings() { S.company = $('#stCompany').value.trim(); S.settings.defaultWh = $('#stDefWh').value; S.settings.theme = $('#stTheme').value; S.settings.allowNegative = $('#stNeg').checked; S.settings.codeMode = $('#stCodeMode').value; save(); syncCodePills(); applyTheme(); refreshLookups(); toast('تم حفظ الإعدادات', 'ok'); }
+function saveSettings() { S.company = $('#stCompany').value.trim(); S.settings.defaultWh = $('#stDefWh').value; S.settings.theme = $('#stTheme').value; S.settings.allowNegative = $('#stNeg').checked; S.settings.codeMode = $('#stCodeMode').value; S.settings.salesWh = $('#stSalesWh').value; save(); syncCodePills(); applyTheme(); refreshLookups(); toast('تم حفظ الإعدادات', 'ok'); }
 function backupExport() { download(`نسخة_احتياطية_المخزون_${todayISO()}.json`, new Blob([JSON.stringify(S, null, 1)], { type: 'application/json' })); }
 function backupImport(file) {
   const fr = new FileReader(); fr.onload = e => { try { const o = JSON.parse(e.target.result); if (!o || !Array.isArray(o.items) || !Array.isArray(o.docs)) throw new Error('بنية الملف غير صحيحة'); if (!confirm(`سيتم استبدال كل البيانات الحالية بمحتوى النسخة (${o.items.length} صنف، ${o.docs.length} سند). متابعة؟`)) return; S = mergeState(o); save(); applyTheme(); refreshAll(); toast(`تم استرجاع النسخة الاحتياطية: ${S.items.length} صنف، ${S.warehouses.length} مستودع، ${S.docs.length} سند`, 'ok'); } catch (x) { toast('تعذر قراءة الملف: ' + x.message, 'bad'); } }; fr.readAsText(file);
