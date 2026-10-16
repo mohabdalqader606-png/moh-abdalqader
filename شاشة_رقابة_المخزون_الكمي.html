@@ -252,6 +252,17 @@ table.tbl td.nm{unicode-bidi:plaintext;text-align:start}
 .lines tbody tr:last-child td{border-bottom:none}
 .lines tfoot td{background:var(--card2);border-top:1px solid var(--line);padding:9px 10px}
 .lines td .in{min-height:34px;padding:6px 9px}
+.tbl-tools{display:flex;align-items:center;gap:10px;padding:6px 14px;border-bottom:1px solid var(--line2);background:var(--card);font-size:12px}
+.tbl-tools .tt{appearance:none;border:1px solid var(--line);background:var(--card);border-radius:7px;padding:3px 9px;cursor:pointer;font-weight:600;font-size:12px;color:var(--ink2);display:inline-flex;align-items:center;gap:5px}
+.tbl-tools .tt:hover{color:var(--ink);border-color:#c9d3e0}
+.tbl-tools .tt.on{background:var(--accent-soft);color:var(--accent);border-color:transparent}
+.tbl-tools .tt svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2;stroke-linejoin:round}
+table.tbl th.sortable-th{cursor:pointer;user-select:none}
+table.tbl th.sortable-th:hover{color:var(--ink);background:var(--line2)}
+table.tbl th.sorted{color:var(--accent)}
+table.tbl th .sort-ind{font-size:10px}
+table.tbl tr.flt td{position:sticky;background:var(--card2);padding:4px 6px;border-bottom:1px solid var(--line);z-index:2}
+table.tbl tr.flt input{min-height:28px;padding:3px 8px;font-size:12px;width:100%;min-width:64px;border-radius:7px}
 .qsum{display:block;margin-top:2px;direction:ltr;text-align:right;white-space:nowrap}
 .lines td.bal{font-size:12px;color:var(--ink2);direction:ltr;text-align:right;white-space:nowrap}
 .lines td.bal.low{color:var(--danger);font-weight:600}
@@ -422,12 +433,12 @@ details[open]>summary::before{content:"▾ "}
           </div>
           <div class="card">
             <div class="hd"><div><h2>تنبيهات المخزون</h2><p>أصناف تحت الحد الأدنى أو برصيد سالب</p></div></div>
-            <div class="bd tight"><div class="tbl-wrap short" id="dashAlerts"></div></div>
+            <div class="bd tight"><div class="tbl-wrap short" id="dashAlerts" data-noenh="1"></div></div>
           </div>
         </div>
         <div class="card">
           <div class="hd"><div><h2>آخر الحركات</h2><p>أحدث 10 سندات مسجّلة</p></div><button class="btn sm" data-go="docs">عرض الكل</button></div>
-          <div class="bd tight"><div class="tbl-wrap short" id="dashRecent"></div></div>
+          <div class="bd tight"><div class="tbl-wrap short" id="dashRecent" data-noenh="1"></div></div>
         </div>
       </section>
 
@@ -578,6 +589,8 @@ details[open]>summary::before{content:"▾ "}
             <button data-rep="card">كرت الصنف</button>
             <button data-rep="moves">حركة تفصيلية</button>
             <button data-rep="low">الحد الأدنى</button>
+            <button data-rep="cdiff">فروقات الجرد</button>
+            <div class="pill-row" id="codeModePills" style="margin-inline-start:auto;align-self:center;padding:6px 0"><span class="small muted" style="align-self:center">الرمز في التقارير:</span><button type="button" data-cm="code">رمز المادة</button><button type="button" data-cm="code2">رمز الوحدة</button></div>
           </div>
 
           <div class="sub on" data-rep="daily">
@@ -634,6 +647,19 @@ details[open]>summary::before{content:"▾ "}
               <div class="row"><button class="btn" id="rlPrint"><svg><use href="#i-print"/></svg>طباعة</button><button class="btn" id="rlExport"><svg><use href="#i-xls"/></svg>إكسل</button></div></div>
             <div class="bd tight"><div class="tbl-wrap" id="rlTable"></div></div>
           </div>
+
+          <div class="sub" data-rep="cdiff">
+            <div class="filters" style="border-radius:0">
+              <div class="field sm"><label>من تاريخ</label><input type="date" class="in" id="rcdFrom"></div>
+              <div class="field sm"><label>إلى تاريخ</label><input type="date" class="in" id="rcdTo"></div>
+              <div class="field sm"><label>المستودع</label><select class="in" id="rcdWh"><option value="">الكل</option></select></div>
+              <div class="field"><label>بحث</label><input class="in" id="rcdQ" placeholder="رمز أو اسم"></div>
+              <label class="toggle" style="padding-bottom:9px"><input type="checkbox" id="rcdOnly" checked>الأصناف ذات الفرق فقط</label>
+              <div class="row"><button class="btn" id="rcdPrint"><svg><use href="#i-print"/></svg>طباعة</button><button class="btn" id="rcdExport"><svg><use href="#i-xls"/></svg>إكسل</button></div>
+            </div>
+            <div class="bd" style="padding:10px 16px 0"><div class="hint">الفرق = الجرد الفعلي − رصيد النظام بتاريخ الجرد. الأخضر زيادة والأحمر نقص. "مُرحَّل" يعني أن فرق الجرد سُوّي بسند إدخال/إخراج وأصبح رصيد النظام مساوياً للعدّ الفعلي.</div></div>
+            <div class="bd tight"><div class="tbl-wrap" id="rcdTable"></div></div>
+          </div>
         </div>
       </section>
 
@@ -652,6 +678,7 @@ details[open]>summary::before{content:"▾ "}
             <div class="bd" style="display:flex;flex-direction:column;gap:12px">
               <div class="field"><label>اسم الشركة</label><input class="in" id="stCompany" placeholder="يظهر في الشاشة والتقارير المطبوعة"></div>
               <div class="field"><label>المستودع الافتراضي</label><select class="in" id="stDefWh"></select></div>
+              <div class="field"><label>الرمز المعروض في التقارير</label><select class="in" id="stCodeMode"><option value="code">رمز المادة</option><option value="code2">رمز الوحدة</option></select></div>
               <div class="field"><label>المظهر</label><select class="in" id="stTheme"><option value="auto">تلقائي حسب النظام</option><option value="light">فاتح</option><option value="dark">داكن</option></select></div>
               <label class="toggle"><input type="checkbox" id="stNeg">السماح بالرصيد السالب (صرف أكثر من المتاح)</label>
               <div class="hint">عند إيقاف الرصيد السالب، يرفض النظام حفظ أي سند إخراج/مبيعات/تحويل/تصنيع يتجاوز الرصيد المتاح في المستودع.</div>
@@ -730,6 +757,7 @@ details[open]>summary::before{content:"▾ "}
         <div class="field"><label>رمز الوحدة</label><input class="in mono" id="imCode2" placeholder="الرمز الثاني في نظام الشركة"></div>
         <div class="field"><label>الوحدة <span class="req">*</span></label><input class="in" id="imUnit" list="unitsList" placeholder="كغم، كرتون، حبة…"><datalist id="unitsList"></datalist></div>
         <div class="field" style="grid-column:span 2"><label>اسم الصنف <span class="req">*</span></label><input class="in" id="imName"></div>
+        <div class="field" style="grid-column:span 2"><label>الاسم المتعارف عليه</label><input class="in" id="imName2" placeholder="الاسم الشائع الذي يستخدمه الموظفون (يظهر تحت الاسم ويُبحث به)"></div>
         <div class="field"><label>نوع الصنف</label><select class="in" id="imType"></select></div>
         <div class="field"><label>التصنيف / المجموعة</label><input class="in" id="imCat" list="catsList"><datalist id="catsList"></datalist></div>
         <div class="field"><label>الحد الأدنى للرصيد</label><input type="number" class="in" id="imMin" min="0" step="any" value="0"></div>
@@ -787,6 +815,7 @@ details[open]>summary::before{content:"▾ "}
         <div class="field"><label>رمز المادة</label><select class="in" id="ipCode"></select></div>
         <div class="field"><label>رمز الوحدة</label><select class="in" id="ipCode2"></select></div>
         <div class="field"><label>الاسم <span class="req">*</span></label><select class="in" id="ipName"></select></div>
+        <div class="field"><label>الاسم المتعارف عليه</label><select class="in" id="ipName2"></select></div>
         <div class="field"><label>الوحدة</label><select class="in" id="ipUnit"></select></div>
         <div class="field"><label>النوع</label><select class="in" id="ipType"></select></div>
         <div class="field"><label>التصنيف</label><select class="in" id="ipCat"></select></div>
@@ -808,7 +837,7 @@ details[open]>summary::before{content:"▾ "}
 /* =========================================================
    رقابة المخزون الكمي — منطق الشاشة
    ========================================================= */
-const APP_VER = '1.6.0';
+const APP_VER = '1.7.0';
 const DB_KEY = 'kinv_ctrl_v1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -971,7 +1000,7 @@ const CATALOG = [
 ["405", "800", "Aust Lamb-Dubai", "kg", "لحم غنم", "raw", 1],
 ["2439", "840", "Assaf- Grain Fed Lamb Whole", "kg", "لحم غنم", "raw", 1]
 ];
-function catalogItems() { return CATALOG.map(r => ({ id: uid(), code: r[0], code2: r[1], name: r[2], unit: r[3], cat: r[4], type: r[5], min: 0, barcode: '', notes: '', active: !!r[6], createdAt: new Date().toISOString() })); }
+function catalogItems() { return CATALOG.map(r => ({ id: uid(), code: r[0], code2: r[1], name: r[2], name2: '', unit: r[3], cat: r[4], type: r[5], min: 0, barcode: '', notes: '', active: !!r[6], createdAt: new Date().toISOString() })); }
 function addCatalogMissing() {
   const have = new Set(S.items.map(i => normCode(i.code))); const add = catalogItems().filter(i => !have.has(normCode(i.code)));
   if (!add.length) { toast('كل أصناف القائمة المعتمدة موجودة مسبقاً'); return 0; }
@@ -984,7 +1013,7 @@ function defaultState() {
   return {
     ver: 1, company: '', items: [], warehouses: [{ id: uid(), code: 'WH-01', name: 'المستودع الرئيسي', loc: '', active: true, createdAt: new Date().toISOString() }],
     docs: [], boms: {}, aliases: {}, seq: {}, imports: [], counts: [],
-    settings: { allowNegative: false, theme: 'auto', defaultWh: '', salesMap: null },
+    settings: { allowNegative: false, theme: 'auto', defaultWh: '', salesMap: null, codeMode: 'code' },
   };
 }
 /** ترقية بيانات الإصدارات السابقة: ملاحظات الأسطر التي سُجّلت فيها الكمية نفسها بالخطأ (قبل 1.4.0) تُمسح */
@@ -1029,6 +1058,13 @@ const itemById = id => S.items.find(i => i.id === id);
 const whById = id => S.warehouses.find(w => w.id === id);
 const whName = id => (whById(id) || {}).name || '—';
 const itemLabel = id => { const i = itemById(id); return i ? `${i.name}` : '— صنف محذوف —'; };
+/* عرض الرمز حسب الإعداد: رمز المادة أو رمز الوحدة */
+const codeMode = () => S.settings.codeMode === 'code2' ? 'code2' : 'code';
+const codeOf = i => !i ? '' : (codeMode() === 'code2' ? (i.code2 || i.code || '') : (i.code || ''));
+const codeLabel = () => codeMode() === 'code2' ? 'رمز الوحدة' : 'رمز المادة';
+const codeCmp = (a, b) => String(codeOf(a)).localeCompare(String(codeOf(b)), 'ar', { numeric: true });
+const nameCell = i => `<td class="nm">${esc(i?.name || '— محذوف —')}${i?.name2 ? `<span class="sub">${esc(i.name2)}</span>` : ''}</td>`;
+const itemMatchesQ = (i, q) => { if (!q) return true; const nq = normName(q), cq = normCode(q); return normName(i.name).includes(nq) || normName(i.name2 || '').includes(nq) || normCode(i.code).includes(cq) || normCode(i.code2 || '').includes(cq) || normCode(i.barcode || '').includes(cq); };
 const activeItems = () => S.items.filter(i => i.active !== false);
 const activeWhs = () => S.warehouses.filter(w => w.active !== false);
 
@@ -1155,6 +1191,53 @@ function fsRender() {
   b.querySelector('#fsBannerDismiss')?.addEventListener('click', () => { try { localStorage.setItem('kinv_fs_dismiss', '1'); } catch (e) { } fsRender(); });
 }
 
+
+/* =========================================================
+   فرز وتصفية عامة لكل الجداول (انقر على العنوان للفرز، صف تصفية تحت العناوين)
+   ========================================================= */
+const TBL_STATE = {};
+function headerColumns(thead) {
+  const rows = [...thead.rows].filter(r => !r.classList.contains('flt')); if (!rows.length) return [];
+  const last = rows.length - 1; const occ = []; const leaves = [];
+  rows.forEach((tr, r) => { let c = 0; for (const th of tr.cells) { while (occ[r] && occ[r][c]) c++; const rs = th.rowSpan || 1, cs = th.colSpan || 1; for (let i = 0; i < rs; i++) { occ[r + i] = occ[r + i] || []; for (let j = 0; j < cs; j++) occ[r + i][c + j] = true; } if (r + rs - 1 === last && cs === 1) leaves.push({ th, col: c }); c += cs; } });
+  return leaves;
+}
+function cellText(td) { if (!td) return ''; const inp = td.querySelector('input,select'); return (inp ? inp.value : td.textContent).trim().replace(/\u200f/g, ''); }
+function cellSortVal(td) { const t = cellText(td); if (/^[+\-−]?\s*[\d,]*\.?\d+\s*%?$/.test(t)) { const n = parseFloat(t.replace(/[,\s%+]/g, '').replace('−', '-')); if (!isNaN(n)) return { n, s: t }; } return { n: null, s: normName(t) }; }
+function rowCellAt(tr, col) { let c = 0; for (const td of tr.cells) { const cs = td.colSpan || 1; if (col >= c && col < c + cs) return td; c += cs; } return null; }
+function matchFilter(td, f) { const q = String(f || '').trim(); if (!q) return true; const m = q.match(/^(>=|<=|<>|!=|>|<|=)\s*(-?[\d.,]+)$/); const v = cellSortVal(td); if (m && v.n != null) { const x = parseFloat(m[2].replace(/,/g, '')); return { '>': v.n > x, '<': v.n < x, '>=': v.n >= x, '<=': v.n <= x, '=': v.n === x, '!=': v.n !== x, '<>': v.n !== x }[m[1]]; } const t = normName(cellText(td)); return q.split('|').some(part => t.includes(normName(part))); }
+function enhanceTable(host) {
+  if (!host || host.dataset.noenh) return; const table = host.querySelector('table.tbl'); if (!table || table.dataset.enh || !table.tHead || !table.tBodies[0]) return; table.dataset.enh = '1';
+  const key = host.id || host.closest('[id]')?.id || 'tbl'; const st = TBL_STATE[key] || (TBL_STATE[key] = { sort: null, dir: 1, flt: {}, on: false });
+  const cols = headerColumns(table.tHead); if (!cols.length) return;
+  const body = table.tBodies[0]; const all = [...body.rows];
+  const isTot = r => r.classList.contains('tot'); const isPinned = r => !isTot(r) && (!r.cells.length || r.cells[0].colSpan > 1 || r.cells.length * 2 < cols.length);
+  const data = all.filter(r => !isTot(r) && !isPinned(r)), top = all.filter(isPinned), bottom = all.filter(isTot);
+  if (data.length < 2 && !Object.values(st.flt).some(Boolean)) return;
+  const bar = document.createElement('div'); bar.className = 'tbl-tools';
+  bar.innerHTML = `<button type="button" class="tt" data-flt title="إظهار صف التصفية تحت العناوين"><svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>تصفية الأعمدة</button><button type="button" class="tt" data-clear style="display:none">مسح الفرز والتصفية</button><span class="small muted" data-cnt></span><span class="small muted" style="margin-inline-start:auto">انقر على عنوان أي عمود للفرز ▲▼</span>`;
+  host.insertBefore(bar, table);
+  const ftr = document.createElement('tr'); ftr.className = 'flt'; const maxCol = Math.max(...cols.map(c => c.col)) + 1;
+  for (let c = 0; c < maxCol; c++) { const td = document.createElement('td'); const leaf = cols.find(x => x.col === c); if (leaf && leaf.th.textContent.trim()) { const inp = document.createElement('input'); inp.className = 'in'; inp.placeholder = 'تصفية…'; inp.title = 'نص للبحث، أو شرط رقمي مثل >10 أو <=0، أو عدة قيم مفصولة بـ |'; inp.value = st.flt[c] || ''; inp.addEventListener('input', () => { st.flt[c] = inp.value; apply(); }); td.appendChild(inp); } ftr.appendChild(td); }
+  table.tHead.appendChild(ftr);
+  cols.forEach(({ th, col }) => { if (!th.textContent.trim()) return; th.classList.add('sortable-th'); const ind = document.createElement('span'); ind.className = 'sort-ind'; th.appendChild(ind); th.addEventListener('click', e => { if (e.target.closest('input,button,a')) return; if (st.sort === col) { st.dir = st.dir === 1 ? -1 : (st.dir === -1 ? 0 : 1); if (st.dir === 0) st.sort = null; } else { st.sort = col; st.dir = 1; } apply(); }); });
+  bar.querySelector('[data-flt]').onclick = () => { st.on = !st.on; apply(); if (st.on) ftr.querySelector('input')?.focus(); };
+  bar.querySelector('[data-clear]').onclick = () => { st.sort = null; st.dir = 1; st.flt = {}; ftr.querySelectorAll('input').forEach(i => i.value = ''); apply(); };
+  function apply() {
+    ftr.style.display = st.on ? '' : 'none'; bar.querySelector('[data-flt]').classList.toggle('on', st.on);
+    const active = Object.values(st.flt).some(v => v && String(v).trim()); const sorted = st.sort != null && st.dir !== 0;
+    let rows = data.slice();
+    if (sorted) { const col = st.sort, dir = st.dir; rows.sort((a, b) => { const va = cellSortVal(rowCellAt(a, col)), vb = cellSortVal(rowCellAt(b, col)); if (va.n != null && vb.n != null) return (va.n - vb.n) * dir; if (va.n != null) return -dir; if (vb.n != null) return dir; if (!va.s && vb.s) return 1; if (va.s && !vb.s) return -1; return va.s.localeCompare(vb.s, 'ar', { numeric: true }) * dir; }); }
+    let vis = 0; for (const r of rows) { const ok = !active || Object.entries(st.flt).every(([c, f]) => matchFilter(rowCellAt(r, +c), f)); r.style.display = ok ? '' : 'none'; if (ok) vis++; }
+    body.append(...top, ...rows, ...bottom);
+    cols.forEach(({ th, col }) => { const ind = th.querySelector('.sort-ind'); if (ind) ind.textContent = st.sort === col && st.dir ? (st.dir > 0 ? ' ▲' : ' ▼') : ''; th.classList.toggle('sorted', st.sort === col && !!st.dir); });
+    bar.querySelector('[data-cnt]').textContent = active ? `${vis} من ${data.length} صف` : ''; bar.querySelector('[data-clear]').style.display = (active || sorted) ? '' : 'none';
+    if (st.on) { const h = [...table.tHead.rows].filter(r => r !== ftr).reduce((s, r) => s + r.getBoundingClientRect().height, 0); ftr.querySelectorAll('td').forEach(td => td.style.top = h + 'px'); }
+  }
+  apply();
+}
+function enhanceAll() { $$('.tbl-wrap').forEach(h => { try { enhanceTable(h); } catch (e) { console.warn('enhance', e); } }); }
+
 /* ---------- UI helpers ---------- */
 function toast(msg, kind = '') {
   const t = document.createElement('div'); t.className = 'toast ' + kind; t.textContent = msg; $('#toasts').appendChild(t);
@@ -1199,10 +1282,10 @@ function makeCombo(host, { placeholder = 'ابحث بالكود أو الاسم�
   let hl = 0, cur = [];
   function render(q) {
     const nq = normName(q), cq = normCode(q);
-    const rank = i => { const c = normCode(i.code), c2 = normCode(i.code2 || ''), n = normName(i.name); if (!q) return 5; if (c === cq) return 0; if (c2 === cq || (i.barcode && normCode(i.barcode) === cq)) return 1; if (n === nq) return 2; if (c.startsWith(cq) || c2.startsWith(cq) || n.startsWith(nq)) return 3; return 4; };
-    cur = source().filter(i => !q || normName(i.name).includes(nq) || normCode(i.code).includes(cq) || (i.code2 && normCode(i.code2).includes(cq)) || (i.barcode && normCode(i.barcode) === cq)).map(i => [rank(i), i]).sort((a, b) => a[0] - b[0]).map(x => x[1]).slice(0, 40);
+    const rank = i => { const c = normCode(i.code), c2 = normCode(i.code2 || ''), n = normName(i.name), n2 = normName(i.name2 || ''); if (!q) return 5; if (c === cq) return 0; if (c2 === cq || (i.barcode && normCode(i.barcode) === cq)) return 1; if (n === nq || (n2 && n2 === nq)) return 2; if (c.startsWith(cq) || c2.startsWith(cq) || n.startsWith(nq) || (n2 && n2.startsWith(nq))) return 3; return 4; };
+    cur = source().filter(i => itemMatchesQ(i, q)).map(i => [rank(i), i]).sort((a, b) => a[0] - b[0]).map(x => x[1]).slice(0, 40);
     hl = 0;
-    list.innerHTML = cur.length ? cur.map((i, k) => `<div data-k="${k}" class="${k === 0 ? 'hl' : ''}"><span class="nm">${esc(i.name)}</span><small>${esc(i.code)}</small></div>`).join('') : `<div class="none">لا توجد نتائج</div>`;
+    list.innerHTML = cur.length ? cur.map((i, k) => `<div data-k="${k}" class="${k === 0 ? 'hl' : ''}"><span class="nm">${esc(i.name)}${i.name2 ? ` <i style="color:var(--ink3);font-style:normal">(${esc(i.name2)})</i>` : ''}</span><small>${esc(codeOf(i))}</small></div>`).join('') : `<div class="none">لا توجد نتائج</div>`;
     host.classList.add('open');
   }
   function pick(i) { api.value = i ? i.id : null; inp.value = i ? `${i.name}` : ''; host.classList.toggle('picked', !!i); host.classList.remove('open'); if (onPick) onPick(i); }
@@ -1251,7 +1334,7 @@ function renderPage(page) {
 }
 function refreshAll() { refreshLookups(); renderPage(currentPage); }
 function refreshLookups() {
-  for (const id of ['dfWh', 'rdWh', 'rcWh', 'rmWh']) fillSelect($('#' + id), whOpts(true), { blank: id === 'dfWh' || id === 'rmWh' ? 'الكل' : 'كل المستودعات' });
+  for (const id of ['dfWh', 'rdWh', 'rcWh', 'rmWh', 'rcdWh']) fillSelect($('#' + id), whOpts(true), { blank: id === 'dfWh' || id === 'rmWh' || id === 'rcdWh' ? 'الكل' : 'كل المستودعات' });
   for (const id of ['slWh', 'omWh', 'stDefWh', 'dmWh', 'dmWhFrom', 'dmWhTo']) fillSelect($('#' + id), whOpts(), { blank: id === 'stDefWh' ? 'بدون' : null });
   for (const id of ['ifType', 'rdType', 'rbType']) fillSelect($('#' + id), typeOpts(), { blank: 'الكل' });
   fillSelect($('#dfType'), docTypeOpts(), { blank: 'الكل' });
@@ -1274,24 +1357,21 @@ function applyTheme() {
 /* =========================================================
    الأصناف
    ========================================================= */
-let itemsSort = { k: 'code', d: 1 };
 function renderItems() {
   const q = $('#ifQ').value.trim(), nq = normName(q), cq = normCode(q), ty = $('#ifType').value, cat = $('#ifCat').value, inac = $('#ifInactive').checked;
   const M = balanceMatrix();
-  let rows = S.items.filter(i => (inac || i.active !== false) && (!ty || i.type === ty) && (!cat || i.cat === cat) && (!q || normName(i.name).includes(nq) || normCode(i.code).includes(cq) || normCode(i.code2 || '').includes(cq) || normCode(i.barcode || '').includes(cq)));
+  let rows = S.items.filter(i => (inac || i.active !== false) && (!ty || i.type === ty) && (!cat || i.cat === cat) && itemMatchesQ(i, q));
   rows = rows.map(i => ({ i, bal: balanceOf(M, i.id) }));
-  const k = itemsSort.k, d = itemsSort.d;
-  rows.sort((a, b) => { const va = k === 'bal' ? a.bal : (a.i[k] ?? ''), vb = k === 'bal' ? b.bal : (b.i[k] ?? ''); return (va < vb ? -1 : va > vb ? 1 : 0) * d; });
+  rows.sort((a, b) => codeCmp(a.i, b.i));
   const host = $('#itemsTable');
   if (!S.items.length) { host.innerHTML = emptyHTML('لا توجد أصناف بعد', 'أضف صنفاً جديداً أو استورد قائمة الأصناف من ملف إكسل'); return; }
   if (!rows.length) { host.innerHTML = emptyHTML('لا توجد نتائج مطابقة'); return; }
-  const H = [['code', 'رمز المادة'], ['code2', 'رمز الوحدة'], ['name', 'الاسم'], ['unit', 'الوحدة'], ['type', 'النوع'], ['cat', 'التصنيف'], ['min', 'الحد الأدنى', 1], ['bal', 'الرصيد الإجمالي', 1]];
-  host.innerHTML = `<table class="tbl sortable"><thead><tr>${H.map(h => `<th data-sort="${h[0]}" class="${h[2] ? 'num' : ''}">${h[1]} ${k === h[0] ? (d > 0 ? '▲' : '▼') : ''}</th>`).join('')}<th>الحالة</th><th></th></tr></thead><tbody>${rows.map(({ i, bal }) => `<tr>
-    <td class="code">${esc(i.code)}</td><td class="code">${esc(i.code2 || '')}</td><td class="nm"><b>${esc(i.name)}</b>${i.barcode ? `<span class="sub mono">${esc(i.barcode)}</span>` : ''}</td><td>${esc(i.unit)}</td><td>${esc(ITEM_TYPES[i.type] || i.type || '')}</td><td>${esc(i.cat || '')}</td>
+  const H = [['code', 'رمز المادة'], ['code2', 'رمز الوحدة'], ['name', 'الاسم'], ['name2', 'الاسم المتعارف عليه'], ['unit', 'الوحدة'], ['type', 'النوع'], ['cat', 'التصنيف'], ['min', 'الحد الأدنى', 1], ['bal', 'الرصيد الإجمالي', 1]];
+  host.innerHTML = `<table class="tbl"><thead><tr>${H.map(h => `<th class="${h[2] ? 'num' : ''}">${h[1]}</th>`).join('')}<th>الحالة</th><th></th></tr></thead><tbody>${rows.map(({ i, bal }) => `<tr>
+    <td class="code">${esc(i.code)}</td><td class="code">${esc(i.code2 || '')}</td><td class="nm"><b>${esc(i.name)}</b>${i.barcode ? `<span class="sub mono">${esc(i.barcode)}</span>` : ''}</td><td class="nm">${esc(i.name2 || '')}</td><td>${esc(i.unit)}</td><td>${esc(ITEM_TYPES[i.type] || i.type || '')}</td><td>${esc(i.cat || '')}</td>
     <td class="num">${i.min ? fmt(i.min) : '<span class="muted">—</span>'}</td><td class="num ${bal < 0 ? 'neg' : ''} ${i.min && bal <= i.min ? 'neg' : ''}">${fmt(bal)}</td>
     <td>${i.active === false ? '<span class="chip">موقوف</span>' : '<span class="chip in">نشط</span>'}</td>
     <td class="nowrap"><button class="btn xs ghost" data-card="${i.id}" title="كرت الصنف"><svg><use href="#i-eye"/></svg></button><button class="btn xs ghost" data-edit="${i.id}" title="تعديل"><svg><use href="#i-edit"/></svg></button><button class="btn xs ghost" data-del="${i.id}" title="حذف"><svg><use href="#i-trash"/></svg></button></td></tr>`).join('')}</tbody></table>`;
-  host.querySelectorAll('th[data-sort]').forEach(th => th.onclick = () => { const s = th.dataset.sort; if (itemsSort.k === s) itemsSort.d *= -1; else itemsSort = { k: s, d: 1 }; renderItems(); });
   host.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openItemModal(b.dataset.edit));
   host.querySelectorAll('[data-del]').forEach(b => b.onclick = () => deleteItem(b.dataset.del));
   host.querySelectorAll('[data-card]').forEach(b => b.onclick = () => { go('reports'); showRep('card'); rcCombo.set(b.dataset.card); renderRepCard(); });
@@ -1306,7 +1386,7 @@ function openItemModal(id = null) {
   editingItem = id ? itemById(id) : null;
   $('#imTitle').textContent = editingItem ? 'تعديل صنف' : 'صنف جديد';
   $('#imCode').value = editingItem ? editingItem.code : suggestItemCode(); $('#imCode2').value = editingItem?.code2 || '';
-  $('#imName').value = editingItem?.name || ''; $('#imUnit').value = editingItem?.unit || ''; $('#imType').value = editingItem?.type || 'raw';
+  $('#imName').value = editingItem?.name || ''; $('#imName2').value = editingItem?.name2 || ''; $('#imUnit').value = editingItem?.unit || ''; $('#imType').value = editingItem?.type || 'raw';
   $('#imCat').value = editingItem?.cat || ''; $('#imMin').value = editingItem?.min || 0; $('#imBarcode').value = editingItem?.barcode || ''; $('#imNotes').value = editingItem?.notes || '';
   $('#imActive').checked = editingItem ? editingItem.active !== false : true;
   $('#imSaveNew').style.display = editingItem ? 'none' : ''; errBox($('#imErr'), []);
@@ -1320,7 +1400,7 @@ function saveItem(andNew = false) {
   const c2 = $('#imCode2').value.trim(); if (c2 && S.items.some(i => i !== editingItem && normCode(i.code2 || '') === normCode(c2))) errs.push('رمز الوحدة مستخدم لصنف آخر');
   if (name && S.items.some(i => i !== editingItem && normName(i.name) === normName(name))) errs.push('يوجد صنف آخر بنفس الاسم');
   if (errs.length) return errBox($('#imErr'), errs);
-  const data = { code, code2: $('#imCode2').value.trim(), name, unit, type: $('#imType').value, cat: $('#imCat').value.trim(), min: num($('#imMin').value), barcode: $('#imBarcode').value.trim(), notes: $('#imNotes').value.trim(), active: $('#imActive').checked };
+  const data = { code, code2: $('#imCode2').value.trim(), name, name2: $('#imName2').value.trim(), unit, type: $('#imType').value, cat: $('#imCat').value.trim(), min: num($('#imMin').value), barcode: $('#imBarcode').value.trim(), notes: $('#imNotes').value.trim(), active: $('#imActive').checked };
   if (editingItem) Object.assign(editingItem, data, { updatedAt: new Date().toISOString() }); else S.items.push({ id: uid(), createdAt: new Date().toISOString(), ...data });
   save(); refreshLookups(); toast(editingItem ? 'تم تعديل الصنف' : 'تمت إضافة الصنف', 'ok');
   if (andNew) { const u = unit, t = $('#imType').value, c = $('#imCat').value; openItemModal(null); $('#imUnit').value = u; $('#imType').value = t; $('#imCat').value = c; } else closeModal('itemModal');
@@ -1334,10 +1414,10 @@ function deleteItem(id) {
 }
 function exportItems() {
   const M = balanceMatrix();
-  exportXlsx('الأصناف.xlsx', [{ name: 'الأصناف', aoa: [['رمز المادة', 'رمز الوحدة', 'الاسم', 'الوحدة', 'النوع', 'التصنيف', 'الحد الأدنى', 'الباركود', 'الحالة', 'الرصيد الإجمالي', ...activeWhs().map(w => w.name)], ...S.items.map(i => [i.code, i.code2 || '', i.name, i.unit, ITEM_TYPES[i.type] || '', i.cat || '', i.min || 0, i.barcode || '', i.active === false ? 'موقوف' : 'نشط', balanceOf(M, i.id), ...activeWhs().map(w => balanceOf(M, i.id, w.id))])] }]);
+  exportXlsx('الأصناف.xlsx', [{ name: 'الأصناف', aoa: [['رمز المادة', 'رمز الوحدة', 'الاسم', 'الاسم المتعارف عليه', 'الوحدة', 'النوع', 'التصنيف', 'الحد الأدنى', 'الباركود', 'الحالة', 'الرصيد الإجمالي', ...activeWhs().map(w => w.name)], ...S.items.map(i => [i.code, i.code2 || '', i.name, i.name2 || '', i.unit, ITEM_TYPES[i.type] || '', i.cat || '', i.min || 0, i.barcode || '', i.active === false ? 'موقوف' : 'نشط', balanceOf(M, i.id), ...activeWhs().map(w => balanceOf(M, i.id, w.id))])] }]);
 }
 function itemsTemplate() {
-  exportXlsx('قالب_الأصناف.xlsx', [{ name: 'الأصناف', aoa: [['رمز المادة', 'رمز الوحدة', 'وصف المادة', 'الوحدة', 'النوع', 'التصنيف', 'الحد الأدنى', 'الباركود'], ['12635', '5048', 'Russian Striploin Angus Beef Prime - 17268', 'kg', 'مادة خام', 'لحم بقري روسي', 20, ''], ['13560', '9112', 'Sausage Production', 'kg', 'منتج جاهز', 'منتجات', 0, '']] }, { name: 'أنواع الأصناف', aoa: [['القيمة'], ...Object.values(ITEM_TYPES).map(v => [v])] }]);
+  exportXlsx('قالب_الأصناف.xlsx', [{ name: 'الأصناف', aoa: [['رمز المادة', 'رمز الوحدة', 'وصف المادة', 'الاسم المتعارف عليه', 'الوحدة', 'النوع', 'التصنيف', 'الحد الأدنى', 'الباركود'], ['12635', '5048', 'Russian Striploin Angus Beef Prime - 17268', 'ستربلوين روسي', 'kg', 'مادة خام', 'لحم بقري روسي', 20, ''], ['13560', '9112', 'Sausage Production', 'نقانق', 'kg', 'منتج جاهز', 'منتجات', 0, '']] }, { name: 'أنواع الأصناف', aoa: [['القيمة'], ...Object.values(ITEM_TYPES).map(v => [v])] }]);
 }
 
 /* ---------- قراءة ملفات الإكسل ---------- */
@@ -1363,19 +1443,19 @@ const typeFromText = t => { const n = normName(t); for (const [k, v] of Object.e
 let ipWB = null, ipRows = null;
 function ipLoad(wb) {
   ipWB = wb; const aoa = sheetAOA(wb, wb.SheetNames[0]); const hr = detectHeaderRow(aoa); const headers = (aoa[hr] || []).map(h => String(h).trim()); ipRows = aoa.slice(hr + 1).filter(r => r.some(c => String(c).trim() !== ''));
-  const map = { ipCode: ['رمز المادة', 'الكود', 'كود', 'رقم الصنف', 'code', 'item code', 'sku'], ipCode2: ['رمز الوحدة', 'كود الوحدة', 'unit code', 'code2'], ipName: ['الاسم', 'اسم الصنف', 'الصنف', 'name', 'item', 'description', 'البيان'], ipUnit: ['الوحدة', 'وحدة', 'unit', 'uom'], ipType: ['النوع', 'نوع', 'type'], ipCat: ['التصنيف', 'المجموعة', 'الفئة', 'category', 'group'], ipMin: ['الحد الأدنى', 'حد أدنى', 'min', 'minimum'], ipBarcode: ['الباركود', 'باركود', 'barcode'] };
+  const map = { ipCode: ['رمز المادة', 'الكود', 'كود', 'رقم الصنف', 'code', 'item code', 'sku'], ipCode2: ['رمز الوحدة', 'كود الوحدة', 'unit code', 'code2'], ipName2: ['الاسم المتعارف عليه', 'الاسم الشائع', 'اسم شائع', 'الاسم المحلي', 'common name', 'alias', 'nickname'], ipName: ['الاسم', 'اسم الصنف', 'الصنف', 'name', 'item', 'description', 'البيان'], ipUnit: ['الوحدة', 'وحدة', 'unit', 'uom'], ipType: ['النوع', 'نوع', 'type'], ipCat: ['التصنيف', 'المجموعة', 'الفئة', 'category', 'group'], ipMin: ['الحد الأدنى', 'حد أدنى', 'min', 'minimum'], ipBarcode: ['الباركود', 'باركود', 'barcode'] };
   for (const [id, keys] of Object.entries(map)) { fillSelect($('#' + id), colOpts(headers)); const g = guessCol(headers, keys); $('#' + id).value = g >= 0 ? String(g) : ''; }
   $('#ipMap').style.display = ''; ipPreview();
 }
 function ipPreview() {
   const c = k => { const v = $('#' + k).value; return v === '' ? -1 : +v; };
-  const C = { code: c('ipCode'), code2: c('ipCode2'), name: c('ipName'), unit: c('ipUnit'), type: c('ipType'), cat: c('ipCat'), min: c('ipMin'), bc: c('ipBarcode') }, defU = $('#ipDefUnit').value.trim() || 'حبة', upd = $('#ipUpdate').checked;
+  const C = { code: c('ipCode'), code2: c('ipCode2'), name2: c('ipName2'), name: c('ipName'), unit: c('ipUnit'), type: c('ipType'), cat: c('ipCat'), min: c('ipMin'), bc: c('ipBarcode') }, defU = $('#ipDefUnit').value.trim() || 'حبة', upd = $('#ipUpdate').checked;
   const host = $('#ipPreview'); if (!ipRows) { host.innerHTML = ''; return; }
   if (C.name < 0) { host.innerHTML = '<div class="hint warn">حدد عمود الاسم للمتابعة.</div>'; $('#ipSave').disabled = true; return; }
   let nextN = +suggestItemCode(); const seenCodes = new Set(), seenNames = new Set();
   const out = ipRows.map(r => {
     const g = i => i >= 0 ? String(r[i] ?? '').trim() : '';
-    const rec = { code: g(C.code), code2: g(C.code2), name: g(C.name), unit: g(C.unit) || defU, type: C.type >= 0 ? typeFromText(g(C.type)) : 'raw', cat: g(C.cat), min: num(g(C.min)), barcode: g(C.bc) };
+    const rec = { code: g(C.code), code2: g(C.code2), name: g(C.name), name2: g(C.name2), unit: g(C.unit) || defU, type: C.type >= 0 ? typeFromText(g(C.type)) : 'raw', cat: g(C.cat), min: num(g(C.min)), barcode: g(C.bc) };
     if (!rec.code) rec.code = String(nextN++).padStart(4, '0');
     let st = 'new', ex = S.items.find(i => normCode(i.code) === normCode(rec.code));
     if (!rec.name) st = 'skip-noname';
@@ -1388,13 +1468,13 @@ function ipPreview() {
   ipRows._out = out;
   const lab = { new: '<span class="chip in">جديد</span>', update: '<span class="chip acc">تحديث</span>', 'skip-noname': '<span class="chip out">بدون اسم</span>', 'skip-exists': '<span class="chip muted">موجود — تخطي</span>', 'skip-name': '<span class="chip out">اسم مكرر لصنف آخر</span>', 'skip-dup': '<span class="chip out">مكرر في الملف</span>' };
   const n = out.filter(o => o.st === 'new').length, u = out.filter(o => o.st === 'update').length;
-  host.innerHTML = `<div class="tbl-wrap" style="max-height:40vh">${tableHTML([{ l: 'الحالة' }, { l: 'رمز المادة' }, { l: 'رمز الوحدة' }, { l: 'الاسم' }, { l: 'الوحدة' }, { l: 'النوع' }, { l: 'التصنيف' }, { l: 'الحد الأدنى', num: 1 }], out.map(o => [lab[o.st], `<span class="code mono">${esc(o.rec.code)}</span>`, `<span class="code mono">${esc(o.rec.code2)}</span>`, esc(o.rec.name), esc(o.rec.unit), ITEM_TYPES[o.rec.type], esc(o.rec.cat), fmt(o.rec.min)]))}</div>`;
+  host.innerHTML = `<div class="tbl-wrap" style="max-height:40vh">${tableHTML([{ l: 'الحالة' }, { l: 'رمز المادة' }, { l: 'رمز الوحدة' }, { l: 'الاسم' }, { l: 'الاسم المتعارف عليه' }, { l: 'الوحدة' }, { l: 'النوع' }, { l: 'التصنيف' }, { l: 'الحد الأدنى', num: 1 }], out.map(o => [lab[o.st], `<span class="code mono">${esc(o.rec.code)}</span>`, `<span class="code mono">${esc(o.rec.code2)}</span>`, esc(o.rec.name), esc(o.rec.name2), esc(o.rec.unit), ITEM_TYPES[o.rec.type], esc(o.rec.cat), fmt(o.rec.min)]))}</div>`;
   $('#ipCount').textContent = `${out.length} سطر — ${n} جديد، ${u} تحديث، ${out.length - n - u} تخطي`;
   $('#ipSave').disabled = !(n + u);
 }
 function ipSave() {
   const out = ipRows?._out || []; let n = 0, u = 0;
-  for (const o of out) { if (o.st === 'new') { S.items.push({ id: uid(), createdAt: new Date().toISOString(), active: true, ...o.rec }); n++; } else if (o.st === 'update') { Object.assign(o.ex, { code2: o.rec.code2 || o.ex.code2 || '', name: o.rec.name, unit: o.rec.unit, type: o.rec.type, cat: o.rec.cat, min: o.rec.min, barcode: o.rec.barcode, updatedAt: new Date().toISOString() }); u++; } }
+  for (const o of out) { if (o.st === 'new') { S.items.push({ id: uid(), createdAt: new Date().toISOString(), active: true, ...o.rec }); n++; } else if (o.st === 'update') { Object.assign(o.ex, { code2: o.rec.code2 || o.ex.code2 || '', name2: o.rec.name2 || o.ex.name2 || '', name: o.rec.name, unit: o.rec.unit, type: o.rec.type, cat: o.rec.cat, min: o.rec.min, barcode: o.rec.barcode, updatedAt: new Date().toISOString() }); u++; } }
   save(); refreshLookups(); closeModal('impModal'); toast(`تم استيراد ${n} صنف جديد وتحديث ${u}`, 'ok'); if (currentPage === 'items') renderItems();
 }
 
@@ -1645,8 +1725,8 @@ function openOpeningGrid() {
 const omQty = new Map();
 function renderOpeningGrid() {
   const M = balanceMatrix(); const wh = $('#omWh').value; const q = $('#omQ').value.trim(), nq = normName(q), cq = normCode(q);
-  const rows = activeItems().filter(i => !q || normName(i.name).includes(nq) || normCode(i.code).includes(cq)).sort((a, b) => a.code.localeCompare(b.code, 'ar', { numeric: true }));
-  $('#omBody').innerHTML = rows.map(i => `<tr><td class="code">${esc(i.code)}</td><td class="nm">${esc(i.name)}</td><td>${esc(i.unit)}</td><td class="num">${fmt(balanceOf(M, i.id, wh))}</td><td><input class="in qty" inputmode="decimal" data-id="${i.id}" value="${esc(omQty.get(i.id) ?? '')}" placeholder="0" title="يمكن كتابة مجموع مثل 20+15"></td></tr>`).join('') || `<tr><td colspan="5" class="empty">لا توجد أصناف</td></tr>`;
+  const rows = activeItems().filter(i => itemMatchesQ(i, q)).sort(codeCmp);
+  $('#omBody').innerHTML = rows.map(i => `<tr><td class="code">${esc(codeOf(i))}</td>${nameCell(i)}<td>${esc(i.unit)}</td><td class="num">${fmt(balanceOf(M, i.id, wh))}</td><td><input class="in qty" inputmode="decimal" data-id="${i.id}" value="${esc(omQty.get(i.id) ?? '')}" placeholder="0" title="يمكن كتابة مجموع مثل 20+15"></td></tr>`).join('') || `<tr><td colspan="5" class="empty">لا توجد أصناف</td></tr>`;
   $('#omBody').querySelectorAll('input').forEach((inp, k, all) => { inp.oninput = () => { omQty.set(inp.dataset.id, inp.value); omCount(); }; inp.onkeydown = e => { if (e.key === 'Enter') { e.preventDefault(); (all[k + 1] || inp).focus(); } }; });
   omCount();
 }
@@ -1695,7 +1775,7 @@ function matchItem(code, name, code2 = '') {
     if (cand.length === 1 && (!c2 || !cand[0].code2)) return cand[0];           // رمز مادة وحيد ولا يتعارض مع رمز الوحدة
     if (!c2) { const i = S.items.find(x => x.code2 && normCode(x.code2) === cc) || S.items.find(x => x.barcode && normCode(x.barcode) === cc); if (i) return i; }
   }
-  if (nn) { const a = S.aliases[nn]; if (a && itemById(a)) return itemById(a); const i = S.items.find(x => normName(x.name) === nn); if (i) return i; if (!cc && !c2) { const j = S.items.find(x => normCode(x.code) === normCode(name) || (x.code2 && normCode(x.code2) === normCode(name))); if (j) return j; } }
+  if (nn) { const a = S.aliases[nn]; if (a && itemById(a)) return itemById(a); const i = S.items.find(x => normName(x.name) === nn) || S.items.find(x => x.name2 && normName(x.name2) === nn); if (i) return i; if (!cc && !c2) { const j = S.items.find(x => normCode(x.code) === normCode(name) || (x.code2 && normCode(x.code2) === normCode(name))); if (j) return j; } }
   return null;
 }
 function matchWh(text) { const n = normName(text), c = normCode(text); return S.warehouses.find(w => normName(w.name) === n || normCode(w.code) === c) || S.warehouses.find(w => n && normName(w.name).includes(n)) || null; }
@@ -1713,40 +1793,42 @@ function slPreview() {
     const qty = C.qty >= 0 ? num(g(r, C.qty)) : 0, buy = useBuy ? num(g(r, C.buy)) : 0;
     const date = C.date >= 0 ? (excelDate(g(r, C.date)) || defDate) : defDate; const whTxt = C.wh >= 0 ? String(g(r, C.wh)).trim() : ''; const wh = C.wh >= 0 && whTxt ? matchWh(whTxt) : whById(defWh);
     const item = matchItem(code, name, code2);
-    let st = item ? 'ok' : 'nomatch'; if (!date) st = 'nodate'; else if (!wh) st = 'nowh'; else if (!(qty > 0) && !(buy > 0)) st = 'noqty';
+    let st = item ? 'ok' : ((name || code2 || code) ? 'new' : 'nomatch'); if (!date) st = 'nodate'; else if (!wh) st = 'nowh'; else if (!(qty > 0) && !(buy > 0)) st = 'noqty';
     return { k: k + 1, code, code2, name, qty: round3(Math.max(0, qty)), buy: round3(Math.max(0, buy)), date, wh: wh?.id || '', whTxt, itemId: item?.id || '', st };
   });
   if (agg) { const m = new Map(); for (const o of out) { if (o.st !== 'ok') { m.set('x' + o.k, o); continue; } const key = `${o.itemId}|${o.date}|${o.wh}`; const e = m.get(key); if (e) { e.qty = round3(e.qty + o.qty); e.buy = round3(e.buy + o.buy); e.n = (e.n || 1) + 1; } else m.set(key, { ...o, n: 1 }); } out = [...m.values()]; }
   slOut = out; slOut._useBuy = useBuy; slRenderPreview(); slStep(3);
 }
 function slRenderPreview() {
-  const host = $('#slPreview'); const out = slOut; const useBuy = out._useBuy; const ok = out.filter(o => o.st === 'ok'), bad = out.length - ok.length;
-  const lab = { ok: '<span class="chip in">مطابق</span>', nomatch: '<span class="chip out">صنف غير معرّف</span>', nodate: '<span class="chip out">تاريخ غير صالح</span>', nowh: '<span class="chip out">مستودع غير معروف</span>', noqty: '<span class="chip">كمية صفر — تخطي</span>' };
+  const host = $('#slPreview'); const out = slOut; const useBuy = out._useBuy; const ok = out.filter(o => o.st === 'ok' || o.st === 'new'), news = out.filter(o => o.st === 'new'), bad = out.length - ok.length;
+  const lab = { ok: '<span class="chip in">مطابق</span>', new: '<span class="chip mfg">صنف جديد — سيُضاف تلقائياً</span>', nomatch: '<span class="chip out">سطر بلا رمز أو وصف</span>', nodate: '<span class="chip out">تاريخ غير صالح</span>', nowh: '<span class="chip out">مستودع غير معروف</span>', noqty: '<span class="chip">كمية صفر — تخطي</span>' };
   const itemSel = o => `<select class="in" data-fix="${o.k}" style="min-height:32px;padding:4px 8px"><option value="">— اختر الصنف المقابل —</option>${activeItems().map(i => `<option value="${i.id}">${esc(i.name)} (${esc(i.code)}${i.code2 ? '/' + esc(i.code2) : ''})</option>`).join('')}</select>`;
   const dup = S.imports.find(im => im.file === slWB._fileName && out.some(o => o.date === im.date));
   const tS = round3(ok.reduce((s, o) => s + o.qty, 0)), tB = round3(ok.reduce((s, o) => s + o.buy, 0));
   host.innerHTML = `${dup ? `<div class="hint warn">تنبيه: ملف بنفس الاسم "${esc(dup.file)}" سبق ترحيله بتاريخ ${esc(dup.date)} (${esc(dup.docs.join('، '))}). تأكد من عدم تكرار الترحيل.</div>` : ''}
-    <div class="row between" style="margin:10px 0"><div class="row"><span class="chip in">${ok.length} سطر جاهز</span>${bad ? `<span class="chip out">${bad} سطر يحتاج معالجة</span>` : ''}<span class="chip out">إجمالي البيع: ${fmt(tS)}</span>${useBuy ? `<span class="chip in">إجمالي الشراء: ${fmt(tB)}</span>` : ''}</div>
-    <div class="row">${out.some(o => o.st === 'nomatch') ? `<button class="btn sm" id="slCreateMissing">إنشاء الأصناف غير المعرّفة تلقائياً</button>` : ''}<button class="btn primary" id="slPost" ${ok.length ? '' : 'disabled'}>ترحيل ${ok.length} سطر${useBuy && tB ? ' (مبيعات + مشتريات)' : ' كمبيعات'}</button></div></div>
-    <div class="tbl-wrap" style="max-height:48vh"><table class="tbl"><thead><tr><th>#</th><th>الحالة</th><th>رمز المادة</th><th>رمز الوحدة</th><th>الوصف بالملف</th><th>الصنف المطابق</th><th>التاريخ</th><th>المستودع</th><th class="num cout">كمية البيع</th>${useBuy ? '<th class="num cin">كمية الشراء</th>' : ''}</tr></thead><tbody>${out.map(o => `<tr><td class="muted">${o.k}${o.n > 1 ? `<span class="sub">${o.n} أسطر</span>` : ''}</td><td>${lab[o.st]}</td><td class="code">${esc(o.code)}</td><td class="code">${esc(o.code2)}</td><td>${esc(o.name)}</td><td>${o.itemId ? `<b>${esc(itemLabel(o.itemId))}</b><span class="sub mono">${esc(itemById(o.itemId).code)}${itemById(o.itemId).code2 ? ' / ' + esc(itemById(o.itemId).code2) : ''}</span>` : o.st === 'nomatch' ? itemSel(o) : ''}</td><td class="mono">${esc(o.date)}</td><td>${o.wh ? esc(whName(o.wh)) : `<span class="neg">${esc(o.whTxt)}</span>`}</td><td class="num cout">${o.qty ? fmt(o.qty) : '<span class="muted">0</span>'}</td>${useBuy ? `<td class="num cin">${o.buy ? fmt(o.buy) : '<span class="muted">0</span>'}</td>` : ''}</tr>`).join('')}</tbody></table></div>`;
+    <div class="row between" style="margin:10px 0"><div class="row"><span class="chip in">${ok.length} سطر جاهز</span>${news.length ? `<span class="chip mfg">${news.length} صنف جديد سيُعرَّف تلقائياً عند الترحيل</span>` : ''}${bad ? `<span class="chip out">${bad} سطر يحتاج معالجة</span>` : ''}<span class="chip out">إجمالي البيع: ${fmt(tS)}</span>${useBuy ? `<span class="chip in">إجمالي الشراء: ${fmt(tB)}</span>` : ''}</div>
+    <div class="row"><button class="btn primary" id="slPost" ${ok.length ? '' : 'disabled'}>ترحيل ${ok.length} سطر${useBuy && tB ? ' (مبيعات + مشتريات)' : ' كمبيعات'}</button></div></div>
+    <div class="tbl-wrap" style="max-height:48vh"><table class="tbl"><thead><tr><th>#</th><th>الحالة</th><th>رمز المادة</th><th>رمز الوحدة</th><th>الوصف بالملف</th><th>الصنف المطابق</th><th>التاريخ</th><th>المستودع</th><th class="num cout">كمية البيع</th>${useBuy ? '<th class="num cin">كمية الشراء</th>' : ''}</tr></thead><tbody>${out.map(o => `<tr><td class="muted">${o.k}${o.n > 1 ? `<span class="sub">${o.n} أسطر</span>` : ''}</td><td>${lab[o.st]}</td><td class="code">${esc(o.code)}</td><td class="code">${esc(o.code2)}</td><td>${esc(o.name)}</td><td>${o.itemId ? `<b>${esc(itemLabel(o.itemId))}</b><span class="sub mono">${esc(itemById(o.itemId).code)}${itemById(o.itemId).code2 ? ' / ' + esc(itemById(o.itemId).code2) : ''}</span>` : o.st === 'new' ? `<span class="small muted">سيُضاف كصنف جديد — أو اربطه بصنف موجود:</span>${itemSel(o)}` : ''}</td><td class="mono">${esc(o.date)}</td><td>${o.wh ? esc(whName(o.wh)) : `<span class="neg">${esc(o.whTxt)}</span>`}</td><td class="num cout">${o.qty ? fmt(o.qty) : '<span class="muted">0</span>'}</td>${useBuy ? `<td class="num cin">${o.buy ? fmt(o.buy) : '<span class="muted">0</span>'}</td>` : ''}</tr>`).join('')}</tbody></table></div>`;
   host.querySelectorAll('[data-fix]').forEach(sel => sel.onchange = () => { const o = out.find(x => String(x.k) === sel.dataset.fix); if (!o || !sel.value) return; o.itemId = sel.value; o.st = (o.qty > 0 || o.buy > 0) ? 'ok' : 'noqty'; if (o.code2 && !itemById(sel.value).code2) { itemById(sel.value).code2 = o.code2; } else if (o.name) S.aliases[normName(o.name)] = sel.value; save(); slRenderPreview(); toast('تم ربط السطر بالصنف وسيُطابَق تلقائياً في المرات القادمة', 'ok'); });
-  const cm = host.querySelector('#slCreateMissing'); if (cm) cm.onclick = () => {
-    const miss = out.filter(o => o.st === 'nomatch' && (o.name || o.code || o.code2)); const units = {}; for (const i of S.items) units[i.unit] = (units[i.unit] || 0) + 1; const defUnit = Object.entries(units).sort((a, b) => b[1] - a[1])[0]?.[0] || 'kg';
-    if (!confirm(`سيتم إنشاء ${miss.length} صنف جديد بالرموز والأوصاف الواردة في الملف (الوحدة: ${defUnit}، النوع: مادة خام). متابعة؟`)) return;
-    let nn = +suggestItemCode();
-    for (const o of miss) { let it = matchItem(o.code, o.name, o.code2); if (!it) { let code = o.code || String(nn++).padStart(4, '0'); if (S.items.some(i => normCode(i.code) === normCode(code))) code = o.code2 ? `${o.code}/${o.code2}` : String(nn++).padStart(4, '0'); it = { id: uid(), code, code2: o.code2 || '', name: o.name || ('صنف ' + code), unit: defUnit, type: 'raw', cat: '', min: 0, barcode: '', active: true, createdAt: new Date().toISOString() }; S.items.push(it); } o.itemId = it.id; o.st = (o.qty > 0 || o.buy > 0) ? 'ok' : 'noqty'; }
-    save(); refreshLookups(); slRenderPreview(); toast('تم إنشاء الأصناف', 'ok');
-  };
   const pb = host.querySelector('#slPost'); if (pb) pb.onclick = slPost;
 }
+/** تعريف الأصناف الجديدة الواردة في ملف المبيعات تلقائياً — يعيد قائمة الأصناف المضافة */
+function slCreateNewItems(out) {
+  const miss = out.filter(o => o.st === 'new'); if (!miss.length) return [];
+  const units = {}; for (const i of S.items) units[i.unit] = (units[i.unit] || 0) + 1; const defUnit = Object.entries(units).sort((a, b) => b[1] - a[1])[0]?.[0] || 'kg';
+  let nn = +suggestItemCode(); const added = [];
+  for (const o of miss) { let it = matchItem(o.code, o.name, o.code2); if (!it) { let code = o.code || String(nn++).padStart(4, '0'); if (S.items.some(i => normCode(i.code) === normCode(code))) code = o.code2 ? `${o.code}/${o.code2}` : String(nn++).padStart(4, '0'); it = { id: uid(), code, code2: o.code2 || '', name: o.name || ('صنف ' + code), name2: '', unit: defUnit, type: 'raw', cat: '', min: 0, barcode: '', notes: 'أُضيف تلقائياً من ملف مبيعات', active: true, createdAt: new Date().toISOString(), autoAdded: true }; S.items.push(it); added.push(it); } o.itemId = it.id; o.st = (o.qty > 0 || o.buy > 0) ? 'ok' : 'noqty'; o.isNew = true; }
+  return added;
+}
 function slPost() {
+  const added = slCreateNewItems(slOut || []); const newIds = new Set(added.map(i => i.id));
   const ok = (slOut || []).filter(o => o.st === 'ok'); if (!ok.length) return;
   // تجميع في سندات حسب (التاريخ، المستودع): مشتريات (إدخال) ثم مبيعات (إخراج)
   const groups = new Map(); for (const o of ok) { const key = o.date + '|' + o.wh; if (!groups.has(key)) groups.set(key, { date: o.date, wh: o.wh, s: new Map(), b: new Map() }); const g = groups.get(key); if (o.qty > 0) g.s.set(o.itemId, round3((g.s.get(o.itemId) || 0) + o.qty)); if (o.buy > 0) g.b.set(o.itemId, round3((g.b.get(o.itemId) || 0) + o.buy)); }
   if (!S.settings.allowNegative) {
     const M = balanceMatrix(); const errs = []; const net = new Map();
     for (const g of groups.values()) { for (const [id, q] of g.s) { const k = id + '|' + g.wh; net.set(k, (net.get(k) || 0) - q); } for (const [id, q] of g.b) { const k = id + '|' + g.wh; net.set(k, (net.get(k) || 0) + q); } }
-    for (const [k, d] of net) { const [id, wh] = k.split('|'); const b = balanceOf(M, id, wh); if (b + d < -1e-9) errs.push(`${itemLabel(id)} في ${whName(wh)}: الرصيد ${fmt(b)} والصافي بعد الترحيل ${fmt(round3(b + d))}`); }
+    for (const [k, d] of net) { const [id, wh] = k.split('|'); if (newIds.has(id)) continue; const b = balanceOf(M, id, wh); if (b + d < -1e-9) errs.push(`${itemLabel(id)} في ${whName(wh)}: الرصيد ${fmt(b)} والصافي بعد الترحيل ${fmt(round3(b + d))}`); }
     if (errs.length) { $('#slPreview').insertAdjacentHTML('afterbegin', `<div class="hint bad"><b>الرصيد غير كافٍ لترحيل المبيعات (يمكن السماح بالرصيد السالب من الإعدادات، أو أدخل الأرصدة الافتتاحية أولاً):</b><ul style="margin:4px 0 0;padding-inline-start:18px">${errs.slice(0, 15).map(e => `<li>${esc(e)}</li>`).join('')}${errs.length > 15 ? `<li>… و${errs.length - 15} أخرى</li>` : ''}</ul></div>`); $('#slPreview').scrollIntoView({ block: 'start' }); return; }
   }
   const ref = $('#slRef').value.trim() || `استيراد — ${slWB._fileName}`; const docs = []; let tS = 0, tB = 0;
@@ -1754,14 +1836,14 @@ function slPost() {
     if (g.b.size) { const doc = { id: uid(), no: nextNo('purchase'), type: 'purchase', date: g.date, wh: g.wh, party: '', ref, notes: `ملف: ${slWB._fileName} (كمية الشراء)`, lines: [...g.b].map(([itemId, qty]) => ({ itemId, qty, note: '' })), createdAt: new Date().toISOString(), source: 'import' }; commitNo('purchase'); S.docs.push(doc); docs.push(doc.no); for (const q of g.b.values()) tB += q; }
     if (g.s.size) { const doc = { id: uid(), no: nextNo('sales'), type: 'sales', date: g.date, wh: g.wh, party: '', ref, notes: `ملف: ${slWB._fileName} (كمية البيع)`, lines: [...g.s].map(([itemId, qty]) => ({ itemId, qty, note: '' })), createdAt: new Date(Date.now() + 1).toISOString(), source: 'import' }; commitNo('sales'); S.docs.push(doc); docs.push(doc.no); for (const q of g.s.values()) tS += q; }
   }
-  S.imports.unshift({ id: uid(), at: new Date().toISOString(), file: slWB._fileName, date: ok[0].date, rows: ok.length, qty: round3(tS), buy: round3(tB), docs });
-  save(); slOut = null; slWB = null; $('#slPreview').innerHTML = `<div class="hint good">تم الترحيل بنجاح في ${docs.length} سند: ${docs.map(esc).join('، ')} — مبيعات ${fmt(round3(tS))}${tB ? `، مشتريات ${fmt(round3(tB))}` : ''}</div>`; $('#slMapWrap').style.display = 'none'; $('#slFile').value = ''; $('#slPaste').value = ''; slStep(4);
-  refreshLookups(); renderSalesLog(); toast('تم ترحيل الملف', 'ok');
+  S.imports.unshift({ id: uid(), at: new Date().toISOString(), file: slWB._fileName, date: ok[0].date, rows: ok.length, qty: round3(tS), buy: round3(tB), docs, newItems: added.map(i => `${i.code}${i.code2 ? '/' + i.code2 : ''} ${i.name}`) });
+  save(); slOut = null; slWB = null; $('#slPreview').innerHTML = `<div class="hint good">تم الترحيل بنجاح في ${docs.length} سند: ${docs.map(esc).join('، ')} — مبيعات ${fmt(round3(tS))}${tB ? `، مشتريات ${fmt(round3(tB))}` : ''}</div>` + (added.length ? `<div class="hint warn" style="margin-top:10px"><b>تنبيه: تم تعريف ${added.length} صنف جديد تلقائياً من الملف</b> (الوحدة والنوع افتراضيان — راجعها من صفحة الأصناف وأدخل أرصدتها الافتتاحية، فالبيع سُجّل عليها برصيد صفر):<ul style="margin:6px 0 0;padding-inline-start:18px">${added.map(i => `<li><span class="mono">${esc(i.code)}${i.code2 ? ' / ' + esc(i.code2) : ''}</span> — ${esc(i.name)}</li>`).join('')}</ul></div>` : ''); $('#slMapWrap').style.display = 'none'; $('#slFile').value = ''; $('#slPaste').value = ''; slStep(4);
+  refreshLookups(); renderSalesLog(); toast(added.length ? `تم ترحيل الملف وإضافة ${added.length} صنف جديد` : 'تم ترحيل الملف', added.length ? 'warn' : 'ok');
 }
 function renderSales() { if (!$('#slDate').value) $('#slDate').value = todayISO(); if (!$('#slWh').value) $('#slWh').value = S.settings.defaultWh || activeWhs()[0]?.id || ''; renderSalesLog(); }
 function renderSalesLog() {
   const host = $('#slLog'); if (!S.imports.length) { host.innerHTML = emptyHTML('لم يتم استيراد أي ملف بعد'); return; }
-  host.innerHTML = `<table class="tbl"><thead><tr><th>وقت الترحيل</th><th>الملف</th><th>تاريخ الحركة</th><th class="num">الأسطر</th><th class="num cout">كمية البيع</th><th class="num cin">كمية الشراء</th><th>السندات</th></tr></thead><tbody>${S.imports.map(im => `<tr><td class="small">${new Date(im.at).toLocaleString('ar-JO')}</td><td>${esc(im.file)}</td><td class="mono">${esc(im.date)}</td><td class="num">${im.rows}</td><td class="num">${fmt(im.qty)}</td><td class="num">${im.buy ? fmt(im.buy) : '<span class="muted">—</span>'}</td><td>${im.docs.map(n => { const d = S.docs.find(x => x.no === n); return d ? `<a href="#" data-view="${d.id}" class="mono">${esc(n)}</a>` : `<span class="mono muted" title="محذوف">${esc(n)}</span>`; }).join('، ')}</td></tr>`).join('')}</tbody></table>`;
+  host.innerHTML = `<table class="tbl"><thead><tr><th>وقت الترحيل</th><th>الملف</th><th>تاريخ الحركة</th><th class="num">الأسطر</th><th class="num cout">كمية البيع</th><th class="num cin">كمية الشراء</th><th class="num">أصناف أُضيفت</th><th>السندات</th></tr></thead><tbody>${S.imports.map(im => `<tr><td class="small">${new Date(im.at).toLocaleString('ar-JO')}</td><td>${esc(im.file)}</td><td class="mono">${esc(im.date)}</td><td class="num">${im.rows}</td><td class="num">${fmt(im.qty)}</td><td class="num">${im.buy ? fmt(im.buy) : '<span class="muted">—</span>'}</td><td class="num">${im.newItems?.length ? `<span class="chip mfg" title="${esc(im.newItems.join('\n'))}">${im.newItems.length}</span>` : '<span class="muted">—</span>'}</td><td>${im.docs.map(n => { const d = S.docs.find(x => x.no === n); return d ? `<a href="#" data-view="${d.id}" class="mono">${esc(n)}</a>` : `<span class="mono muted" title="محذوف">${esc(n)}</span>`; }).join('، ')}</td></tr>`).join('')}</tbody></table>`;
   host.querySelectorAll('[data-view]').forEach(a => a.onclick = e => { e.preventDefault(); viewDoc(a.dataset.view); });
 }
 function salesTemplate() { exportXlsx('قالب_المبيعات_اليومية.xlsx', [{ name: 'المبيعات', aoa: [['رمز المادة', 'رمز الوحدة', 'وصف المادة', 'نسبة الضريبة', 'كمية الشراء', 'كمية البيع', 'الكلفة'], ['59', '92', 'Angus Brisket Prime 2011-6215', 0, 0, 38.342, 8.166], ['67', '101', 'Flank Steak Angus Longfed 6218-2014', 0, 94.9, 53.402, 13.128]] }]); }
@@ -1809,14 +1891,14 @@ function cnRows() {
   const rows = [];
   for (const i of S.items) {
     if (i.active === false && !cnEntry.has(i.id)) continue;
-    if (q && !(normName(i.name).includes(nq) || normCode(i.code).includes(cq) || normCode(i.code2 || '').includes(cq))) continue;
+    if (q && !itemMatchesQ(i, q)) continue;
     const e = cnEntry.get(i.id); const sysLive = balanceOf(M, i.id, wh); const stored = locked ? c.lines.find(l => l.itemId === i.id) : null; const system = stored ? stored.system : sysLive;
     const has = e && String(e.actual ?? '').trim() !== ''; const ex = has ? sumExpr(e.actual) : null; const actual = has ? ex.total : (zero ? 0 : null);
     const diff = actual == null ? null : round3(actual - system);
     if (onlyDiff && !(diff)) continue;
     rows.push({ item: i, system, actual, diff, note: e?.note || '', counted: has, raw: e?.actual ?? '', parts: ex && ex.multi ? qtyNote(ex.parts, ex.total) : '' });
   }
-  rows.sort((a, b) => a.item.code.localeCompare(b.item.code, 'ar', { numeric: true }));
+  rows.sort((a, b) => codeCmp(a.item, b.item));
   return { rows, date, wh, c, locked };
 }
 function renderCountGrid() {
@@ -1826,8 +1908,8 @@ function renderCountGrid() {
   $('#cnSave').disabled = locked; $('#cnPost').disabled = !c || locked; $('#cnDelete').disabled = !c;
   if (!rows.length) { host.innerHTML = emptyHTML('لا توجد أصناف للعرض'); return; }
   const T = rows.reduce((t, r) => { t.sys += r.system; if (r.actual != null) { t.act += r.actual; t.diff += r.diff; t.n++; if (r.diff) t.nd++; if (r.diff > 0) t.plus += r.diff; if (r.diff < 0) t.minus += r.diff; } return t; }, { sys: 0, act: 0, diff: 0, n: 0, nd: 0, plus: 0, minus: 0 });
-  host.innerHTML = `<table class="tbl"><thead><tr><th>الكود</th><th>رمز الوحدة</th><th>الصنف</th><th>الوحدة</th><th class="num">رصيد النظام</th><th style="width:140px">الجرد الفعلي</th><th class="num">الفرق</th><th class="num">%</th><th>ملاحظة</th></tr></thead><tbody>${rows.map(r => `<tr>
-    <td class="code">${esc(r.item.code)}</td><td class="code">${esc(r.item.code2 || '')}</td><td class="nm">${esc(r.item.name)}</td><td class="muted">${esc(r.item.unit)}</td><td class="num">${fmtS(r.system)}</td>
+  host.innerHTML = `<table class="tbl"><thead><tr><th>رمز المادة</th><th>رمز الوحدة</th><th>الصنف</th><th>الوحدة</th><th class="num">رصيد النظام</th><th style="width:140px">الجرد الفعلي</th><th class="num">الفرق</th><th class="num">%</th><th>ملاحظة</th></tr></thead><tbody>${rows.map(r => `<tr>
+    <td class="code">${esc(r.item.code)}</td><td class="code">${esc(r.item.code2 || '')}</td>${nameCell(r.item)}<td class="muted">${esc(r.item.unit)}</td><td class="num">${fmtS(r.system)}</td>
     <td><input class="in qty" inputmode="decimal" data-id="${r.item.id}" value="${esc(r.raw)}" placeholder="${locked ? '' : '—'}" ${locked ? 'disabled' : ''} style="min-height:34px;padding:5px 9px" title="يمكن كتابة مجموع مثل 20+15+7 لأكثر من موقع"><span class="qsum small muted">${esc(r.parts)}</span></td>
     <td class="num nowrap ${r.diff > 0 ? 'pos' : r.diff < 0 ? 'neg' : ''}"><b>${r.diff == null ? '<span class="muted">غير مجرود</span>' : (r.diff > 0 ? '+' : '') + fmt(r.diff)}</b></td>
     <td class="num muted small">${r.diff == null || !r.system ? '' : (Math.round(r.diff / Math.abs(r.system) * 1000) / 10) + '%'}</td>
@@ -1880,21 +1962,36 @@ function renderCountHistory() {
 }
 function countAOA(all = false) {
   const { rows } = cnRows(); const r2 = all ? rows : rows.filter(r => r.actual != null);
-  return [['الكود', 'رمز الوحدة', 'الصنف', 'الوحدة', 'رصيد النظام', 'الجرد الفعلي', 'الفرق', 'تفصيل العدّ', 'ملاحظة'], ...r2.map(r => [r.item.code, r.item.code2 || '', r.item.name, r.item.unit, r.system, r.actual ?? '', r.diff ?? '', r.parts, r.note])];
+  return [['رمز المادة', 'رمز الوحدة', 'الصنف', 'الاسم المتعارف عليه', 'الوحدة', 'رصيد النظام', 'الجرد الفعلي', 'الفرق', 'تفصيل العدّ', 'ملاحظة'], ...r2.map(r => [r.item.code, r.item.code2 || '', r.item.name, r.item.name2 || '', r.item.unit, r.system, r.actual ?? '', r.diff ?? '', r.parts, r.note])];
 }
 function printCount(blank = false) {
   const date = $('#cnDate').value, wh = $('#cnWh').value;
   if (blank) { const { rows } = cnRows(); printHTML('نموذج جرد فعلي', [`التاريخ: ${date}`, `المستودع: ${whName(wh)}`], `<table><thead><tr><th>الكود</th><th>رمز الوحدة</th><th>الصنف</th><th>الوحدة</th><th class="num">رصيد النظام</th><th style="width:110px">الجرد الفعلي</th><th style="width:140px">ملاحظة</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(r.item.code)}</td><td>${esc(r.item.code2 || '')}</td><td>${esc(r.item.name)}</td><td>${esc(r.item.unit)}</td><td class="num">${fmt(r.system)}</td><td></td><td></td></tr>`).join('')}</tbody></table><div class="sig"><div>أمين المستودع</div><div>لجنة الجرد</div><div>المعتمد</div></div>`); return; }
-  printHTML('تقرير فروقات الجرد الفعلي', [`التاريخ: ${date}`, `المستودع: ${whName(wh)}`], aoaTable(countAOA(), 4) + `<div class="sig"><div>أمين المستودع</div><div>لجنة الجرد</div><div>المعتمد</div></div>`);
+  printHTML('تقرير فروقات الجرد الفعلي', [`التاريخ: ${date}`, `المستودع: ${whName(wh)}`], aoaTable(countAOA(), 5) + `<div class="sig"><div>أمين المستودع</div><div>لجنة الجرد</div><div>المعتمد</div></div>`);
 }
 
 /* =========================================================
    التقارير
    ========================================================= */
 let rcCombo;
-function showRep(name) { $$('#repTabs button').forEach(b => b.classList.toggle('on', b.dataset.rep === name)); $$('[data-rep].sub').forEach(s => s.classList.toggle('on', s.dataset.rep === name)); renderRep(name); }
+function syncCodePills() { $$('#codeModePills button').forEach(b => b.classList.toggle('on', b.dataset.cm === codeMode())); }
+function showRep(name) { $$('#repTabs button[data-rep]').forEach(b => b.classList.toggle('on', b.dataset.rep === name)); $$('[data-rep].sub').forEach(s => s.classList.toggle('on', s.dataset.rep === name)); renderRep(name); }
 function renderReports() { const cur = $('#repTabs button.on')?.dataset.rep || 'daily'; renderRep(cur); }
-function renderRep(name) { ({ daily: renderRepDaily, balances: renderRepBalances, card: renderRepCard, moves: renderRepMoves, low: renderRepLow })[name](); }
+function renderRep(name) { ({ daily: renderRepDaily, balances: renderRepBalances, card: renderRepCard, moves: renderRepMoves, low: renderRepLow, cdiff: renderRepCountDiff })[name](); }
+
+/* --- فروقات الجرد --- */
+function countDiffData() {
+  const from = $('#rcdFrom').value, to = $('#rcdTo').value, wh = $('#rcdWh').value, q = $('#rcdQ').value.trim(), only = $('#rcdOnly').checked; const rows = [];
+  for (const c of S.counts) { if ((from && c.date < from) || (to && c.date > to) || (wh && c.wh !== wh)) continue; for (const l of c.lines) { const i = itemById(l.itemId); if (!i) continue; if (only && !l.diff) continue; if (q && !itemMatchesQ(i, q)) continue; rows.push({ c, l, i }); } }
+  rows.sort((a, b) => b.c.date.localeCompare(a.c.date) || codeCmp(a.i, b.i)); return rows;
+}
+function renderRepCountDiff() {
+  const rows = countDiffData(); const host = $('#rcdTable'); if (!S.counts.length) { host.innerHTML = emptyHTML('لا توجد عمليات جرد محفوظة بعد', 'أدخل الجرد من صفحة الجرد اليومي ثم ارجع لهذا التقرير'); return; } if (!rows.length) { host.innerHTML = emptyHTML('لا توجد فروقات مطابقة للفلاتر'); return; }
+  const plus = round3(rows.filter(r => r.l.diff > 0).reduce((s, r) => s + r.l.diff, 0)), minus = round3(rows.filter(r => r.l.diff < 0).reduce((s, r) => s + r.l.diff, 0)), sys = round3(rows.reduce((s, r) => s + r.l.system, 0)), act = round3(rows.reduce((s, r) => s + r.l.actual, 0));
+  host.innerHTML = `<table class="tbl"><thead><tr><th>تاريخ الجرد</th><th>المستودع</th><th>${codeLabel()}</th><th>الصنف</th><th>الوحدة</th><th class="num">رصيد النظام</th><th class="num">الجرد الفعلي</th><th class="num">الفرق</th><th class="num">%</th><th>تفصيل العدّ</th><th>الحالة</th><th>ملاحظة</th></tr></thead><tbody>${rows.map(({ c, l, i }) => `<tr><td class="mono">${esc(c.date)}</td><td>${esc(whName(c.wh))}</td><td class="code">${esc(codeOf(i))}</td>${nameCell(i)}<td class="muted">${esc(i.unit)}</td><td class="num">${fmtS(l.system)}</td><td class="num">${fmt(l.actual)}</td><td class="num ${l.diff > 0 ? 'pos' : l.diff < 0 ? 'neg' : ''}"><b>${(l.diff > 0 ? '+' : '') + fmt(l.diff)}</b></td><td class="num muted small">${l.system ? (Math.round(l.diff / Math.abs(l.system) * 1000) / 10) + '%' : ''}</td><td class="small muted mono">${esc(l.parts || '')}</td><td>${c.posted ? '<span class="chip in">مُرحَّل</span>' : '<span class="chip mfg">غير مرحَّل</span>'}</td><td class="small">${esc(l.note || '')}</td></tr>`).join('')}
+    <tr class="tot"><td colspan="5">الإجمالي — ${rows.length} سطر · زيادة ${fmt(plus)} · نقص ${fmt(minus)}</td><td class="num">${fmt(sys)}</td><td class="num">${fmt(act)}</td><td class="num ${round3(act - sys) < 0 ? 'neg' : ''}">${(act - sys > 0 ? '+' : '') + fmt(round3(act - sys))}</td><td colspan="4"></td></tr></tbody></table>`;
+}
+function countDiffAOA() { return [['تاريخ الجرد', 'المستودع', codeLabel(), 'الصنف', 'الاسم المتعارف عليه', 'الوحدة', 'رصيد النظام', 'الجرد الفعلي', 'الفرق', 'تفصيل العدّ', 'الحالة', 'ملاحظة'], ...countDiffData().map(({ c, l, i }) => [c.date, whName(c.wh), codeOf(i), i.name, i.name2 || '', i.unit, l.system, l.actual, l.diff, l.parts || '', c.posted ? 'مُرحَّل' : 'غير مرحَّل', l.note || ''])]; }
 
 /* --- التقرير اليومي --- */
 function dailyData() {
@@ -1908,8 +2005,8 @@ function dailyData() {
     if (e.qin) { r.i[e.side] += e.qin; r.tin += e.qin; } if (e.qout) { r.o[e.side] += e.qout; r.tout += e.qout; }
   }
   const rows = [];
-  for (const it of S.items) { if (ty && it.type !== ty) continue; if (q && !(normName(it.name).includes(nq) || normCode(it.code).includes(cq))) continue; const r = R.get(it.id) || mk(it.id); if (onlyMoved && !r.tin && !r.tout) continue; if (!R.has(it.id) && it.active === false) continue; if (!r.open && !r.tin && !r.tout && it.active === false) continue; r.item = it; r.close = round3(r.open + r.tin - r.tout); r.open = round3(r.open); r.tin = round3(r.tin); r.tout = round3(r.tout); rows.push(r); }
-  rows.sort((a, b) => a.item.code.localeCompare(b.item.code, 'ar', { numeric: true }));
+  for (const it of S.items) { if (ty && it.type !== ty) continue; if (q && !itemMatchesQ(it, q)) continue; const r = R.get(it.id) || mk(it.id); if (onlyMoved && !r.tin && !r.tout) continue; if (!R.has(it.id) && it.active === false) continue; if (!r.open && !r.tin && !r.tout && it.active === false) continue; r.item = it; r.close = round3(r.open + r.tin - r.tout); r.open = round3(r.open); r.tin = round3(r.tin); r.tout = round3(r.tout); rows.push(r); }
+  rows.sort((a, b) => codeCmp(a.item, b.item));
   return { rows, from, to, wh };
 }
 const DAILY_IN = [['opening', 'رصيد افتتاحي'], ['purchase', 'مشتريات'], ['receipt', 'إدخال'], ['mfgIn', 'تصنيع'], ['transferIn', 'تحويل وارد']], DAILY_OUT = [['sales', 'مبيعات'], ['issue', 'إخراج'], ['mfgOut', 'تصنيع'], ['transferOut', 'تحويل صادر']];
@@ -1920,32 +2017,32 @@ function renderRepDaily() {
   if (!rows.length) { host.innerHTML = emptyHTML('لا توجد بيانات للعرض', 'عدّل الفلاتر أو أدخل حركات'); return; }
   const ins = DAILY_IN.filter(([k]) => rows.some(r => r.i[k])), outs = DAILY_OUT.filter(([k]) => rows.some(r => r.o[k]));
   const T = rows.reduce((t, r) => { t.open += r.open; t.tin += r.tin; t.tout += r.tout; t.close += r.close; for (const [k] of DAILY_IN) t.i[k] += r.i[k]; for (const [k] of DAILY_OUT) t.o[k] += r.o[k]; return t; }, { open: 0, tin: 0, tout: 0, close: 0, i: { opening: 0, purchase: 0, receipt: 0, mfgIn: 0, transferIn: 0 }, o: { sales: 0, issue: 0, mfgOut: 0, transferOut: 0 } });
-  let head = `<tr><th rowspan="${detail ? 2 : 1}">الكود</th><th rowspan="${detail ? 2 : 1}">الصنف</th><th rowspan="${detail ? 2 : 1}">الوحدة</th><th rowspan="${detail ? 2 : 1}" class="num">رصيد افتتاحي</th>`;
+  let head = `<tr><th rowspan="${detail ? 2 : 1}">${codeLabel()}</th><th rowspan="${detail ? 2 : 1}">الصنف</th><th rowspan="${detail ? 2 : 1}">الوحدة</th><th rowspan="${detail ? 2 : 1}" class="num">رصيد افتتاحي</th>`;
   if (detail) head += `<th colspan="${ins.length + 1}" class="grp cin">الإدخال</th><th colspan="${outs.length + 1}" class="grp cout">الإخراج</th><th rowspan="2" class="num">الرصيد</th></tr><tr>${ins.map(([, l]) => `<th class="num">${l}</th>`).join('')}<th class="num cin">إجمالي الإدخال</th>${outs.map(([, l]) => `<th class="num">${l}</th>`).join('')}<th class="num cout">إجمالي الإخراج</th></tr>`;
   else head += `<th class="num cin">إدخال</th><th class="num cout">إخراج</th><th class="num">الرصيد</th></tr>`;
-  const row = (r, isTot) => { const i = isTot ? r : r.item; let h = isTot ? `<td colspan="3">الإجمالي (${rows.length} صنف)</td>` : `<td class="code">${esc(i.code)}</td><td class="nm">${esc(i.name)}</td><td class="muted">${esc(i.unit)}</td>`; h += `<td class="num">${fmtS(r.open)}</td>`; if (detail) h += ins.map(([k]) => `<td class="num">${fmtS(r.i[k])}</td>`).join('') + `<td class="num cin"><b>${fmtS(r.tin)}</b></td>` + outs.map(([k]) => `<td class="num">${fmtS(r.o[k])}</td>`).join('') + `<td class="num cout"><b>${fmtS(r.tout)}</b></td>`; else h += `<td class="num cin">${fmtS(r.tin)}</td><td class="num cout">${fmtS(r.tout)}</td>`; return h + `<td class="num"><b>${fmtS(r.close)}</b></td>`; };
+  const row = (r, isTot) => { const i = isTot ? r : r.item; let h = isTot ? `<td colspan="3">الإجمالي (${rows.length} صنف)</td>` : `<td class="code">${esc(codeOf(i))}</td>${nameCell(i)}<td class="muted">${esc(i.unit)}</td>`; h += `<td class="num">${fmtS(r.open)}</td>`; if (detail) h += ins.map(([k]) => `<td class="num">${fmtS(r.i[k])}</td>`).join('') + `<td class="num cin"><b>${fmtS(r.tin)}</b></td>` + outs.map(([k]) => `<td class="num">${fmtS(r.o[k])}</td>`).join('') + `<td class="num cout"><b>${fmtS(r.tout)}</b></td>`; else h += `<td class="num cin">${fmtS(r.tin)}</td><td class="num cout">${fmtS(r.tout)}</td>`; return h + `<td class="num"><b>${fmtS(r.close)}</b></td>`; };
   host.innerHTML = `<table class="tbl"><thead>${head}</thead><tbody>${rows.map(r => `<tr>${row(r)}</tr>`).join('')}<tr class="tot">${row({ ...T, open: round3(T.open), tin: round3(T.tin), tout: round3(T.tout), close: round3(T.close) }, true)}</tr></tbody></table>`;
 }
 function dailyAOA() {
-  const { rows } = dailyData(); const detail = $('#rdDetail').checked; const H = ['الكود', 'الصنف', 'الوحدة', 'رصيد افتتاحي']; if (detail) H.push(...DAILY_IN.map(x => 'إدخال: ' + x[1])); H.push('إجمالي الإدخال'); if (detail) H.push(...DAILY_OUT.map(x => 'إخراج: ' + x[1])); H.push('إجمالي الإخراج', 'الرصيد');
-  return [H, ...rows.map(r => { const a = [r.item.code, r.item.name, r.item.unit, r.open]; if (detail) a.push(...DAILY_IN.map(([k]) => r.i[k])); a.push(r.tin); if (detail) a.push(...DAILY_OUT.map(([k]) => r.o[k])); a.push(r.tout, r.close); return a; })];
+  const { rows } = dailyData(); const detail = $('#rdDetail').checked; const H = [codeLabel(), 'الصنف', 'الاسم المتعارف عليه', 'الوحدة', 'رصيد افتتاحي']; if (detail) H.push(...DAILY_IN.map(x => 'إدخال: ' + x[1])); H.push('إجمالي الإدخال'); if (detail) H.push(...DAILY_OUT.map(x => 'إخراج: ' + x[1])); H.push('إجمالي الإخراج', 'الرصيد');
+  return [H, ...rows.map(r => { const a = [codeOf(r.item), r.item.name, r.item.name2 || '', r.item.unit, r.open]; if (detail) a.push(...DAILY_IN.map(([k]) => r.i[k])); a.push(r.tin); if (detail) a.push(...DAILY_OUT.map(([k]) => r.o[k])); a.push(r.tout, r.close); return a; })];
 }
-function dailyPrint() { const { from, to, wh } = dailyData(); const aoa = dailyAOA(); printHTML('تقرير حركة المخزون اليومي', [from === to ? `التاريخ: ${from}` : `من ${from} إلى ${to}`, wh ? `المستودع: ${whName(wh)}` : 'كل المستودعات'], aoaTable(aoa, 3)); }
+function dailyPrint() { const { from, to, wh } = dailyData(); const aoa = dailyAOA(); printHTML('تقرير حركة المخزون اليومي', [from === to ? `التاريخ: ${from}` : `من ${from} إلى ${to}`, wh ? `المستودع: ${whName(wh)}` : 'كل المستودعات'], aoaTable(aoa, 4)); }
 function aoaTable(aoa, numFrom) { const [h, ...rows] = aoa; const tot = rows.length ? h.map((_, i) => i < numFrom ? (i === 0 ? 'الإجمالي' : '') : fmt(round3(rows.reduce((s, r) => s + (+r[i] || 0), 0)))) : null; return `<table><thead><tr>${h.map((c, i) => `<th class="${i >= numFrom ? 'num' : ''}">${esc(c)}</th>`).join('')}</tr></thead><tbody>${rows.map(r => `<tr>${r.map((c, i) => `<td class="${i >= numFrom ? 'num' : ''}">${i >= numFrom ? fmt(c) : esc(c)}</td>`).join('')}</tr>`).join('')}${tot ? `<tr class="tot">${tot.map((c, i) => `<td class="${i >= numFrom ? 'num' : ''}">${c}</td>`).join('')}</tr>` : ''}</tbody></table>`; }
 
 /* --- أرصدة المخزون --- */
 function balancesData() {
   const asOf = $('#rbAsOf').value || null, ty = $('#rbType').value, q = $('#rbQ').value.trim(), nq = normName(q), cq = normCode(q), hideZero = $('#rbZero').checked;
   const M = balanceMatrix({ asOf }); const whs = activeWhs();
-  const rows = S.items.filter(i => (!ty || i.type === ty) && (!q || normName(i.name).includes(nq) || normCode(i.code).includes(cq))).map(i => ({ item: i, per: whs.map(w => balanceOf(M, i.id, w.id)), tot: balanceOf(M, i.id) })).filter(r => !(hideZero && r.tot === 0 && r.per.every(v => v === 0)) && !(r.item.active === false && r.tot === 0));
-  rows.sort((a, b) => a.item.code.localeCompare(b.item.code, 'ar', { numeric: true })); return { rows, whs, asOf };
+  const rows = S.items.filter(i => (!ty || i.type === ty) && itemMatchesQ(i, q)).map(i => ({ item: i, per: whs.map(w => balanceOf(M, i.id, w.id)), tot: balanceOf(M, i.id) })).filter(r => !(hideZero && r.tot === 0 && r.per.every(v => v === 0)) && !(r.item.active === false && r.tot === 0));
+  rows.sort((a, b) => codeCmp(a.item, b.item)); return { rows, whs, asOf };
 }
 function renderRepBalances() {
   const { rows, whs } = balancesData(); const host = $('#rbTable'); if (!rows.length) { host.innerHTML = emptyHTML('لا توجد أرصدة للعرض'); return; }
   const tot = whs.map((_, k) => round3(rows.reduce((s, r) => s + r.per[k], 0))), gt = round3(rows.reduce((s, r) => s + r.tot, 0));
-  host.innerHTML = `<table class="tbl"><thead><tr><th>الكود</th><th>الصنف</th><th>الوحدة</th>${whs.map(w => `<th class="num">${esc(w.name)}</th>`).join('')}<th class="num">الإجمالي</th><th class="num">الحد الأدنى</th></tr></thead><tbody>${rows.map(r => `<tr><td class="code">${esc(r.item.code)}</td><td class="nm">${esc(r.item.name)}</td><td class="muted">${esc(r.item.unit)}</td>${r.per.map(v => `<td class="num">${fmtS(v)}</td>`).join('')}<td class="num ${r.item.min && r.tot <= r.item.min ? 'neg' : ''}"><b>${fmtS(r.tot)}</b></td><td class="num muted">${r.item.min ? fmt(r.item.min) : '—'}</td></tr>`).join('')}<tr class="tot"><td colspan="3">الإجمالي (${rows.length} صنف)</td>${tot.map(v => `<td class="num">${fmt(v)}</td>`).join('')}<td class="num">${fmt(gt)}</td><td></td></tr></tbody></table>`;
+  host.innerHTML = `<table class="tbl"><thead><tr><th>${codeLabel()}</th><th>الصنف</th><th>الوحدة</th>${whs.map(w => `<th class="num">${esc(w.name)}</th>`).join('')}<th class="num">الإجمالي</th><th class="num">الحد الأدنى</th></tr></thead><tbody>${rows.map(r => `<tr><td class="code">${esc(codeOf(r.item))}</td>${nameCell(r.item)}<td class="muted">${esc(r.item.unit)}</td>${r.per.map(v => `<td class="num">${fmtS(v)}</td>`).join('')}<td class="num ${r.item.min && r.tot <= r.item.min ? 'neg' : ''}"><b>${fmtS(r.tot)}</b></td><td class="num muted">${r.item.min ? fmt(r.item.min) : '—'}</td></tr>`).join('')}<tr class="tot"><td colspan="3">الإجمالي (${rows.length} صنف)</td>${tot.map(v => `<td class="num">${fmt(v)}</td>`).join('')}<td class="num">${fmt(gt)}</td><td></td></tr></tbody></table>`;
 }
-function balancesAOA() { const { rows, whs } = balancesData(); return [['الكود', 'الصنف', 'الوحدة', ...whs.map(w => w.name), 'الإجمالي'], ...rows.map(r => [r.item.code, r.item.name, r.item.unit, ...r.per, r.tot])]; }
+function balancesAOA() { const { rows, whs } = balancesData(); return [[codeLabel(), 'الصنف', 'الاسم المتعارف عليه', 'الوحدة', ...whs.map(w => w.name), 'الإجمالي'], ...rows.map(r => [codeOf(r.item), r.item.name, r.item.name2 || '', r.item.unit, ...r.per, r.tot])]; }
 
 /* --- كرت الصنف --- */
 function cardData() {
@@ -1959,7 +2056,7 @@ function renderRepCard() {
   const host = $('#rcTable'); const c = cardData(); if (!c) { host.innerHTML = emptyHTML('اختر صنفاً لعرض كرت حركته'); return; }
   const i = itemById(c.id);
   host.innerHTML = `<table class="tbl"><thead><tr><th>التاريخ</th><th>رقم السند</th><th>نوع الحركة</th><th>المستودع</th><th>الطرف / المرجع</th><th class="num cin">وارد</th><th class="num cout">صادر</th><th class="num">الرصيد</th></tr></thead><tbody>
-    <tr><td colspan="7"><b>رصيد أول المدة${c.from ? ' قبل ' + c.from : ''}</b> — ${esc(i.name)} (${esc(i.unit)})${c.wh ? ' — ' + esc(whName(c.wh)) : ''}</td><td class="num"><b>${fmtS(c.open)}</b></td></tr>
+    <tr><td colspan="7"><b>رصيد أول المدة${c.from ? ' قبل ' + c.from : ''}</b> — <span class="mono">${esc(codeOf(i))}</span> ${esc(i.name)}${i.name2 ? ' (' + esc(i.name2) + ')' : ''} (${esc(i.unit)})${c.wh ? ' — ' + esc(whName(c.wh)) : ''}</td><td class="num"><b>${fmtS(c.open)}</b></td></tr>
     ${c.rows.map(e => `<tr><td class="mono">${esc(e.date)}</td><td class="code"><a href="#" data-view="${e.docId}">${esc(e.docNo)}</a></td><td>${sideChip(e.side)}</td><td>${esc(e.whN)}</td><td class="small">${esc(e.party)}${e.ref ? `<span class="sub">${esc(e.ref)}</span>` : ''}</td><td class="num cin">${e.qin ? fmt(e.qin) : ''}</td><td class="num cout">${e.qout ? fmt(e.qout) : ''}</td><td class="num ${e.bal < 0 ? 'neg' : ''}">${fmt(e.bal)}</td></tr>`).join('')}
     <tr class="tot"><td colspan="5">الإجمالي (${c.rows.length} حركة)</td><td class="num">${fmt(round3(c.rows.reduce((s, e) => s + e.qin, 0)))}</td><td class="num">${fmt(round3(c.rows.reduce((s, e) => s + e.qout, 0)))}</td><td class="num">${fmtS(c.close)}</td></tr></tbody></table>`;
   host.querySelectorAll('[data-view]').forEach(a => a.onclick = e => { e.preventDefault(); viewDoc(a.dataset.view); });
@@ -1969,15 +2066,15 @@ function cardAOA() { const c = cardData(); if (!c) return null; return [['الت
 /* --- الحركة التفصيلية --- */
 function movesData() {
   const from = $('#rmFrom').value, to = $('#rmTo').value, wh = $('#rmWh').value, side = $('#rmType').value, q = $('#rmQ').value.trim(), nq = normName(q);
-  return ledger().filter(e => (!from || e.date >= from) && (!to || e.date <= to) && (!wh || e.wh === wh) && (!side || e.side === side) && (!q || normName(itemLabel(e.itemId)).includes(nq) || normName(e.docNo).includes(nq) || normCode(itemById(e.itemId)?.code || '').includes(normCode(q)))).slice().reverse();
+  return ledger().filter(e => (!from || e.date >= from) && (!to || e.date <= to) && (!wh || e.wh === wh) && (!side || e.side === side) && (!q || normName(e.docNo).includes(nq) || (itemById(e.itemId) && itemMatchesQ(itemById(e.itemId), q)))).slice().reverse();
 }
 function renderRepMoves() {
   const rows = movesData(); const host = $('#rmTable'); if (!rows.length) { host.innerHTML = emptyHTML('لا توجد حركات مطابقة'); return; }
   const sh = rows.slice(0, 1500);
-  host.innerHTML = `<table class="tbl"><thead><tr><th>التاريخ</th><th>رقم السند</th><th>نوع الحركة</th><th>الكود</th><th>الصنف</th><th>الوحدة</th><th>المستودع</th><th class="num cin">وارد</th><th class="num cout">صادر</th></tr></thead><tbody>${sh.map(e => { const i = itemById(e.itemId) || {}; return `<tr><td class="mono">${esc(e.date)}</td><td class="code"><a href="#" data-view="${e.docId}">${esc(e.docNo)}</a></td><td>${sideChip(e.side)}</td><td class="code">${esc(i.code || '')}</td><td class="nm">${esc(i.name || '— محذوف —')}</td><td class="muted">${esc(i.unit || '')}</td><td>${esc(whName(e.wh))}</td><td class="num cin">${e.qin ? fmt(e.qin) : ''}</td><td class="num cout">${e.qout ? fmt(e.qout) : ''}</td></tr>`; }).join('')}<tr class="tot"><td colspan="7">الإجمالي (${rows.length} حركة${rows.length > sh.length ? ' — يُعرض أول ' + sh.length : ''})</td><td class="num">${fmt(round3(rows.reduce((s, e) => s + e.qin, 0)))}</td><td class="num">${fmt(round3(rows.reduce((s, e) => s + e.qout, 0)))}</td></tr></tbody></table>`;
+  host.innerHTML = `<table class="tbl"><thead><tr><th>التاريخ</th><th>رقم السند</th><th>نوع الحركة</th><th>${codeLabel()}</th><th>الصنف</th><th>الوحدة</th><th>المستودع</th><th class="num cin">وارد</th><th class="num cout">صادر</th></tr></thead><tbody>${sh.map(e => { const i = itemById(e.itemId) || {}; return `<tr><td class="mono">${esc(e.date)}</td><td class="code"><a href="#" data-view="${e.docId}">${esc(e.docNo)}</a></td><td>${sideChip(e.side)}</td><td class="code">${esc(codeOf(i))}</td>${nameCell(i.id ? i : null)}<td class="muted">${esc(i.unit || '')}</td><td>${esc(whName(e.wh))}</td><td class="num cin">${e.qin ? fmt(e.qin) : ''}</td><td class="num cout">${e.qout ? fmt(e.qout) : ''}</td></tr>`; }).join('')}<tr class="tot"><td colspan="7">الإجمالي (${rows.length} حركة${rows.length > sh.length ? ' — يُعرض أول ' + sh.length : ''})</td><td class="num">${fmt(round3(rows.reduce((s, e) => s + e.qin, 0)))}</td><td class="num">${fmt(round3(rows.reduce((s, e) => s + e.qout, 0)))}</td></tr></tbody></table>`;
   host.querySelectorAll('[data-view]').forEach(a => a.onclick = ev => { ev.preventDefault(); viewDoc(a.dataset.view); });
 }
-function movesAOA() { return [['التاريخ', 'رقم السند', 'نوع الحركة', 'الكود', 'الصنف', 'الوحدة', 'المستودع', 'وارد', 'صادر'], ...movesData().map(e => { const i = itemById(e.itemId) || {}; return [e.date, e.docNo, SIDE_LABEL[e.side], i.code || '', i.name || '', i.unit || '', whName(e.wh), e.qin || '', e.qout || '']; })]; }
+function movesAOA() { return [['التاريخ', 'رقم السند', 'نوع الحركة', codeLabel(), 'الصنف', 'الوحدة', 'المستودع', 'وارد', 'صادر'], ...movesData().map(e => { const i = itemById(e.itemId) || {}; return [e.date, e.docNo, SIDE_LABEL[e.side], codeOf(i), i.name || '', i.unit || '', whName(e.wh), e.qin || '', e.qout || '']; })]; }
 
 /* --- الحد الأدنى --- */
 function lowData() {
@@ -1987,9 +2084,9 @@ function lowData() {
 }
 function renderRepLow() {
   const rows = lowData(); const host = $('#rlTable'); if (!rows.length) { host.innerHTML = emptyHTML('لا توجد تنبيهات', 'كل الأصناف فوق حدها الأدنى وبدون أرصدة سالبة'); return; }
-  host.innerHTML = `<table class="tbl"><thead><tr><th>الكود</th><th>الصنف</th><th>الوحدة</th><th class="num">الرصيد الإجمالي</th><th class="num">الحد الأدنى</th><th class="num">النقص عن الحد</th><th>الحالة</th></tr></thead><tbody>${rows.map(r => `<tr><td class="code">${esc(r.item.code)}</td><td class="nm">${esc(r.item.name)}</td><td class="muted">${esc(r.item.unit)}</td><td class="num ${r.tot < 0 ? 'neg' : ''}">${fmt(r.tot)}</td><td class="num">${r.item.min ? fmt(r.item.min) : '—'}</td><td class="num">${r.need ? fmt(r.need) : ''}</td><td>${r.negs.length ? `<span class="chip out">رصيد سالب: ${r.negs.map(w => esc(w.name)).join('، ')}</span>` : r.tot <= 0 ? '<span class="chip out">نفد الرصيد</span>' : '<span class="chip mfg">تحت الحد الأدنى</span>'}</td></tr>`).join('')}</tbody></table>`;
+  host.innerHTML = `<table class="tbl"><thead><tr><th>${codeLabel()}</th><th>الصنف</th><th>الوحدة</th><th class="num">الرصيد الإجمالي</th><th class="num">الحد الأدنى</th><th class="num">النقص عن الحد</th><th>الحالة</th></tr></thead><tbody>${rows.map(r => `<tr><td class="code">${esc(codeOf(r.item))}</td>${nameCell(r.item)}<td class="muted">${esc(r.item.unit)}</td><td class="num ${r.tot < 0 ? 'neg' : ''}">${fmt(r.tot)}</td><td class="num">${r.item.min ? fmt(r.item.min) : '—'}</td><td class="num">${r.need ? fmt(r.need) : ''}</td><td>${r.negs.length ? `<span class="chip out">رصيد سالب: ${r.negs.map(w => esc(w.name)).join('، ')}</span>` : r.tot <= 0 ? '<span class="chip out">نفد الرصيد</span>' : '<span class="chip mfg">تحت الحد الأدنى</span>'}</td></tr>`).join('')}</tbody></table>`;
 }
-function lowAOA() { return [['الكود', 'الصنف', 'الوحدة', 'الرصيد', 'الحد الأدنى', 'النقص', 'الحالة'], ...lowData().map(r => [r.item.code, r.item.name, r.item.unit, r.tot, r.item.min || '', r.need || '', r.negs.length ? 'رصيد سالب' : 'تحت الحد الأدنى'])]; }
+function lowAOA() { return [[codeLabel(), 'الصنف', 'الوحدة', 'الرصيد', 'الحد الأدنى', 'النقص', 'الحالة'], ...lowData().map(r => [codeOf(r.item), r.item.name, r.item.unit, r.tot, r.item.min || '', r.need || '', r.negs.length ? 'رصيد سالب' : 'تحت الحد الأدنى'])]; }
 
 /* =========================================================
    لوحة التحكم
@@ -2042,11 +2139,11 @@ function renderChart14(days, agg) {
    الإعدادات والنسخ الاحتياطي
    ========================================================= */
 function renderSettings() {
-  $('#stCompany').value = S.company || ''; fillSelect($('#stDefWh'), whOpts(), { blank: 'بدون' }); $('#stDefWh').value = S.settings.defaultWh || ''; $('#stTheme').value = S.settings.theme || 'auto'; $('#stNeg').checked = !!S.settings.allowNegative;
+  $('#stCompany').value = S.company || ''; fillSelect($('#stDefWh'), whOpts(), { blank: 'بدون' }); $('#stDefWh').value = S.settings.defaultWh || ''; $('#stTheme').value = S.settings.theme || 'auto'; $('#stNeg').checked = !!S.settings.allowNegative; $('#stCodeMode').value = codeMode();
   const size = Math.round((localStorage.getItem(DB_KEY) || '').length / 1024);
   fsRender(); $('#bkInfo').innerHTML = `الحجم الحالي للبيانات: <b>${size} كيلوبايت</b> — ${S.items.length} صنف، ${S.warehouses.length} مستودع، ${S.docs.length} سند، ${S.counts.length} جرد، ${Object.keys(S.boms).length} وصفة${S.updatedAt ? ` — آخر تحديث ${new Date(S.updatedAt).toLocaleString('ar-JO')}` : ''}.`;
 }
-function saveSettings() { S.company = $('#stCompany').value.trim(); S.settings.defaultWh = $('#stDefWh').value; S.settings.theme = $('#stTheme').value; S.settings.allowNegative = $('#stNeg').checked; save(); applyTheme(); refreshLookups(); toast('تم حفظ الإعدادات', 'ok'); }
+function saveSettings() { S.company = $('#stCompany').value.trim(); S.settings.defaultWh = $('#stDefWh').value; S.settings.theme = $('#stTheme').value; S.settings.allowNegative = $('#stNeg').checked; S.settings.codeMode = $('#stCodeMode').value; save(); syncCodePills(); applyTheme(); refreshLookups(); toast('تم حفظ الإعدادات', 'ok'); }
 function backupExport() { download(`نسخة_احتياطية_المخزون_${todayISO()}.json`, new Blob([JSON.stringify(S, null, 1)], { type: 'application/json' })); }
 function backupImport(file) {
   const fr = new FileReader(); fr.onload = e => { try { const o = JSON.parse(e.target.result); if (!o || !Array.isArray(o.items) || !Array.isArray(o.docs)) throw new Error('بنية الملف غير صحيحة'); if (!confirm(`سيتم استبدال كل البيانات الحالية بمحتوى النسخة (${o.items.length} صنف، ${o.docs.length} سند). متابعة؟`)) return; S = mergeState(o); save(); applyTheme(); refreshAll(); toast(`تم استرجاع النسخة الاحتياطية: ${S.items.length} صنف، ${S.warehouses.length} مستودع، ${S.docs.length} سند`, 'ok'); } catch (x) { toast('تعذر قراءة الملف: ' + x.message, 'bad'); } }; fr.readAsText(file);
@@ -2054,7 +2151,7 @@ function backupImport(file) {
 function exportAllExcel() {
   const M = balanceMatrix();
   exportXlsx(`بيانات_المخزون_${todayISO()}.xlsx`, [
-    { name: 'الأصناف', aoa: [['رمز المادة', 'رمز الوحدة', 'الاسم', 'الوحدة', 'النوع', 'التصنيف', 'الحد الأدنى', 'الباركود', 'الحالة'], ...S.items.map(i => [i.code, i.code2 || '', i.name, i.unit, ITEM_TYPES[i.type] || '', i.cat || '', i.min || 0, i.barcode || '', i.active === false ? 'موقوف' : 'نشط'])] },
+    { name: 'الأصناف', aoa: [['رمز المادة', 'رمز الوحدة', 'الاسم', 'الاسم المتعارف عليه', 'الوحدة', 'النوع', 'التصنيف', 'الحد الأدنى', 'الباركود', 'الحالة'], ...S.items.map(i => [i.code, i.code2 || '', i.name, i.name2 || '', i.unit, ITEM_TYPES[i.type] || '', i.cat || '', i.min || 0, i.barcode || '', i.active === false ? 'موقوف' : 'نشط'])] },
     { name: 'المستودعات', aoa: [['الكود', 'الاسم', 'الموقع', 'الحالة'], ...S.warehouses.map(w => [w.code, w.name, w.loc || '', w.active === false ? 'موقوف' : 'نشط'])] },
     { name: 'الأرصدة', aoa: [['الكود', 'الصنف', 'الوحدة', ...activeWhs().map(w => w.name), 'الإجمالي'], ...S.items.map(i => [i.code, i.name, i.unit, ...activeWhs().map(w => balanceOf(M, i.id, w.id)), balanceOf(M, i.id)])] },
     { name: 'الحركات', aoa: [['التاريخ', 'رقم السند', 'نوع السند', 'نوع الحركة', 'الكود', 'الصنف', 'المستودع', 'وارد', 'صادر'], ...ledger().map(e => { const i = itemById(e.itemId) || {}; return [e.date, e.docNo, DT[e.type].label, SIDE_LABEL[e.side], i.code || '', i.name || '', whName(e.wh), e.qin || '', e.qout || '']; })] },
@@ -2074,6 +2171,8 @@ function bindFile(dropId, inputId, handler) {
   drop.ondrop = e => { e.preventDefault(); drop.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) handler(f); };
 }
 function init() {
+  // تفعيل الفرز والتصفية بعد كل عرض جدول (قبل ربط الأحداث حتى تلتقط النسخة المغلّفة)
+  for (const n of ['renderItems', 'renderWhs', 'renderDocs', 'renderRepDaily', 'renderRepBalances', 'renderRepCard', 'renderRepMoves', 'renderRepLow', 'renderRepCountDiff', 'renderCountGrid', 'renderCountHistory', 'renderSalesLog', 'renderBoms', 'renderOpeningGrid', 'slRenderPreview', 'ipPreview']) { const f = window[n]; if (typeof f === 'function') window[n] = function (...a) { const r = f.apply(this, a); enhanceAll(); return r; }; }
   PRISTINE = '<!doctype html>\n' + document.documentElement.outerHTML;
   storageCheck(); S = load();
   const emb = embeddedState();
@@ -2128,12 +2227,15 @@ function init() {
   $('#cnToday').onclick = () => { $('#cnDate').value = todayISO(); renderCount(); }; $('#cnSave').onclick = saveCount; $('#cnPost').onclick = postCount; $('#cnDelete').onclick = () => deleteCount();
   $('#cnPrint').onclick = () => printCount(false); $('#cnBlank').onclick = () => printCount(true); $('#cnExport').onclick = () => exportXlsx(`الجرد_${$('#cnDate').value}.xlsx`, [{ name: 'الجرد', aoa: countAOA(true) }]);
   // reports
-  $$('#repTabs button').forEach(b => b.onclick = () => showRep(b.dataset.rep));
+  $$('#repTabs button[data-rep]').forEach(b => b.onclick = () => showRep(b.dataset.rep));
+  $$('#codeModePills button').forEach(b => b.onclick = () => { S.settings.codeMode = b.dataset.cm; save(); syncCodePills(); renderReports(); }); syncCodePills();
+  ['rcdFrom', 'rcdTo', 'rcdWh', 'rcdOnly'].forEach(id => $('#' + id).onchange = renderRepCountDiff); $('#rcdQ').oninput = renderRepCountDiff;
+  $('#rcdPrint').onclick = () => printHTML('تقرير فروقات الجرد', [$('#rcdFrom').value ? 'من ' + $('#rcdFrom').value : '', $('#rcdTo').value ? 'إلى ' + $('#rcdTo').value : '', $('#rcdWh').value ? 'المستودع: ' + whName($('#rcdWh').value) : 'كل المستودعات'].filter(Boolean), aoaTable(countDiffAOA(), 6)); $('#rcdExport').onclick = () => exportXlsx(`فروقات_الجرد_${todayISO()}.xlsx`, [{ name: 'فروقات الجرد', aoa: countDiffAOA() }]);
   ['rdFrom', 'rdTo', 'rdWh', 'rdType', 'rdMoved', 'rdDetail'].forEach(id => $('#' + id).onchange = renderRepDaily); $('#rdQ').oninput = renderRepDaily;
   $('#rdToday').onclick = () => { $('#rdFrom').value = $('#rdTo').value = todayISO(); renderRepDaily(); };
   $('#rdPrint').onclick = dailyPrint; $('#rdExport').onclick = () => exportXlsx(`التقرير_اليومي_${$('#rdFrom').value}.xlsx`, [{ name: 'التقرير اليومي', aoa: dailyAOA() }]);
   ['rbAsOf', 'rbType', 'rbZero'].forEach(id => $('#' + id).onchange = renderRepBalances); $('#rbQ').oninput = renderRepBalances;
-  $('#rbPrint').onclick = () => { const { asOf } = balancesData(); printHTML('تقرير أرصدة المخزون', [asOf ? 'حتى تاريخ ' + asOf : 'الأرصدة الحالية'], aoaTable(balancesAOA(), 3)); }; $('#rbExport').onclick = () => exportXlsx(`أرصدة_المخزون_${todayISO()}.xlsx`, [{ name: 'الأرصدة', aoa: balancesAOA() }]);
+  $('#rbPrint').onclick = () => { const { asOf } = balancesData(); printHTML('تقرير أرصدة المخزون', [asOf ? 'حتى تاريخ ' + asOf : 'الأرصدة الحالية'], aoaTable(balancesAOA(), 4)); }; $('#rbExport').onclick = () => exportXlsx(`أرصدة_المخزون_${todayISO()}.xlsx`, [{ name: 'الأرصدة', aoa: balancesAOA() }]);
   rcCombo = makeCombo($('#rcItem'), { placeholder: 'اختر الصنف…', source: () => S.items, onPick: renderRepCard }); ['rcWh', 'rcFrom', 'rcTo'].forEach(id => $('#' + id).onchange = renderRepCard);
   $('#rcPrint').onclick = () => { const a = cardAOA(); if (!a) return toast('اختر صنفاً أولاً', 'warn'); const i = itemById(rcCombo.value); printHTML(`كرت الصنف — ${i.name} (${i.code})`, [$('#rcWh').value ? 'المستودع: ' + whName($('#rcWh').value) : 'كل المستودعات', $('#rcFrom').value ? 'من ' + $('#rcFrom').value : '', $('#rcTo').value ? 'إلى ' + $('#rcTo').value : ''].filter(Boolean), aoaTable(a, 6)); };
   $('#rcExport').onclick = () => { const a = cardAOA(); if (!a) return toast('اختر صنفاً أولاً', 'warn'); exportXlsx(`كرت_الصنف_${itemById(rcCombo.value).code}.xlsx`, [{ name: 'كرت الصنف', aoa: a }]); };
