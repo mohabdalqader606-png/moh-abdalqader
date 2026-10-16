@@ -837,7 +837,7 @@ details[open]>summary::before{content:"▾ "}
 /* =========================================================
    رقابة المخزون الكمي — منطق الشاشة
    ========================================================= */
-const APP_VER = '1.7.1';
+const APP_VER = '1.7.2';
 const DB_KEY = 'kinv_ctrl_v1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -1849,8 +1849,18 @@ function slPost() {
 function renderSales() { if (!$('#slDate').value) $('#slDate').value = todayISO(); if (!$('#slWh').value) $('#slWh').value = S.settings.defaultWh || activeWhs()[0]?.id || ''; renderSalesLog(); }
 function renderSalesLog() {
   const host = $('#slLog'); if (!S.imports.length) { host.innerHTML = emptyHTML('لم يتم استيراد أي ملف بعد'); return; }
-  host.innerHTML = `<table class="tbl"><thead><tr><th>وقت الترحيل</th><th>الملف</th><th>تاريخ الحركة</th><th class="num">الأسطر</th><th class="num cout">كمية البيع</th><th class="num cin">كمية الشراء</th><th class="num">أصناف أُضيفت</th><th>السندات</th></tr></thead><tbody>${S.imports.map(im => `<tr><td class="small">${new Date(im.at).toLocaleString('ar-JO')}</td><td>${esc(im.file)}</td><td class="mono">${esc(im.date)}</td><td class="num">${im.rows}</td><td class="num">${fmt(im.qty)}</td><td class="num">${im.buy ? fmt(im.buy) : '<span class="muted">—</span>'}</td><td class="num">${im.newItems?.length ? `<span class="chip mfg" title="${esc(im.newItems.join('\n'))}">${im.newItems.length}</span>` : '<span class="muted">—</span>'}</td><td>${im.docs.map(n => { const d = S.docs.find(x => x.no === n); return d ? `<a href="#" data-view="${d.id}" class="mono">${esc(n)}</a>` : `<span class="mono muted" title="محذوف">${esc(n)}</span>`; }).join('، ')}</td></tr>`).join('')}</tbody></table>`;
+  host.innerHTML = `<table class="tbl"><thead><tr><th>وقت الترحيل</th><th>الملف</th><th>تاريخ الحركة</th><th class="num">الأسطر</th><th class="num cout">كمية البيع</th><th class="num cin">كمية الشراء</th><th class="num">أصناف أُضيفت</th><th>السندات</th><th></th></tr></thead><tbody>${S.imports.map(im => `<tr class="${im.undone ? 'muted' : ''}"><td class="small">${new Date(im.at).toLocaleString('ar-JO')}${im.undone ? '<span class="sub"><span class="chip out">تم التراجع عنه</span></span>' : ''}</td><td>${esc(im.file)}</td><td class="mono">${esc(im.date)}</td><td class="num">${im.rows}</td><td class="num">${fmt(im.qty)}</td><td class="num">${im.buy ? fmt(im.buy) : '<span class="muted">—</span>'}</td><td class="num">${im.newItems?.length ? `<span class="chip mfg" title="${esc(im.newItems.join('\n'))}">${im.newItems.length}</span>` : '<span class="muted">—</span>'}</td><td>${im.docs.map(n => { const d = S.docs.find(x => x.no === n); return d ? `<a href="#" data-view="${d.id}" class="mono">${esc(n)}</a>` : `<span class="mono muted" title="محذوف"><s>${esc(n)}</s></span>`; }).join('، ')}</td><td class="nowrap">${!im.undone && im.docs.some(n => S.docs.some(x => x.no === n)) ? `<button class="btn xs danger" data-undo="${im.id}" title="حذف كل سندات هذا الاستيراد (مبيعات ومشتريات) لإعادة رفع الملف"><svg><use href="#i-trash"/></svg>تراجع عن هذا الاستيراد</button>` : ''}</td></tr>`).join('')}</tbody></table>`;
   host.querySelectorAll('[data-view]').forEach(a => a.onclick = e => { e.preventDefault(); viewDoc(a.dataset.view); });
+  host.querySelectorAll('[data-undo]').forEach(b => b.onclick = () => undoImport(b.dataset.undo));
+}
+/** حذف كل السندات الناتجة عن استيراد معيّن (لإعادة رفع الملف بتاريخ أو مستودع صحيح) */
+function undoImport(id) {
+  const im = S.imports.find(x => x.id === id); if (!im) return;
+  const docs = S.docs.filter(d => im.docs.includes(d.no)); if (!docs.length) return toast('سندات هذا الاستيراد محذوفة مسبقاً', 'warn');
+  const desc = docs.map(d => `${d.no} (${DT[d.type].label} — ${d.date} — ${d.lines.length} سطر)`).join('\n');
+  if (!confirm(`سيتم حذف ${docs.length} سند ناتج عن ملف "${im.file}" وعكس أثرها على الأرصدة:\n${desc}\n\nالأصناف التي أُضيفت تلقائياً تبقى معرّفة. متابعة؟`)) return;
+  S.docs = S.docs.filter(d => !im.docs.includes(d.no)); im.undone = true; im.undoneAt = new Date().toISOString();
+  save(); refreshAll(); toast(`تم حذف ${docs.length} سند — يمكنك الآن إعادة رفع الملف بالتاريخ الصحيح`, 'ok');
 }
 function salesTemplate() { exportXlsx('قالب_المبيعات_اليومية.xlsx', [{ name: 'المبيعات', aoa: [['رمز المادة', 'رمز الوحدة', 'وصف المادة', 'نسبة الضريبة', 'كمية الشراء', 'كمية البيع', 'الكلفة'], ['59', '92', 'Angus Brisket Prime 2011-6215', 0, 0, 38.342, 8.166], ['67', '101', 'Flank Steak Angus Longfed 6218-2014', 0, 94.9, 53.402, 13.128]] }]); }
 
