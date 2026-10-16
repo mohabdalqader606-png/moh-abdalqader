@@ -862,7 +862,7 @@ details[open]>summary::before{content:"▾ "}
 /* =========================================================
    رقابة المخزون الكمي — منطق الشاشة
    ========================================================= */
-const APP_VER = '2.1.0';
+const APP_VER = '2.1.1';
 const DB_KEY = 'kinv_ctrl_v1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -1274,6 +1274,9 @@ function enhanceTable(host) {
   apply();
 }
 function enhanceAll() { $$('.tbl-wrap').forEach(h => { try { enhanceTable(h); } catch (e) { console.warn('enhance', e); } }); }
+// مراقب عام: أي جدول يُعرض في أي مكان بالشاشة يُفعَّل عليه الفرز والتصفية تلقائياً
+let _enhRaf = 0; function enhanceSoon() { if (_enhRaf) return; _enhRaf = requestAnimationFrame(() => { _enhRaf = 0; enhanceAll(); }); }
+if (typeof MutationObserver !== 'undefined') document.addEventListener('DOMContentLoaded', () => new MutationObserver(muts => { if (muts.some(m => m.addedNodes.length)) enhanceSoon(); }).observe(document.body, { childList: true, subtree: true }));
 
 /* ---------- UI helpers ---------- */
 function toast(msg, kind = '') {
@@ -2299,7 +2302,7 @@ function bindFile(dropId, inputId, handler) {
 }
 function init() {
   // تفعيل الفرز والتصفية بعد كل عرض جدول (قبل ربط الأحداث حتى تلتقط النسخة المغلّفة)
-  for (const n of ['renderItems', 'renderWhs', 'renderDocs', 'renderRepDaily', 'renderRepBalances', 'renderRepCard', 'renderRepMoves', 'renderRepLow', 'renderRepCountDiff', 'renderCountGrid', 'renderCountHistory', 'renderSalesLog', 'renderAlloc', 'renderBoms', 'renderOpeningGrid', 'slRenderPreview', 'ipPreview']) { const f = window[n]; if (typeof f === 'function') window[n] = function (...a) { const r = f.apply(this, a); enhanceAll(); return r; }; }
+  for (const n of ['renderItems', 'renderWhs', 'renderDocs', 'renderRepDaily', 'renderRepBalances', 'renderRepCard', 'renderRepMoves', 'renderRepLow', 'renderRepFull', 'renderRepCountDiff', 'renderCountGrid', 'renderCountHistory', 'renderSalesLog', 'renderAlloc', 'renderBoms', 'renderOpeningGrid', 'slRenderPreview', 'ipPreview']) { const f = window[n]; if (typeof f === 'function') window[n] = function (...a) { const r = f.apply(this, a); enhanceAll(); return r; }; }
   PRISTINE = '<!doctype html>\n' + document.documentElement.outerHTML;
   storageCheck(); S = load();
   const emb = embeddedState();
