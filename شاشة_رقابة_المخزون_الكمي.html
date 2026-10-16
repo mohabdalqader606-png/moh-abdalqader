@@ -486,7 +486,7 @@ details[open]>summary::before{content:"▾ "}
                 <div class="field"><label>عمود التاريخ (اختياري)</label><select class="in" id="mDate"></select></div>
                 <div class="field"><label>عمود المستودع (اختياري)</label><select class="in" id="mWh"></select></div>
               </div>
-              <div class="hint" style="margin-top:10px">المطابقة تتم برمز الوحدة أولاً (لأن رمز المادة قد يتكرر لأكثر من وحدة)، ثم برمز المادة إن كان وحيداً، ثم بالوصف. كمية البيع تُرحَّل كمبيعات (إخراج) وكمية الشراء كفاتورة مشتريات (إدخال) على نفس التاريخ والمستودع.</div>
+              <div class="hint" style="margin-top:10px">المطابقة تتم برمز الوحدة أولاً (لأن رمز المادة قد يتكرر لأكثر من وحدة)، ثم برمز المادة إن كان وحيداً ولا يتعارض مع رمز الوحدة، ثم بالوصف المطابق تماماً للاسم أو الاسم المتعارف عليه. أي سطر لا يطابق يُعرَّف كصنف جديد تلقائياً عند الترحيل (لا يوجد ربط يدوي). كمية البيع تُرحَّل كمبيعات (إخراج) وكمية الشراء كفاتورة مشتريات (إدخال) على نفس التاريخ والمستودع.</div>
               <div class="row between" style="margin-top:10px">
                 <div class="row"><label class="toggle"><input type="checkbox" id="slAgg" checked>تجميع الكميات لكل صنف</label><span id="slBuyWrap" style="display:none"><label class="toggle"><input type="checkbox" id="slBuy" checked>ترحيل كمية الشراء كفاتورة مشتريات</label></span></div>
                 <div class="row"><button class="btn" id="slPreviewBtn">معاينة المطابقة</button></div>
@@ -837,7 +837,7 @@ details[open]>summary::before{content:"▾ "}
 /* =========================================================
    رقابة المخزون الكمي — منطق الشاشة
    ========================================================= */
-const APP_VER = '1.7.0';
+const APP_VER = '1.7.1';
 const DB_KEY = 'kinv_ctrl_v1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -1020,6 +1020,7 @@ function defaultState() {
 function migrate(o) {
   if (!o || !Array.isArray(o.docs)) return o;
   for (const d of o.docs) for (const l of d.lines || []) { if (l.note && /^[\d.,\s]+$/.test(String(l.note)) && Math.abs(num(l.note) - (+l.qty || 0)) < 1e-9) l.note = ''; }
+  o.aliases = {}; // أُلغي الربط اليدوي للأوصاف نهائياً — المطابقة بالرموز ثم الوصف المطابق فقط
   return o;
 }
 function mergeState(o) { const d = defaultState(); return migrate(Object.assign(d, o, { settings: Object.assign(d.settings, o.settings || {}) })); }
@@ -1766,18 +1767,24 @@ function slParseSheet(autoHeader = false) {
   for (const [id, keys] of Object.entries(SL_GUESS)) { fillSelect($('#' + id), colOpts(slHeaders)); let v = ''; if (saved[id] && slHeaders.includes(saved[id])) v = String(slHeaders.indexOf(saved[id])); else if (!(id in saved)) { const g = guessCol(slHeaders, keys); if (g >= 0) v = String(g); } else { const g = guessCol(slHeaders, keys); if (g >= 0) v = String(g); } $('#' + id).value = v; }
   $('#slBuyWrap').style.display = $('#mBuy').value !== '' ? '' : 'none';
 }
-/** مطابقة صنف من ملف المبيعات: رمز الوحدة هو المفتاح الفريد، ورمز المادة قد يتكرر لعدة وحدات */
-function matchItem(code, name, code2 = '') {
+/** مطابقة صنف من ملف المبيعات مع بيان الأساس: رمز الوحدة هو المفتاح الفريد، ورمز المادة قد يتكرر لعدة وحدات */
+const BASIS_LABEL = { code2: 'رمز الوحدة', code: 'رمز المادة', name: 'الوصف مطابق للاسم', name2: 'الاسم المتعارف عليه' };
+function matchItemEx(code, name, code2 = '') {
   const cc = normCode(code), c2 = normCode(code2), nn = normName(name);
-  if (c2) { const i = S.items.find(x => x.code2 && normCode(x.code2) === c2); if (i) return i; }
+  if (c2) { const i = S.items.find(x => x.code2 && normCode(x.code2) === c2); if (i) return { item: i, basis: 'code2' }; }
   if (cc) {
     const cand = S.items.filter(x => normCode(x.code) === cc);
-    if (cand.length === 1 && (!c2 || !cand[0].code2)) return cand[0];           // رمز مادة وحيد ولا يتعارض مع رمز الوحدة
-    if (!c2) { const i = S.items.find(x => x.code2 && normCode(x.code2) === cc) || S.items.find(x => x.barcode && normCode(x.barcode) === cc); if (i) return i; }
+    if (cand.length === 1 && (!c2 || !cand[0].code2)) return { item: cand[0], basis: 'code' };   // رمز مادة وحيد ولا يتعارض مع رمز الوحدة
+    if (!c2) { const i = S.items.find(x => x.code2 && normCode(x.code2) === cc) || S.items.find(x => x.barcode && normCode(x.barcode) === cc); if (i) return { item: i, basis: 'code' }; }
   }
-  if (nn) { const a = S.aliases[nn]; if (a && itemById(a)) return itemById(a); const i = S.items.find(x => normName(x.name) === nn) || S.items.find(x => x.name2 && normName(x.name2) === nn); if (i) return i; if (!cc && !c2) { const j = S.items.find(x => normCode(x.code) === normCode(name) || (x.code2 && normCode(x.code2) === normCode(name))); if (j) return j; } }
+  if (nn) {
+    const i = S.items.find(x => normName(x.name) === nn); if (i) return { item: i, basis: 'name' };
+    const j = S.items.find(x => x.name2 && normName(x.name2) === nn); if (j) return { item: j, basis: 'name2' };
+    if (!cc && !c2) { const k = S.items.find(x => normCode(x.code) === normCode(name) || (x.code2 && normCode(x.code2) === normCode(name))); if (k) return { item: k, basis: 'code' }; }
+  }
   return null;
 }
+function matchItem(code, name, code2 = '') { return (matchItemEx(code, name, code2) || {}).item || null; }
 function matchWh(text) { const n = normName(text), c = normCode(text); return S.warehouses.find(w => normName(w.name) === n || normCode(w.code) === c) || S.warehouses.find(w => n && normName(w.name).includes(n)) || null; }
 function slCols() { const c = k => { const v = $('#' + k).value; return v === '' ? -1 : +v; }; return { code: c('mCode'), code2: c('mCode2'), name: c('mName'), qty: c('mQty'), buy: c('mBuy'), date: c('mDate'), wh: c('mWh') }; }
 function slPreview() {
@@ -1792,24 +1799,23 @@ function slPreview() {
     const code = String(g(r, C.code) ?? '').trim(), code2 = String(g(r, C.code2) ?? '').trim(), name = String(g(r, C.name) ?? '').trim();
     const qty = C.qty >= 0 ? num(g(r, C.qty)) : 0, buy = useBuy ? num(g(r, C.buy)) : 0;
     const date = C.date >= 0 ? (excelDate(g(r, C.date)) || defDate) : defDate; const whTxt = C.wh >= 0 ? String(g(r, C.wh)).trim() : ''; const wh = C.wh >= 0 && whTxt ? matchWh(whTxt) : whById(defWh);
-    const item = matchItem(code, name, code2);
+    const mx = matchItemEx(code, name, code2); const item = mx && mx.item;
     let st = item ? 'ok' : ((name || code2 || code) ? 'new' : 'nomatch'); if (!date) st = 'nodate'; else if (!wh) st = 'nowh'; else if (!(qty > 0) && !(buy > 0)) st = 'noqty';
-    return { k: k + 1, code, code2, name, qty: round3(Math.max(0, qty)), buy: round3(Math.max(0, buy)), date, wh: wh?.id || '', whTxt, itemId: item?.id || '', st };
+    return { k: k + 1, code, code2, name, qty: round3(Math.max(0, qty)), buy: round3(Math.max(0, buy)), date, wh: wh?.id || '', whTxt, itemId: item?.id || '', basis: mx ? mx.basis : '', st };
   });
   if (agg) { const m = new Map(); for (const o of out) { if (o.st !== 'ok') { m.set('x' + o.k, o); continue; } const key = `${o.itemId}|${o.date}|${o.wh}`; const e = m.get(key); if (e) { e.qty = round3(e.qty + o.qty); e.buy = round3(e.buy + o.buy); e.n = (e.n || 1) + 1; } else m.set(key, { ...o, n: 1 }); } out = [...m.values()]; }
   slOut = out; slOut._useBuy = useBuy; slRenderPreview(); slStep(3);
 }
 function slRenderPreview() {
   const host = $('#slPreview'); const out = slOut; const useBuy = out._useBuy; const ok = out.filter(o => o.st === 'ok' || o.st === 'new'), news = out.filter(o => o.st === 'new'), bad = out.length - ok.length;
-  const lab = { ok: '<span class="chip in">مطابق</span>', new: '<span class="chip mfg">صنف جديد — سيُضاف تلقائياً</span>', nomatch: '<span class="chip out">سطر بلا رمز أو وصف</span>', nodate: '<span class="chip out">تاريخ غير صالح</span>', nowh: '<span class="chip out">مستودع غير معروف</span>', noqty: '<span class="chip">كمية صفر — تخطي</span>' };
-  const itemSel = o => `<select class="in" data-fix="${o.k}" style="min-height:32px;padding:4px 8px"><option value="">— اختر الصنف المقابل —</option>${activeItems().map(i => `<option value="${i.id}">${esc(i.name)} (${esc(i.code)}${i.code2 ? '/' + esc(i.code2) : ''})</option>`).join('')}</select>`;
+  const okChip = o => (o.basis === 'name' || o.basis === 'name2') ? '<span class="chip in">مطابق بالوصف</span>' : '<span class="chip in">مطابق</span>';
+  const lab = { ok: '', new: '<span class="chip mfg">صنف جديد — سيُضاف تلقائياً</span>', nomatch: '<span class="chip out">سطر بلا رمز أو وصف</span>', nodate: '<span class="chip out">تاريخ غير صالح</span>', nowh: '<span class="chip out">مستودع غير معروف</span>', noqty: '<span class="chip">كمية صفر — تخطي</span>' };
   const dup = S.imports.find(im => im.file === slWB._fileName && out.some(o => o.date === im.date));
   const tS = round3(ok.reduce((s, o) => s + o.qty, 0)), tB = round3(ok.reduce((s, o) => s + o.buy, 0));
   host.innerHTML = `${dup ? `<div class="hint warn">تنبيه: ملف بنفس الاسم "${esc(dup.file)}" سبق ترحيله بتاريخ ${esc(dup.date)} (${esc(dup.docs.join('، '))}). تأكد من عدم تكرار الترحيل.</div>` : ''}
     <div class="row between" style="margin:10px 0"><div class="row"><span class="chip in">${ok.length} سطر جاهز</span>${news.length ? `<span class="chip mfg">${news.length} صنف جديد سيُعرَّف تلقائياً عند الترحيل</span>` : ''}${bad ? `<span class="chip out">${bad} سطر يحتاج معالجة</span>` : ''}<span class="chip out">إجمالي البيع: ${fmt(tS)}</span>${useBuy ? `<span class="chip in">إجمالي الشراء: ${fmt(tB)}</span>` : ''}</div>
     <div class="row"><button class="btn primary" id="slPost" ${ok.length ? '' : 'disabled'}>ترحيل ${ok.length} سطر${useBuy && tB ? ' (مبيعات + مشتريات)' : ' كمبيعات'}</button></div></div>
-    <div class="tbl-wrap" style="max-height:48vh"><table class="tbl"><thead><tr><th>#</th><th>الحالة</th><th>رمز المادة</th><th>رمز الوحدة</th><th>الوصف بالملف</th><th>الصنف المطابق</th><th>التاريخ</th><th>المستودع</th><th class="num cout">كمية البيع</th>${useBuy ? '<th class="num cin">كمية الشراء</th>' : ''}</tr></thead><tbody>${out.map(o => `<tr><td class="muted">${o.k}${o.n > 1 ? `<span class="sub">${o.n} أسطر</span>` : ''}</td><td>${lab[o.st]}</td><td class="code">${esc(o.code)}</td><td class="code">${esc(o.code2)}</td><td>${esc(o.name)}</td><td>${o.itemId ? `<b>${esc(itemLabel(o.itemId))}</b><span class="sub mono">${esc(itemById(o.itemId).code)}${itemById(o.itemId).code2 ? ' / ' + esc(itemById(o.itemId).code2) : ''}</span>` : o.st === 'new' ? `<span class="small muted">سيُضاف كصنف جديد — أو اربطه بصنف موجود:</span>${itemSel(o)}` : ''}</td><td class="mono">${esc(o.date)}</td><td>${o.wh ? esc(whName(o.wh)) : `<span class="neg">${esc(o.whTxt)}</span>`}</td><td class="num cout">${o.qty ? fmt(o.qty) : '<span class="muted">0</span>'}</td>${useBuy ? `<td class="num cin">${o.buy ? fmt(o.buy) : '<span class="muted">0</span>'}</td>` : ''}</tr>`).join('')}</tbody></table></div>`;
-  host.querySelectorAll('[data-fix]').forEach(sel => sel.onchange = () => { const o = out.find(x => String(x.k) === sel.dataset.fix); if (!o || !sel.value) return; o.itemId = sel.value; o.st = (o.qty > 0 || o.buy > 0) ? 'ok' : 'noqty'; if (o.code2 && !itemById(sel.value).code2) { itemById(sel.value).code2 = o.code2; } else if (o.name) S.aliases[normName(o.name)] = sel.value; save(); slRenderPreview(); toast('تم ربط السطر بالصنف وسيُطابَق تلقائياً في المرات القادمة', 'ok'); });
+    <div class="tbl-wrap" style="max-height:48vh"><table class="tbl"><thead><tr><th>#</th><th>الحالة</th><th>رمز المادة</th><th>رمز الوحدة</th><th>الوصف بالملف</th><th>الصنف المطابق</th><th>التاريخ</th><th>المستودع</th><th class="num cout">كمية البيع</th>${useBuy ? '<th class="num cin">كمية الشراء</th>' : ''}</tr></thead><tbody>${out.map(o => `<tr><td class="muted">${o.k}${o.n > 1 ? `<span class="sub">${o.n} أسطر</span>` : ''}</td><td>${o.st === 'ok' ? okChip(o) : lab[o.st]}</td><td class="code">${esc(o.code)}</td><td class="code">${esc(o.code2)}</td><td>${esc(o.name)}</td><td>${o.itemId ? `<b>${esc(itemLabel(o.itemId))}</b><span class="sub mono">${esc(itemById(o.itemId).code)}${itemById(o.itemId).code2 ? ' / ' + esc(itemById(o.itemId).code2) : ''}</span><span class="sub">الأساس: ${esc(BASIS_LABEL[o.basis] || '—')}</span>` : o.st === 'new' ? `<span class="small muted">سيُضاف كصنف جديد برمزيه ووصفه كما في الملف</span>` : ''}</td><td class="mono">${esc(o.date)}</td><td>${o.wh ? esc(whName(o.wh)) : `<span class="neg">${esc(o.whTxt)}</span>`}</td><td class="num cout">${o.qty ? fmt(o.qty) : '<span class="muted">0</span>'}</td>${useBuy ? `<td class="num cin">${o.buy ? fmt(o.buy) : '<span class="muted">0</span>'}</td>` : ''}</tr>`).join('')}</tbody></table></div>`;
   const pb = host.querySelector('#slPost'); if (pb) pb.onclick = slPost;
 }
 /** تعريف الأصناف الجديدة الواردة في ملف المبيعات تلقائياً — يعيد قائمة الأصناف المضافة */
