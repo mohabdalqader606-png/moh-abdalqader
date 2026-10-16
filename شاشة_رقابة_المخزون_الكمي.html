@@ -332,11 +332,24 @@ details[open]>summary::before{content:"▾ "}
 /* ===== Print ===== */
 #printArea{display:none}
 @media print{
-  @page{margin:12mm}
-  body{background:#fff;color:#000;font-size:12px;font-family:var(--font)}
+  @page{size:A4;margin:10mm 9mm 12mm}
+  body{background:#fff;color:#000;font-size:11.5px;font-family:var(--font)}
+  #printArea .ph{display:flex;align-items:baseline;justify-content:space-between;gap:12px;border-bottom:2px solid #222;padding-bottom:6px;margin-bottom:6px}
+  #printArea .ph .co{font-size:15px;font-weight:700}
+  #printArea thead{display:table-header-group}
+  #printArea tr{page-break-inside:avoid}
+  #printArea .sub{display:block;font-size:9.5px;color:#555;font-weight:400}
+  #printArea .chip{display:inline-block;border:1px solid #999;border-radius:4px;padding:0 4px;font-size:10px;background:#fff;color:#000}
+  #printArea .chip.dot::before{display:none}
+  #printArea .muted{color:#666}
+  #printArea .neg{color:#000;font-weight:700}
+  #printArea .pos{color:#000}
+  #printArea td.code,#printArea .mono{font-family:ui-monospace,Consolas,monospace;font-size:10.5px;direction:ltr;text-align:right}
+  #printArea td.cin,#printArea td.cout,#printArea th.cin,#printArea th.cout{box-shadow:none}
+  #printArea .nm{unicode-bidi:plaintext}
   .app,.toast-wrap,.ov{display:none !important}
   #printArea{display:block}
-  #printArea h1{font-size:18px;margin-bottom:2px}
+  #printArea h1{font-size:16px;margin:0}
   #printArea .meta{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:11.5px;color:#333;margin:4px 0 10px;border-bottom:1px solid #999;padding-bottom:8px}
   #printArea table{width:100%;border-collapse:collapse;font-size:11.5px}
   #printArea th,#printArea td{border:1px solid #999;padding:5px 7px;text-align:start}
@@ -862,7 +875,7 @@ details[open]>summary::before{content:"▾ "}
 /* =========================================================
    رقابة المخزون الكمي — منطق الشاشة
    ========================================================= */
-const APP_VER = '2.1.1';
+const APP_VER = '2.2.0';
 const DB_KEY = 'kinv_ctrl_v1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -1250,15 +1263,15 @@ function enhanceTable(host) {
   const body = table.tBodies[0]; const all = [...body.rows];
   const isTot = r => r.classList.contains('tot'); const isPinned = r => !isTot(r) && (!r.cells.length || r.cells[0].colSpan > 1 || r.cells.length * 2 < cols.length);
   const data = all.filter(r => !isTot(r) && !isPinned(r)), top = all.filter(isPinned), bottom = all.filter(isTot);
-  if (data.length < 2 && !Object.values(st.flt).some(Boolean)) return;
   const bar = document.createElement('div'); bar.className = 'tbl-tools';
-  bar.innerHTML = `<button type="button" class="tt" data-flt title="إظهار صف التصفية تحت العناوين"><svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>تصفية الأعمدة</button><button type="button" class="tt" data-clear style="display:none">مسح الفرز والتصفية</button><span class="small muted" data-cnt></span><span class="small muted" style="margin-inline-start:auto">انقر على عنوان أي عمود للفرز ▲▼</span>`;
+  bar.innerHTML = `<button type="button" class="tt" data-flt title="إظهار صف التصفية تحت العناوين"><svg viewBox="0 0 24 24"><path d="M3 5h18l-7 8v6l-4-2v-4z"/></svg>تصفية الأعمدة</button><button type="button" class="tt" data-print title="طباعة الجدول كما يظهر الآن على A4"><svg viewBox="0 0 24 24"><path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="7"/></svg>طباعة A4</button><button type="button" class="tt" data-clear style="display:none">مسح الفرز والتصفية</button><span class="small muted" data-cnt></span><span class="small muted" style="margin-inline-start:auto">انقر على عنوان أي عمود للفرز ▲▼</span>`;
   host.insertBefore(bar, table);
   const ftr = document.createElement('tr'); ftr.className = 'flt'; const maxCol = Math.max(...cols.map(c => c.col)) + 1;
   for (let c = 0; c < maxCol; c++) { const td = document.createElement('td'); const leaf = cols.find(x => x.col === c); if (leaf && leaf.th.textContent.trim()) { const inp = document.createElement('input'); inp.className = 'in'; inp.placeholder = 'تصفية…'; inp.title = 'نص للبحث، أو شرط رقمي مثل >10 أو <=0، أو عدة قيم مفصولة بـ |'; inp.value = st.flt[c] || ''; inp.addEventListener('input', () => { st.flt[c] = inp.value; apply(); }); td.appendChild(inp); } ftr.appendChild(td); }
   table.tHead.appendChild(ftr);
   cols.forEach(({ th, col }) => { if (!th.textContent.trim()) return; th.classList.add('sortable-th'); const ind = document.createElement('span'); ind.className = 'sort-ind'; th.appendChild(ind); th.addEventListener('click', e => { if (e.target.closest('input,button,a')) return; if (st.sort === col) { st.dir = st.dir === 1 ? -1 : (st.dir === -1 ? 0 : 1); if (st.dir === 0) st.sort = null; } else { st.sort = col; st.dir = 1; } apply(); }); });
   bar.querySelector('[data-flt]').onclick = () => { st.on = !st.on; apply(); if (st.on) ftr.querySelector('input')?.focus(); };
+  bar.querySelector('[data-print]').onclick = () => printTableHost(host);
   bar.querySelector('[data-clear]').onclick = () => { st.sort = null; st.dir = 1; st.flt = {}; ftr.querySelectorAll('input').forEach(i => i.value = ''); apply(); };
   function apply() {
     ftr.style.display = st.on ? '' : 'none'; bar.querySelector('[data-flt]').classList.toggle('on', st.on);
@@ -1302,9 +1315,29 @@ function exportXlsx(name, sheets) { // sheets: [{name, aoa}]
   for (const s of sheets) { const ws = XLSX.utils.aoa_to_sheet(s.aoa); ws['!cols'] = (s.aoa[0] || []).map((_, ci) => ({ wch: Math.min(40, Math.max(8, ...s.aoa.slice(0, 200).map(r => String(r[ci] ?? '').length + 2))) })); if (!wb.Workbook) wb.Workbook = { Views: [{ RTL: true }] }; XLSX.utils.book_append_sheet(wb, ws, s.name.slice(0, 31)); }
   XLSX.writeFile(wb, name);
 }
-function printHTML(title, meta, bodyHtml) {
-  $('#printArea').innerHTML = `<h1>${esc(title)}</h1><div class="meta"><span>${esc(S.company || '')}</span>${meta.map(m => `<span>${esc(m)}</span>`).join('')}<span>طُبع في ${new Date().toLocaleString('ar-JO')}</span></div>${bodyHtml}`;
+function printHTML(title, meta, bodyHtml, opts = {}) {
+  $('#printArea').innerHTML = `<div class="ph"><div class="co">${esc(S.company || 'رقابة المخزون الكمي')}</div><h1>${esc(title)}</h1></div><div class="meta">${meta.filter(Boolean).map(m => `<span>${esc(m)}</span>`).join('')}<span>طُبع في ${new Date().toLocaleString('ar-JO')}</span></div>${bodyHtml}`;
+  let st = document.getElementById('pgOrient'); if (!st) { st = document.createElement('style'); st.id = 'pgOrient'; document.head.appendChild(st); }
+  st.textContent = `@media print{@page{size:A4 ${opts.landscape ? 'landscape' : 'portrait'};margin:10mm 9mm 12mm}}`;
   setTimeout(() => window.print(), 50);
+}
+/** طباعة أي جدول كما يظهر الآن (بعد الفرز والتصفية) على A4 */
+function printTableHost(host, titleOverride) {
+  const table = host.querySelector('table.tbl'); if (!table) return toast('لا يوجد جدول للطباعة', 'warn');
+  const clone = table.cloneNode(true);
+  clone.querySelectorAll('tr.flt').forEach(r => r.remove());
+  clone.querySelectorAll('tr').forEach(r => { if (r.style.display === 'none') r.remove(); });
+  clone.querySelectorAll('input,select,textarea').forEach(el => { const v = el.tagName === 'SELECT' ? (el.selectedOptions[0]?.textContent || '') : el.value; el.replaceWith(document.createTextNode(v)); });
+  clone.querySelectorAll('button,.sort-ind,svg').forEach(el => el.remove());
+  clone.querySelectorAll('a').forEach(a => a.replaceWith(document.createTextNode(a.textContent)));
+  // حذف الأعمدة الفارغة (أعمدة الأزرار)
+  const hdr = clone.tHead && clone.tHead.rows[clone.tHead.rows.length - 1]; if (hdr && clone.tHead.rows.length === 1) { const n = hdr.cells.length; for (let c = n - 1; c >= 0; c--) { const empty = !hdr.cells[c].textContent.trim() && [...clone.tBodies[0].rows].every(r => r.cells[c] && (r.cells[c].colSpan > 1 || !r.cells[c].textContent.trim())); if (empty) clone.querySelectorAll('tr').forEach(r => { if (r.cells[c] && r.cells.length === n) r.deleteCell(c); }); } }
+  clone.removeAttribute('class'); clone.querySelectorAll('[style]').forEach(el => el.removeAttribute('style'));
+  const card = host.closest('.card'); const sub = host.closest('.sub'); const tabBtn = sub ? $(`#repTabs button[data-rep="${sub.dataset.rep}"]`) : null;
+  const title = titleOverride || [tabBtn?.textContent.trim(), card?.querySelector('.hd h2')?.textContent.trim()].filter(Boolean)[0] || $('#pageTitle').textContent;
+  const meta = [$('#pageTitle').textContent]; const filt = (card || host.parentElement).querySelector('.filters'); if (filt) { const parts = []; filt.querySelectorAll('.field').forEach(f => { const l = f.querySelector('label')?.textContent.trim(); const inp = f.querySelector('input,select'); if (!l || !inp) return; const v = inp.tagName === 'SELECT' ? inp.selectedOptions[0]?.textContent.trim() : inp.value; if (v && v !== 'الكل' && !/^(كل |تجميعي|بدون|أول )/.test(v)) parts.push(`${l.replace(/\s*\*$/, '')}: ${v}`); }); filt.querySelectorAll('.toggle input:checked').forEach(t => parts.push(t.parentElement.textContent.trim())); if (parts.length) meta.push(parts.join(' · ')); }
+  const cols = hdr ? hdr.cells.length : 0; const rows = clone.tBodies[0] ? clone.tBodies[0].rows.length : 0;
+  printHTML(title, meta.concat(`${rows} صف`), clone.outerHTML, { landscape: cols > 8 });
 }
 function tableHTML(headers, rows, { total = null, cls = 'tbl' } = {}) {
   const th = headers.map(h => `<th class="${h.num ? 'num' : ''}">${esc(h.l)}</th>`).join('');
@@ -1632,10 +1665,10 @@ function deleteDoc(id) {
 let viewing = null;
 function docLinesHTML(d, forPrint = false) {
   const rows = []; const M = forPrint ? null : balanceMatrix();
-  if (d.type === 'manufacture') { const i = itemById(d.product.itemId) || {}; rows.push([`<span class="chip in">إدخال</span>`, `<b>${esc(i.name || '؟')}</b>`, esc(i.code || ''), esc(i.unit || ''), esc(whName(d.whTo)), fmt(d.product.qty), 'منتج جاهز']); }
-  for (const l of d.lines) { const i = itemById(l.itemId) || {}; const dir = d.type === 'transfer' ? '<span class="chip trf">تحويل</span>' : (d.type === 'manufacture' || DT[d.type].kind === 'out') ? '<span class="chip out">إخراج</span>' : '<span class="chip in">إدخال</span>'; rows.push([dir, `<span class="nm">${esc(i.name || '— صنف محذوف —')}</span>`, esc(i.code || ''), esc(i.unit || ''), esc(d.type === 'transfer' ? `${whName(d.whFrom)} ← ${whName(d.whTo)}` : d.type === 'manufacture' ? whName(d.whFrom) : whName(d.wh)), fmt(l.qty), esc(l.note || '')]); }
-  const H = [{ l: 'الحركة' }, { l: 'الصنف' }, { l: 'الكود' }, { l: 'الوحدة' }, { l: 'المستودع' }, { l: 'الكمية', num: 1 }, { l: 'ملاحظة' }];
-  return tableHTML(H, rows, { total: ['', 'الإجمالي', '', '', '', fmt(docTotalQty(d)), ''], cls: forPrint ? '' : 'tbl' });
+  if (d.type === 'manufacture') { const i = itemById(d.product.itemId) || {}; rows.push([`<span class="chip in">إدخال</span>`, esc(i.code || ''), esc(i.code2 || ''), `<b>${esc(i.name || '؟')}</b>${i.name2 ? `<span class="sub">${esc(i.name2)}</span>` : ''}`, esc(i.unit || ''), esc(whName(d.whTo)), fmt(d.product.qty), 'منتج جاهز']); }
+  for (const l of d.lines) { const i = itemById(l.itemId) || {}; const dir = d.type === 'transfer' ? '<span class="chip trf">تحويل</span>' : (d.type === 'manufacture' || DT[d.type].kind === 'out') ? '<span class="chip out">إخراج</span>' : '<span class="chip in">إدخال</span>'; rows.push([dir, esc(i.code || ''), esc(i.code2 || ''), `<span class="nm">${esc(i.name || '— صنف محذوف —')}${i.name2 ? `<span class="sub">${esc(i.name2)}</span>` : ''}</span>`, esc(i.unit || ''), esc(d.type === 'transfer' ? `${whName(d.whFrom)} ← ${whName(d.whTo)}` : d.type === 'manufacture' ? whName(d.whFrom) : whName(d.wh)), fmt(l.qty), esc(l.note || '')]); }
+  const H = [{ l: 'الحركة' }, { l: 'رمز المادة' }, { l: 'رمز الوحدة' }, { l: 'الصنف' }, { l: 'الوحدة' }, { l: 'المستودع' }, { l: 'الكمية', num: 1 }, { l: 'ملاحظة' }];
+  return tableHTML(H, rows, { total: ['', '', '', 'الإجمالي', '', '', fmt(docTotalQty(d)), ''], cls: forPrint ? '' : 'tbl' });
 }
 function docHeadHTML(d) {
   const f = (l, v) => v ? `<div><span>${l}</span><b>${esc(v)}</b></div>` : '';
@@ -2389,7 +2422,7 @@ function init() {
   window.addEventListener('beforeunload', () => { if (fsDirty) fsWrite(); });
   go('dashboard'); fsInit();
 }
-window.INV = { get S() { return S; }, save, addCatalogMissing, exportPortable, fs: { link: fsLink, open: fsOpen, write: fsWrite, get state() { return fsState; }, get handle() { return fsHandle; } }, ledger, balanceMatrix, balanceOf, go, openDocModal, viewDoc, dailyData, refreshAll, matchItem, normName };
+window.INV = { get S() { return S; }, save, addCatalogMissing, exportPortable, printTableHost, printDoc, fs: { link: fsLink, open: fsOpen, write: fsWrite, get state() { return fsState; }, get handle() { return fsHandle; } }, ledger, balanceMatrix, balanceOf, go, openDocModal, viewDoc, dailyData, refreshAll, matchItem, normName };
 document.addEventListener('DOMContentLoaded', init);
 </script>
 </body>
