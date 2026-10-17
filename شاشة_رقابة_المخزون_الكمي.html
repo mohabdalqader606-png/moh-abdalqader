@@ -875,7 +875,7 @@ details[open]>summary::before{content:"▾ "}
 /* =========================================================
    رقابة المخزون الكمي — منطق الشاشة
    ========================================================= */
-const APP_VER = '2.3.0';
+const APP_VER = '2.3.1';
 const DB_KEY = 'kinv_ctrl_v1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -1092,9 +1092,14 @@ function exportPortable() {
 }
 function seedCatalogIfEmpty() { if (!S.items.length && !S.catalogSeeded) { S.items = catalogItems(); S.catalogSeeded = true; save(); } }
 let _ledger = null;
+/** الجرد يُقارن دائماً بالرصيد الدفتري حتى نهاية تاريخ الجرد بعد كل الحركات المُدخلة لذلك التاريخ (حتى المتأخرة في إدخالها)؛ تُحدَّث القيم المخزّنة عند كل حفظ وعند التحميل */
+function refreshCounts() {
+  if (!S || !Array.isArray(S.counts)) return; const cache = new Map();
+  for (const c of S.counts) { let M = cache.get(c.date); if (!M) { M = balanceMatrix({ asOf: c.date }); cache.set(c.date, M); } for (const l of c.lines || []) { l.system = round3(balanceOf(M, l.itemId, c.wh)); l.diff = round3((+l.actual || 0) - l.system); } }
+}
 function save() {
   S.updatedAt = new Date().toISOString();
-  _ledger = null;
+  _ledger = null; refreshCounts();
   try { localStorage.setItem(DB_KEY, JSON.stringify(S)); } catch (e) { if (fsState !== 'granted') toast('تعذر الحفظ المحلي: ' + e.message, 'bad'); }
   updateSaveStamp(); fsQueue();
 }
@@ -2413,6 +2418,7 @@ function init() {
   $('#fsLink').onclick = fsLink; $('#fsOpen').onclick = fsOpen; $('#fsReconnect').onclick = fsReconnect; $('#fsUnlink').onclick = fsUnlink; $('#fsSaveNow').onclick = () => { if (fsState === 'granted') fsWrite(); else toast('لا يوجد ملف بيانات مرتبط', 'warn'); };
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && fsDirty) fsWrite(); });
   window.addEventListener('beforeunload', () => { if (fsDirty) fsWrite(); });
+  _ledger = null; refreshCounts();
   if (S.migrNoCountAdjRemoved) { const adj = S.migrNoCountAdjRemoved; delete S.migrNoCountAdjRemoved; save(); setTimeout(() => toast(`الجرد الفعلي أصبح للمعرفة فقط: حُذفت سندات التسوية التي كانت تُنشأ من الجرد (${adj.join('، ')}) وعادت الأرصدة الدفترية كما هي قبلها`, 'ok', 12000), 900); }
   go('dashboard'); fsInit();
 }
