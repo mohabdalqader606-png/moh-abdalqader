@@ -634,6 +634,7 @@ details[open]>summary::before{content:"▾ "}
               <div class="field"><label>المستودع</label><select class="in" id="rfWh"><option value="">تجميعي — كل المستودعات</option></select></div>
               <div class="field sm"><label>نوع الصنف</label><select class="in" id="rfType"><option value="">الكل</option></select></div>
               <div class="field"><label>بحث</label><input class="in" id="rfQ" placeholder="رمز أو اسم"></div>
+              <div class="field sm"><label>عمود الفرق</label><select class="in" id="rfDiff"><option value="">الكل</option><option value="nz">بدون أصفار (فروقات فقط)</option><option value="pos">زيادة فقط</option><option value="neg">نقص فقط</option></select></div>
               <label class="toggle" style="padding-bottom:9px"><input type="checkbox" id="rfMoved">الأصناف المتحركة أو المجرودة فقط</label>
               <div class="row"><button class="btn" id="rfToday">اليوم</button><button class="btn" id="rfMonth">الشهر الحالي</button><button class="btn" id="rfPrint"><svg><use href="#i-print"/></svg>طباعة</button><button class="btn" id="rfExport"><svg><use href="#i-xls"/></svg>إكسل</button></div>
             </div>
@@ -875,7 +876,7 @@ details[open]>summary::before{content:"▾ "}
 /* =========================================================
    رقابة المخزون الكمي — منطق الشاشة
    ========================================================= */
-const APP_VER = '2.4.0';
+const APP_VER = '2.4.1';
 const DB_KEY = 'kinv_ctrl_v1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -2104,7 +2105,7 @@ function renderRep(name) { ({ daily: renderRepDaily, full: renderRepFull, balanc
 
 /* --- تقرير الحركة والجرد (تجميعي أو حسب المستودع) --- */
 function fullData() {
-  const from = $('#rfFrom').value || todayISO(), to = $('#rfTo').value || from, wh = $('#rfWh').value, ty = $('#rfType').value, q = $('#rfQ').value.trim(), onlyMoved = $('#rfMoved').checked;
+  const from = $('#rfFrom').value || todayISO(), to = $('#rfTo').value || from, wh = $('#rfWh').value, ty = $('#rfType').value, q = $('#rfQ').value.trim(), onlyMoved = $('#rfMoved').checked, dmode = $('#rfDiff').value;
   const R = new Map(); const mk = id => ({ itemId: id, open: 0, inn: 0, pur: 0, out: 0, sal: 0 });
   for (const e of ledger()) {
     if (wh && e.wh !== wh) continue; if (e.date > to) continue;
@@ -2132,6 +2133,7 @@ function fullData() {
     r.close = round3(r.open + r.inn + r.pur - r.out - r.sal); r.open = round3(r.open); for (const k of ['inn', 'pur', 'out', 'sal']) r[k] = round3(r[k]);
     r.actual = cnt ? round3(cnt.actual) : null; r.diff = cnt ? round3(cnt.actual - r.close) : null; r.cwhs = cnt ? cnt.whs : []; r.cimp = cnt ? (cnt.imp || 0) : 0; r.cdates = cnt ? [...cnt.dates] : []; r.missing = cnt ? cnt.missing : [];
     if (onlyMoved && !r.inn && !r.pur && !r.out && !r.sal && !cnt) continue; if (it.active === false && !r.open && !r.close && !cnt) continue;
+    if (dmode === 'nz' && !r.diff) continue; if (dmode === 'pos' && !(r.diff > 0)) continue; if (dmode === 'neg' && !(r.diff < 0)) continue;
     r.item = it; rows.push(r);
   }
   rows.sort((a, b) => codeCmp(a.item, b.item)); return { rows, from, to, wh };
@@ -2398,9 +2400,9 @@ function init() {
   // reports
   $$('#repTabs button[data-rep]').forEach(b => b.onclick = () => showRep(b.dataset.rep));
   $$('#codeModePills button').forEach(b => b.onclick = () => { S.settings.codeMode = b.dataset.cm; save(); syncCodePills(); renderReports(); }); syncCodePills();
-  ['rfFrom', 'rfTo', 'rfWh', 'rfType', 'rfMoved'].forEach(id => $('#' + id).onchange = renderRepFull); $('#rfQ').oninput = renderRepFull;
+  ['rfFrom', 'rfTo', 'rfWh', 'rfType', 'rfMoved', 'rfDiff'].forEach(id => $('#' + id).onchange = renderRepFull); $('#rfQ').oninput = renderRepFull;
   $('#rfToday').onclick = () => { $('#rfFrom').value = $('#rfTo').value = todayISO(); renderRepFull(); }; $('#rfMonth').onclick = () => { const t = todayISO(); $('#rfFrom').value = t.slice(0, 8) + '01'; $('#rfTo').value = t; renderRepFull(); };
-  $('#rfPrint').onclick = () => { const { from, to, wh } = fullData(); printHTML('تقرير الحركة والجرد' + (wh ? ' — ' + whName(wh) : ' — تجميعي'), [from === to ? 'التاريخ: ' + from : `من ${from} إلى ${to}`, wh ? 'المستودع: ' + whName(wh) : 'كل المستودعات (تجميعي)'], aoaTable(fullAOA().map(r => r.slice(0, 12)), 4)); };
+  $('#rfPrint').onclick = () => { const { from, to, wh } = fullData(); printHTML('تقرير الحركة والجرد' + (wh ? ' — ' + whName(wh) : ' — تجميعي'), [from === to ? 'التاريخ: ' + from : `من ${from} إلى ${to}`, wh ? 'المستودع: ' + whName(wh) : 'كل المستودعات (تجميعي)', ({ nz: 'الفروقات فقط (بدون أصفار)', pos: 'الزيادة فقط', neg: 'النقص فقط' })[$('#rfDiff').value] || ''].filter(Boolean), aoaTable(fullAOA().map(r => r.slice(0, 12)), 4)); };
   $('#rfExport').onclick = () => exportXlsx(`تقرير_الحركة_والجرد_${$('#rfFrom').value}.xlsx`, [{ name: 'الحركة والجرد', aoa: fullAOA() }]);
   ['rcdFrom', 'rcdTo', 'rcdWh', 'rcdOnly'].forEach(id => $('#' + id).onchange = renderRepCountDiff); $('#rcdQ').oninput = renderRepCountDiff;
   $('#rcdPrint').onclick = () => printHTML('تقرير فروقات الجرد', [$('#rcdFrom').value ? 'من ' + $('#rcdFrom').value : '', $('#rcdTo').value ? 'إلى ' + $('#rcdTo').value : '', $('#rcdWh').value ? 'المستودع: ' + whName($('#rcdWh').value) : 'كل المستودعات'].filter(Boolean), aoaTable(countDiffAOA(), 6)); $('#rcdExport').onclick = () => exportXlsx(`فروقات_الجرد_${todayISO()}.xlsx`, [{ name: 'فروقات الجرد', aoa: countDiffAOA() }]);
