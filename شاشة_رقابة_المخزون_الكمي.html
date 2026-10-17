@@ -530,8 +530,8 @@ details[open]>summary::before{content:"▾ "}
             <label class="toggle" style="padding-bottom:9px"><input type="checkbox" id="cnDiff">الفروقات فقط</label>
             <div class="row"><button class="btn" id="cnToday">اليوم</button><button class="btn" id="cnBlank" title="طباعة نموذج فارغ للعدّ اليدوي"><svg><use href="#i-print"/></svg>نموذج جرد</button><button class="btn" id="cnPrint"><svg><use href="#i-print"/></svg>طباعة الفروقات</button><button class="btn" id="cnExport"><svg><use href="#i-xls"/></svg>إكسل</button></div>
           </div>
-          <div class="bd" style="padding:10px 16px"><div class="row between"><div class="row"><span id="cnStatus"></span><span class="small muted">رصيد النظام = الرصيد حتى نهاية تاريخ الجرد في المستودع المحدد. الفرق = الجرد الفعلي − رصيد النظام. إذا كان الصنف في أكثر من موقع اكتب الكميات كمجموع مثل <kbd>20+15+7</kbd> ويُحسب الإجمالي مع حفظ التفصيل. اضغط <kbd>Enter</kbd> للانتقال للصنف التالي.</span></div>
-            <div class="row"><button class="btn danger sm" id="cnDelete">حذف الجرد</button><button class="btn sm" id="cnPost"><svg><use href="#i-check"/></svg>ترحيل الفروقات كتسوية</button><button class="btn primary" id="cnSave">حفظ الجرد</button></div></div></div>
+          <div class="bd" style="padding:10px 16px"><div class="row between"><div class="row"><span id="cnStatus"></span><span class="small muted">رصيد النظام = الرصيد حتى نهاية تاريخ الجرد في المستودع المحدد. الفرق = الجرد الفعلي − رصيد النظام. الجرد للمعرفة والمتابعة فقط ولا يُغيّر الأرصدة الدفترية ولا يولّد أي سند. إذا كان الصنف في أكثر من موقع اكتب الكميات كمجموع مثل <kbd>20+15+7</kbd> ويُحسب الإجمالي مع حفظ التفصيل. اضغط <kbd>Enter</kbd> للانتقال للصنف التالي.</span></div>
+            <div class="row"><button class="btn danger sm" id="cnDelete">حذف الجرد</button><button class="btn primary" id="cnSave">حفظ الجرد</button></div></div></div>
           <div class="bd" style="padding:14px 18px;border-top:1px solid var(--line2);border-bottom:1px solid var(--line2);background:var(--card2)">
             <div class="row" style="align-items:flex-end;gap:10px">
               <div class="field" style="flex:2 1 280px"><label>إدخال سريع — الصنف (كود / اسم / باركود)</label><div class="combo" id="cnQuickItem"></div></div>
@@ -690,7 +690,7 @@ details[open]>summary::before{content:"▾ "}
               <label class="toggle" style="padding-bottom:9px"><input type="checkbox" id="rcdOnly" checked>الأصناف ذات الفرق فقط</label>
               <div class="row"><button class="btn" id="rcdPrint"><svg><use href="#i-print"/></svg>طباعة</button><button class="btn" id="rcdExport"><svg><use href="#i-xls"/></svg>إكسل</button></div>
             </div>
-            <div class="bd" style="padding:10px 16px 0"><div class="hint">الفرق = الجرد الفعلي − رصيد النظام بتاريخ الجرد. الأخضر زيادة والأحمر نقص. "مُرحَّل" يعني أن فرق الجرد سُوّي بسند إدخال/إخراج وأصبح رصيد النظام مساوياً للعدّ الفعلي.</div></div>
+            <div class="bd" style="padding:10px 16px 0"><div class="hint">الفرق = الجرد الفعلي − رصيد النظام بتاريخ الجرد. الأخضر زيادة والأحمر نقص. الجرد للمعرفة فقط ولا يُغيّر الأرصدة الدفترية.</div></div>
             <div class="bd tight"><div class="tbl-wrap" id="rcdTable"></div></div>
           </div>
         </div>
@@ -875,7 +875,7 @@ details[open]>summary::before{content:"▾ "}
 /* =========================================================
    رقابة المخزون الكمي — منطق الشاشة
    ========================================================= */
-const APP_VER = '2.2.1';
+const APP_VER = '2.3.0';
 const DB_KEY = 'kinv_ctrl_v1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -1054,7 +1054,7 @@ function defaultState() {
   const main = { id: uid(), code: 'WH-01', name: 'المستودع الرئيسي', loc: '', active: true, trusted: true, createdAt: new Date().toISOString() }, sal = VIRTUAL_SALES_WH();
   return {
     ver: 1, company: '', items: [], warehouses: [main, sal],
-    docs: [], boms: {}, aliases: {}, seq: {}, imports: [], counts: [], migrNoSalesMain: true, migrVirtualSales: true, migrTrustedMain: true,
+    docs: [], boms: {}, aliases: {}, seq: {}, imports: [], counts: [], migrNoSalesMain: true, migrVirtualSales: true, migrTrustedMain: true, migrNoCountAdj: true,
     settings: { allowNegative: false, theme: 'auto', defaultWh: '', salesWh: sal.id, salesMap: null, codeMode: 'code' },
   };
 }
@@ -1068,9 +1068,11 @@ function migrate(o) {
   if (!o.migrTrustedMain && Array.isArray(o.warehouses)) { const main = o.warehouses.find(w => w.code === 'WH-01' || /الرئيسي/.test(w.name || '')); if (main) main.trusted = true; o.migrTrustedMain = true; }
   // مستودع وهمي للمبيعات يُنشأ مرة واحدة ويصبح مستودع المبيعات الافتراضي
   if (!o.migrVirtualSales && Array.isArray(o.warehouses)) { let v = o.warehouses.find(w => w.virtual); if (!v) { v = VIRTUAL_SALES_WH(); o.warehouses.push(v); } o.settings = o.settings || {}; if (!o.settings.salesWh || !o.warehouses.some(w => w.id === o.settings.salesWh && !w.noSales)) o.settings.salesWh = v.id; o.migrVirtualSales = true; }
+  // الجرد الفعلي للمعرفة فقط (لا يولّد سندات تسوية): سندات التسوية التي أُنشئت من الجرد في الإصدارات السابقة تُحذف مرة واحدة ويُفتح الجرد للتعديل
+  if (!o.migrNoCountAdj) { const adj = new Set(o.docs.filter(d => d.source === 'count').map(d => d.no)); o.docs = o.docs.filter(d => d.source !== 'count'); for (const c of o.counts || []) { delete c.posted; delete c.adjDocs; delete c.postedAt; } o.migrNoCountAdj = true; if (adj.size) o.migrNoCountAdjRemoved = [...adj]; }
   return o;
 }
-function mergeState(o) { const d = defaultState(); const m = Object.assign(d, o, { settings: Object.assign(d.settings, o.settings || {}) }); m.migrNoSalesMain = !!o.migrNoSalesMain; m.migrVirtualSales = !!o.migrVirtualSales; m.migrTrustedMain = !!o.migrTrustedMain; if (!o.settings || !o.settings.salesWh) m.settings.salesWh = ''; return migrate(m); }
+function mergeState(o) { const d = defaultState(); const m = Object.assign(d, o, { settings: Object.assign(d.settings, o.settings || {}) }); m.migrNoSalesMain = !!o.migrNoSalesMain; m.migrVirtualSales = !!o.migrVirtualSales; m.migrTrustedMain = !!o.migrTrustedMain; m.migrNoCountAdj = !!o.migrNoCountAdj; if (!o.settings || !o.settings.salesWh) m.settings.salesWh = ''; return migrate(m); }
 function load() {
   try { const r = localStorage.getItem(DB_KEY); if (r) return mergeState(JSON.parse(r)); } catch (e) { console.warn('load failed', e); }
   return defaultState();
@@ -1292,9 +1294,9 @@ let _enhRaf = 0; function enhanceSoon() { if (_enhRaf) return; _enhRaf = request
 if (typeof MutationObserver !== 'undefined') document.addEventListener('DOMContentLoaded', () => new MutationObserver(muts => { if (muts.some(m => m.addedNodes.length)) enhanceSoon(); }).observe(document.body, { childList: true, subtree: true }));
 
 /* ---------- UI helpers ---------- */
-function toast(msg, kind = '') {
+function toast(msg, kind = '', ms = 3200) {
   const t = document.createElement('div'); t.className = 'toast ' + kind; t.textContent = msg; $('#toasts').appendChild(t);
-  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .25s'; setTimeout(() => t.remove(), 260); }, 3200);
+  setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .25s'; setTimeout(() => t.remove(), 260); }, ms);
 }
 function errBox(el, msgs) { el.innerHTML = msgs && msgs.length ? `<div class="hint bad"><b>يرجى تصحيح ما يلي:</b><ul style="margin:4px 0 0;padding-inline-start:18px">${msgs.map(m => `<li>${esc(m)}</li>`).join('')}</ul></div>` : ''; }
 function openModal(id) { $('#' + id).classList.add('on'); document.body.style.overflow = 'hidden'; }
@@ -1980,7 +1982,6 @@ let cnQuickCombo = null; const cnLog = []; // سجل الإدخالات السر
 function cnQuickAdd() {
   const id = cnQuickCombo.value; const ex = sumExpr($('#cnQty').value); const q = ex.total; const note = $('#cnNote').value.trim();
   if (!id) { toast('اختر الصنف أولاً', 'warn'); cnQuickCombo.inp.focus(); return; } if (!(q > 0)) { toast('أدخل كمية أكبر من صفر', 'warn'); $('#cnQty').focus(); return; }
-  const c = cnFind($('#cnDate').value, $('#cnWh').value); if (c && c.posted) return toast('هذا الجرد مُرحَّل ومقفل', 'warn');
   const e = cnEntry.get(id) || { actual: '', note: '' }; const cur = String(e.actual || '').trim(); e.actual = cur ? `${cur}+${$('#cnQty').value.trim()}` : $('#cnQty').value.trim();
   if (note) e.note = e.note ? `${e.note} ؛ ${fmt(q)}: ${note}` : `${fmt(q)}: ${note}`; cnEntry.set(id, e);
   cnLog.unshift({ id, q, raw: $('#cnQty').value.trim(), note, key: cnKey() });
@@ -2007,13 +2008,13 @@ function renderCount() {
   renderCountGrid(); renderCountHistory(); renderCnLog();
 }
 function cnRows() {
-  const date = $('#cnDate').value, wh = $('#cnWh').value; const c = cnFind(date, wh); const locked = !!(c && c.posted);
+  const date = $('#cnDate').value, wh = $('#cnWh').value; const c = cnFind(date, wh); const locked = false;
   const M = balanceMatrix({ asOf: date }); const q = $('#cnQ').value.trim(), nq = normName(q), cq = normCode(q); const zero = $('#cnZero').checked, onlyDiff = $('#cnDiff').checked;
   const rows = [];
   for (const i of S.items) {
     if (i.active === false && !cnEntry.has(i.id)) continue;
     if (q && !itemMatchesQ(i, q)) continue;
-    const e = cnEntry.get(i.id); const sysLive = balanceOf(M, i.id, wh); const stored = locked ? c.lines.find(l => l.itemId === i.id) : null; const system = stored ? stored.system : sysLive;
+    const e = cnEntry.get(i.id); const sysLive = balanceOf(M, i.id, wh); const system = sysLive;
     const has = e && String(e.actual ?? '').trim() !== ''; const ex = has ? sumExpr(e.actual) : null; const actual = has ? ex.total : (zero ? 0 : null);
     const diff = actual == null ? null : round3(actual - system);
     if (onlyDiff && !(diff)) continue;
@@ -2025,8 +2026,8 @@ function cnRows() {
 function renderCountGrid() {
   const { rows, c, locked, wh } = cnRows(); const host = $('#cnTable');
   if (!wh) { host.innerHTML = emptyHTML('اختر المستودع'); return; }
-  $('#cnStatus').innerHTML = c ? (locked ? `<span class="chip in">جرد محفوظ ومُرحَّل — ${esc(c.adjDocs?.join('، ') || '')}</span>` : `<span class="chip acc">جرد محفوظ (غير مرحَّل) — ${c.lines.length} صنف</span>`) : '<span class="chip">جرد جديد لم يُحفظ بعد</span>';
-  $('#cnSave').disabled = locked; $('#cnPost').disabled = !c || locked; $('#cnDelete').disabled = !c;
+  $('#cnStatus').innerHTML = c ? `<span class="chip acc">جرد محفوظ — ${c.lines.length} صنف</span>` : '<span class="chip">جرد جديد لم يُحفظ بعد</span>';
+  $('#cnSave').disabled = false; $('#cnDelete').disabled = !c;
   if (!rows.length) { host.innerHTML = emptyHTML('لا توجد أصناف للعرض'); return; }
   const T = rows.reduce((t, r) => { t.sys += r.system; if (r.actual != null) { t.act += r.actual; t.diff += r.diff; t.n++; if (r.diff) t.nd++; if (r.diff > 0) t.plus += r.diff; if (r.diff < 0) t.minus += r.diff; } return t; }, { sys: 0, act: 0, diff: 0, n: 0, nd: 0, plus: 0, minus: 0 });
   host.innerHTML = `<table class="tbl"><thead><tr><th>رمز المادة</th><th>رمز الوحدة</th><th>الصنف</th><th>الوحدة</th><th class="num">رصيد النظام</th><th style="width:140px">الجرد الفعلي</th><th class="num">الفرق</th><th class="num">%</th><th>ملاحظة</th></tr></thead><tbody>${rows.map(r => `<tr>
@@ -2054,30 +2055,19 @@ function saveCount() {
   const M = balanceMatrix({ asOf: date }); const zero = $('#cnZero').checked; const lines = [];
   for (const i of S.items) { const e = cnEntry.get(i.id); const has = e && String(e.actual).trim() !== ''; if (!has && !(zero && i.active !== false)) continue; const ex = has ? sumExpr(e.actual) : null; const actual = has ? ex.total : 0; if (actual < 0 || (ex && ex.parts.some(p => p < 0))) return toast('كمية الجرد لا يمكن أن تكون سالبة: ' + i.name, 'bad'); const system = balanceOf(M, i.id, wh); lines.push({ itemId: i.id, system, actual, parts: ex && ex.multi ? String(e.actual).trim() : '', diff: round3(actual - system), note: e?.note?.trim() || '' }); }
   if (!lines.length) return toast('لم تُدخل أي كمية جرد', 'warn');
-  let c = cnFind(date, wh); if (c) { if (c.posted) return toast('هذا الجرد مُرحَّل ولا يمكن تعديله. احذفه أولاً لإعادة الجرد.', 'warn'); Object.assign(c, { lines, updatedAt: new Date().toISOString() }); } else { c = { id: uid(), date, wh, lines, posted: false, createdAt: new Date().toISOString() }; S.counts.push(c); }
+  let c = cnFind(date, wh); if (c) { Object.assign(c, { lines, updatedAt: new Date().toISOString() }); } else { c = { id: uid(), date, wh, lines, createdAt: new Date().toISOString() }; S.counts.push(c); }
   save(); cnLoadedKey = ''; renderCount(); toast(`تم حفظ الجرد: ${lines.length} صنف، ${lines.filter(l => l.diff).length} بفرق`, 'ok');
-}
-function postCount() {
-  const c = cnFind($('#cnDate').value, $('#cnWh').value); if (!c || c.posted) return;
-  const plus = c.lines.filter(l => l.diff > 0), minus = c.lines.filter(l => l.diff < 0);
-  if (!plus.length && !minus.length) { c.posted = true; c.adjDocs = []; save(); renderCount(); return toast('لا توجد فروقات — تم إقفال الجرد بدون تسوية', 'ok'); }
-  if (!confirm(`سيتم ترحيل فروقات الجرد كتسوية:\n• زيادة: ${plus.length} صنف (سند إدخال)\n• نقص: ${minus.length} صنف (سند إخراج)\nبعدها يصبح رصيد النظام مساوياً للجرد الفعلي بتاريخ ${c.date}. متابعة؟`)) return;
-  const docs = []; const ref = `تسوية جرد ${c.date}`;
-  if (plus.length) { const d = { id: uid(), no: nextNo('receipt'), type: 'receipt', date: c.date, wh: c.wh, party: 'تسوية جرد', ref, notes: 'زيادة جرد فعلي عن رصيد النظام', lines: plus.map(l => ({ itemId: l.itemId, qty: l.diff, note: [l.parts ? 'العدّ: ' + l.parts : '', l.note].filter(Boolean).join(' ؛ ') })), createdAt: new Date().toISOString(), source: 'count' }; commitNo('receipt'); S.docs.push(d); docs.push(d.no); }
-  if (minus.length) { const d = { id: uid(), no: nextNo('issue'), type: 'issue', date: c.date, wh: c.wh, party: 'تسوية جرد', ref, notes: 'نقص جرد فعلي عن رصيد النظام', lines: minus.map(l => ({ itemId: l.itemId, qty: round3(-l.diff), note: [l.parts ? 'العدّ: ' + l.parts : '', l.note].filter(Boolean).join(' ؛ ') })), createdAt: new Date(Date.now() + 1).toISOString(), source: 'count' }; commitNo('issue'); S.docs.push(d); docs.push(d.no); }
-  c.posted = true; c.adjDocs = docs; c.postedAt = new Date().toISOString(); save(); cnLoadedKey = ''; refreshLookups(); renderCount(); toast('تم ترحيل فروقات الجرد: ' + docs.join('، '), 'ok');
 }
 function deleteCount(id) {
   const c = id ? S.counts.find(x => x.id === id) : cnFind($('#cnDate').value, $('#cnWh').value); if (!c) return;
-  const msg = c.posted && c.adjDocs?.length ? `حذف جرد ${c.date} لمستودع ${whName(c.wh)} مع سندات التسوية المرتبطة (${c.adjDocs.join('، ')})؟ سيُعكس أثرها على الأرصدة.` : `حذف جرد ${c.date} لمستودع ${whName(c.wh)}؟`;
+  const msg = `حذف جرد ${c.date} لمستودع ${whName(c.wh)}؟`;
   if (!confirm(msg)) return;
-  if (c.adjDocs?.length) S.docs = S.docs.filter(d => !c.adjDocs.includes(d.no));
   S.counts = S.counts.filter(x => x.id !== c.id); save(); cnLoadedKey = ''; cnEntry.clear(); refreshLookups(); renderCount(); toast('تم حذف الجرد');
 }
 function renderCountHistory() {
   const host = $('#cnHistory'); const list = S.counts.slice().sort((a, b) => b.date.localeCompare(a.date) || b.createdAt.localeCompare(a.createdAt));
   if (!list.length) { host.innerHTML = emptyHTML('لا توجد عمليات جرد محفوظة بعد'); return; }
-  host.innerHTML = `<table class="tbl"><thead><tr><th>التاريخ</th><th>المستودع</th><th class="num">أصناف مجرودة</th><th class="num">أصناف بفرق</th><th class="num cin">زيادة</th><th class="num cout">نقص</th><th>الحالة</th><th></th></tr></thead><tbody>${list.map(c => { const nd = c.lines.filter(l => l.diff).length, p = round3(c.lines.filter(l => l.diff > 0).reduce((s, l) => s + l.diff, 0)), m = round3(c.lines.filter(l => l.diff < 0).reduce((s, l) => s - l.diff, 0)); return `<tr><td class="mono">${esc(c.date)}</td><td>${esc(whName(c.wh))}</td><td class="num">${c.lines.length}</td><td class="num ${nd ? 'neg' : ''}">${nd}</td><td class="num">${p ? fmt(p) : '<span class="muted">0</span>'}</td><td class="num">${m ? fmt(m) : '<span class="muted">0</span>'}</td><td>${c.posted ? `<span class="chip in">مُرحَّل</span>${c.adjDocs?.length ? `<span class="sub mono">${esc(c.adjDocs.join('، '))}</span>` : ''}` : '<span class="chip mfg">غير مرحَّل</span>'}</td><td class="nowrap"><button class="btn xs ghost" data-open="${c.id}" title="فتح"><svg><use href="#i-eye"/></svg></button><button class="btn xs ghost" data-del="${c.id}" title="حذف"><svg><use href="#i-trash"/></svg></button></td></tr>`; }).join('')}</tbody></table>`;
+  host.innerHTML = `<table class="tbl"><thead><tr><th>التاريخ</th><th>المستودع</th><th class="num">أصناف مجرودة</th><th class="num">أصناف بفرق</th><th class="num cin">زيادة</th><th class="num cout">نقص</th><th></th></tr></thead><tbody>${list.map(c => { const nd = c.lines.filter(l => l.diff).length, p = round3(c.lines.filter(l => l.diff > 0).reduce((s, l) => s + l.diff, 0)), m = round3(c.lines.filter(l => l.diff < 0).reduce((s, l) => s - l.diff, 0)); return `<tr><td class="mono">${esc(c.date)}</td><td>${esc(whName(c.wh))}</td><td class="num">${c.lines.length}</td><td class="num ${nd ? 'neg' : ''}">${nd}</td><td class="num">${p ? fmt(p) : '<span class="muted">0</span>'}</td><td class="num">${m ? fmt(m) : '<span class="muted">0</span>'}</td><td class="nowrap"><button class="btn xs ghost" data-open="${c.id}" title="فتح"><svg><use href="#i-eye"/></svg></button><button class="btn xs ghost" data-del="${c.id}" title="حذف"><svg><use href="#i-trash"/></svg></button></td></tr>`; }).join('')}</tbody></table>`;
   host.querySelectorAll('[data-open]').forEach(b => b.onclick = () => { const c = S.counts.find(x => x.id === b.dataset.open); $('#cnDate').value = c.date; $('#cnWh').value = c.wh; cnLoadedKey = ''; renderCount(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
   host.querySelectorAll('[data-del]').forEach(b => b.onclick = () => deleteCount(b.dataset.del));
 }
@@ -2154,10 +2144,10 @@ function countDiffData() {
 function renderRepCountDiff() {
   const rows = countDiffData(); const host = $('#rcdTable'); if (!S.counts.length) { host.innerHTML = emptyHTML('لا توجد عمليات جرد محفوظة بعد', 'أدخل الجرد من صفحة الجرد اليومي ثم ارجع لهذا التقرير'); return; } if (!rows.length) { host.innerHTML = emptyHTML('لا توجد فروقات مطابقة للفلاتر'); return; }
   const plus = round3(rows.filter(r => r.l.diff > 0).reduce((s, r) => s + r.l.diff, 0)), minus = round3(rows.filter(r => r.l.diff < 0).reduce((s, r) => s + r.l.diff, 0)), sys = round3(rows.reduce((s, r) => s + r.l.system, 0)), act = round3(rows.reduce((s, r) => s + r.l.actual, 0));
-  host.innerHTML = `<table class="tbl"><thead><tr><th>تاريخ الجرد</th><th>المستودع</th><th>${codeLabel()}</th><th>الصنف</th><th>الوحدة</th><th class="num">رصيد النظام</th><th class="num">الجرد الفعلي</th><th class="num">الفرق</th><th class="num">%</th><th>تفصيل العدّ</th><th>الحالة</th><th>ملاحظة</th></tr></thead><tbody>${rows.map(({ c, l, i }) => `<tr><td class="mono">${esc(c.date)}</td><td>${esc(whName(c.wh))}</td><td class="code">${esc(codeOf(i))}</td>${nameCell(i)}<td class="muted">${esc(i.unit)}</td><td class="num">${fmtS(l.system)}</td><td class="num">${fmt(l.actual)}</td><td class="num ${l.diff > 0 ? 'pos' : l.diff < 0 ? 'neg' : ''}"><b>${(l.diff > 0 ? '+' : '') + fmt(l.diff)}</b></td><td class="num muted small">${l.system ? (Math.round(l.diff / Math.abs(l.system) * 1000) / 10) + '%' : ''}</td><td class="small muted mono">${esc(l.parts || '')}</td><td>${c.posted ? '<span class="chip in">مُرحَّل</span>' : '<span class="chip mfg">غير مرحَّل</span>'}</td><td class="small">${esc(l.note || '')}</td></tr>`).join('')}
+  host.innerHTML = `<table class="tbl"><thead><tr><th>تاريخ الجرد</th><th>المستودع</th><th>${codeLabel()}</th><th>الصنف</th><th>الوحدة</th><th class="num">رصيد النظام</th><th class="num">الجرد الفعلي</th><th class="num">الفرق</th><th class="num">%</th><th>تفصيل العدّ</th><th>ملاحظة</th></tr></thead><tbody>${rows.map(({ c, l, i }) => `<tr><td class="mono">${esc(c.date)}</td><td>${esc(whName(c.wh))}</td><td class="code">${esc(codeOf(i))}</td>${nameCell(i)}<td class="muted">${esc(i.unit)}</td><td class="num">${fmtS(l.system)}</td><td class="num">${fmt(l.actual)}</td><td class="num ${l.diff > 0 ? 'pos' : l.diff < 0 ? 'neg' : ''}"><b>${(l.diff > 0 ? '+' : '') + fmt(l.diff)}</b></td><td class="num muted small">${l.system ? (Math.round(l.diff / Math.abs(l.system) * 1000) / 10) + '%' : ''}</td><td class="small muted mono">${esc(l.parts || '')}</td><td class="small">${esc(l.note || '')}</td></tr>`).join('')}
     <tr class="tot"><td colspan="5">الإجمالي — ${rows.length} سطر · زيادة ${fmt(plus)} · نقص ${fmt(minus)}</td><td class="num">${fmt(sys)}</td><td class="num">${fmt(act)}</td><td class="num ${round3(act - sys) < 0 ? 'neg' : ''}">${(act - sys > 0 ? '+' : '') + fmt(round3(act - sys))}</td><td colspan="4"></td></tr></tbody></table>`;
 }
-function countDiffAOA() { return [['تاريخ الجرد', 'المستودع', codeLabel(), 'الصنف', 'الاسم المتعارف عليه', 'الوحدة', 'رصيد النظام', 'الجرد الفعلي', 'الفرق', 'تفصيل العدّ', 'الحالة', 'ملاحظة'], ...countDiffData().map(({ c, l, i }) => [c.date, whName(c.wh), codeOf(i), i.name, i.name2 || '', i.unit, l.system, l.actual, l.diff, l.parts || '', c.posted ? 'مُرحَّل' : 'غير مرحَّل', l.note || ''])]; }
+function countDiffAOA() { return [['تاريخ الجرد', 'المستودع', codeLabel(), 'الصنف', 'الاسم المتعارف عليه', 'الوحدة', 'رصيد النظام', 'الجرد الفعلي', 'الفرق', 'تفصيل العدّ', 'ملاحظة'], ...countDiffData().map(({ c, l, i }) => [c.date, whName(c.wh), codeOf(i), i.name, i.name2 || '', i.unit, l.system, l.actual, l.diff, l.parts || '', l.note || ''])]; }
 
 /* --- التقرير اليومي --- */
 function dailyData() {
@@ -2321,7 +2311,7 @@ function exportAllExcel() {
     { name: 'المستودعات', aoa: [['الكود', 'الاسم', 'الموقع', 'الحالة'], ...S.warehouses.map(w => [w.code, w.name, w.loc || '', w.active === false ? 'موقوف' : 'نشط'])] },
     { name: 'الأرصدة', aoa: [['الكود', 'الصنف', 'الوحدة', ...activeWhs().map(w => w.name), 'الإجمالي'], ...S.items.map(i => [i.code, i.name, i.unit, ...activeWhs().map(w => balanceOf(M, i.id, w.id)), balanceOf(M, i.id)])] },
     { name: 'الحركات', aoa: [['التاريخ', 'رقم السند', 'نوع السند', 'نوع الحركة', 'الكود', 'الصنف', 'المستودع', 'وارد', 'صادر'], ...ledger().map(e => { const i = itemById(e.itemId) || {}; return [e.date, e.docNo, DT[e.type].label, SIDE_LABEL[e.side], i.code || '', i.name || '', whName(e.wh), e.qin || '', e.qout || '']; })] },
-    { name: 'الجرد', aoa: [['التاريخ', 'المستودع', 'الكود', 'الصنف', 'رصيد النظام', 'الجرد الفعلي', 'الفرق', 'مرحَّل'], ...S.counts.flatMap(c => c.lines.map(l => [c.date, whName(c.wh), itemById(l.itemId)?.code || '', itemLabel(l.itemId), l.system, l.actual, l.diff, c.posted ? 'نعم' : 'لا']))] },
+    { name: 'الجرد', aoa: [['التاريخ', 'المستودع', 'الكود', 'الصنف', 'رصيد النظام', 'الجرد الفعلي', 'الفرق'], ...S.counts.flatMap(c => c.lines.map(l => [c.date, whName(c.wh), itemById(l.itemId)?.code || '', itemLabel(l.itemId), l.system, l.actual, l.diff]))] },
     { name: 'الوصفات', aoa: [['المنتج', 'كمية الإنتاج', 'المادة', 'الكمية'], ...Object.entries(S.boms).flatMap(([pid, b]) => b.lines.map(l => [itemLabel(pid), b.batch || 1, itemLabel(l.itemId), l.qty]))] },
   ]);
 }
@@ -2391,7 +2381,7 @@ function init() {
   ['cnDate', 'cnWh'].forEach(id => $('#' + id).onchange = renderCount); $('#cnQ').oninput = renderCountGrid; ['cnZero', 'cnDiff'].forEach(id => $('#' + id).onchange = renderCountGrid);
   cnQuickCombo = makeCombo($('#cnQuickItem'), { placeholder: 'ابحث بالكود أو الاسم أو امسح الباركود…', onPick: i => { if (i) { const e = cnEntry.get(i.id); const tot = e ? sumExpr(e.actual) : null; $('#cnQuickInfo').innerHTML = tot && !tot.empty ? `${esc(i.name)}: العدّ الحالي <b>${fmt(tot.total)}</b>${tot.multi ? ` (${tot.parts.map(fmt).join(' + ')})` : ''} — الكمية الجديدة ستُضاف إليه` : `${esc(i.name)}: لم يُعدّ بعد`; setTimeout(() => $('#cnQty').focus(), 20); } } });
   $('#cnAdd').onclick = cnQuickAdd; ['cnQty', 'cnNote'].forEach(id => $('#' + id).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); cnQuickAdd(); } }));
-  $('#cnToday').onclick = () => { $('#cnDate').value = todayISO(); renderCount(); }; $('#cnSave').onclick = saveCount; $('#cnPost').onclick = postCount; $('#cnDelete').onclick = () => deleteCount();
+  $('#cnToday').onclick = () => { $('#cnDate').value = todayISO(); renderCount(); }; $('#cnSave').onclick = saveCount; $('#cnDelete').onclick = () => deleteCount();
   $('#cnPrint').onclick = () => printCount(false); $('#cnBlank').onclick = () => printCount(true); $('#cnExport').onclick = () => exportXlsx(`الجرد_${$('#cnDate').value}.xlsx`, [{ name: 'الجرد', aoa: countAOA(true) }]);
   // reports
   $$('#repTabs button[data-rep]').forEach(b => b.onclick = () => showRep(b.dataset.rep));
@@ -2423,6 +2413,7 @@ function init() {
   $('#fsLink').onclick = fsLink; $('#fsOpen').onclick = fsOpen; $('#fsReconnect').onclick = fsReconnect; $('#fsUnlink').onclick = fsUnlink; $('#fsSaveNow').onclick = () => { if (fsState === 'granted') fsWrite(); else toast('لا يوجد ملف بيانات مرتبط', 'warn'); };
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && fsDirty) fsWrite(); });
   window.addEventListener('beforeunload', () => { if (fsDirty) fsWrite(); });
+  if (S.migrNoCountAdjRemoved) { const adj = S.migrNoCountAdjRemoved; delete S.migrNoCountAdjRemoved; save(); setTimeout(() => toast(`الجرد الفعلي أصبح للمعرفة فقط: حُذفت سندات التسوية التي كانت تُنشأ من الجرد (${adj.join('، ')}) وعادت الأرصدة الدفترية كما هي قبلها`, 'ok', 12000), 900); }
   go('dashboard'); fsInit();
 }
 window.INV = { get S() { return S; }, save, addCatalogMissing, exportPortable, printTableHost, printDoc, fs: { link: fsLink, open: fsOpen, write: fsWrite, get state() { return fsState; }, get handle() { return fsHandle; } }, ledger, balanceMatrix, balanceOf, go, openDocModal, viewDoc, dailyData, refreshAll, matchItem, normName };
