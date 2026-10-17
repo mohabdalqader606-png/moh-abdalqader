@@ -876,7 +876,7 @@ details[open]>summary::before{content:"▾ "}
 /* =========================================================
    رقابة المخزون الكمي — منطق الشاشة
    ========================================================= */
-const APP_VER = '2.4.1';
+const APP_VER = '2.4.2';
 const DB_KEY = 'kinv_ctrl_v1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -2166,11 +2166,11 @@ function countDiffAOA() { return [['تاريخ الجرد', 'المستودع', 
 /* --- التقرير اليومي --- */
 function dailyData() {
   const from = $('#rdFrom').value || todayISO(), to = $('#rdTo').value || from, wh = $('#rdWh').value, ty = $('#rdType').value, q = $('#rdQ').value.trim(), nq = normName(q), cq = normCode(q), onlyMoved = $('#rdMoved').checked;
-  const R = new Map(); const mk = id => ({ itemId: id, open: 0, i: { opening: 0, purchase: 0, receipt: 0, mfgIn: 0, transferIn: 0 }, o: { sales: 0, issue: 0, mfgOut: 0, transferOut: 0 }, tin: 0, tout: 0 });
+  const R = new Map(); const mk = id => ({ itemId: id, open: 0, i: { purchase: 0, receipt: 0, mfgIn: 0, transferIn: 0 }, o: { sales: 0, issue: 0, mfgOut: 0, transferOut: 0 }, tin: 0, tout: 0 });
   for (const e of ledger()) {
     if (wh && e.wh !== wh) continue;
     let r = R.get(e.itemId); if (!r) { r = mk(e.itemId); R.set(e.itemId, r); }
-    if (e.date < from) { r.open += e.qin - e.qout; continue; } if (e.date > to) continue;
+    if (e.date > to) continue; if (e.side === 'opening' || e.date < from) { r.open += e.qin - e.qout; continue; } // سندات الأرصدة الافتتاحية تُعدّ رصيداً افتتاحياً دائماً حتى لو كانت بتاريخ ضمن الفترة
     if (!wh && (e.side === 'transferIn' || e.side === 'transferOut')) continue; // التحويلات الداخلية تتعادل على مستوى كل المستودعات
     const sd = repSide(e); if (e.qin) { r.i[sd] += e.qin; r.tin += e.qin; } if (e.qout) { r.o[sd] += e.qout; r.tout += e.qout; }
   }
@@ -2179,14 +2179,14 @@ function dailyData() {
   rows.sort((a, b) => codeCmp(a.item, b.item));
   return { rows, from, to, wh };
 }
-const DAILY_IN = [['opening', 'رصيد افتتاحي'], ['purchase', 'مشتريات'], ['receipt', 'إدخال'], ['mfgIn', 'تصنيع'], ['transferIn', 'تحويل وارد']], DAILY_OUT = [['sales', 'مبيعات'], ['issue', 'إخراج'], ['mfgOut', 'تصنيع'], ['transferOut', 'تحويل صادر']];
+const DAILY_IN = [['purchase', 'مشتريات'], ['receipt', 'إدخال'], ['mfgIn', 'تصنيع'], ['transferIn', 'تحويل وارد']], DAILY_OUT = [['sales', 'مبيعات'], ['issue', 'إخراج'], ['mfgOut', 'تصنيع'], ['transferOut', 'تحويل صادر']];
 function renderRepDaily() {
   if (!$('#rdFrom').value) $('#rdFrom').value = todayISO(); if (!$('#rdTo').value) $('#rdTo').value = $('#rdFrom').value;
   const { rows, from, to, wh } = dailyData(); const detail = $('#rdDetail').checked; const host = $('#rdTable');
-  $('#rdHint').innerHTML = `<b>${from === to ? 'تقرير يوم ' + from : `الفترة من ${from} إلى ${to}`}</b> — ${wh ? 'مستودع: ' + esc(whName(wh)) : 'كل المستودعات (التحويلات الداخلية بين المستودعات لا تظهر لأنها تتعادل)'}. الإدخال يشمل المشتريات وسندات الإدخال وإنتاج التصنيع، والإخراج يشمل المبيعات وسندات الإخراج واستهلاك التصنيع.`;
+  $('#rdHint').innerHTML = `<b>${from === to ? 'تقرير يوم ' + from : `الفترة من ${from} إلى ${to}`}</b> — ${wh ? 'مستودع: ' + esc(whName(wh)) : 'كل المستودعات (التحويلات الداخلية بين المستودعات لا تظهر لأنها تتعادل)'}. الرصيد الافتتاحي يشمل سندات الأرصدة الافتتاحية (بأي تاريخ حتى نهاية الفترة) وكل الحركات قبل الفترة. الإدخال يشمل المشتريات وسندات الإدخال وإنتاج التصنيع، والإخراج يشمل المبيعات وسندات الإخراج واستهلاك التصنيع.`;
   if (!rows.length) { host.innerHTML = emptyHTML('لا توجد بيانات للعرض', 'عدّل الفلاتر أو أدخل حركات'); return; }
   const ins = DAILY_IN.filter(([k]) => rows.some(r => r.i[k])), outs = DAILY_OUT.filter(([k]) => rows.some(r => r.o[k]));
-  const T = rows.reduce((t, r) => { t.open += r.open; t.tin += r.tin; t.tout += r.tout; t.close += r.close; for (const [k] of DAILY_IN) t.i[k] += r.i[k]; for (const [k] of DAILY_OUT) t.o[k] += r.o[k]; return t; }, { open: 0, tin: 0, tout: 0, close: 0, i: { opening: 0, purchase: 0, receipt: 0, mfgIn: 0, transferIn: 0 }, o: { sales: 0, issue: 0, mfgOut: 0, transferOut: 0 } });
+  const T = rows.reduce((t, r) => { t.open += r.open; t.tin += r.tin; t.tout += r.tout; t.close += r.close; for (const [k] of DAILY_IN) t.i[k] += r.i[k]; for (const [k] of DAILY_OUT) t.o[k] += r.o[k]; return t; }, { open: 0, tin: 0, tout: 0, close: 0, i: { purchase: 0, receipt: 0, mfgIn: 0, transferIn: 0 }, o: { sales: 0, issue: 0, mfgOut: 0, transferOut: 0 } });
   let head = `<tr><th rowspan="${detail ? 2 : 1}">${codeLabel()}</th><th rowspan="${detail ? 2 : 1}">الصنف</th><th rowspan="${detail ? 2 : 1}">الوحدة</th><th rowspan="${detail ? 2 : 1}" class="num">رصيد افتتاحي</th>`;
   if (detail) head += `<th colspan="${ins.length + 1}" class="grp cin">الإدخال</th><th colspan="${outs.length + 1}" class="grp cout">الإخراج</th><th rowspan="2" class="num">الرصيد</th></tr><tr>${ins.map(([, l]) => `<th class="num">${l}</th>`).join('')}<th class="num cin">إجمالي الإدخال</th>${outs.map(([, l]) => `<th class="num">${l}</th>`).join('')}<th class="num cout">إجمالي الإخراج</th></tr>`;
   else head += `<th class="num cin">إدخال</th><th class="num cout">إخراج</th><th class="num">الرصيد</th></tr>`;
