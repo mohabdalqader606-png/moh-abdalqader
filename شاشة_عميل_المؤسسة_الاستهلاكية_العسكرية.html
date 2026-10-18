@@ -701,8 +701,8 @@ ORDER BY T0."DocNum"</code>
 
       <div class="row-actions" style="margin-top:6px;">
         <button class="btn-primary btn-sm" onclick="renderDailyInvoiceMatch()">🆚 مطابقة يومية</button>
-        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">من تاريخ <input type="date" id="dailyMatchFrom" onchange="renderDailyInvoiceMatch()"></label>
-        <label style="font-size:12px; display:flex; align-items:center; gap:6px;">إلى تاريخ <input type="date" id="dailyMatchTo" onchange="renderDailyInvoiceMatch()"></label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;" title="الفلتر حسب تاريخ فاتورة الصرف الوهمي — بيقارن بس الفواتير اللي تاريخها ضمن الفترة مع سنداتها، وما بيعرض سندات بدون فاتورة بهاي الفترة">من تاريخ الفاتورة <input type="date" id="dailyMatchFrom" onchange="renderDailyInvoiceMatch()"></label>
+        <label style="font-size:12px; display:flex; align-items:center; gap:6px;" title="لو بدك يوم واحد بس، حط نفس التاريخ بالخانتين">إلى تاريخ الفاتورة <input type="date" id="dailyMatchTo" onchange="renderDailyInvoiceMatch()"></label>
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;"><input type="checkbox" id="dailyMatchOnlyDiff" checked onchange="renderDailyInvoiceMatch()"> عرض المجموعات يلي فيها فرق بس</label>
         <button class="btn-ghost btn-sm" onclick="printSection('dailyMatchBox','مطابقة يومية')">🖨️ طباعة</button>
       </div>
@@ -836,7 +836,7 @@ ORDER BY T0."DocNum"</code>
 // ⚠️ ارفع هاد الرقم مع كل تحديث فعلي يُدفع لهاي الشاشة (أي تاريخ/نص مختلف كافي) — هو يلي بيخلي
 // checkForNewVersion() تكتشف وجود نسخة أحدث وتنبّه أي مستخدم فاتح الشاشة تلقائياً بدل ما يضل عالق
 // على نسخة قديمة بصمت لحد ما حدا يحكيله يدوياً يعمل تحديث قوي.
-const APP_VERSION = '2026-10-12.2';
+const APP_VERSION = '2026-10-18.1';
 const STORAGE_KEY = 'milInst_v2';
 let IS_FRESH_LOAD = false;
 let freshLoadBannerDismissed = false;
@@ -3713,7 +3713,22 @@ function renderDailyInvoiceMatch(){
   if(!DUMMY_INV_ITEMS.length){ box.innerHTML = ''; sumRow.style.display = 'none'; flash('dummyInvItemsMsg','استورد أصناف فواتير الصرف الوهمي أول (فوق).', false); return; }
   if(!TRANSFERS.length){ box.innerHTML = ''; sumRow.style.display = 'none'; flash('dummyInvItemsMsg','ما في سندات تحويل مستوردة.', false); return; }
 
-  const knownInvNos = new Set(DUMMY_INV_ITEMS.map(it=>normDocNum(it.invoiceNo)));
+  // فلتر التاريخ يمشي حسب تاريخ فاتورة الصرف الوهمي: لو حددت فترة، بنقارن بس الفواتير اللي تاريخها ضمنها
+  // (مع سنداتها المرتبطة)، وما بنعرض أي سند/مجموعة ما فيها فاتورة بهاي الفترة.
+  const from = document.getElementById('dailyMatchFrom').value;
+  const to = document.getElementById('dailyMatchTo').value;
+  const onlyDiff = document.getElementById('dailyMatchOnlyDiff').checked;
+  const dateFilterOn = !!(from||to);
+  const invItems = dateFilterOn
+    ? DUMMY_INV_ITEMS.filter(r=>{ const d = normDateToISO(r.date); return d && (!from||d>=from) && (!to||d<=to); })
+    : DUMMY_INV_ITEMS;
+  if(!invItems.length){
+    sumRow.style.display = 'none';
+    box.innerHTML = `<div class="hint" style="color:var(--crimson);">ما في فواتير صرف وهمي معتمدة بتاريخ ${esc(from||'')}${from&&to&&from!==to?' إلى '+esc(to):(to&&!from?esc(to):'')} — تأكد من تاريخ الفواتير بقسم 6، أو وسّع الفترة.</div>`;
+    return;
+  }
+
+  const knownInvNos = new Set(invItems.map(it=>normDocNum(it.invoiceNo)));
   const invNoToPreciseKey = new Map();
 
   // ---- تجميع جهة السندات ----
@@ -3730,7 +3745,7 @@ function renderDailyInvoiceMatch(){
     return item.whsPricePiece || 0;
   }
   const theirNameByCode = new Map();
-  DUMMY_INV_ITEMS.forEach(r=>{ if(r.theirCode && r.theirName && !theirNameByCode.has(r.theirCode)) theirNameByCode.set(r.theirCode, r.theirName); });
+  invItems.forEach(r=>{ if(r.theirCode && r.theirName && !theirNameByCode.has(r.theirCode)) theirNameByCode.set(r.theirCode, r.theirName); });
   const unmappedOurCodesGlobal = new Set();
   TRANSFERS.forEach(t=>{
     const from011 = isWhs011(t.fromWhs), to011 = isWhs011(t.toWhs);
@@ -3768,8 +3783,8 @@ function renderDailyInvoiceMatch(){
     b.trItems.set(it.theirCode, (b.trItems.get(it.theirCode)||0) + theirQty);
   });
 
-  // ---- تجميع جهة الفواتير ----
-  DUMMY_INV_ITEMS.forEach(r=>{
+  // ---- تجميع جهة الفواتير (المفلترة بالتاريخ لو في فلتر) ----
+  invItems.forEach(r=>{
     const n = normDocNum(r.invoiceNo);
     let key, label, kind;
     if(invNoToPreciseKey.has(n)){
@@ -3791,9 +3806,6 @@ function renderDailyInvoiceMatch(){
     b.invValue.set(r.theirCode, (b.invValue.get(r.theirCode)||0) + lineValue);
   });
 
-  const from = document.getElementById('dailyMatchFrom').value;
-  const to = document.getElementById('dailyMatchTo').value;
-  const onlyDiff = document.getElementById('dailyMatchOnlyDiff').checked;
   const EPS = 0.001;
   const PRICE_EPS = 0.005;
 
@@ -3825,8 +3837,9 @@ function renderDailyInvoiceMatch(){
     return {key, label:b.label, kind:b.kind, awaitingInvoice, dates:Array.from(b.dates).filter(Boolean).sort(), invNos:Array.from(b.invNos), docNums:Array.from(b.docNums).filter(Boolean), rows, hasDiff: hasDiff && !awaitingInvoice, trTotal, invTotal, ourTrTotal, ourInvTotal, expectedValueTotal, invoicedValueTotal};
   });
 
-  if(from||to){
-    groups = groups.filter(g=> g.dates.length===0 || g.dates.some(d=> (!from||d>=from) && (!to||d<=to)));
+  if(dateFilterOn){
+    // بس المجموعات اللي فيها فاتورة صرف وهمي بتاريخ الفترة — السندات اللي ما إلها فاتورة بهاي الفترة ما تنعرض
+    groups = groups.filter(g=> g.invNos.length>0);
   }
   const comparable = groups.filter(g=>!g.awaitingInvoice);
   const awaitingCount = groups.filter(g=>g.awaitingInvoice).length;
