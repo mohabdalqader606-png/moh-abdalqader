@@ -194,7 +194,7 @@ footer{color:var(--muted);font-size:11px;text-align:center;padding:10px}
 <body>
 <header class="top">
   <div class="row">
-    <div><h1>شاشة تحليل الحزمة اليومية للتدقيق</h1><div class="sub" id="hsub">16 كويري معتمد + عمر الذمة + عروض المؤسسة العسكرية · مركز الكيلاني للأغذية · كل تبويب مستقل ببياناته وفلاتره وتقاريره</div></div>
+    <div><h1>شاشة تحليل الحزمة اليومية للتدقيق</h1><div class="sub" id="hsub">16 كويري معتمد + ربحية الأصناف + عمر الذمة + عروض المؤسسة العسكرية · مركز الكيلاني للأغذية · كل تبويب مستقل ببياناته وفلاتره وتقاريره</div></div>
     <span class="sp"></span>
     <span class="ubox" id="ubox" style="display:none"><b id="uEmail"></b><span id="syncSt" style="font-size:11px;opacity:.9"></span><button class="hbtn" onclick="doLogout()">خروج</button></span>
     <button class="hbtn" id="printBtn" onclick="doPrint()" style="display:none">طباعة A4</button>
@@ -1278,6 +1278,240 @@ LEFT JOIN OCRD B0 ON B0."CardCode"=W."Card"
 WHERE W."F1"+W."F2"+W."F3"+W."F4"+W."F5">0
 ORDER BY U0."U_NAME",W."F1"+W."F2"+W."F3"+W."F4"+W."F5" DESC,W."C"
 </script>
+<script type="text/plain" id="sql_q17">
+/* SELECT FROM OINV T0 */
+/* WHERE T0."DocDate" BETWEEN [%0] AND [%1] */
+
+WITH Combined AS (
+    -- ============ الفواتير ============
+    SELECT
+        T0."DocEntry",
+        T0."CardCode",
+        T0."CardName",
+        T0."DocDate",
+        YEAR(T0."DocDate")   AS "Yr",
+        MONTH(T0."DocDate")  AS "Mo",
+        T0."DiscSum"         AS "DocDiscount",
+        T1."LineNum",
+        T1."ItemCode",
+        T1."Dscription",
+        T1."Quantity"        AS "Quantity",
+        T1."Price",
+        T1."LineTotal"       AS "LineTotal",
+        'Invoice'            AS "Type",
+        T0."SlpCode",
+
+        COALESCE(
+            (SELECT MAX(B."DistNumber")
+             FROM OITL O INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+             INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+             WHERE O."DocType" = 13 AND O."DocEntry" = T0."DocEntry" AND O."DocLine" = T1."LineNum"
+               AND O."StockEff" = 1),
+            (SELECT MAX(B."DistNumber")
+             FROM DLN1 DL
+             INNER JOIN OITL O ON O."DocType" = 15 AND O."DocEntry" = DL."DocEntry" AND O."DocLine" = DL."LineNum"
+             INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+             INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+             WHERE DL."BaseEntry" = T0."DocEntry" AND DL."BaseLine" = T1."LineNum" AND DL."BaseType" = 13
+               AND O."StockEff" = 1),
+            (SELECT MAX(B."DistNumber")
+             FROM OITL O INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+             INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+             WHERE O."DocType" = 15 AND O."DocEntry" = T1."BaseEntry" AND O."DocLine" = T1."BaseLine"
+               AND T1."BaseType" = 15 AND O."StockEff" = 1)
+        ) AS "BatchNum",
+
+        (COALESCE(
+            (SELECT MAX(B."CostTotal" / NULLIF(B."Quantity",0))
+             FROM OITL O INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+             INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+             WHERE O."DocType" = 13 AND O."DocEntry" = T0."DocEntry" AND O."DocLine" = T1."LineNum"
+               AND O."StockEff" = 1),
+            (SELECT MAX(B."CostTotal" / NULLIF(B."Quantity",0))
+             FROM DLN1 DL
+             INNER JOIN OITL O ON O."DocType" = 15 AND O."DocEntry" = DL."DocEntry" AND O."DocLine" = DL."LineNum"
+             INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+             INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+             WHERE DL."BaseEntry" = T0."DocEntry" AND DL."BaseLine" = T1."LineNum" AND DL."BaseType" = 13
+               AND O."StockEff" = 1),
+            (SELECT MAX(B."CostTotal" / NULLIF(B."Quantity",0))
+             FROM OITL O INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+             INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+             WHERE O."DocType" = 15 AND O."DocEntry" = T1."BaseEntry" AND O."DocLine" = T1."BaseLine"
+               AND T1."BaseType" = 15 AND O."StockEff" = 1)
+        ) * IFNULL(NULLIF(T1."NumPerMsr",0), 1)) AS "UnitCost",
+
+        ((SELECT SUM(Q."Quantity" * (BN."CostTotal" / NULLIF(BN."Quantity",0)))
+                / NULLIF(SUM(Q."Quantity"),0)
+         FROM OBTQ Q
+         INNER JOIN OBTN BN ON Q."ItemCode" = BN."ItemCode" AND Q."SysNumber" = BN."SysNumber"
+         WHERE Q."ItemCode" = T1."ItemCode" AND Q."WhsCode" = T1."WhsCode" AND Q."Quantity" > 0
+        ) * IFNULL(NULLIF(T1."NumPerMsr",0), 1)) AS "EstCost"
+
+    FROM "OINV" T0
+    INNER JOIN "INV1" T1 ON T0."DocEntry" = T1."DocEntry"
+    WHERE
+        T0."CANCELED" = 'N'
+        AND T0."DocDate" BETWEEN [%0] AND [%1]
+
+    UNION ALL
+
+    -- ============ المرتجعات ============
+    SELECT
+        T0."DocEntry",
+        T0."CardCode",
+        T0."CardName",
+        T0."DocDate",
+        YEAR(T0."DocDate")   AS "Yr",
+        MONTH(T0."DocDate")  AS "Mo",
+        T0."DiscSum"         AS "DocDiscount",
+        T1."LineNum",
+        T1."ItemCode",
+        T1."Dscription",
+        -T1."Quantity"       AS "Quantity",
+        T1."Price",
+        -T1."LineTotal"      AS "LineTotal",
+        'Return'             AS "Type",
+        T0."SlpCode",
+
+        (SELECT MAX(B."DistNumber")
+         FROM OITL O INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+         INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+         WHERE O."DocType" = 14 AND O."DocEntry" = T0."DocEntry" AND O."DocLine" = T1."LineNum"
+           AND O."StockEff" = 1) AS "BatchNum",
+
+        ((SELECT MAX(B."CostTotal" / NULLIF(B."Quantity",0))
+          FROM OITL O INNER JOIN ITL1 L ON O."LogEntry" = L."LogEntry"
+          INNER JOIN OBTN B ON L."ItemCode" = B."ItemCode" AND L."SysNumber" = B."SysNumber"
+          WHERE O."DocType" = 14 AND O."DocEntry" = T0."DocEntry" AND O."DocLine" = T1."LineNum"
+            AND O."StockEff" = 1) * IFNULL(NULLIF(T1."NumPerMsr",0), 1)) AS "UnitCost",
+
+        NULL AS "EstCost"
+
+    FROM "ORIN" T0
+    INNER JOIN "RIN1" T1 ON T0."DocEntry" = T1."DocEntry"
+    WHERE
+        T0."CANCELED" = 'N'
+        AND T0."DocDate" BETWEEN [%0] AND [%1]
+),
+LineWithDocDisc AS (
+    SELECT
+        C.*,
+        D."DocTotalLines",
+        CASE
+            WHEN D."DocTotalLines" = 0 THEN 0
+            ELSE C."LineTotal" / D."DocTotalLines"
+        END AS "LineRatio"
+    FROM Combined C
+    INNER JOIN (
+        SELECT "Type", "DocEntry", SUM("LineTotal") AS "DocTotalLines"
+        FROM Combined
+        GROUP BY "Type", "DocEntry"
+    ) D ON C."Type" = D."Type" AND C."DocEntry" = D."DocEntry"
+),
+Lines AS (
+    SELECT
+        L.*,
+        L."LineTotal" - CASE WHEN L."Type" = 'Return' THEN - (L."LineRatio" * L."DocDiscount")
+                              ELSE (L."LineRatio" * L."DocDiscount")
+                         END AS "NetLine"
+    FROM LineWithDocDisc L
+)
+SELECT
+    L."Yr"                 AS "السنة",
+    L."Mo"                 AS "الشهر",
+    L."DocDate"            AS "التاريخ",
+
+    CASE WHEN L."Type" = 'Return' THEN 'مرتجع' ELSE 'فاتورة' END AS "نوع المستند",
+
+    /* روابط المستندات - تنسحب مباشرة من OINV / ORIN حتى يطلع السهم */
+    OI."DocNum"            AS "رقم الفاتورة",
+    RN."DocNum"            AS "رقم المرتجع",
+
+    L."CardCode"           AS "Customer/Vendor Code",
+    L."CardName"           AS "Customer/Vendor Name",
+    C."GroupCode"          AS "Customer Category",
+    G."GroupName"          AS "Customer Category Name",
+    S."SlpName"            AS "Sales Rep",
+    L."ItemCode"           AS "Item No.",
+    MAX(L."Dscription")    AS "Item/Service Description",
+
+    L."BatchNum"           AS "رقم الباتش",
+    CASE WHEN L."BatchNum" IS NULL THEN 'غير مدلفرة' ELSE 'مدلفرة' END AS "حالة التسليم",
+
+    MAX(IT."CardCode")     AS "رمز مورد الصنف",
+    MAX(VEN."CardName")    AS "اسم مورد الصنف",
+
+    MAX(IT."SalUnitMsr")   AS "وحدة البيع",
+    MAX(IT."NumInSale")    AS "معامل التحويل",
+
+    MAX(IT."SWeight1")     AS "وزن الوحدة",
+    MAX(IT."SWght1Unit")   AS "وحدة الوزن",
+
+    SUM(L."Quantity")                                              AS "الكمية",
+    SUM(L."Quantity" * COALESCE(IT."NumInSale", 1))                AS "الكمية (موحّدة بالوحدة الرئيسية)",
+    SUM(L."Quantity" * COALESCE(IT."NumInSale", 1) * COALESCE(IT."SWeight1", 0)) AS "إجمالي الوزن",
+
+    SUM(L."Quantity" * L."Price")                                  AS "المبيعات قبل الخصم",
+
+    SUM(
+        CASE WHEN L."Type" = 'Return' THEN - ((L."Quantity" * L."Price") - L."LineTotal")
+             ELSE ((L."Quantity" * L."Price") - L."LineTotal")
+        END
+    ) AS "خصم السطر",
+
+    SUM(
+        CASE WHEN L."Type" = 'Return' THEN - (L."LineRatio" * L."DocDiscount")
+             ELSE (L."LineRatio" * L."DocDiscount")
+        END
+    ) AS "خصم المستند",
+
+    SUM(L."NetLine")                                               AS "صافي المبيعات",
+
+    MAX(L."UnitCost")                                              AS "كلفة الوحدة الحالية للباتش",
+    SUM(L."Quantity" * L."UnitCost")                               AS "إجمالي الكلفة",
+    SUM(L."NetLine") - SUM(L."Quantity" * L."UnitCost")            AS "مجمل الربح",
+
+    CASE
+        WHEN SUM(L."NetLine") = 0 OR SUM(L."Quantity" * L."UnitCost") IS NULL THEN NULL
+        ELSE ROUND((SUM(L."NetLine") - SUM(L."Quantity" * L."UnitCost")) / SUM(L."NetLine") * 100, 2)
+    END                                                            AS "نسبة الربح %",
+
+    SUM(CASE WHEN L."BatchNum" IS NULL THEN L."Quantity" * L."EstCost" END) AS "كلفة تقديرية (غير مدلفرة)",
+
+    CASE
+        WHEN L."BatchNum" IS NULL
+        THEN SUM(L."NetLine") - SUM(L."Quantity" * L."EstCost")
+        ELSE NULL
+    END                                                            AS "مجمل الربح التقديري",
+
+    CASE
+        WHEN L."BatchNum" IS NOT NULL THEN NULL
+        WHEN SUM(L."NetLine") = 0 OR SUM(L."Quantity" * L."EstCost") IS NULL THEN NULL
+        ELSE ROUND((SUM(L."NetLine") - SUM(L."Quantity" * L."EstCost")) / SUM(L."NetLine") * 100, 2)
+    END                                                            AS "نسبة الربح التقديرية %"
+
+FROM Lines L
+LEFT JOIN OINV OI  ON L."Type" = 'Invoice' AND OI."DocEntry" = L."DocEntry"
+LEFT JOIN ORIN RN  ON L."Type" = 'Return'  AND RN."DocEntry" = L."DocEntry"
+LEFT JOIN OCRD C   ON L."CardCode" = C."CardCode"
+LEFT JOIN OCRG G   ON C."GroupCode" = G."GroupCode"
+LEFT JOIN OSLP S   ON L."SlpCode" = S."SlpCode"
+LEFT JOIN OITM IT  ON L."ItemCode" = IT."ItemCode"
+LEFT JOIN OCRD VEN ON IT."CardCode" = VEN."CardCode"
+
+GROUP BY
+    L."Yr", L."Mo", L."DocDate", L."Type", L."DocEntry", OI."DocNum", RN."DocNum",
+    L."CardCode", L."CardName", L."ItemCode", L."BatchNum",
+    C."GroupCode", G."GroupName", S."SlpName"
+
+HAVING
+    SUM(L."Quantity") <> 0
+    OR SUM(L."NetLine") <> 0
+
+ORDER BY
+    L."DocDate", L."Type", OI."DocNum", RN."DocNum", L."ItemCode", L."BatchNum";
+</script>
 <script type="text/plain" id="sql_aging1">
 /* SELECT C."CardCode" FROM OCRD C WHERE C."CreateDate" < [%0] */
 SELECT
@@ -1512,7 +1746,7 @@ const QDEF=[
  {id:'q16',n:"فصل المهام التفصيلي مستنداً بمستند",short:"فصل المهام التفصيلي",g:CHECKS[15],doc:"رقم المستند",date:"تاريخ المستند",dims:["اسم المستخدم", "نوع الحركة", "اسم الطرف"],ms:["المبلغ"],flags:["الملاحظات"],text:[],cols:["فتح المستخدم", "رمز المستخدم", "اسم المستخدم", "نوع الحركة", "رقم المستند", "فتح فاتورة", "فتح اشعار دائن", "فتح سند قبض", "فتح امر شراء", "فتح فاتورة شراء", "فتح سند صرف", "فتح القيد", "فتح ادخال مخزون", "فتح اخراج مخزون", "فتح الطرف", "اسم الطرف", "تاريخ المستند", "تاريخ الادخال", "ايام التأخير", "المبلغ", "درجة الخطورة", "الملاحظات"]},
 ];
 /* ================= utils ================= */
-const VERSION='v2.14';
+const VERSION='v2.15';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nf0=new Intl.NumberFormat('en-US',{maximumFractionDigits:0,minimumFractionDigits:0});
@@ -2612,6 +2846,70 @@ function renderMil(T){const main=$('main'),S=T.S;T.last=T.last||{};if(!T.P)T.P={
   (MILV[S.view]||MILV.ev)(T,$('view'));}
 async function milInit(T){T.S=milState();T.ts={};MIL_OF={};try{MIL_OF=JSON.parse(LS.get('kap_mil')||'{}')||{};}catch(e){MIL_OF={};}try{MIL_META=Object.assign({name:'',date:'',ref:'',notes:''},JSON.parse(LS.get('kap_mil_meta')||'{}'));}catch(e){}try{MIL_HIST=JSON.parse(LS.get('kap_mil_hist')||'[]')||[];}catch(e){MIL_HIST=[];}try{const o=JSON.parse(LS.get('kap_mil_s')||'{}');Object.assign(T.S,{minM:o.minM!=null?o.minM:T.S.minM,warnM:o.warnM!=null?o.warnM:T.S.warnM,offerUnit:o.offerUnit||'unit'});}catch(e){}
   const D=await IDB.get('mil');if(D&&D.rows&&D.rows.length)T.D=D;T.P={n:(T.D?T.D.rows.length:MIL_DEFAULT.length),cols:[],missing:[]};}
+/* ================= تبويب مبيعات الأصناف بالكلفة والربح (فواتير ومرتجعات) ================= */
+const SALES_DEF={id:'q17',n:"مبيعات الأصناف بالكلفة والربح (فواتير ومرتجعات)",short:"ربحية الأصناف",
+  g:{t:"مبيعات الأصناف بالكلفة والربح (فواتير ومرتجعات)",m:"فواتير المبيعات والمرتجعات سطراً بسطر · كلفة الباتش الحالية · الوزن والمورد وفئة العميل",open:"لا يوجد سهم فتح · افتح الفاتورة أو المرتجع برقمه",
+    goal:"قياس ربحية كل صنف وعميل ومندوب ومورد وفئة عملاء على المبيعات الفعلية (الفواتير ناقص المرتجعات) بعد كل الخصومات، مقابل كلفة الباتش الفعلية المحدّثة بتكاليف الاستيراد، مع الأوزان المباعة لتحليل الكميات بالكيلو.",
+    shows:[["نوع المستند","فاتورة أو مرتجع؛ المرتجع يظهر بكمية وقيمة سالبتين فيخصم تلقائياً من المجاميع"],["صافي المبيعات","المبيعات قبل الخصم − خصم السطر − حصة السطر من خصم الفاتورة"],["كلفة الوحدة الحالية للباتش","كلفة الباتش المسحوب منه (بعد تحميل تكاليف الاستيراد) × معامل التحويل"],["مجمل الربح / نسبة الربح %","صافي المبيعات − إجمالي الكلفة، ونسبته من صافي المبيعات"],["حالة التسليم","مدلفرة = سُحب من باتش محدد؛ غير مدلفرة = فاتورة حجز لم تُسلَّم، وكلفتها تقديرية من متوسط الباتشات المتاحة في المستودع"],["إجمالي الوزن","الكمية × معامل التحويل × وزن الوحدة (بوحدة الوزن في بطاقة الصنف)"]],
+    read:"ابدأ بتبويب «الربحية حسب…» واختر الصنف أو المندوب أو المورد. انظر أولاً للأسطر ذات نسبة الربح السالبة أو الأقل من 10%، ثم لنسبة المرتجعات من المبيعات، ثم لحجم الخصومات. الأسطر غير المدلفرة ربحها تقديري حتى تُسلَّم.",
+    act:["هامش سالب أو منخفض على صنف: راجع سعر البيع المعتمد وآخر كلفة استيراد.","مرتجعات عالية على صنف أو عميل: تحقق من الصلاحية والجودة وسياسة المرتجعات.","خصومات كبيرة عند مندوب: قارن مع صلاحيات الخصم المعتمدة.","أسطر غير مدلفرة قديمة: تابع التسليم أو ألغِ الحجز."]},
+  doc:"رقم الفاتورة",date:"التاريخ",
+  dims:["Sales Rep","Customer/Vendor Name","Customer Category Name","Item/Service Description","اسم مورد الصنف","نوع المستند","حالة التسليم","وحدة البيع"],
+  ms:["صافي المبيعات","مجمل الربح","إجمالي الكلفة","الكمية","إجمالي الوزن","خصم السطر","خصم المستند","المبيعات قبل الخصم","كلفة تقديرية (غير مدلفرة)","مجمل الربح التقديري"],
+  flags:["تنبيه الهامش","تنبيه المستند","تنبيه التسليم"],text:["رقم الباتش","Item No.","Customer/Vendor Code","رمز مورد الصنف","Customer Category"],
+  derive:[{frm:"نسبة الربح %",t:"تنبيه الهامش",fn:v=>v===''||v==null?'':(v<0?'✖ هامش سالب':v<10?'⚠ هامش أقل من 10%':'')},{frm:"نوع المستند",t:"تنبيه المستند",fn:v=>/مرتجع/.test(v)?'↩ مرتجع':''},{frm:"حالة التسليم",t:"تنبيه التسليم",fn:v=>/غير/.test(v)?'⚠ غير مدلفرة (كلفة تقديرية)':''}],
+  custom:[['q17_prof','الربحية حسب…']],
+  cols:["السنة","الشهر","التاريخ","نوع المستند","رقم الفاتورة","رقم المرتجع","Customer/Vendor Code","Customer/Vendor Name","Customer Category","Customer Category Name","Sales Rep","Item No.","Item/Service Description","رقم الباتش","حالة التسليم","رمز مورد الصنف","اسم مورد الصنف","وحدة البيع","معامل التحويل","وزن الوحدة","وحدة الوزن","الكمية","الكمية (موحّدة بالوحدة الرئيسية)","إجمالي الوزن","المبيعات قبل الخصم","خصم السطر","خصم المستند","صافي المبيعات","كلفة الوحدة الحالية للباتش","إجمالي الكلفة","مجمل الربح","نسبة الربح %","كلفة تقديرية (غير مدلفرة)","مجمل الربح التقديري","نسبة الربح التقديرية %"]};
+QDEF.push(SALES_DEF);
+/* الربحية حسب بُعد يختاره المستخدم: صنف / مورد / عميل / مندوب / فئة / شهر / وحدة */
+const SALES_DIMS=[['item','الصنف','صنف'],['sup','المورد','مورد'],['cust','العميل','عميل'],['rep','المندوب','مندوب'],['cat','فئة العميل','فئة'],['mon','الشهر','شهر'],['unit','وحدة البيع','وحدة'],['deliv','حالة التسليم','حالة']];
+CUSTOM.q17_prof=(T,el)=>{const P=T.P,V=P.V,idx=filtered(T);const C=n=>P.cols.find(c=>c.k===hnorm(n))||null;
+  const cType=C('نوع المستند'),cInv=C('رقم الفاتورة'),cRet=C('رقم المرتجع'),cCust=C('Customer/Vendor Name'),cCustC=C('Customer/Vendor Code'),cCat=C('Customer Category Name'),cRep=C('Sales Rep'),cItem=C('Item/Service Description'),cItemC=C('Item No.'),cSup=C('اسم مورد الصنف'),cUnit=C('وحدة البيع'),cDeliv=C('حالة التسليم'),cYr=C('السنة'),cMo=C('الشهر'),cWU=C('وحدة الوزن');
+  const cQty=C('الكمية'),cQtyB=C('الكمية (موحّدة بالوحدة الرئيسية)'),cW=C('إجمالي الوزن'),cGross=C('المبيعات قبل الخصم'),cDL=C('خصم السطر'),cDD=C('خصم المستند'),cNet=C('صافي المبيعات'),cCost=C('إجمالي الكلفة'),cProfit=C('مجمل الربح'),cEst=C('كلفة تقديرية (غير مدلفرة)'),cEstP=C('مجمل الربح التقديري');
+  if(!cNet||!cItem){el.innerHTML='<div class="card"><div class="empty">هذا التحليل يحتاج أعمدة: Item/Service Description، صافي المبيعات</div></div>';return;}
+  const num=(c,i)=>c?(V[c.i][i]||0):0,str=(c,i)=>c?String(V[c.i][i]==null?'':V[c.i][i]):'';
+  const avail=SALES_DIMS.filter(d=>({item:cItem,sup:cSup,cust:cCust,rep:cRep,cat:cCat,mon:cMo,unit:cUnit,deliv:cDeliv})[d[0]]);
+  if(!T.sd||!avail.some(d=>d[0]===T.sd))T.sd=avail[0][0];const sd=T.sd;
+  const keyOf=i=>{switch(sd){case 'item':return str(cItem,i)||str(cItemC,i)||'(بدون)';case 'sup':return str(cSup,i)||'(بدون مورد)';case 'cust':return str(cCust,i)||'(بدون)';case 'rep':return str(cRep,i)||'(بدون)';case 'cat':return str(cCat,i)||'(بدون)';case 'mon':return (str(cYr,i)||'')+'-'+String(str(cMo,i)||'').padStart(2,'0');case 'unit':return str(cUnit,i)||'(بدون)';case 'deliv':return str(cDeliv,i)||'(بدون)';}return '';};
+  const dimCol={item:cItem,sup:cSup,cust:cCust,rep:cRep,cat:cCat,mon:cMo,unit:cUnit,deliv:cDeliv}[sd];const dimName=avail.find(d=>d[0]===sd)[1],dimUnit=avail.find(d=>d[0]===sd)[2];
+  const isRet=i=>cType&&/مرتجع/.test(str(cType,i));
+  const M=new Map();
+  for(const i of idx){const k=keyOf(i);let g=M.get(k);
+    if(!g){g={label:k,code:'',n:0,docs:new Set(),custs:new Set(),items:new Set(),qty:0,qtyB:0,w:0,gross:0,dl:0,dd:0,net:0,cost:0,profit:0,retN:0,retQty:0,retNet:0,saleNet:0,und:0,undNet:0,est:0,estP:0,neg:0,low:0,wu:''};M.set(k,g);}
+    if(!g.code){if(sd==='item')g.code=str(cItemC,i);else if(sd==='cust')g.code=str(cCustC,i);}
+    g.n++;const d=str(isRet(i)?cRet:cInv,i);if(d)g.docs.add((isRet(i)?'R':'I')+d);const cu=str(cCust,i);if(cu)g.custs.add(cu);const it=str(cItemC,i)||str(cItem,i);if(it)g.items.add(it);
+    g.qty+=num(cQty,i);g.qtyB+=num(cQtyB,i);g.w+=num(cW,i);g.gross+=num(cGross,i);g.dl+=num(cDL,i);g.dd+=num(cDD,i);g.net+=num(cNet,i);g.cost+=num(cCost,i);g.profit+=num(cProfit,i);if(!g.wu)g.wu=str(cWU,i);
+    if(isRet(i)){g.retN++;g.retQty+=-num(cQty,i);g.retNet+=-num(cNet,i);}else g.saleNet+=num(cNet,i);
+    if(cDeliv&&/غير/.test(str(cDeliv,i))){g.und++;g.undNet+=num(cNet,i);g.est+=num(cEst,i);g.estP+=num(cEstP,i);}
+    const fl=P.FL[i];if(fl.some(f=>/هامش سالب/.test(f)))g.neg++;else if(fl.some(f=>/أقل من 10/.test(f)))g.low++;}
+  const rows=[...M.values()].map(g=>{g.nd=g.docs.size;g.nc=g.custs.size;g.ni=g.items.size;delete g.docs;delete g.custs;delete g.items;g.margin=sdiv(g.profit,g.net);g.disc=g.dl+g.dd;g.discPct=sdiv(g.disc,g.gross);g.retPct=sdiv(g.retNet,g.saleNet);g.ppk=sdiv(g.profit,g.w);g.cpu=sdiv(g.cost,g.qty);g.npu=sdiv(g.net,g.qty);return g;}).sort((a,b)=>b.profit-a.profit);
+  const tot={label:'الإجمالي ('+FI(rows.length)+' '+dimUnit+')',n:0,nd:0,nc:0,ni:0,qty:0,qtyB:0,w:0,gross:0,dl:0,dd:0,disc:0,net:0,cost:0,profit:0,retN:0,retQty:0,retNet:0,saleNet:0,und:0,undNet:0,est:0,estP:0,neg:0,low:0};
+  for(const g of rows)for(const k of ['n','nd','qty','qtyB','w','gross','dl','dd','disc','net','cost','profit','retN','retQty','retNet','saleNet','und','undNet','est','estP','neg','low'])tot[k]+=g[k];
+  tot.nc='';tot.ni='';tot.margin=sdiv(tot.profit,tot.net);tot.discPct=sdiv(tot.disc,tot.gross);tot.retPct=sdiv(tot.retNet,tot.saleNet);tot.ppk=sdiv(tot.profit,tot.w);
+  const wu=rows.find(g=>g.wu)?.wu||'';const wuTxt=/kg|كغم|كيلو/i.test(wu)?'كغم':(/^\d*$/.test(wu)?'':wu);
+  const negRows=rows.filter(g=>g.margin!=null&&g.margin<0),lowRows=rows.filter(g=>g.margin!=null&&g.margin>=0&&g.margin<0.10);
+  let h='<div class="card"><h3>الربحية حسب <select id="sdSel">'+avail.map(d=>'<option value="'+d[0]+'"'+(sd===d[0]?' selected':'')+'>'+d[1]+'</option>').join('')+'</select> <span class="hint">صافي المبيعات بعد كل الخصومات وبعد خصم المرتجعات · الكلفة من الباتش الفعلي · اضغط على السطر لعرض أسطره</span></h3>';
+  h+=kpis([['صافي المبيعات',F2(tot.net),FI(tot.nd)+' مستند · '+FI(tot.n)+' سطر','gold'],['إجمالي الكلفة',F2(tot.cost),tot.est>0?'منها تقديري '+F2(tot.est):'كلفة باتش فعلية'],['مجمل الربح',F2(tot.profit),'نسبة الربح '+PC(tot.margin),tot.profit<0?'red':'green'],['الخصومات',F2(tot.disc),PC(tot.discPct)+' من المبيعات قبل الخصم · سطر '+F2(tot.dl)+' / مستند '+F2(tot.dd),tot.disc>0?'gold':''],['المرتجعات',F2(tot.retNet),FI(tot.retN)+' سطر · '+PC(tot.retPct)+' من مبيعات الفواتير',tot.retNet>0?'red':''],['الوزن المباع',F2(tot.w)+(wuTxt?' '+wuTxt:''),tot.w>0?'ربح '+F3(tot.ppk)+' لكل '+(wuTxt||'وحدة وزن'):'لا أوزان في بطاقات الأصناف'],['هامش سالب / أقل من 10%',FI(negRows.length)+' / '+FI(lowRows.length),dimUnit+' من أصل '+FI(rows.length),negRows.length?'red':lowRows.length?'gold':''],...(tot.und?[['أسطر غير مدلفرة',FI(tot.und),'صافي '+F2(tot.undNet)+' · ربح تقديري '+F2(tot.estP),'gold']]:[])]);
+  h+='<div id="sdT"></div></div>';
+  h+='<div class="grid2"><div class="card"><h3>الأعلى ربحاً <span class="hint">مجمل الربح بالدينار</span></h3><div id="sdTop"></div></div><div class="card"><h3>الأدنى نسبة ربح <span class="hint">نسبة الربح من صافي المبيعات — الأحمر خسارة</span></h3><div id="sdLow"></div></div></div>';
+  if(sd!=='mon'&&cMo)h+='<div class="card"><h3>صافي المبيعات ومجمل الربح حسب الشهر</h3><div id="sdMon"></div></div>';
+  el.innerHTML=h;
+  $('sdSel').onchange=e=>{T.sd=e.target.value;T.ts={};CUSTOM.q17_prof(T,el);};
+  const first={k:'label',t:dimName,f:'t',cls:'nm',h:r=>'<span class="lnk">'+esc(r.label)+'</span>'+(r.code?'<span class="code" style="margin-inline-start:6px">'+esc(r.code)+'</span>':'')+(r.neg?'<span class="pill r" title="أسطر بهامش سالب">'+FI(r.neg)+' ✖</span>':'')};
+  const cols=[{k:'#',t:'#',nos:1},first,{k:'nd',t:'المستندات',f:'i'},{k:'n',t:'الأسطر',f:'i'},...(sd!=='cust'?[{k:'nc',t:'العملاء',f:'i'}]:[]),...(sd!=='item'?[{k:'ni',t:'الأصناف',f:'i'}]:[]),
+    {k:'qty',t:'الكمية',f:'n'},{k:'w',t:'الوزن'+(wuTxt?' ('+wuTxt+')':''),f:'n'},{k:'gross',t:'قبل الخصم',f:'n'},{k:'disc',t:'الخصومات',f:'n',heat:true,red:true},{k:'discPct',t:'% الخصم',f:'pc'},{k:'retNet',t:'المرتجعات',f:'n',heat:true,red:true},{k:'retPct',t:'% المرتجع',f:'pc'},
+    {k:'net',t:'صافي المبيعات',f:'n',heat:true},{k:'cost',t:'الكلفة',f:'n'},{k:'profit',t:'مجمل الربح',f:'n',heat:true},{k:'margin',t:'نسبة الربح',f:'pc',h:r=>r.margin==null?'<span class="z">—</span>':'<span class="'+(r.margin<0?'dn':r.margin<0.10?'pill w':'up')+'">'+PC(r.margin)+'</span>'},
+    ...(sd==='item'?[{k:'npu',t:'صافي سعر الوحدة',f:'n',dec:3},{k:'cpu',t:'كلفة الوحدة',f:'n',dec:3}]:[]),{k:'ppk',t:'ربح/'+(wuTxt||'وزن'),f:'n',dec:3},...(tot.und?[{k:'und',t:'أسطر غير مدلفرة',f:'i'},{k:'estP',t:'ربح تقديري (غير مدلفر)',f:'n'}]:[])];
+  table(T,$('sdT'),'sdT_'+sd,{name:'الربحية_حسب_'+dimName,cols,rows,total:tot,sort:'profit',dir:-1,onRow:r=>{if(sd==='mon'){T.S.drill.push({col:cYr.i,val:r.label.split('-')[0],label:'السنة'});drillTo(T,cMo.i,String(+r.label.split('-')[1]),'الشهر');}else drillTo(T,dimCol.i,/^\(بدون/.test(r.label)?'':r.label,dimName);}});
+  const top=rows.filter(g=>g.profit>0).slice(0,12);$('sdTop').innerHTML=hbars(top.map(g=>({l:g.label,v:g.profit,s:PC(g.margin)})),{click:true,fmt:F2});
+  const low=rows.filter(g=>g.margin!=null&&g.net>0).sort((a,b)=>a.margin-b.margin).slice(0,12);$('sdLow').innerHTML=hbars(low.map(g=>({l:g.label,v:Math.round(g.margin*1000)/10,s:F2(g.profit)})),{click:true,fmt:v=>v.toFixed(1)+'%'});
+  const hbClick=(list)=>e=>{const i=e.target.dataset.hb;if(i==null)return;const r=list[+i];if(sd==='mon'){T.S.drill.push({col:cYr.i,val:r.label.split('-')[0],label:'السنة'});drillTo(T,cMo.i,String(+r.label.split('-')[1]),'الشهر');}else drillTo(T,dimCol.i,/^\(بدون/.test(r.label)?'':r.label,dimName);};
+  $('sdTop').onclick=hbClick(top);$('sdLow').onclick=hbClick(low);
+  if(sd!=='mon'&&cMo){const MM=new Map();for(const i of idx){const k=(str(cYr,i)||'')+'-'+String(str(cMo,i)||'').padStart(2,'0');const g=MM.get(k)||{net:0,profit:0};g.net+=num(cNet,i);g.profit+=num(cProfit,i);MM.set(k,g);}
+    const ks=[...MM.keys()].sort();barChart($('sdMon'),ks,ks.map(k=>MM.get(k).net),{h:200,fmt:F2});}
+};
+EXPL_VIEWS.q17_prof={t:'الربحية حسب…',d:'يجمع أسطر الفواتير والمرتجعات حسب البُعد المختار (الصنف، المورد، العميل، المندوب، فئة العميل، الشهر، وحدة البيع، حالة التسليم). المرتجعات تدخل بقيم سالبة فتُخصم من الكمية والمبيعات والكلفة والربح تلقائياً. الكلفة هي كلفة الباتش الفعلي المسحوب منه (مع تكاليف الاستيراد)، وللأسطر غير المدلفرة كلفة تقديرية تظهر منفصلة.',
+  cols:[['المستندات','عدد الفواتير والمرتجعات المختلفة'],['العملاء / الأصناف','عدد العملاء أو الأصناف المختلفة داخل السطر'],['الكمية','صافي الكمية المباعة (الفواتير − المرتجعات) بوحدة البيع'],['الوزن','الكمية × معامل التحويل × وزن الوحدة من بطاقة الصنف'],['قبل الخصم','الكمية × سعر الوحدة قبل أي خصم'],['الخصومات / % الخصم','خصم السطر + حصة السطر من خصم المستند، ونسبتهما من المبيعات قبل الخصم'],['المرتجعات / % المرتجع','صافي قيمة المرتجعات ونسبتها من صافي مبيعات الفواتير'],['صافي المبيعات','بعد كل الخصومات وبعد خصم المرتجعات'],['الكلفة','الكمية × كلفة الوحدة الحالية للباتش'],['مجمل الربح / نسبة الربح','صافي المبيعات − الكلفة، ونسبته من صافي المبيعات؛ أقل من 10% تحذير وسالب خسارة'],['ربح/كغم','مجمل الربح ÷ الوزن المباع'],['ربح تقديري (غير مدلفر)','للأسطر التي لم تُسلَّم بعد: صافي المبيعات − الكلفة التقديرية من الباتشات المتاحة']]};
 /* ================= boot ================= */
 async function appBoot(){
   for(const d of QDEF)TABS[d.id]=mkTab(d);
