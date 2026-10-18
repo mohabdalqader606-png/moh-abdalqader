@@ -836,7 +836,7 @@ ORDER BY T0."DocNum"</code>
 // ⚠️ ارفع هاد الرقم مع كل تحديث فعلي يُدفع لهاي الشاشة (أي تاريخ/نص مختلف كافي) — هو يلي بيخلي
 // checkForNewVersion() تكتشف وجود نسخة أحدث وتنبّه أي مستخدم فاتح الشاشة تلقائياً بدل ما يضل عالق
 // على نسخة قديمة بصمت لحد ما حدا يحكيله يدوياً يعمل تحديث قوي.
-const APP_VERSION = '2026-10-18.1';
+const APP_VERSION = '2026-10-18.2';
 const STORAGE_KEY = 'milInst_v2';
 let IS_FRESH_LOAD = false;
 let freshLoadBannerDismissed = false;
@@ -3215,7 +3215,7 @@ const DUMMY_INV_PROMPT = `أنت خبير بقراءة "فاتورة الصرف 
 1) لكل فاتورة منفصلة أضف عنصراً مستقلاً في مصفوفة invoices — لا تدمج فاتورتين مع بعض ولا تتجاوز أي فاتورة أو صفحة.
 2) لكل فاتورة استخرج: invoiceNo = رقم المستند الطويل (حوالي 10 أرقام، يبدأ عادةً بـ 26، مثل 2621109928) المطبوع في الصندوق العلوي من الفاتورة بجانب التاريخ ورقم المستودع — أرقام فقط. تنبيه مهم: الفاتورة فيها أيضاً خانة مكتوب بجانبها حرفياً "رقم الفاتورة" وفيها رقم تسلسلي قصير (مثل 17) — هذا الرقم القصير ليس المطلوب إطلاقاً، تجاهله تماماً ولا تضعه في invoiceNo أبداً. إذا لم تجد رقماً طويلاً بهذا الشكل ضع null بدل الرقم القصير. ثم date (تاريخ الفاتورة محوّلاً لصيغة YYYY-MM-DD)، market (اسم السوق أو الفرع كما هو مكتوب بالضبط)، warehouse (اتركه null دائماً — المستودع ثابت ويُضبط تلقائياً من النظام)، totalAmount (المبلغ الإجمالي المطبوع بآخر الفاتورة كرقم — انسخه كما هو مطبوع، لا تحسبه بنفسك من الأسطر).
 3) لكل صنف بالفاتورة استخرج: code (رمز المادة كما هو مطبوع بالضبط، أرقام)، qty (الكمية رقماً)، price (سعر الوحدة رقماً)، value (قيمة/إجمالي السطر رقماً). لا تستخرج اسم الصنف إطلاقاً وما تضيف حقل name — اسم كل صنف بيتحدد لاحقاً تلقائياً من جدول ربط أصناف داخلي حسب رمزه، فتركيزك الكامل ينحصر بدقة قراءة الرمز والأرقام بس.
-4) اقرأ كل رقم بدقة متناهية رقماً رقماً، وتحقق داخلياً أن qty × price ≈ value لكل سطر. أي رقم غير واضح بالصورة أو لا يمكن حسم قراءته بثقة — ضعه null بدل التخمين. لا تخترع رقماً أبداً.
+4) اقرأ كل رقم بدقة متناهية رقماً رقماً، واقرأ كل سطر مستقلاً من صفه هو بالذات — لا تنسخ كمية أو سعر من السطر المجاور فوقه أو تحته أبداً (مثلاً سطر كميته 48 وسطر تحته كميته 24: لكل سطر كميته هو). تحقق داخلياً أن qty × price ≈ value لكل سطر، وبعد ما تخلص كل الأسطر تحقق أيضاً أن مجموع value لكل الأسطر ≈ totalAmount المطبوع؛ إذا اختلفوا أعد قراءة كميات الأسطر واحداً واحداً قبل ما تجاوب. أي رقم غير واضح بالصورة أو لا يمكن حسم قراءته بثقة — ضعه null بدل التخمين. لا تخترع رقماً أبداً.
 5) تجاهل صفوف المجاميع الفارغة التي لا تمثل صنفاً فعلياً.
 6) أجب بـ JSON فقط بدون أي نص أو markdown إضافي وبالضبط بهذا الشكل:
 {"invoices":[{"invoiceNo":"","date":"YYYY-MM-DD","market":"","warehouse":"","totalAmount":0,"items":[{"code":"","qty":0,"price":0,"value":0}]}]}`;
@@ -3334,6 +3334,25 @@ function diLineMismatch(it){
   if(isNaN(q)||isNaN(p)||isNaN(v)) return false;
   return Math.abs(q*p - v) > Math.max(0.02, v*0.01);
 }
+// مجموع قيم الأسطر المقروءة مقابل المبلغ الإجمالي المطبوع بآخر الفاتورة — لو اختلفوا فغالباً كمية سطر انقرأت غلط
+// (مثلاً الذكاء الاصطناعي نسخ كمية السطر المجاور: 24 بدل 48) حتى لو كمية×سعر=قيمة بنفس السطر صحيحة.
+// بترجع null لو كل شي سليم (أو لو المبلغ/القيم ناقصة — إلها تحذيرها الخاص)، وإلا {sum, diff, candidates}
+// حيث candidates = الأسطر يلي لو تغيّرت كميتها بمقدار (الفرق ÷ سعرها) بيطلع عدد صحيح — مرشّحة إنها هي الغلطانة.
+function diTotalMismatch(inv){
+  if(inv.totalAmount==null || inv.totalAmount==='' || !inv.items || !inv.items.length) return null;
+  const total = +inv.totalAmount; if(isNaN(total)) return null;
+  if(inv.items.some(it=>it.value==null || isNaN(+it.value))) return null;
+  const sum = Math.round(inv.items.reduce((acc,it)=>acc+(+it.value), 0)*1000)/1000;
+  const diff = Math.round((total - sum)*1000)/1000;
+  if(Math.abs(diff) <= Math.max(0.02, 0.005*inv.items.length)) return null;
+  const candidates = [];
+  inv.items.forEach((it,i)=>{
+    const p=+it.price, q=+it.qty; if(!p || isNaN(q) || it.qty==null) return;
+    const dq = diff/p, r = Math.round(dq);
+    if(r!==0 && Math.abs(dq-r)<0.01 && q+r>0) candidates.push({i, code:it.code, qty:q, fixQty:q+r});
+  });
+  return { sum, diff, candidates };
+}
 function diRenderKeyAsk(msg, forceEdit){
   const box=document.getElementById('diKeyAskBox');
   const key = anthKey();
@@ -3442,7 +3461,9 @@ function diRenderReview(){
     const flags = inv.items.some(it=>it.code==null||it.name==null||it.qty==null||it.price==null||it.value==null||diLineMismatch(it));
     const anyNameMismatch = inv.items.some(it=>diNameMismatch(it.name, diKnownNameForCode(it.code)));
     const invNoSuspicious = diInvoiceNoSuspicious(inv.invoiceNo);
-    h+=`<div class="card" style="margin-bottom:10px; ${(flags||anyNameMismatch||invNoSuspicious)?'border-color:var(--crimson);':''}">
+    const totalMm = diTotalMismatch(inv);
+    const candIdx = new Set(totalMm && totalMm.candidates.length<=4 ? totalMm.candidates.map(c=>c.i) : []);
+    h+=`<div class="card" style="margin-bottom:10px; ${(flags||anyNameMismatch||invNoSuspicious||totalMm)?'border-color:var(--crimson);':''}">
       ${invNoSuspicious?`<div class="status-msg err" style="margin-bottom:6px;">⚠ رقم الفاتورة "${esc(inv.invoiceNo)}" قصير جداً — غالباً هاد الرقم التسلسلي يلي جنب عنوان "رقم الفاتورة" بالفاتورة، مش رقم المستند الحقيقي. اكتب رقم المستند الطويل (~10 أرقام، مثل 2621109928) من الصندوق العلوي جنب التاريخ، وإلا ما رح تتطابق مع سندات التحويل.</div>`:''}
       <div class="row-actions" style="margin-bottom:6px;">
         <label style="font-size:12px; display:flex; align-items:center; gap:6px;">رقم الفاتورة <input type="text" data-di="${idx}" data-f="invoiceNo" value="${esc(inv.invoiceNo)}" style="width:150px; direction:ltr; text-align:left; ${invNoSuspicious?'border-color:var(--crimson);':''}" oninput="diEditField(this)"></label>
@@ -3460,7 +3481,7 @@ function diRenderReview(){
       const knownName = diKnownNameForCode(it.code);
       const nameMismatch = diNameMismatch(it.name, knownName);
       const cellStyle = (v)=> v==null?'background:var(--crimson-bg);':'';
-      h+=`<tr style="${mismatch?'background:var(--gold-bg);':''}">
+      h+=`<tr style="${(mismatch||candIdx.has(iidx))?'background:var(--gold-bg);':''}">
         <td><input type="text" style="direction:ltr; ${cellStyle(it.code)}" data-di="${idx}" data-item="${iidx}" data-f="code" value="${it.code==null?'':esc(it.code)}" oninput="diEditItem(this)"></td>
         <td>
           <input type="text" style="${cellStyle(it.name)}${nameMismatch?'background:var(--crimson-bg);':''}" data-di="${idx}" data-item="${iidx}" data-f="name" value="${it.name==null?'':esc(it.name)}" oninput="diEditItem(this)">
@@ -3474,6 +3495,7 @@ function diRenderReview(){
     h+=`</tbody></table>
       ${flags?'<div class="status-msg err" style="margin-top:4px;">⚠ فيه خانات فاضية أو أرقام لا تتطابق (كمية×سعر≠قيمة) — راجعها قبل الاعتماد أو اعتمدها وهي محددة بالأحمر/الأصفر.</div>':''}
       ${anyNameMismatch?'<div class="status-msg err" style="margin-top:4px;">⚠ فيه اسم صنف مقروء مختلف عن اسمه المعروف بجدول ربط الأصناف — راجع الأسطر المحددة بالأحمر.</div>':''}
+      ${totalMm?`<div class="status-msg err" style="margin-top:4px;">⚠ مجموع قيم الأسطر المقروءة (<b>${fmt3(totalMm.sum)}</b>) لا يساوي المبلغ الإجمالي المطبوع بالفاتورة (<b>${fmt3(inv.totalAmount)}</b>) — الفرق ${fmt3(totalMm.diff)}. غالباً كمية سطر انقرأت غلط (مثلاً انتسخت كمية السطر المجاور). ${totalMm.candidates.length&&totalMm.candidates.length<=4 ? 'قارن هالأسطر (المظللة بالأصفر) مع الفاتورة الورقية: '+totalMm.candidates.map(c=>`<b>${esc(c.code)}</b> (مقروءة ${fmtNum(c.qty)} — لو كانت ${fmtNum(c.fixQty)} بيتطابق المجموع)`).join('، ')+'.' : 'قارن كميات الأسطر مع الفاتورة الورقية وصحّح الغلط.'} عدّل الكمية هون وبتنحسب القيمة تلقائياً.</div>`:''}
       <div class="row-actions" style="margin-top:6px;">
         <button class="btn-primary btn-sm" onclick="diApproveInvoice(${idx})">✔ اعتماد هاي الفاتورة</button>
         <button class="btn-danger btn-sm" onclick="DI_READ.invoices.splice(${idx},1); diRenderReview();">✕ تجاهل هاي الفاتورة</button>
@@ -3492,6 +3514,11 @@ function diEditItem(el){
   const idx=+el.dataset.di, iidx=+el.dataset.item, f=el.dataset.f;
   const it=DI_READ.invoices[idx].items[iidx];
   it[f] = (f==='code'||f==='name') ? (el.value.trim()||null) : (el.value===''?null:parseNum(el.value));
+  // لما تصحّح الكمية أو السعر يدوياً (مثلاً 24 → 48) بتنحسب قيمة السطر تلقائياً (كمية×سعر) عشان ما يضل السطر محدد كـ"لا يتطابق"
+  if((f==='qty'||f==='price') && it.qty!=null && it.price!=null){
+    it.value = Math.round(it.qty*it.price*1000)/1000;
+    const row = el.closest('tr'); const vEl = row && row.querySelector('input[data-f="value"]'); if(vEl) vEl.value = it.value;
+  }
   diSaveReviewState();
 }
 function diInvoiceToItems(inv){
@@ -3532,7 +3559,7 @@ async function diApproveAll(){
   let ok=0, skipped=0;
   const remaining=[];
   for(const inv of DI_READ.invoices){
-    const flags = !inv.invoiceNo || diInvoiceNoSuspicious(inv.invoiceNo) || inv.items.some(it=>it.code==null||it.name==null||it.qty==null||it.price==null||it.value==null||diLineMismatch(it));
+    const flags = !inv.invoiceNo || diInvoiceNoSuspicious(inv.invoiceNo) || !!diTotalMismatch(inv) || inv.items.some(it=>it.code==null||it.name==null||it.qty==null||it.price==null||it.value==null||diLineMismatch(it));
     if(flags){ remaining.push(inv); skipped++; continue; }
     const newItems=diInvoiceToItems(inv);
     if(!newItems.length){ remaining.push(inv); skipped++; continue; }
@@ -4002,9 +4029,21 @@ async function returnSelectedDummyInvoicesToReview(){
   document.getElementById('dummyInvItemsDetailBox').innerHTML = '';
   flash('dummyExportMsg', `تم إرجاع ${byInv.size} فاتورة محددة لقائمة المراجعة فوق (قسم 5) — راجعها واعتمدها من جديد.`, true);
 }
+// مجموع قيم أسطر كل فاتورة معتمدة (من DUMMY_INV_ITEMS) — للمقارنة مع المبلغ المسجل بصف الفاتورة
+function dummyInvLinesSumMap(){
+  const m = new Map();
+  DUMMY_INV_ITEMS.forEach(r=>{ const k=normDocNum(r.invoiceNo); if(!k) return; m.set(k, (m.get(k)||0) + (r.value!=null ? +r.value : (+r.qty||0)*(+r.price||0))); });
+  return m;
+}
+function dummyInvAmountMismatch(row, sumMap){
+  const k = normDocNum(row.docNum); if(!k || !sumMap.has(k) || row.amount==null || row.amount==='') return null;
+  const sum = Math.round(sumMap.get(k)*1000)/1000, diff = Math.round((+row.amount - sum)*1000)/1000;
+  return Math.abs(diff) > 0.02 ? {sum, diff} : null;
+}
 function renderDummyInvoices(){
   const tbody = document.getElementById('dummyInvTbody');
-  tbody.innerHTML = DUMMY_INVOICES.map(r=>`<tr>
+  const sumMap = dummyInvLinesSumMap();
+  tbody.innerHTML = DUMMY_INVOICES.map(r=>{ const mm = dummyInvAmountMismatch(r, sumMap); return `<tr>
     <td><input type="checkbox" class="dummyInvRowSelect" data-id="${r.id}" data-docnum="${esc(r.docNum)}"></td>
     <td><input type="text" value="${esc(r.docNum)}" onchange="updateDummyInvoiceField('${r.id}','docNum',this.value)" style="width:100px;"></td>
     <td><input type="date" value="${esc(r.date)}" onchange="updateDummyInvoiceField('${r.id}','date',this.value)"></td>
@@ -4015,9 +4054,9 @@ function renderDummyInvoices(){
     </select></td>
     <td><input type="number" step="any" value="${r.amount}" onchange="updateDummyInvoiceField('${r.id}','amount',this.value)" style="width:100px;"></td>
     <td><input type="text" value="${esc(r.warehouse||DUMMY_INV_WAREHOUSE)}" onchange="updateDummyInvoiceField('${r.id}','warehouse',this.value)" style="width:60px; direction:ltr; text-align:left;"></td>
-    <td><button class="btn-ghost tiny-btn" onclick="diShowInvoiceItems('${esc(r.docNum)}')">🔍 الأصناف</button></td>
+    <td><button class="btn-ghost tiny-btn" onclick="diShowInvoiceItems('${esc(r.docNum)}')">🔍 الأصناف</button>${mm?` <span style="color:var(--crimson); cursor:help;" title="مجموع قيم أسطر هاي الفاتورة ${fmt3(mm.sum)} ≠ المبلغ المسجل ${fmt3(r.amount)} (الفرق ${fmt3(mm.diff)}) — غالباً كمية سطر مقروءة غلط، افتح 🔍 الأصناف وصحّحها">⚠</span>`:''}</td>
     <td><button class="btn-danger tiny-btn" onclick="deleteDummyInvoiceRow('${r.id}')">حذف</button></td>
-  </tr>`).join('') || '<tr><td colspan="8" class="muted" style="padding:10px;">ما في فواتير مسجلة بعد — رح تتعبى تلقائياً لما تعتمد فواتير من قسم "مطابقة يومية" فوق، أو اضغط "إضافة فاتورة يدوياً".</td></tr>';
+  </tr>`; }).join('') || '<tr><td colspan="8" class="muted" style="padding:10px;">ما في فواتير مسجلة بعد — رح تتعبى تلقائياً لما تعتمد فواتير من قسم "مطابقة يومية" فوق، أو اضغط "إضافة فاتورة يدوياً".</td></tr>';
   const selectAll = document.getElementById('dummyInvSelectAll'); if(selectAll) selectAll.checked = false;
 }
 function toggleAllDummyInvSelect(checked){
@@ -4029,21 +4068,41 @@ function diShowInvoiceItems(docNum){
   const n = normDocNum(docNum);
   const rows = DUMMY_INV_ITEMS.map((r,i)=>({...r, _i:i})).filter(r=>normDocNum(r.invoiceNo)===n);
   if(!rows.length){ box.innerHTML = `<div class="hint" style="margin-top:6px;">ما في أصناف مسجلة لفاتورة <b>${esc(docNum)}</b>.</div>`; return; }
+  const hdr = DUMMY_INVOICES.find(d=>normDocNum(d.docNum)===n);
+  const linesSum = Math.round(rows.reduce((acc,r)=>acc+(r.value!=null ? +r.value : (+r.qty||0)*(+r.price||0)), 0)*1000)/1000;
+  const mm = hdr ? dummyInvAmountMismatch(hdr, new Map([[n, linesSum]])) : null;
   box.innerHTML = `<div class="card" style="margin-top:8px;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-      <b>أصناف فاتورة ${esc(docNum)} (${rows.length} سطر) — إذا في صنف غلط (قراءة خاطئة من الذكاء الاصطناعي)، احذفه من هون</b>
+      <b>أصناف فاتورة ${esc(docNum)} (${rows.length} سطر) — إذا في كمية انقرأت غلط عدّلها مباشرة بخانة الكمية (القيمة بتنحسب لحالها)، وإذا في صنف غلط احذفه</b>
       <button class="btn-ghost btn-sm" onclick="document.getElementById('dummyInvItemsDetailBox').innerHTML=''">✕ إغلاق</button>
     </div>
+    <div class="hint" style="margin-bottom:6px; ${mm?'color:var(--crimson);':''}">مجموع قيم الأسطر: <b>${fmt3(linesSum)}</b>${hdr&&hdr.amount!=null&&hdr.amount!==''?` — المبلغ المسجل بالفاتورة: <b>${fmt3(hdr.amount)}</b>${mm?` ⚠ الفرق ${fmt3(mm.diff)} — غالباً كمية سطر مقروءة غلط، قارن مع الفاتورة الورقية وصحّحها`:' ✓ متطابق'}`:''}</div>
     <table class="grid"><thead><tr><th>رمزهم</th><th>اسم الصنف عندهم</th><th>الكمية</th><th>السعر</th><th>القيمة</th><th></th></tr></thead>
     <tbody>${rows.map(r=>`<tr>
       <td class="mono">${esc(r.theirCode)}</td>
       <td>${esc(r.theirName||'')}</td>
-      <td class="mono">${fmtNum(r.qty)}</td>
+      <td><input type="number" step="any" class="mono" value="${r.qty}" style="width:80px; direction:ltr;" ${roleEdit?'':'disabled'} onchange="diEditInvItemQty(${r._i}, this.value, '${esc(docNum)}')"></td>
       <td class="mono">${fmt4(r.price)}</td>
       <td class="mono">${fmtNum(r.value)}</td>
       <td><button class="btn-danger tiny-btn" onclick="diDeleteInvItemLine(${r._i}, '${esc(docNum)}')">🗑 حذف</button></td>
     </tr>`).join('')}</tbody></table>
   </div>`;
+}
+// تعديل كمية سطر بفاتورة معتمدة (مثلاً الذكاء الاصطناعي قرأ 24 بدل 48) — القيمة تنحسب تلقائياً (كمية×سعر)،
+// ويتحدّث السيرفر المشترك والمطابقة اليومية مباشرة بدون ما تحتاج ترجع الفاتورة للمراجعة أو تعيد قراءتها
+async function diEditInvItemQty(idx, val, docNum){
+  const item = DUMMY_INV_ITEMS[idx]; if(!item) return;
+  const q = parseNum(val);
+  if(!(q>0)){ flash('dummyInvItemsMsg','الكمية لازم تكون رقم أكبر من صفر.', false); diShowInvoiceItems(docNum); return; }
+  item.qty = q;
+  item.value = Math.round(q*(+item.price||0)*1000)/1000;
+  saveState();
+  const n = normDocNum(item.invoiceNo);
+  await diPushToCloud(DUMMY_INV_ITEMS.filter(r=>normDocNum(r.invoiceNo)===n));
+  diShowInvoiceItems(docNum);
+  renderDummyInvoices();
+  renderDailyInvoiceMatch();
+  flash('dummyInvItemsMsg', `✔ صارت كمية ${item.theirName||item.theirCode} = ${fmtNum(q)} (القيمة ${fmt3(item.value)}).`, true);
 }
 async function diDeleteInvItemLine(idx, docNum){
   const item = DUMMY_INV_ITEMS[idx];
