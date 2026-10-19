@@ -836,7 +836,7 @@ ORDER BY T0."DocNum"</code>
 // ⚠️ ارفع هاد الرقم مع كل تحديث فعلي يُدفع لهاي الشاشة (أي تاريخ/نص مختلف كافي) — هو يلي بيخلي
 // checkForNewVersion() تكتشف وجود نسخة أحدث وتنبّه أي مستخدم فاتح الشاشة تلقائياً بدل ما يضل عالق
 // على نسخة قديمة بصمت لحد ما حدا يحكيله يدوياً يعمل تحديث قوي.
-const APP_VERSION = '2026-10-18.2';
+const APP_VERSION = '2026-10-19.1';
 const STORAGE_KEY = 'milInst_v2';
 let IS_FRESH_LOAD = false;
 let freshLoadBannerDismissed = false;
@@ -3235,34 +3235,83 @@ function diLoadReviewState(){
 
 function diB64(file){ return new Promise((res,rej)=>{ const rd=new FileReader(); rd.onload=()=>res(rd.result.split(',')[1]); rd.onerror=()=>rej(new Error('تعذرت قراءة الملف')); rd.readAsDataURL(file); }); }
 
-async function diCallAPI(b64, fileSize){
+// القراءة بالبث (stream) بدل انتظار الرد كامل: الملفات الممسوحة ضوئياً (كثير صفحات) بتاخذ أحياناً أكثر من 5 دقايق،
+// وبدون بث كان الطلب ينقطع بمهلة ثابتة ("signal is aborted without reason") وتروح القراءة كلها. مع البث:
+// - المهلة صارت على "الصمت" (ما وصل ولا جزء من الرد لمدة DI_IDLE_MS) مش على المدة الكلية، مع سقف كلي أعلى DI_MAX_MS.
+// - تقدم القراءة (كم وصل من الرد وكم مضى من الوقت) بيبان بشريط التقدم، ورسالة الخطأ عند الانقطاع بتشرح السبب والحل.
+let DI_IDLE_MS = 3*60*1000, DI_MAX_MS = 25*60*1000;
+function diParseSSEEvent(dataStr, acc){
+  let ev; try{ ev=JSON.parse(dataStr); }catch(e){ return; }
+  if(ev.type==='message_start'){ if(ev.message && ev.message.usage) Object.assign(acc.usage, ev.message.usage); }
+  else if(ev.type==='content_block_delta'){ if(ev.delta && ev.delta.type==='text_delta') acc.text += ev.delta.text||''; }
+  else if(ev.type==='message_delta'){ if(ev.usage) Object.assign(acc.usage, ev.usage); if(ev.delta && ev.delta.stop_reason) acc.stopReason = ev.delta.stop_reason; }
+  else if(ev.type==='error'){ throw new Error((ev.error && ev.error.message) || 'خطأ من الخادم أثناء البث'); }
+}
+function diFeedSSE(buf, acc){
+  let sep;
+  while((sep = buf.indexOf('\n\n'))>=0){
+    const chunk = buf.slice(0,sep); buf = buf.slice(sep+2);
+    const dataLines = chunk.split('\n').filter(l=>l.startsWith('data:')).map(l=>l.slice(5).trim());
+    if(dataLines.length) diParseSSEEvent(dataLines.join('\n'), acc);
+  }
+  return buf;
+}
+async function diCallAPI(b64, fileSize, onProgress){
   const hdrs={'content-type':'application/json','x-api-key':anthKey(),
     'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'};
   if(anthWsid()) hdrs['anthropic-workspace-id']=anthWsid();
   const controller=new AbortController();
-  const tid=setTimeout(()=>controller.abort(),300000);
+  let abortReason='', idleTid=null;
+  const armIdle = ()=>{ clearTimeout(idleTid); idleTid=setTimeout(()=>{ abortReason='idle'; controller.abort(); }, DI_IDLE_MS); };
+  const maxTid=setTimeout(()=>{ abortReason='max'; controller.abort(); }, DI_MAX_MS);
+  const startedAt=Date.now();
+  const elapsedSec = ()=> Math.round((Date.now()-startedAt)/1000);
   try{
     // max_tokens أعلى (64000) بكل الحالات. أما "effort" فمرتبط بحجم الملف: الملفات الكبيرة (كثير صفحات ممسوحة ضوئياً)
     // بتحتاج effort منخفض عشان الموديل ما يصرف كل حصة الـmax_tokens على تفكير داخلي غير ظاهر (بيرجع رد فاضي).
     // بس effort منخفض بيقلل دقة القراءة (أسماء/أرقام أصناف) — فبالفواتير العادية (ملف صغير) منسيب effort الافتراضي (أعلى دقة).
     const isLargeFile = fileSize && fileSize > 8*1024*1024;
     const effort = isLargeFile ? 'low' : 'high';
+    armIdle();
     const resp=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:hdrs,signal:controller.signal,
-      body:JSON.stringify({model:DI_ANTH_MODEL, max_tokens:64000, system:DUMMY_INV_PROMPT, output_config:{effort},
+      body:JSON.stringify({model:DI_ANTH_MODEL, max_tokens:64000, stream:true, system:DUMMY_INV_PROMPT, output_config:{effort},
         messages:[{role:'user',content:[
           {type:'document',source:{type:'base64',media_type:'application/pdf',data:b64}},
           {type:'text',text:'استخرج كل الفواتير وكل الأصناف من كل صفحات هذا الملف بدون أي حد أقصى للعدد. أجب بـ JSON فقط.'}
         ]}]})});
     if(resp.status===529||resp.status===503) throw new Error('الخادم مشغول، حاول بعد لحظات');
     if(!resp.ok){ const ej=await resp.json().catch(()=>({})); throw new Error((ej.error&&ej.error.message)||('خطأ '+resp.status)); }
-    const j=await resp.json();
-    const text=(j.content||[]).map(c=>c.text||'').join('');
+    const acc={text:'', usage:{}, stopReason:null};
+    if(resp.body && resp.body.getReader){
+      const reader=resp.body.getReader(), dec=new TextDecoder();
+      let buf='';
+      while(true){
+        const {value, done} = await reader.read();
+        if(done) break;
+        armIdle();
+        buf += dec.decode(value, {stream:true});
+        buf = diFeedSSE(buf, acc);
+        if(onProgress) onProgress({chars:acc.text.length, seconds:elapsedSec()});
+      }
+      diFeedSSE(buf+'\n\n', acc);
+    }else{
+      diFeedSSE((await resp.text())+'\n\n', acc);
+    }
+    const text=acc.text;
     if(!text.trim()){
-      if(j.stop_reason==='max_tokens') throw new Error('الملف كبير جداً (كثير صفحات) وما لحق يطلع أي نتيجة قبل ما توصل حدّ الرد الأقصى — جرب تقسم الملف لدفعات أصغر (مثلاً 20-30 صفحة بكل مرة).');
+      if(acc.stopReason==='max_tokens') throw new Error('الملف كبير جداً (كثير صفحات) وما لحق يطلع أي نتيجة قبل ما توصل حدّ الرد الأقصى — جرب تقسم الملف لدفعات أصغر (مثلاً 20-30 صفحة بكل مرة).');
       throw new Error('وصل ردّ فارغ من القارئ — أعد المحاولة');
     }
-    return {text, usage:j.usage||null};
-  } finally { clearTimeout(tid); }
+    return {text, usage:Object.keys(acc.usage).length?acc.usage:null};
+  }catch(e){
+    if(e && (e.name==='AbortError' || /aborted/i.test(e.message||''))){
+      const mins = Math.max(1, Math.round(elapsedSec()/60));
+      if(abortReason==='idle') throw new Error(`انقطعت القراءة: ما وصل أي جزء من الرد لمدة ${Math.round(DI_IDLE_MS/60000)} دقايق متواصلة (بعد ${mins} دقيقة من البداية) — غالباً مشكلة بالاتصال أو ضغط على الخادم. أعد المحاولة، وإذا تكررت قسّم الملف لدفعات أصغر.`);
+      if(abortReason==='max') throw new Error(`تجاوزت القراءة الحد الأقصى (${Math.round(DI_MAX_MS/60000)} دقيقة) — الملف كبير جداً أو كثير صفحات ممسوحة ضوئياً؛ قسّمه لدفعات أصغر (مثلاً 10-15 صفحة بكل مرة).`);
+      throw new Error(`انقطعت القراءة بعد ${mins} دقيقة (أُلغي الطلب) — أعد المحاولة.`);
+    }
+    throw e;
+  } finally { clearTimeout(idleTid); clearTimeout(maxTid); }
 }
 // سعر Claude Sonnet 5 الرسمي: $2 لكل مليون توكن إدخال، $10 لكل مليون توكن إخراج
 const DI_PRICE_IN_PER_TOKEN = 2.00/1e6, DI_PRICE_OUT_PER_TOKEN = 10.00/1e6;
@@ -3286,12 +3335,12 @@ function diRenderProgress(state){
   const box = document.getElementById('diProgressBox');
   if(!box) return;
   if(!state){ box.innerHTML=''; return; }
-  const {i, total, fileName, done, batchCost, batchInvoices, batchErrors} = state;
+  const {i, total, fileName, done, batchCost, batchInvoices, batchErrors, detail} = state;
   const pct = total ? Math.round(((done?total:i)/total)*100) : 0;
   const barColor = batchErrors ? 'var(--crimson)' : 'var(--teal)';
   box.innerHTML = `<div style="border:1px solid var(--line); border-radius:8px; padding:8px 12px; margin:6px 0; background:#fff;">
     <div style="display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:4px;">
-      <span>${done ? '✅ خلصت الدفعة' : '⏳ جارِ القراءة'}: ملف ${Math.min(i+(done?0:1),total)} من ${total}${!done?' — '+esc(fileName||''):''}</span>
+      <span>${done ? '✅ خلصت الدفعة' : '⏳ جارِ القراءة'}: ملف ${Math.min(i+(done?0:1),total)} من ${total}${!done?' — '+esc(fileName||''):''}${(!done&&detail)?` <span class="muted">(${esc(detail)})</span>`:''}</span>
       <span>فواتير هالدفعة: <b>${batchInvoices||0}</b> · تكلفة هالدفعة: <b>$${(batchCost||0).toFixed(4)}</b>${batchErrors?` · ⚠ ${batchErrors} فشل`:''}</span>
     </div>
     <div style="height:6px; background:var(--paper); border-radius:4px; overflow:hidden;">
@@ -3392,10 +3441,14 @@ async function diHandleFiles(evt){
   let batchCost = 0, batchInvoices = 0;
   for(let i=0;i<files.length;i++){
     diRenderProgress({i, total:files.length, fileName:files[i].name, batchCost, batchInvoices, batchErrors:errors.length});
-    flash('diMsg', `⏳ جارِ قراءة ${files[i].name} (${i+1}/${files.length})... (رح ياخذ عادة نص دقيقة لدقيقة لكل ملف)`, true);
+    flash('diMsg', `⏳ جارِ قراءة ${files[i].name} (${i+1}/${files.length})... (عادة نص دقيقة لدقيقة لكل ملف، والملفات الممسوحة ضوئياً الكبيرة ممكن تاخذ عدة دقايق — خلّي الصفحة مفتوحة)`, true);
     try{
       const b64=await diB64(files[i]);
-      const {text, usage}=await diCallAPI(b64, files[i].size);
+      const onProgress = (p)=>{
+        const detail = p.chars ? `وصل ${p.chars.toLocaleString('en-US')} حرف من الرد · ${p.seconds} ث` : `بانتظار أول جزء من الرد · ${p.seconds} ث`;
+        diRenderProgress({i, total:files.length, fileName:files[i].name, batchCost, batchInvoices, batchErrors:errors.length, detail});
+      };
+      const {text, usage}=await diCallAPI(b64, files[i].size, onProgress);
       const parsed=diSafeParse(text);
       const invs=(parsed.invoices||[]).map(inv=>({
         invoiceNo: inv.invoiceNo||'', date: inv.date||'', market: inv.market||'', warehouse: DUMMY_INV_WAREHOUSE, totalAmount: inv.totalAmount??null,
