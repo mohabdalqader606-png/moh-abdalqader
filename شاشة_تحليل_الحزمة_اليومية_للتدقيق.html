@@ -191,6 +191,7 @@ footer{color:var(--muted);font-size:11px;text-align:center;padding:10px}
 .gate .err{color:var(--bad);font-weight:700;margin-top:10px}.gate .note{color:var(--muted);font-size:11.5px;margin-top:12px}
 .ubox{display:flex;align-items:center;gap:8px;font-size:12px;opacity:.95}.ubox b{font-weight:600}
 @media print{.ubox{display:none!important}}
+body.scope-aging .tabs{display:none!important}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 </head>
@@ -1749,7 +1750,7 @@ const QDEF=[
  {id:'q16',n:"فصل المهام التفصيلي مستنداً بمستند",short:"فصل المهام التفصيلي",g:CHECKS[15],doc:"رقم المستند",date:"تاريخ المستند",dims:["اسم المستخدم", "نوع الحركة", "اسم الطرف"],ms:["المبلغ"],flags:["الملاحظات"],text:[],cols:["فتح المستخدم", "رمز المستخدم", "اسم المستخدم", "نوع الحركة", "رقم المستند", "فتح فاتورة", "فتح اشعار دائن", "فتح سند قبض", "فتح امر شراء", "فتح فاتورة شراء", "فتح سند صرف", "فتح القيد", "فتح ادخال مخزون", "فتح اخراج مخزون", "فتح الطرف", "اسم الطرف", "تاريخ المستند", "تاريخ الادخال", "ايام التأخير", "المبلغ", "درجة الخطورة", "الملاحظات"]},
 ];
 /* ================= utils ================= */
-const VERSION='v2.20';
+const VERSION='v2.21';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nf0=new Intl.NumberFormat('en-US',{maximumFractionDigits:0,minimumFractionDigits:0});
@@ -1803,6 +1804,8 @@ const weekLabel=k=>'أسبوع '+fmtDay(k*7+3);
 const SUPABASE_URL='https://fxjdmqqmcgccocfbgopm.supabase.co';
 const SUPABASE_KEY='sb_publishable_NGtGX9SN8hXSoq-JRidGcQ_NfAyYCP5'; /* مفتاح عام — الحماية عبر RLS ومصفوفة الصلاحيات */
 const SCREEN_ID='daily-audit-pack';
+/* صلاحية مقصورة على تبويب عمر الذمة وحده: شاشة ثانية مسجّلة بجدول screens تشير لنفس الملف */
+const AGING_SCREEN_ID='audit-pack-aging';let SCOPE='all';
 let sb=null,UID=null,UEMAIL=null,UPERM=null;
 /* كل ما يُحفظ على الجهاز (الكشوف، الإعدادات، الربط) مفصول باسم المستخدم المسجّل */
 const LS={key:k=>(UID?UID+'|':'')+k,get(k){try{return localStorage.getItem(LS.key(k));}catch(e){return null;}},set(k,v){try{localStorage.setItem(LS.key(k),v);}catch(e){}if(typeof SYNC!=='undefined'&&k!=='kap_active')SYNC.schedulePrefs();},del(k){try{localStorage.removeItem(LS.key(k));}catch(e){}}};
@@ -2922,7 +2925,7 @@ EXPL_VIEWS.q17_prof={t:'الربحية حسب…',d:'يجمع أسطر الفو�
 async function appBoot(){
   for(const d of QDEF)TABS[d.id]=mkTab(d);
   for(const d of QDEF){if(d.kind==='aging'){await agInit(TABS[d.id]);continue;}if(d.kind==='mil'){await milInit(TABS[d.id]);continue;}const D=await IDB.get(d.id);if(D&&D.rows&&D.rows.length){const T=TABS[d.id];T.D=D;try{build(T);}catch(e){console.error(e);T.D=null;T.P=null;}}}
-  let a=LS.get('kap_active');
+  let a=LS.get('kap_active');if(location.hash==='#aging'&&TABS.aging)a='aging';
   ACTIVE=(a&&TABS[a])?a:QDEF[0].id;
   $('qtabs').style.display='';$('printBtn').style.display='';
   renderTabs();renderTab(TABS[ACTIVE]);
@@ -2944,10 +2947,16 @@ async function doLogin(){const email=($('lgEmail').value||'').trim(),password=$(
 async function doLogout(){try{await sb.auth.signOut();}catch(e){}location.reload();}
 async function afterLogin(session){
   $('main').innerHTML='<div class="gate"><h2>جارٍ التحقق من صلاحيتك...</h2></div>';
-  const {data:row,error}=await sb.from('user_screen_permissions').select('permission').eq('user_id',session.user.id).eq('screen_id',SCREEN_ID).maybeSingle();
+  const {data:rows,error}=await sb.from('user_screen_permissions').select('screen_id,permission').eq('user_id',session.user.id).in('screen_id',[SCREEN_ID,AGING_SCREEN_ID]);
   if(error){renderDenied('تعذّر التحقق من صلاحيتك','حصل خطأ أثناء التحقق من صلاحيتك على هذه الشاشة. حدّث الصفحة وحاول مجدداً، وإذا تكرر راجع مدير الصلاحيات.');return;}
-  if(!row||!row.permission){renderDenied('لا تملك صلاحية الدخول','حسابك غير مخوَّل بالدخول على شاشة تحليل الحزمة اليومية للتدقيق. راجع مدير الصلاحيات لمنحك صلاحية من شاشة إدارة المستخدمين والصلاحيات.');return;}
-  UID=session.user.id;UEMAIL=session.user.email||'';UPERM=row.permission;
+  const full=(rows||[]).find(r=>r.screen_id===SCREEN_ID&&r.permission),agOnly=(rows||[]).find(r=>r.screen_id===AGING_SCREEN_ID&&r.permission);
+  const row=full||agOnly;
+  if(!row){renderDenied('لا تملك صلاحية الدخول','حسابك غير مخوَّل بالدخول على شاشة تحليل الحزمة اليومية للتدقيق ولا على تحليل عمر الذمة. راجع مدير الصلاحيات لمنحك صلاحية من شاشة إدارة المستخدمين والصلاحيات.');return;}
+  UID=session.user.id;UEMAIL=session.user.email||'';UPERM=row.permission;SCOPE=full?'all':'aging';
+  if(SCOPE==='aging'){/* إبقاء تبويب عمر الذمة فقط: لا شريط تبويبات ولا أي ذكر لباقي الكويريات */
+    for(let i=QDEF.length-1;i>=0;i--)if(QDEF[i].kind!=='aging')QDEF.splice(i,1);
+    document.title='شاشة تحليل عمر الذمة';const h1=document.querySelector('header.top h1');if(h1)h1.textContent='شاشة تحليل عمر الذمة';const hs=$('hsub');if(hs)hs.textContent='أرصدة العملاء وأعمارها · الفترات والشيكات المؤجلة · حسب المندوب والمدير والفرع · مركز الكيلاني للأغذية · بياناتك محفوظة باسم حسابك وحدك';
+    document.body.classList.add('scope-aging');}
   $('uEmail').textContent=UEMAIL;$('ubox').style.display='';
   await migrateLegacy();
   SYNC.on=true;SYNC.status();
@@ -2956,7 +2965,7 @@ async function afterLogin(session){
   await appBoot();SYNC.status();
 }
 (async()=>{
-  $('ver').textContent='شاشة تحليل الحزمة اليومية للتدقيق — '+VERSION+' — مركز الكيلاني للأغذية';
+  $('ver').textContent=(location.hash==='#aging'?'شاشة تحليل عمر الذمة (ضمن الحزمة اليومية للتدقيق)':'شاشة تحليل الحزمة اليومية للتدقيق')+' — '+VERSION+' — مركز الكيلاني للأغذية';
   if(typeof supabase==='undefined'){$('main').innerHTML='<div class="gate"><h2>تعذّر تحميل مكتبة الدخول</h2><div class="sub">تأكد من الاتصال بالإنترنت ثم حدّث الصفحة.</div></div>';return;}
   sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
   try{const {data:{session},error}=await sb.auth.getSession();if(error){renderGate('تعذّر التحقق من الجلسة: '+error.message);return;}if(!session){renderGate();return;}await afterLogin(session);}
