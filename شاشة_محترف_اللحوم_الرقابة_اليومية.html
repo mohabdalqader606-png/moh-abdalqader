@@ -243,7 +243,6 @@ body:not(.perm-ADMIN) .need-admin{display:none!important}
 <nav class="tabs" id="tabs">
  <button data-v="entry" class="on">الإدخال اليومي</button>
  <button data-v="journal">سجل الحركات</button>
- <button data-v="customers">العملاء</button>
  <span class="sep"></span>
  <button data-v="statement">كشف الحساب</button>
  <button data-v="report">التقرير التنفيذي</button>
@@ -268,7 +267,7 @@ body:not(.perm-ADMIN) .need-admin{display:none!important}
    <div class="grid">
     <div class="f"><label>تاريخ المستند <span class="req">*</span></label><input type="date" id="fDate"></div>
     <div class="f"><label><span id="noLbl">رقم الفاتورة</span> <span class="req">*</span></label><input id="fNo" autocomplete="off"></div>
-    <div class="f" style="grid-column:span 2"><label>اسم العميل <span class="req">*</span></label><input id="fCust" list="custList" autocomplete="off" placeholder="اختر من القائمة أو اكتب اسماً جديداً"></div>
+    <div class="f" style="grid-column:span 2"><label>الحساب</label><div style="padding:9px 11px;border:1px solid #cfd5df;border-radius:7px;background:#f6f7fa;color:var(--navy);font-weight:700">مبيعات الضيف</div><input id="fCust" type="hidden"></div>
     <div class="f"><label>المبلغ (دينار) <span class="req">*</span></label><input id="fAmt" class="amount" inputmode="decimal" placeholder="0.000"></div>
    </div>
    <div class="f" style="margin-top:12px"><label id="noteLbl">ملاحظات الحركة</label><textarea id="fNote" placeholder="تظهر بجانب الحركة في كشف الحساب والتقرير"></textarea></div>
@@ -346,7 +345,7 @@ body:not(.perm-ADMIN) .need-admin{display:none!important}
     <div class="f"><label>من تاريخ</label><input type="date" id="sFrom"></div>
     <div class="f"><label>إلى تاريخ</label><input type="date" id="sTo"></div>
     <div class="f"><label>النوع</label><select id="sType"><option value="">كل الأنواع</option><option value="inv">فاتورة</option><option value="blk">فاتورة عميل موقوف</option><option value="ret">مرتجع</option><option value="pay">سند قبض</option></select></div>
-    <div class="f"><label>تصفية حسب العميل (اختياري)</label><select id="sCust"></select></div>
+    <div class="f" style="display:none"><label>تصفية حسب العميل</label><select id="sCust"></select></div>
     <div class="row"><button class="btn" id="sRun">عرض</button><button class="btn ghost" id="sPrint">طباعة / PDF</button><button class="btn ghost" id="sCsv">تصدير CSV</button></div>
    </div>
   </div>
@@ -421,7 +420,7 @@ body:not(.perm-ADMIN) .need-admin{display:none!important}
   <div class="card-b tbl-wrap" id="auditTable"></div>
  </div>
 </section>
-<div class="muted noprint" style="text-align:center;margin:6px 0 30px">محترف اللحوم – نظام الرقابة اليومية للمبيعات والذمم · ضمن بوابة مركز الكيلاني للأغذية · الإصدار 1.0</div>
+<div class="muted noprint" style="text-align:center;margin:6px 0 30px">محترف اللحوم – نظام الرقابة اليومية للمبيعات والذمم · ضمن بوابة مركز الكيلاني للأغذية · الإصدار 1.1</div>
 </main>
 
 <datalist id="custList"></datalist>
@@ -710,7 +709,8 @@ var GS = (function () {
   "use strict";
   var SUPABASE_URL = "https://fxjdmqqmcgccocfbgopm.supabase.co";
   var SUPABASE_KEY = "sb_publishable_NGtGX9SN8hXSoq-JRidGcQ_NfAyYCP5"; // مفتاح عام – الحماية عبر RLS ودوال الخادم
-  var APP_VERSION = "1.0";
+  var APP_VERSION = "1.1";
+  var ACCOUNT_NAME = "مبيعات الضيف";
   var sb = null, ME = null;
   var T = GS.TYPES, fmt = GS.fmt, fils = GS.fils, fd = GS.fd;
   var D = null, editing = null;
@@ -860,7 +860,7 @@ var GS = (function () {
   function setType(v) {
     [].forEach.call(document.querySelectorAll("#types input"), function (i) { i.checked = i.value === v; i.parentNode.classList.toggle("on", i.checked); });
     $("noLbl").textContent = T[v].no;
-    $("noteLbl").innerHTML = v === "blk" ? 'مبرر الفوترة على حساب الضيف <span style="color:var(--amb)">(مطلوب للرقابة)</span>' : v === "ret" ? "سبب المرتجع / ملاحظات" : "ملاحظات الحركة";
+    $("noteLbl").innerHTML = v === "blk" ? 'اسم عميل الذمم ومبرر فوترته على حساب الضيف <span style="color:var(--amb)">(مطلوب للرقابة)</span>' : v === "ret" ? "سبب المرتجع / ملاحظات" : "ملاحظات الحركة";
     hint();
   }
   $("types").addEventListener("change", function () { setType(curType()); });
@@ -898,7 +898,7 @@ var GS = (function () {
     rollDay();
     if (!can("INPUT")) { alert("صلاحيتك لا تسمح بإدخال الحركات."); return; }
     if (busy) { toast("عملية أخرى قيد التنفيذ…"); return; }
-    var ty = curType(), date = $("fDate").value, no = $("fNo").value.trim(), cust = $("fCust").value.trim().replace(/\s+/g, " "),
+    var ty = curType(), date = $("fDate").value, no = $("fNo").value.trim(), cust = (editing && (D.tx.filter(function (x) { return x.id === editing; })[0] || {}).cust) || ACCOUNT_NAME,
       amt = GS.parseAmount($("fAmt").value), note = $("fNote").value.trim();
     var err = [];
     if (!date || !GS.isDate(date)) err.push("تاريخ المستند"); if (!no) err.push(T[ty].no); if (!cust) err.push("اسم العميل");
@@ -917,7 +917,7 @@ var GS = (function () {
     var dup = dupList(ty, no);
     if (dup.length) steps.push({ dup: true, t: "<b>رقم مستند مكرر.</b> " + T[ty].no + " " + esc(no) + " مسجّل سابقاً:<br>" + dup.map(function (t) { return "• " + fd(t.date) + " – " + esc(t.cust) + " – " + fmt(fils(t.amount)) + " (" + T[t.type].l + ")"; }).join("<br>") + "<br>سيُسجَّل تأكيدك مع الحركة ويظهر في استثناءات التقرير." });
     var c = custByName(cust), makeBlocked = false;
-    if (ty === "blk" && (!c || c.status !== "blocked")) steps.push({ blk: true, t: "العميل «" + esc(cust) + "» " + (c ? "مصنّف ضيفاً عادياً" : "غير مسجّل") + ". هل تريد تصنيفه «ذمم – موقوف»؟ (لا يغيّر ذلك أي حركة سابقة)" });
+    /* وضع الحساب الواحد: لا تصنيف عملاء عند الإدخال */
     if (ty === "blk" && !note) steps.push({ t: "لم تُدوَّن ملاحظة مبرر الفوترة على حساب الضيف. ستظهر الفاتورة في الاستثناءات كـ«بدون مبرر مدوّن»." });
     var aff = affectedApprovals([date, orig && orig.date]);
     if (!steps.length && !editing && !aff.length) { commit(ty, date, no, cust, amt, note, false, false, ""); return; }
@@ -935,10 +935,7 @@ var GS = (function () {
   async function commit(ty, date, no, cust, amt, note, dupAck, makeBlocked, reason) {
     var c = custByName(cust), editT = editing ? D.tx.filter(function (x) { return x.id === editing; })[0] : null;
     var ok = await run(editT ? "حفظ التعديل" : "حفظ الحركة", async function () {
-      var status = c ? c.status : ((ty === "blk" && makeBlocked) ? "blocked" : "guest");
-      if (!c) await q(sb.from("mp_gs_customers").upsert({ id: uid("c"), name: cust, status: status, note: "" }, { onConflict: "name", ignoreDuplicates: true }));
-      else if (ty === "blk" && makeBlocked && c.status !== "blocked") { await q(sb.from("mp_gs_customers").update({ status: "blocked" }).eq("id", c.id)); status = "blocked"; }
-      var cs = ty === "blk" ? "blocked" : status;
+      var cs = ty === "blk" ? "blocked" : "guest";   // وضع الحساب الواحد: لا سجل عملاء
       if (editT) {
         var patch = { type: ty, date: date, no: no, cust: cust, amount: amt, note: note };
         if (editT.type !== ty || editT.cust !== cust) patch.custStatus = cs;
@@ -1013,10 +1010,10 @@ var GS = (function () {
     var list = D.tx.filter(function (t) { return t.date === d; }).sort(GS.sortTx);
     if (!list.length) { $("dTable").innerHTML = '<div class="empty">لا توجد حركات مسجلة بتاريخ ' + fd(d) + "</div>"; return; }
     var balMap = {}; if (r.valid) r.rows.forEach(function (x) { balMap[x.t.id] = x.bal; });
-    var h = '<table class="t"><thead><tr><th>#</th><th>النوع</th><th>رقم المستند</th><th>العميل</th><th class="n">مدين</th><th class="n">دائن</th><th class="n">الرصيد</th><th>الملاحظات</th><th>الإدخال</th><th class="noprint"></th></tr></thead><tbody>';
+    var h = '<table class="t"><thead><tr><th>#</th><th>النوع</th><th>رقم المستند</th><th class="n">مدين</th><th class="n">دائن</th><th class="n">الرصيد</th><th>الملاحظات</th><th>الإدخال</th><th class="noprint"></th></tr></thead><tbody>';
     list.forEach(function (t, i) {
       var a = fils(t.amount), dr = T[t.type].s > 0 ? a : 0, cr = T[t.type].s < 0 ? a : 0;
-      h += '<tr class="' + (t.voided ? "void" : "") + '"><td>' + (i + 1) + "</td><td class=\"keep\">" + tag(t.type) + (t.voided ? ' <span class="tag void">ملغاة</span>' : "") + (t.modified ? ' <span class="tag edit">معدّلة</span>' : "") + "</td><td>" + esc(t.no) + "</td><td>" + esc(t.cust) + '</td><td class="n">' + (dr ? fmt(dr) : "") + '</td><td class="n">' + (cr ? fmt(cr) : "") + '</td><td class="n">' + (balMap[t.id] != null ? fmt(balMap[t.id]) : "—") + '</td><td class="keep">' + noteHtml(t.note) + (t.voided ? '<span class="note" style="border-color:var(--red)">ألغيت: ' + esc(t.voided.reason) + "</span>" : "") + '</td><td class="keep muted">' + dt(t.created) + "<br>" + esc(t.createdBy || "") + '</td><td class="noprint keep" style="white-space:nowrap">' +
+      h += '<tr class="' + (t.voided ? "void" : "") + '"><td>' + (i + 1) + "</td><td class=\"keep\">" + tag(t.type) + (t.voided ? ' <span class="tag void">ملغاة</span>' : "") + (t.modified ? ' <span class="tag edit">معدّلة</span>' : "") + "</td><td>" + esc(t.no) + '</td><td class="n">' + (dr ? fmt(dr) : "") + '</td><td class="n">' + (cr ? fmt(cr) : "") + '</td><td class="n">' + (balMap[t.id] != null ? fmt(balMap[t.id]) : "—") + '</td><td class="keep">' + noteHtml(t.note) + (t.voided ? '<span class="note" style="border-color:var(--red)">ألغيت: ' + esc(t.voided.reason) + "</span>" : "") + '</td><td class="keep muted">' + dt(t.created) + "<br>" + esc(t.createdBy || "") + '</td><td class="noprint keep" style="white-space:nowrap">' +
         (t.voided ? '<button class="btn ghost sm need-input" data-act="restore" data-id="' + t.id + '">استعادة</button>' : '<button class="btn ghost sm need-input" data-act="edit" data-id="' + t.id + '">تعديل</button> <button class="btn danger sm need-input" data-act="void" data-id="' + t.id + '">إلغاء</button>') + "</td></tr>";
     });
     $("dTable").innerHTML = h + "</tbody></table>";
@@ -1038,12 +1035,12 @@ var GS = (function () {
     if (!list.length) { $("jTable").innerHTML = '<div class="empty">لا توجد حركات مطابقة</div>'; return; }
     var tot = 0, notCounted = 0;
     list.forEach(function (t) { if (t.voided) return; if (GS.counted(D, t)) tot += T[t.type].s * fils(t.amount); else notCounted++; });
-    var h = '<div class="muted" style="margin-bottom:6px">' + list.length + ' حركة (الأحدث أولاً)' + (list.length > 1000 ? " – يُعرض أول 1000 فقط، والمجموع يشمل الكل" : "") + '</div><table class="t"><thead><tr><th>تاريخ المستند</th><th>النوع</th><th>رقم المستند</th><th>العميل</th><th>تصنيف العميل وقت الإدخال</th><th class="n">المبلغ</th><th>الملاحظات</th><th>أُدخلت</th><th>آخر تعديل</th><th class="noprint"></th></tr></thead><tbody>';
+    var h = '<div class="muted" style="margin-bottom:6px">' + list.length + ' حركة (الأحدث أولاً)' + (list.length > 1000 ? " – يُعرض أول 1000 فقط، والمجموع يشمل الكل" : "") + '</div><table class="t"><thead><tr><th>تاريخ المستند</th><th>النوع</th><th>رقم المستند</th><th class="n">المبلغ</th><th>الملاحظات</th><th>أُدخلت</th><th>آخر تعديل</th><th class="noprint"></th></tr></thead><tbody>';
     list.slice(0, 1000).forEach(function (t) {
-      h += '<tr class="' + (t.voided ? "void" : "") + '"><td class="num">' + fd(t.date) + '</td><td class="keep">' + tag(t.type) + (t.voided ? ' <span class="tag void">ملغاة</span>' : "") + "</td><td>" + esc(t.no) + "</td><td>" + esc(t.cust) + "</td><td>" + (t.custStatus ? GS.STATUS[t.custStatus] : "—") + '</td><td class="n">' + fmt(fils(t.amount)) + '</td><td class="keep">' + noteHtml(t.note) + (t.voided ? '<span class="note" style="border-color:var(--red)">ألغيت ' + dt(t.voided.at) + " – " + esc(t.voided.by) + ": " + esc(t.voided.reason) + "</span>" : "") + '</td><td class="keep muted">' + dt(t.created) + "<br>" + esc(t.createdBy || "") + '</td><td class="keep muted">' + (t.modified ? dt(t.modified.at) + "<br>" + esc(t.modified.by) + (t.modified.reason ? '<br><span title="سبب التعديل">' + esc(t.modified.reason) + "</span>" : "") : "") + '</td><td class="noprint keep" style="white-space:nowrap">' +
+      h += '<tr class="' + (t.voided ? "void" : "") + '"><td class="num">' + fd(t.date) + '</td><td class="keep">' + tag(t.type) + (t.voided ? ' <span class="tag void">ملغاة</span>' : "") + "</td><td>" + esc(t.no) + '</td><td class="n">' + fmt(fils(t.amount)) + '</td><td class="keep">' + noteHtml(t.note) + (t.voided ? '<span class="note" style="border-color:var(--red)">ألغيت ' + dt(t.voided.at) + " – " + esc(t.voided.by) + ": " + esc(t.voided.reason) + "</span>" : "") + '</td><td class="keep muted">' + dt(t.created) + "<br>" + esc(t.createdBy || "") + '</td><td class="keep muted">' + (t.modified ? dt(t.modified.at) + "<br>" + esc(t.modified.by) + (t.modified.reason ? '<br><span title="سبب التعديل">' + esc(t.modified.reason) + "</span>" : "") : "") + '</td><td class="noprint keep" style="white-space:nowrap">' +
         (t.voided ? '<button class="btn ghost sm need-input" data-act="restore" data-id="' + t.id + '">استعادة</button>' : '<button class="btn ghost sm need-input" data-act="edit" data-id="' + t.id + '">تعديل</button> <button class="btn danger sm need-input" data-act="void" data-id="' + t.id + '">إلغاء</button>') + "</td></tr>";
     });
-    h += '</tbody><tfoot><tr><td colspan="5">صافي أثر الحركات السارية المعروضة على الرصيد' + (notCounted ? " (لا يشمل " + notCounted + " حركة قبل تاريخ الرصيد الافتتاحي)" : "") + '</td><td class="n">' + fmt(tot) + '</td><td colspan="4"></td></tr></tfoot></table>';
+    h += '</tbody><tfoot><tr><td colspan="3">صافي أثر الحركات السارية المعروضة على الرصيد' + (notCounted ? " (لا يشمل " + notCounted + " حركة قبل تاريخ الرصيد الافتتاحي)" : "") + '</td><td class="n">' + fmt(tot) + '</td><td colspan="4"></td></tr></tfoot></table>';
     $("jTable").innerHTML = h;
   }
 
@@ -1131,7 +1128,7 @@ var GS = (function () {
     if (cust) {
       var cs = GS.customerStatement(D, from, to, cust, ty);
       var plab = "صافي " + (ty ? T[ty].plural + " " : "حركات ") + "العميل قبل الفترة (منذ " + fd(D.openDate) + ")";
-      h = head + '<div class="eq" style="margin-bottom:10px">الرصيد الافتتاحي للحساب غير موزّع على العملاء، لذلك يبدأ كشف العميل بصافي ' + (ty ? "«" + T[ty].plural + "» فقط" : "حركاته") + " السابقة منذ " + fd(D.openDate) + ". هذا الكشف ليس رصيد حساب مبيعات الضيف.</div>" + stmtTable(cs.rows, plab, cs.prior, { from: from, doc: true, balLabel: ty ? "مجموع تراكمي" : "رصيد العميل المتحرك" });
+      h = head + '<div class="eq" style="margin-bottom:10px">الرصيد الافتتاحي للحساب غير موزّع على العملاء، لذلك يبدأ كشف العميل بصافي ' + (ty ? "«" + T[ty].plural + "» فقط" : "حركاته") + " السابقة منذ " + fd(D.openDate) + ". هذا الكشف ليس رصيد حساب مبيعات الضيف.</div>" + stmtTable(cs.rows, plab, cs.prior, { from: from, doc: true, noCust: true, balLabel: ty ? "مجموع تراكمي" : "رصيد العميل المتحرك" });
       pushCsv(cs.rows, plab, cs.prior);
     } else {
       var r = GS.period(D, from, to);
@@ -1139,10 +1136,10 @@ var GS = (function () {
       if (ty) {
         var ts = GS.typeStatement(D, from, to, ty);
         h = head + '<div class="eq" style="margin-bottom:10px">كشف «' + T[ty].plural + '» فقط: العمود الأخير مجموع تراكمي لهذا النوع يبدأ من صفر، <b>وليس رصيد الحساب</b>. للمرجعية: رصيد الحساب في بداية ' + fd(from) + " " + num(r.open) + " وفي نهاية " + fd(to) + " " + num(r.close) + ".</div>" +
-          stmtTable(ts.rows, "بداية المجموع التراكمي", 0, { from: from, doc: true, balLabel: "مجموع تراكمي للنوع" });
+          stmtTable(ts.rows, "بداية المجموع التراكمي", 0, { from: from, doc: true, noCust: true, balLabel: "مجموع تراكمي للنوع" });
         pushCsv(ts.rows, "بداية المجموع التراكمي للنوع", 0);
       } else {
-        h = head + stmtTable(r.rows, "الرصيد الافتتاحي في بداية " + fd(from), r.open, { from: from, doc: true }) + checkLine(r);
+        h = head + stmtTable(r.rows, "الرصيد الافتتاحي في بداية " + fd(from), r.open, { from: from, doc: true, noCust: true }) + checkLine(r);
         pushCsv(r.rows, "الرصيد الافتتاحي", r.open);
       }
     }
@@ -1280,7 +1277,7 @@ var GS = (function () {
     if (parts === "all") {
       /* ---- المستوى 2: كشف الحساب التفصيلي ---- */
       h += '<div class="doc page-break" id="p2">' + head("المستوى الثاني – كشف الحساب التفصيلي") +
-        '<h3><span class="no">هـ</span>جدول الحركة ' + (one ? "اليومية" : "للفترة") + " مع الرصيد المتحرك</h3>" + stmtTable(r.rows, "الرصيد الافتتاحي في بداية " + fd(from), r.open, { from: from, doc: true }) + checkLine(r) +
+        '<h3><span class="no">هـ</span>جدول الحركة ' + (one ? "اليومية" : "للفترة") + " مع الرصيد المتحرك</h3>" + stmtTable(r.rows, "الرصيد الافتتاحي في بداية " + fd(from), r.open, { from: from, doc: true, noCust: true }) + checkLine(r) +
         '<div class="doc-foot"><span>' + esc(D.company) + "</span><span>كشف الحساب التفصيلي</span></div></div>";
 
       /* ---- المستوى 3: ملحق فواتير الموقوفين ---- */
@@ -1290,12 +1287,12 @@ var GS = (function () {
       if (!bl.length) h += '<div class="exc info"><span class="lv">لا يوجد</span>لم تُسجَّل فواتير لعملاء موقوفين في هذه الفترة.</div>';
       else {
         var bt = 0;
-        h += '<table class="doc-t"><thead><tr><th>#</th><th>التاريخ</th><th>رقم الفاتورة</th><th>العميل</th><th>تصنيفه وقت الإدخال</th><th class="n">المبلغ</th><th class="nt">المبرر / الملاحظة</th><th>أدخلها</th></tr></thead><tbody>';
-        bl.forEach(function (x, i) { bt += x.dr; h += "<tr><td>" + (i + 1) + '</td><td class="num">' + fd(x.t.date) + "</td><td>" + esc(x.t.no) + "</td><td>" + esc(x.t.cust) + "</td><td>" + (x.t.custStatus ? GS.STATUS[x.t.custStatus] : "—") + '</td><td class="n">' + fmt(x.dr) + '</td><td class="nt">' + (x.t.note ? noteHtml(x.t.note) : '<span style="color:var(--amb);font-size:11.5px">لا يوجد مبرر مدوّن</span>') + '</td><td class="muted">' + esc(x.t.createdBy || "") + "</td></tr>"; });
-        h += '</tbody><tfoot><tr><td colspan="5">إجمالي فواتير العملاء الموقوفين (' + bl.length + ')</td><td class="n">' + fmt(bt) + '</td><td colspan="2">' + (bt === r.blk ? "✔ يطابق البند الفرعي في الملخص" : "✖ لا يطابق الملخص") + "</td></tr></tfoot></table>";
-        var byC = {}; bl.forEach(function (x) { byC[x.t.cust] = (byC[x.t.cust] || 0) + x.dr; });
-        h += '<h3>تجميع حسب العميل</h3><table class="doc-t"><thead><tr><th>العميل</th><th class="n">عدد الفواتير</th><th class="n">المبلغ</th></tr></thead><tbody>' +
-          Object.keys(byC).sort(function (p, q) { return byC[q] - byC[p]; }).map(function (c) { return "<tr><td>" + esc(c) + '</td><td class="n">' + bl.filter(function (x) { return x.t.cust === c; }).length + '</td><td class="n">' + fmt(byC[c]) + "</td></tr>"; }).join("") + "</tbody></table>";
+        h += '<table class="doc-t"><thead><tr><th>#</th><th>التاريخ</th><th>رقم الفاتورة</th><th class="n">المبلغ</th><th class="nt">اسم عميل الذمم والمبرر</th><th>أدخلها</th></tr></thead><tbody>';
+        bl.forEach(function (x, i) { bt += x.dr; h += "<tr><td>" + (i + 1) + '</td><td class="num">' + fd(x.t.date) + "</td><td>" + esc(x.t.no) + '</td><td class="n">' + fmt(x.dr) + '</td><td class="nt">' + (x.t.note ? noteHtml(x.t.note) : '<span style="color:var(--amb);font-size:11.5px">لا يوجد مبرر مدوّن</span>') + '</td><td class="muted">' + esc(x.t.createdBy || "") + "</td></tr>"; });
+        h += '</tbody><tfoot><tr><td colspan="3">إجمالي فواتير العملاء الموقوفين (' + bl.length + ')</td><td class="n">' + fmt(bt) + '</td><td colspan="2">' + (bt === r.blk ? "✔ يطابق البند الفرعي في الملخص" : "✖ لا يطابق الملخص") + "</td></tr></tfoot></table>";
+
+
+
       }
       h += '<div class="doc-foot"><span>' + esc(D.company) + "</span><span>ملحق فواتير العملاء الموقوفين</span></div></div>";
 
