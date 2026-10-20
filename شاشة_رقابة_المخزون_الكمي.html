@@ -582,6 +582,7 @@ details[open]>summary::before{content:"▾ "}
             <div class="field sm"><label>النوع</label><select class="in" id="ifType"><option value="">الكل</option></select></div>
             <div class="field sm"><label>التصنيف</label><select class="in" id="ifCat"><option value="">الكل</option></select></div>
             <label class="toggle" style="padding-bottom:9px"><input type="checkbox" id="ifInactive">إظهار الموقوفة</label>
+            <label class="toggle" style="padding-bottom:9px" title="الأصناف التي لم تُحدَّد كلفتها بعد"><input type="checkbox" id="ifNoCost">بلا كلفة فقط</label>
             <div class="row" style="margin-inline-start:auto">
               <button class="btn" id="itemsCatalog" title="إضافة أصناف القائمة المعتمدة الناقصة"><svg><use href="#i-box"/></svg>القائمة المعتمدة</button>
               <button class="btn" id="itemsTemplate"><svg><use href="#i-dl"/></svg>قالب إكسل</button>
@@ -917,7 +918,7 @@ details[open]>summary::before{content:"▾ "}
 /* =========================================================
    رقابة المخزون الكمي — منطق الشاشة
    ========================================================= */
-const APP_VER = '2.5.1';
+const APP_VER = '2.5.2';
 const DB_KEY = 'kinv_ctrl_v1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -1513,9 +1514,9 @@ function applyTheme() {
    الأصناف
    ========================================================= */
 function renderItems() {
-  const q = $('#ifQ').value.trim(), nq = normName(q), cq = normCode(q), ty = $('#ifType').value, cat = $('#ifCat').value, inac = $('#ifInactive').checked;
+  const q = $('#ifQ').value.trim(), nq = normName(q), cq = normCode(q), ty = $('#ifType').value, cat = $('#ifCat').value, inac = $('#ifInactive').checked, noCost = $('#ifNoCost').checked;
   const M = balanceMatrix();
-  let rows = S.items.filter(i => (inac || i.active !== false) && (!ty || i.type === ty) && (!cat || i.cat === cat) && itemMatchesQ(i, q));
+  let rows = S.items.filter(i => (inac || i.active !== false) && (!ty || i.type === ty) && (!cat || i.cat === cat) && (!noCost || costOf(i.id) == null) && itemMatchesQ(i, q));
   rows = rows.map(i => ({ i, bal: balanceOf(M, i.id) }));
   rows.sort((a, b) => codeCmp(a.i, b.i));
   const host = $('#itemsTable');
@@ -2123,7 +2124,9 @@ function csApply() {
   S.costsMeta = { at: new Date().toISOString(), n, file: csWB._fileName }; save(); csOut = null; csWB = null; $('#csMapWrap').style.display = 'none'; $('#csFile').value = ''; $('#csPaste').value = '';
   $('#csPreview').innerHTML = `<div class="hint good">تم اعتماد الكلف لـ ${n} صنف</div>`; renderCostMeta(); toast(`تم تحديث كلفة ${n} صنف`, 'ok');
 }
-function renderCostMeta() { const el = $('#csMeta'); if (!el) return; const n = Object.keys(S.costs || {}).length; el.textContent = n ? `${n} صنف لها كلفة` + (S.costsMeta ? ` — آخر كشف: ${new Date(S.costsMeta.at).toLocaleDateString('ar-JO')} (${S.costsMeta.file})` : '') : 'لا توجد كلف بعد'; }
+function renderCostMeta() { const el = $('#csMeta'); if (!el) return; const n = activeItems().filter(i => costOf(i.id) != null).length, miss = activeItems().filter(i => costOf(i.id) == null).length; el.innerHTML = `${n ? `<span class="chip in">${n} صنف لها كلفة</span>` : 'لا توجد كلف بعد'} ${miss ? `<span class="chip out">${miss} صنف بلا كلفة</span>` : '<span class="chip in">كل الأصناف لها كلفة</span>'}${S.costsMeta ? ` <span class="muted">آخر كشف: ${new Date(S.costsMeta.at).toLocaleDateString('ar-JO')} (${esc(S.costsMeta.file)})</span>` : ''}`; }
+/** كشف الأصناف التي بلا كلفة جاهز للتعبئة ثم رفعه ككشف كلف */
+function exportNoCost() { const rows = activeItems().filter(i => costOf(i.id) == null).sort(codeCmp); if (!rows.length) return toast('كل الأصناف النشطة لها كلفة', 'ok'); exportXlsx(`الأصناف_بلا_كلفة_${todayISO()}.xlsx`, [{ name: 'الكلف', aoa: [['رمز المادة', 'رمز الوحدة', 'وصف المادة', 'الوحدة', 'الكلفة'], ...rows.map(i => [i.code, i.code2 || '', i.name, i.unit, ''])] }]); }
 
 
 /* =========================================================
@@ -2552,7 +2555,7 @@ function init() {
   ['dfType', 'dfFrom', 'dfTo', 'dfWh'].forEach(id => $('#' + id).onchange = renderDocs); $('#dfQ').oninput = renderDocs;
   $('#dfReset').onclick = () => { ['dfType', 'dfFrom', 'dfTo', 'dfWh', 'dfQ'].forEach(id => $('#' + id).value = ''); renderDocs(); }; $('#dfExport').onclick = exportDocs;
   // items
-  ['ifType', 'ifCat', 'ifInactive'].forEach(id => $('#' + id).onchange = renderItems); $('#ifQ').oninput = renderItems;
+  ['ifType', 'ifCat', 'ifInactive', 'ifNoCost'].forEach(id => $('#' + id).onchange = renderItems); $('#ifQ').oninput = renderItems;
   $('#itemAdd').onclick = () => openItemModal(); $('#imClose').onclick = $('#imCancel').onclick = () => closeModal('itemModal'); $('#imSave').onclick = () => saveItem(false); $('#imSaveNew').onclick = () => saveItem(true);
   $('#itemModal').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); saveItem(false); } });
   $('#itemsExport').onclick = exportItems; $('#itemsCatalog').onclick = () => { if (confirm('إضافة أصناف القائمة المعتمدة (121 صنف) غير الموجودة حالياً؟')) { addCatalogMissing(); renderItems(); } }; $('#itemsTemplate').onclick = itemsTemplate;
@@ -2599,7 +2602,7 @@ function init() {
   $('#rpExport').onclick = () => exportXlsx(`المبيعات_والربحية_${$('#rpFrom').value}.xlsx`, [{ name: 'المبيعات والربحية', aoa: profitAOA() }]);
   bindFile('csDrop', 'csFile', async f => { try { csLoad(await readWorkbook(f), f.name); } catch (x) { toast('تعذر قراءة الملف: ' + x.message, 'bad'); } });
   $('#csPasteBtn').onclick = () => { const t = $('#csPaste').value.trim(); if (!t) return; csLoad(readPasted(t), 'لصق كلف ' + todayISO()); }; $('#csSheet').onchange = () => csParse(true); $('#csHeaderRow').onchange = () => csParse(false); $('#csPreviewBtn').onclick = csPreview;
-  $('#csDrop').insertAdjacentHTML('afterend', `<div class="row small muted" style="margin-top:-6px"><a href="#" id="csTemplate">تنزيل قالب كشف الكلف</a></div>`); $('#csTemplate').onclick = e => { e.preventDefault(); costTemplate(); };
+  $('#csDrop').insertAdjacentHTML('afterend', `<div class="row small muted" style="margin-top:-6px;gap:14px"><a href="#" id="csTemplate">تنزيل قالب كشف الكلف</a><a href="#" id="csNoCost" title="كشف بالأصناف التي لم تُحدَّد كلفتها: عبّئ عمود الكلفة ثم ارفعه هنا">تنزيل الأصناف بلا كلفة لتعبئتها</a></div>`); $('#csTemplate').onclick = e => { e.preventDefault(); costTemplate(); }; $('#csNoCost').onclick = e => { e.preventDefault(); exportNoCost(); };
   ['rbAsOf', 'rbType', 'rbZero', 'rbCost'].forEach(id => $('#' + id).onchange = renderRepBalances); $('#rbQ').oninput = renderRepBalances;
   $('#rbPrint').onclick = () => { const { asOf } = balancesData(); const a = balancesAOA(); printHTML('تقرير أرصدة المخزون', [asOf ? 'حتى تاريخ ' + asOf : 'الأرصدة الحالية'], aoaTable(a, 4, $('#rbCost').checked ? [a[0].length - 2] : []), { landscape: $('#rbCost').checked }); }; $('#rbExport').onclick = () => exportXlsx(`أرصدة_المخزون_${todayISO()}.xlsx`, [{ name: 'الأرصدة', aoa: balancesAOA() }]);
   rcCombo = makeCombo($('#rcItem'), { placeholder: 'اختر الصنف…', source: () => S.items, onPick: renderRepCard }); ['rcWh', 'rcFrom', 'rcTo'].forEach(id => $('#' + id).onchange = renderRepCard);
