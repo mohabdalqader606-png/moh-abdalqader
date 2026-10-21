@@ -1752,7 +1752,7 @@ const QDEF=[
  {id:'q16',n:"فصل المهام التفصيلي مستنداً بمستند",short:"فصل المهام التفصيلي",g:CHECKS[15],doc:"رقم المستند",date:"تاريخ المستند",dims:["اسم المستخدم", "نوع الحركة", "اسم الطرف"],ms:["المبلغ"],flags:["الملاحظات"],text:[],cols:["فتح المستخدم", "رمز المستخدم", "اسم المستخدم", "نوع الحركة", "رقم المستند", "فتح فاتورة", "فتح اشعار دائن", "فتح سند قبض", "فتح امر شراء", "فتح فاتورة شراء", "فتح سند صرف", "فتح القيد", "فتح ادخال مخزون", "فتح اخراج مخزون", "فتح الطرف", "اسم الطرف", "تاريخ المستند", "تاريخ الادخال", "ايام التأخير", "المبلغ", "درجة الخطورة", "الملاحظات"]},
 ];
 /* ================= utils ================= */
-const VERSION='v2.22';
+const VERSION='v2.23';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nf0=new Intl.NumberFormat('en-US',{maximumFractionDigits:0,minimumFractionDigits:0});
@@ -3009,7 +3009,8 @@ function procParseTrack(sheets,src){const ships=[];let id=0;const skipped=[];
     let cur=null;
     for(let i=hi+1;i<sh.rows.length;i++){const r=sh.rows[i];const g=k=>C[k]>=0?r[C[k]]:null;const order=procStr(g('order'));
       const amt=procNum(g('amt')),inv=procStr(g('inv')),cont=procStr(g('cont')),bl=procStr(g('bl'));
-      if(order&&!/^total/i.test(order)){const okey=procOrderKey(order);cur={id:++id,sheet:sh.name,mo,orderRaw:order,order:okey,sup:procStr(g('sup')),ap:procStr(g('ap')).replace(/\.0+$/,''),amts:[],details:procStr(g('det')),shipDate:procDate(g('ship')),arrDate:procDate(g('arr')),bl,conts:[],decl:procStr(g('decl')),declDate:procDate(g('declDate')),ref:procStr(g('ref')),color:procStr(g('color')),notes:procStr(g('notes')),po:procStr(g('po')),arab:procDate(g('arab')),recvDate:procDate(g('recv')),rows:1};ships.push(cur);}
+      const supv=procStr(g('sup'));const newBySup=!order&&supv&&(!cur||norm(supv)!==norm(cur.sup));
+      if((order&&!/^total/i.test(order))||newBySup){const okey=order?procOrderKey(order):'';cur={id:++id,sheet:sh.name,mo,orderRaw:order||'(بدون رقم)',order:okey||('بدون رقم #'+(id+1)),sup:supv,ap:procStr(g('ap')).replace(/\.0+$/,''),amts:[],details:procStr(g('det')),shipDate:procDate(g('ship')),arrDate:procDate(g('arr')),bl,conts:[],decl:procStr(g('decl')),declDate:procDate(g('declDate')),ref:procStr(g('ref')),color:procStr(g('color')),notes:procStr(g('notes')),po:procStr(g('po')),arab:procDate(g('arab')),recvDate:procDate(g('recv')),rows:1};ships.push(cur);}
       else if(cur){cur.rows++;if(!cur.recvDate)cur.recvDate=procDate(g('recv'));if(!cur.shipDate)cur.shipDate=procDate(g('ship'));if(!cur.arrDate)cur.arrDate=procDate(g('arr'));if(!cur.decl){cur.decl=procStr(g('decl'));cur.declDate=procDate(g('declDate'));}if(!cur.color)cur.color=procStr(g('color'));if(!cur.bl&&bl)cur.bl=bl;}
       else continue;
       if(amt!=null||inv){const c=g('amt');cur.amts.push({amt:amt||0,cur:(c&&c.cur)||'',inv,invDate:procDate(g('invDate'))});}
@@ -3064,11 +3065,11 @@ function procBuild(T){const M={ships:[],items:new Map(),lc:new Map(),lcRows:[],m
   const supCanon=new Map();if(T.DT&&T.DT.rows){const cnt=new Map();for(const s of T.DT.rows){const k=norm(s.sup||'').replace(/[^a-z0-9\u0600-\u06ff]/g,'');if(!k)continue;const c=cnt.get(k)||new Map();c.set(s.sup,(c.get(s.sup)||0)+1);cnt.set(k,c);}for(const [k,c] of cnt)supCanon.set(k,[...c.entries()].sort((a,b)=>b[1]-a[1])[0][0]);}
   if(T.DT&&T.DT.rows){for(const s0 of T.DT.rows){const s=Object.assign({},s0);{const k=norm(s.sup||'').replace(/[^a-z0-9\u0600-\u06ff]/g,'');if(supCanon.has(k))s.sup=supCanon.get(k);}s.conts=s0.conts.map(c=>Object.assign({},c));s.amts=s0.amts.map(a=>Object.assign({},a));
       if(procFix(s.order,'excl'))continue;
-      const fm=procFix(s.order,'mo');if(fm)s.mo=+fm;const fs=procFix(s.order,'ship');if(fs)s.shipDate=fromISO(fs);const fa=procFix(s.order,'arr');if(fa)s.arrDate=fromISO(fa);const fr=procFix(s.order,'recv');if(fr)s.recvDate=fromISO(fr);
+      const fm=procFix(s.order,'mo');if(fm)s.mo=+fm;const lastMo=lastSheet?(PROC_SHEET[String(lastSheet).toUpperCase().replace(/[^A-Z]/g,'')]||PROC_SHEET[String(lastSheet).toUpperCase().replace(/[^A-Z]/g,'').slice(0,3)]||null):null;const fs=procFix(s.order,'ship');if(fs)s.shipDate=fromISO(fs);const fa=procFix(s.order,'arr');if(fa)s.arrDate=fromISO(fa);const fr=procFix(s.order,'recv');if(fr)s.recvDate=fromISO(fr);
       const fc=procFix(s.order,'cur'),fam=procFix(s.order,'amt');if(fam!=null&&s.amts.length){s.amts[0].amt=+fam;for(let i=1;i<s.amts.length;i++)s.amts[i].amt=0;}if(fc)for(const a of s.amts)a.cur=fc;
       s.amtBy={};for(const a of s.amts){const c=a.cur||'USD';s.amtBy[c]=(s.amtBy[c]||0)+(a.amt||0);}s.amtTot=Object.values(s.amtBy).reduce((x,y)=>x+y,0);s.cur=Object.keys(s.amtBy).sort((a,b)=>s.amtBy[b]-s.amtBy[a])[0]||'';
       s.invs=s.amts.map(a=>a.inv).filter(Boolean);
-      s.isTransit=PROC_SET.transitLast&&lastSheet&&s.sheet===lastSheet;s.zero=!(s.amtTot>0);s.isSample=/SAMPLE|عينة|عيّنة/i.test(s.details||'');
+      s.isTransit=!!(PROC_SET.transitLast&&lastSheet&&(s.sheet===lastSheet||(fm&&lastMo&&+fm===lastMo)));s.zero=!(s.amtTot>0);s.isSample=/SAMPLE|عينة|عيّنة/i.test(s.details||'');
       s.mode=procMode(s);s.nCont=s.conts.length;s.n20=s.conts.filter(c=>c.sz===20).length;s.n40=s.conts.filter(c=>c.sz===40).length;s.trackWt=s.conts.reduce((a,c)=>a+(c.wt||0),0);
       s.lines=s.ap?(M.lc.get(s.ap)||[]):[];s.noLC=!!procFix(s.order,'nolc');
       s.fob=0;s.inve=0;s.doce=0;s.extra=0;s.wkg=0;let wAny=false;const byW={},byF={},stor={},ctry={};
