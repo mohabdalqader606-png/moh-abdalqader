@@ -389,7 +389,7 @@ details.sqlbox pre{margin:0;padding:12px 14px;border-top:1px solid var(--line);d
           <select id="sGrp"><option value="doc">القيد / المستند (للتصوير)</option><option value="exp">اسم المصروف</option><option value="date">تاريخ القيد</option></select></div>
         <div class="grow" style="flex:2 1 200px"><label class="f">بحث</label><input type="search" id="sQ" placeholder="بحث في العينات…"></div>
       </div>
-      <div class="hint" style="margin-top:6px">في تجميع <b>«القيد / المستند»</b> كل قيد مجموعة واحدة بكل سطوره من مختلف المصروفات، فتصوّره مرة واحدة وتضغط <b>«✔ الكل»</b>. اللافتة «يشمل N مصروفات» تعني أن هذا القيد له عينات في أكثر من مصروف.</div>
+      <div class="hint" style="margin-top:6px">في تجميع <b>«القيد / المستند»</b> كل قيد مجموعة واحدة فيها كل الفواتير (السطور) المطلوب تصويرها منه. تسحب القيد من الملف مرة واحدة، تصوّر فاتورة كل مصروف، وتعلّم <b>«تم التصوير»</b> على كل فاتورة (أو <b>«✔ الكل»</b> بعد تصويرها جميعاً). اللافتة «يشمل N مصروفات» تعني أن في هذا القيد فواتير لأكثر من مصروف.</div>
       <div class="chips seg" id="sDoneChips" style="margin-top:10px">
         <span class="chip on" data-v="all">الكل <span class="n" id="cAll">0</span></span>
         <span class="chip" data-v="no">⧗ لم تُصوَّر <span class="n" id="cNo">0</span></span>
@@ -518,7 +518,7 @@ ORDER BY
     </div>
   </section>
 
-  <footer>شاشة عينات المصروفات — الإصدار v2.5 · مزامنة سحابية</footer>
+  <footer>شاشة عينات المصروفات — الإصدار v2.6 · مزامنة سحابية</footer>
 </div>
 
 <div class="bottombar" id="bottombar">
@@ -894,7 +894,7 @@ function docSiblings(id){const f=findRow(id);if(!f||!f.r.doc)return [id];return 
 /* المصروفات التي يشملها كل مستند ضمن العينات المختارة (نفس الكشف) */
 function jKey(s,r){return s.id+'|'+(r.trx||r.doc);}
 function selDocExpenses(){const m=new Map();state.statements.forEach(s=>s.rows.forEach(r=>{if(!r.sel||!(r.trx||r.doc))return;const k=jKey(s,r);if(!m.has(k))m.set(k,new Map());m.get(k).set(expKey(r),r.exp);}));return m;}
-function multiHtml(exps,cur,verb){const others=Array.from(exps.entries()).filter(([k])=>k!==cur).map(([,v])=>v);if(!others.length)return '';return `<div class="multi">📎 <span><b>${verb} ${exps.size} مصروفات</b> — صورة واحدة تكفي. أيضاً: ${others.map(esc).join('، ')}</span></div>`;}
+function multiHtml(exps,cur,verb){const others=Array.from(exps.entries()).filter(([k])=>k!==cur).map(([,v])=>v);if(!others.length)return '';return `<div class="multi">📎 <span><b>${verb} ${exps.size} مصروفات</b> — عند سحب القيد صوّر فواتيرها كلها معاً. أيضاً: ${others.map(esc).join('، ')}</span></div>`;}
 const PALETTE=['#2563eb','#d97706','#0f8a5f','#7c3aed','#db2777','#0891b2','#ca8a04','#dc2626','#4f46e5','#059669'];
 function colorFor(key){let h=0;for(let i=0;i<key.length;i++)h=(h*31+key.charCodeAt(i))>>>0;return PALETTE[h%PALETTE.length];}
 function ring(p,color){const r=18,c=2*Math.PI*r;return `<div class="ring" style="--gc:${color}"><svg viewBox="0 0 44 44"><circle class="bg" cx="22" cy="22" r="${r}"/><circle class="fg" cx="22" cy="22" r="${r}" stroke-dasharray="${(c*p/100).toFixed(2)} ${c.toFixed(2)}"/></svg><span>${Math.round(p)}%</span></div>`;}
@@ -957,7 +957,7 @@ function renderList(){
         <div class="c c-date">${esc(r.date)}${ui.fSt==='all'?'<span class="pill grey">'+esc(x.s.name)+'</span>':''}</div>
         <div class="c c-doc">${docCell(r)}${dn>1?` <span class="pill info">${dn}</span>`:''}</div>
         <div class="c c-trx"><span class="num">${esc(r.trx)}</span>${r.series?`<small>سيريز ${esc(r.series)}</small>`:''}</div>
-        <div class="c c-desc"><div class="desc">${esc(r.desc||r.edesc||'—')}</div>${(r.edesc&&r.edesc!==r.desc)||(r.r1&&!docInfo(r).isPay)?`<div class="sub">${r.edesc&&r.edesc!==r.desc?`<span>${esc(r.edesc)}</span>`:''}${r.r1&&!docInfo(r).isPay?`<span>Ref <span class="num">${esc(r.r1)}</span></span>`:''}</div>`:''}${de?`<div class="multi">📎 <span><b>المستند مختار كعينة</b> في: ${Array.from(de.values()).map(esc).join('، ')} — إن أضفته هنا تكفي صورة واحدة للجميع</span></div>`:''}${r.note?`<div class="note-v">✎ ${esc(r.note)}</div>`:''}</div>
+        <div class="c c-desc"><div class="desc">${esc(r.desc||r.edesc||'—')}</div>${(r.edesc&&r.edesc!==r.desc)||(r.r1&&!docInfo(r).isPay)?`<div class="sub">${r.edesc&&r.edesc!==r.desc?`<span>${esc(r.edesc)}</span>`:''}${r.r1&&!docInfo(r).isPay?`<span>Ref <span class="num">${esc(r.r1)}</span></span>`:''}</div>`:''}${de?`<div class="multi">📎 <span><b>لهذا القيد عينة</b> في: ${Array.from(de.values()).map(esc).join('، ')} — إن أضفت هذا السطر تُصوَّر فاتورته مع فواتيرها بسحبة واحدة للقيد</span></div>`:''}${r.note?`<div class="note-v">✎ ${esc(r.note)}</div>`:''}</div>
         <div class="c c-amt"><span class="num">${fmt(r.net)}</span><small>د.أ</small></div>
         <div class="c c-act">
           <input type="checkbox" class="mchk" data-multi="${r.id}" ${checked?'checked':''} title="تحديد متعدد">
@@ -995,9 +995,9 @@ function renderSamples(){
     if(ui.sGrp==='doc'){const ex=new Map();g.items.forEach(x=>ex.set(expKey(x.r),x.r.exp));const names=Array.from(ex.values());g.sub=(ex.size>1?`<span class="pill warn">يشمل ${ex.size} مصروفات</span> `:'')+names.map(esc).join('، ')+' · '+g.sub;}
     html.push(`<div class="grp${open?' open':''}" data-g="${esc(g.k)}"><div class="grp-h" data-gs="${esc(g.k)}" style="--gc:${col}">
         ${ring(p,col)}
-        <div class="ttl">${esc(g.title)}<small>${ui.sGrp==='doc'?g.sub:esc(g.sub)}${g.sub?' · ':''}${g.items.length} ${ui.sGrp==='doc'?'سطر':'عينة'} · ${fmt(amt)}</small></div>
+        <div class="ttl">${esc(g.title)}<small>${ui.sGrp==='doc'?g.sub:esc(g.sub)}${g.sub?' · ':''}${g.items.length} ${ui.sGrp==='doc'?'فاتورة للتصوير':'عينة'} · ${fmt(amt)}</small></div>
         <div class="meta"><b>${done} / ${g.items.length}</b>مصوّرة</div>
-        ${CAN_EDIT?`<button class="btn s ghost no-print" data-doneall="${esc(g.k)}" title="تعليم الكل كمصوّر">✔ الكل</button>`:''}
+        ${CAN_EDIT?`<button class="btn s ghost no-print" data-doneall="${esc(g.k)}" title="تعليم كل فواتير هذا القيد كمصوّرة">✔ الكل</button>`:''}
         <span class="caret">▼</span></div><div class="grp-b">${sortbar(ui.sortS,'data-sorts')}${headRow(ui.sortS,'data-sorts','ملاحظة · التصوير')}`);
     g.items.sort(sorter(ui.sortS)).forEach(x=>{const r=x.r;
       const de=(r.trx||r.doc)&&docExp.get(jKey(x.s,r));
@@ -1096,7 +1096,7 @@ $('#sQ').addEventListener('input',e=>{ui.sQ=e.target.value.trim();renderSamples(
 $('#btnExpandS').addEventListener('click',e=>{ui.allOpenS=!ui.allOpenS;if(!ui.allOpenS)ui.openS.clear();e.target.textContent=ui.allOpenS?'طيّ الكل':'توسيع الكل';renderSamples();});
 $('#samplesBody').addEventListener('change',e=>{
   const d=e.target.closest('[data-done]');
-  if(d){const id=d.dataset.done;patchRows([id],{done:d.checked});renderKpis();renderSamples();renderStats();renderData();if(d.checked){const f=findRow(id);const ex=f&&(f.r.trx||f.r.doc)?selDocExpenses().get(jKey(f.s,f.r)):null;if(ex&&ex.size>1)toast(`تنبيه: هذا المستند له عينات في ${ex.size} مصروفات — علّم باقي سطوره إن صوّرتها`);}return;}
+  if(d){const id=d.dataset.done;patchRows([id],{done:d.checked});renderKpis();renderSamples();renderStats();renderData();if(d.checked){const f=findRow(id);const ex=f&&(f.r.trx||f.r.doc)?selDocExpenses().get(jKey(f.s,f.r)):null;if(ex&&ex.size>1)toast(`تنبيه: في هذا القيد فواتير لـ ${ex.size} مصروفات — صوّر الباقي ما دام القيد بيدك`);}return;}
   const n=e.target.closest('[data-note]');if(n){patchRows([n.dataset.note],{note:n.value.trim()});}
 });
 $('#samplesBody').addEventListener('click',e=>{
