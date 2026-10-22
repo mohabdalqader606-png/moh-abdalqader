@@ -133,12 +133,14 @@ table.g tr.row:hover td{background:#f8fbfe}
 .pin.miss{border-color:#f1b8b2;background:var(--bad-bg)} .pin.ovr{color:#6941c6;font-weight:700}
 .val.bad{color:var(--bad);font-weight:700} .val.sur{color:var(--sur);font-weight:700}
 .sdue{margin-top:6px;font-size:12px;color:var(--bad)}
-.mbox{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr 1.3fr;gap:8px;margin:10px 0 4px}
+.mbox{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px;margin:10px 0 4px}
 .mbox div{border:1px solid var(--line);border-radius:8px;padding:6px 9px}
 .mbox span{display:block;font-size:11px;color:var(--mute)}
 .mbox b{font-size:15px}
 .mbox .dueb{background:var(--bad-bg);border-color:#f1b8b2}
 .mbox .dueb b{color:var(--bad);font-size:17px}
+.mbox .ordb{background:#f4f0ff;border-color:#d9d0fb} .mbox .ordb b{color:#6941c6;font-size:17px}
+.kpi.ord .v{color:#6941c6}
 .pinfo{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .pinfo div{border:1px solid var(--line);border-radius:8px;padding:6px 9px}
 .pinfo span{display:block;font-size:11px;color:var(--mute)}
@@ -181,7 +183,7 @@ body.ro .ne{display:none!important}
 .vsec{margin-top:18px}
 .vhead{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;background:var(--navy-l);border-right:5px solid var(--navy);padding:8px 12px;border-radius:6px}
 .vhead b{font-size:16px;color:var(--navy-d)} .vhead span{color:var(--mute);font-size:13px}
-.mbox.v4{grid-template-columns:repeat(4,1fr)}
+.mbox.v4{grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}
 @media (max-width:700px){.mbox,.mbox.v4,.rep .rk,.rep .info{grid-template-columns:1fr 1fr}}
 @media print{ .vsec.pb{page-break-before:always} }
 .hidden{display:none!important}
@@ -507,6 +509,29 @@ function stats(sess){
   return r;
 }
 const ST_LBL={ok:"مطابق",bad:"عجز",sur:"زيادة",nc:"لم يُجرد",na:"—"};
+/* مبلغ الأوردر = كمية Ordered بكشف النظام × سعر الكاش فان (+ الضريبة إن فُعّلت) — بدون المعامل (المعامل للعجز فقط) */
+function ordCalc(s){
+  const out={rows:[],total:0,qtyItems:0,noPrice:0}; if(!s||!s.stock) return out;
+  const byCode=new Map(allItems(s).map(it=>[it.code,it]));
+  const withTax=pset(s).tax;
+  Object.entries(s.stock).forEach(([code,st])=>{ const q=+st.ordered||0; if(q<=EPS) return;
+    const it=byCode.get(code)||itemFromCode(code,"p",st.desc); const r=rec(code);
+    const price=r.price, tax=r.tax||0; const u=(price===null||price===undefined)?null:price*(withTax?1+tax:1);
+    const val=u===null?null:Math.round(q*u*1000)/1000;
+    out.rows.push({it,q,price,tax,u,val}); out.qtyItems++; if(val===null) out.noPrice++; else out.total+=val; });
+  out.total=Math.round(out.total*1000)/1000;
+  const ord=new Map(allItems(s).map((it,i)=>[it.code,i])); out.rows.sort((a,b)=>(ord.get(a.it.code)??1e9)-(ord.get(b.it.code)??1e9));
+  return out;
+}
+function ordTable(s,o){
+  const g={}; o.rows.forEach(r=>{(g[r.it.sup]=g[r.it.sup]||[]).push(r);}); let n=0;
+  let h=`<table><thead><tr><th>#</th><th>رمز الصنف</th><th>اسم الصنف</th><th>الوحدة</th><th>الكمية المطلوبة</th><th>رصيد النظام</th><th>السعر</th><th>الضريبة</th><th>مبلغ الأوردر</th></tr></thead><tbody>`;
+  Object.keys(g).forEach(sup=>{ h+=`<tr class="sup"><td colspan="9">المورد: <span dir="auto">${esc(sup)}</span></td></tr>`;
+    g[sup].forEach(({it,q,price,tax,val})=>{ n++; const st=s.stock[it.code]||{};
+      h+=`<tr><td class="n">${n}</td><td class="n"><b>${esc(it.code)}</b></td><td class="nm">${esc(it.name)}</td><td>${esc(UNIT_AR[it.unit]||it.unit||"")}</td><td class="n"><b>${fmt(q)}</b></td><td class="n">${fmt(st.inStock||0)}</td><td class="n">${price===null||price===undefined?'<span style="color:var(--bad)">—</span>':fmtM(price)}</td><td class="n">${Math.round(tax*100)}%</td><td class="n"><b>${val===null?"":fmtM(val)}</b></td></tr>`; }); });
+  h+=`<tr class="tot"><td colspan="8">مجموع مبلغ الأوردر (سعر الكاش فان${pset(s).tax?" + الضريبة":""})${o.noPrice?` — ${o.noPrice} صنف بدون سعر`:""}</td><td class="n">${fmtM(o.total)}</td></tr></tbody></table>`;
+  return h;
+}
 
 /* ================= sidebar ================= */
 let sessQ="";
@@ -574,23 +599,24 @@ function valCalc(s){
 function renderValue(m){
   const reps=[...new Set(S.sessions.filter(s=>s.stock).map(s=>s.rep).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"ar"));
   const sess=valSessions(); const calcs=sess.map(s=>({s,...valCalc(s)}));
-  const T=calcs.reduce((a,{t})=>{["n","sysVal","actVal","short","sur","ncVal","due","noPrice"].forEach(k=>a[k]+=t[k]);return a;},{n:0,sysVal:0,actVal:0,short:0,sur:0,ncVal:0,due:0,noPrice:0});
+  calcs.forEach(c=>{ c.o=ordCalc(c.s); c.t.ord=c.o.total; });
+  const T=calcs.reduce((a,{t})=>{["n","sysVal","actVal","short","sur","ncVal","due","noPrice","ord"].forEach(k=>a[k]+=t[k]);return a;},{n:0,sysVal:0,actVal:0,short:0,sur:0,ncVal:0,due:0,noPrice:0,ord:0});
   const facs=[...new Set(sess.map(psetLabel))];
   const scopeTxt=(vScope==="last"?"آخر جرد لكل مندوب":"كل عمليات الجرد")+(vFrom||vTo?` · الفترة ${vFrom?dAr(vFrom):"البداية"} — ${vTo?dAr(vTo):"اليوم"}`:"");
   let body="";
   if(!sess.length) body='<div class="empty">لا توجد عمليات جرد مرفوع لها كشف النظام ضمن هذا الاختيار.</div>';
   else if(vMode==="sum"){
-    body=`<table><thead><tr><th>#</th><th>المندوب</th><th>تاريخ الجرد</th><th>السيارة</th><th>أساس الاحتساب</th><th>أصناف</th><th>قيمة رصيد النظام</th><th>القيمة الفعلية</th><th>قيمة العجز</th><th>قيمة الزيادة</th><th>المطلوب من المندوب</th></tr></thead><tbody>
+    body=`<table><thead><tr><th>#</th><th>المندوب</th><th>تاريخ الجرد</th><th>السيارة</th><th>أساس الاحتساب</th><th>أصناف</th><th>قيمة رصيد النظام</th><th>القيمة الفعلية</th><th>قيمة العجز</th><th>قيمة الزيادة</th><th>المطلوب من المندوب</th><th>مبلغ الأوردر</th></tr></thead><tbody>
       ${calcs.map(({s,t},i)=>`<tr><td class="n">${i+1}</td><td class="nm"><b>${esc(s.rep||"")}</b></td><td>${esc(dAr(s.date))}</td><td>${esc(s.vehicle||"")}</td><td style="font-size:11px">×${pset(s).f}${pset(s).tax?" + ضريبة":""}${pset(s).offset?" · مقاصة":""}</td><td class="n">${t.n}</td>
-        <td class="n">${fmtM(t.sysVal)}</td><td class="n">${fmtM(t.actVal)}</td><td class="n" style="color:var(--bad);font-weight:700">${fmtM(t.short)}</td><td class="n" style="color:var(--sur);font-weight:700">${fmtM(t.sur)}</td><td class="n"><b>${fmtM(t.due)}</b></td></tr>`).join("")}
-      <tr class="tot"><td colspan="5">المجموع (${calcs.length} جرد)</td><td class="n">${T.n}</td><td class="n">${fmtM(T.sysVal)}</td><td class="n">${fmtM(T.actVal)}</td><td class="n">${fmtM(T.short)}</td><td class="n">${fmtM(T.sur)}</td><td class="n">${fmtM(T.due)}</td></tr>
+        <td class="n">${fmtM(t.sysVal)}</td><td class="n">${fmtM(t.actVal)}</td><td class="n" style="color:var(--bad);font-weight:700">${fmtM(t.short)}</td><td class="n" style="color:var(--sur);font-weight:700">${fmtM(t.sur)}</td><td class="n"><b>${fmtM(t.due)}</b></td><td class="n" style="color:#6941c6">${fmtM(t.ord)}</td></tr>`).join("")}
+      <tr class="tot"><td colspan="5">المجموع (${calcs.length} جرد)</td><td class="n">${T.n}</td><td class="n">${fmtM(T.sysVal)}</td><td class="n">${fmtM(T.actVal)}</td><td class="n">${fmtM(T.short)}</td><td class="n">${fmtM(T.sur)}</td><td class="n">${fmtM(T.due)}</td><td class="n">${fmtM(T.ord)}</td></tr>
     </tbody></table>
-    <div class="note">قيمة رصيد النظام = In Stock × سعر الوحدة المحتسب · القيمة الفعلية = الكمية المجرودة × سعر الوحدة المحتسب. ${T.ncVal>EPS?`يوجد أصناف لم تُجرد قيمتها بالنظام ${fmtM(T.ncVal)} د.أ (غير داخلة في العجز).`:""}</div>`;
+    <div class="note">قيمة رصيد النظام = In Stock × سعر الوحدة المحتسب · القيمة الفعلية = الكمية المجرودة × سعر الوحدة المحتسب · مبلغ الأوردر = كمية Ordered × سعر الكاش فان (+ الضريبة) بدون المعامل. ${T.ncVal>EPS?`يوجد أصناف لم تُجرد قيمتها بالنظام ${fmtM(T.ncVal)} د.أ (غير داخلة في العجز).`:""}</div>`;
   } else {
-    body=calcs.map(({s,rows,t},si)=>{
+    body=calcs.map(({s,rows,t,o},si)=>{
       const g={}; rows.forEach(r=>{(g[r.it.sup]=g[r.it.sup]||[]).push(r);}); let n=0;
       let h=`<div class="vsec ${si?"pb":""}"><div class="vhead"><div><b>${esc(s.rep||"")}</b> <span>· ${esc(dAr(s.date))}${s.vehicle?" · سيارة "+esc(s.vehicle):""}</span></div><div class="hint">${esc(psetLabel(s))}</div></div>
-        <div class="mbox v4"><div><span>قيمة رصيد النظام</span><b class="n">${fmtM(t.sysVal)}</b></div><div><span>القيمة الفعلية</span><b class="n">${fmtM(t.actVal)}</b></div><div><span>قيمة العجز / الزيادة</span><b class="n"><span style="color:var(--bad);display:inline">${fmtM(t.short)}</span> / <span style="color:var(--sur);display:inline">${fmtM(t.sur)}</span></b></div><div class="dueb"><span>المطلوب من المندوب</span><b class="n">${fmtM(t.due)} د.أ</b></div></div>
+        <div class="mbox v4"><div><span>قيمة رصيد النظام</span><b class="n">${fmtM(t.sysVal)}</b></div><div><span>القيمة الفعلية</span><b class="n">${fmtM(t.actVal)}</b></div><div><span>قيمة العجز / الزيادة</span><b class="n"><span style="color:var(--bad);display:inline">${fmtM(t.short)}</span> / <span style="color:var(--sur);display:inline">${fmtM(t.sur)}</span></b></div><div class="dueb"><span>المطلوب من المندوب</span><b class="n">${fmtM(t.due)} د.أ</b></div><div class="ordb"><span>مبلغ الأوردر</span><b class="n">${fmtM(o.total)} د.أ</b></div></div>
         <table><thead><tr><th>#</th><th>رمز الصنف</th><th>اسم الصنف</th><th>الوحدة</th><th>سعر الوحدة المحتسب</th><th>كمية النظام</th><th>قيمة النظام</th><th>الكمية الفعلية</th><th>القيمة الفعلية</th><th>الفرق</th><th>قيمة الفرق</th></tr></thead><tbody>`;
       Object.keys(g).forEach(sup=>{
         h+=`<tr class="sup"><td colspan="11">المورد: <span dir="auto">${esc(sup)}</span></td></tr>`;
@@ -605,6 +631,7 @@ function renderValue(m){
       });
       h+=`<tr class="tot"><td colspan="6">مجموع مستودع ${esc(s.rep||"")}</td><td class="n">${fmtM(t.sysVal)}</td><td></td><td class="n">${fmtM(t.actVal)}</td><td></td><td class="n">${fmtM(t.net)}</td></tr></tbody></table>
         ${t.noPrice?`<div class="note" style="color:var(--bad)">⚠ ${t.noPrice} صنف بدون سعر غير داخل في المجاميع.</div>`:""}
+        ${o.rows.length?`<h2>الأوردر المطلوب — ${esc(s.rep||"")} (${o.rows.length} صنف · ${fmtM(o.total)} د.أ)</h2>${ordTable(s,o)}`:""}
         <div class="sig"><div>المندوب<br><b>${esc(s.rep||"")}</b></div><div>المدقق الداخلي</div><div>الاعتماد</div></div></div>`;
       return h;
     }).join("");
@@ -628,7 +655,8 @@ function renderValue(m){
       <div><span>القيمة الفعلية</span><b class="n">${fmtM(T.actVal)}</b></div>
       <div><span>قيمة العجز</span><b class="n" style="color:var(--bad)">${fmtM(T.short)}</b></div>
       <div><span>قيمة الزيادة</span><b class="n" style="color:var(--sur)">${fmtM(T.sur)}</b></div>
-      <div class="dueb"><span>إجمالي المطلوب</span><b class="n">${fmtM(T.due)} د.أ</b></div></div>`:""}
+      <div class="dueb"><span>إجمالي المطلوب</span><b class="n">${fmtM(T.due)} د.أ</b></div>
+      <div class="ordb"><span>مبلغ الأوردر المطلوب</span><b class="n">${fmtM(T.ord)} د.أ</b></div></div>`:""}
     ${T.noPrice?`<div class="note" style="color:var(--bad)">⚠ ${T.noPrice} سطر بدون سعر غير داخل في المجاميع.</div>`:""}
     ${body}
     ${vMode==="sum"&&sess.length?`<div class="sig"><div>إعداد: المدقق الداخلي</div><div>المدير المالي</div><div>الاعتماد</div></div>`:""}
@@ -765,6 +793,7 @@ function renderEntry(s){
     <div class="kpi ok"><div class="l">نسبة المطابقة</div><div class="v n" id="kAcc">${k.acc}%</div><div class="bar"><i id="kBar" style="width:${k.acc}%"></i></div></div>
     <div class="kpi bad"><div class="l">قيمة العجز (د.أ)</div><div class="v n sm" id="kSv">${fmtM(k.shortVal)}</div></div>
     <div class="kpi sur"><div class="l">قيمة الزيادة (د.أ)</div><div class="v n sm" id="kUv">${fmtM(k.surVal)}</div></div>
+    <div class="kpi ord"><div class="l">مبلغ الأوردر المطلوب (د.أ)</div><div class="v n sm" id="kOrd">${fmtM(ordCalc(s).total)}</div><div class="hint" id="kOrdN">${ordCalc(s).qtyItems} صنف · سعر الكاش فان${pset(s).tax?" + الضريبة":""}</div></div>
   </div>
   <div class="hint warn ${k.noPrice?"":"hidden"}" id="kNp">⚠ يوجد <b id="kNpN">${k.noPrice}</b> صنف بفروقات بدون سعر — أدخل سعره في عمود السعر.</div>
   <div class="tools">
@@ -876,6 +905,7 @@ document.addEventListener("change",e=>{
 let sideT=null; function renderSideSoon(){ clearTimeout(sideT); sideT=setTimeout(renderSide,400); }
 function updK(s){ const k=stats(s); const set=(id,v)=>{const el=$("#"+id); if(el) el.textContent=v;};
   set("kInc",k.inc); set("kOk",k.ok); set("kBad",k.bad); set("kSur",k.sur); set("kNc",k.nc); set("kAcc",k.acc+"%"); const b=$("#kBar"); if(b) b.style.width=k.acc+"%";
+  const o=ordCalc(s); set("kOrd",fmtM(o.total)); set("kOrdN",o.qtyItems+" صنف · سعر الكاش فان"+(pset(s).tax?" + الضريبة":""));
   set("kSv",fmtM(k.shortVal)); set("kUv",fmtM(k.surVal)); set("kDue2",fmtM(k.due)); set("kNpN",k.noPrice); const np=$("#kNp"); if(np) np.classList.toggle("hidden",!k.noPrice); }
 
 /* ---------- report pane ---------- */
@@ -921,6 +951,7 @@ function moneyBox(s,k){
     <div><span>قيمة الزيادة</span><b class="n" style="color:var(--sur)">${fmtM(k.surVal)}</b></div>
     <div><span>صافي الفرق</span><b class="n">${fmtM(k.net)}</b></div>
     <div class="dueb"><span>المبلغ المطلوب من المندوب</span><b class="n">${fmtM(k.due)} د.أ</b></div>
+    <div class="ordb"><span>مبلغ الأوردر المطلوب</span><b class="n">${fmtM(ordCalc(s).total)} د.أ</b></div>
   </div>${k.noPrice?`<div class="note" style="color:var(--bad)">⚠ ${k.noPrice} صنف بفروقات بدون سعر ولم تدخل قيمته في المبالغ.</div>`:""}`;
 }
 function renderReport(s){
@@ -952,6 +983,7 @@ function renderReport(s){
     ${bad.length?repTable(s,bad,false):'<div class="okline">لا يوجد عجز.</div>'}
     <h2>ثانياً: أصناف الزيادة (${sur.length})</h2>
     ${sur.length?repTable(s,sur,false):'<div class="okline">لا توجد زيادة.</div>'}
+    ${(()=>{ const o=ordCalc(s); return o.rows.length?`<h2>الأوردر المطلوب للمندوب (Ordered) — ${o.rows.length} صنف · ${fmtM(o.total)} د.أ</h2><div class="note">كميات قيد الطلب بكشف النظام، غير داخلة في الرصيد ولا في الفروقات. المبلغ بسعر الكاش فان${pset(s).tax?" + الضريبة":""} وبدون المعامل.</div>${ordTable(s,o)}`:""; })()}
     ${nc.length?`<h2>ثالثاً: أصناف لها رصيد بالنظام ولم تُجرد (${nc.length})</h2><div class="note">قيمة الرصيد معروضة للعلم فقط ولا تدخل في المبلغ المطلوب.</div>${repTable(s,nc,false,"sys")}`:""}
     ${showFull?`<h2>كشف جميع الأصناف المشمولة (${inc.length})</h2>${repTable(s,inc,true)}`:""}
 
@@ -1262,8 +1294,9 @@ function csv(rows){ return "﻿"+rows.map(r=>r.map(v=>{ v=v===null||v===undefine
 function exportCsv(id){
   const s=S.sessions.find(x=>x.id===id); if(!s) return;
   const k=stats(s);
-  const rows=[["المندوب",s.rep,"التاريخ",s.date,"السيارة",s.vehicle],["أساس الاحتساب",psetLabel(s),"قيمة العجز",fmtM(k.shortVal),"قيمة الزيادة",fmtM(k.surVal),"المطلوب",fmtM(k.due)],[],["المورد","رمز الصنف","اسم الصنف","الوحدة","رصيد النظام","Ordered","الكمية الفعلية","الفرق","الحالة","السعر","الضريبة %","سعر الوحدة المحتسب","قيمة الفرق","ملاحظات"]];
-  allItems(s).forEach(it=>{ const c=rowCalc(s,it); if(c.status==="na") return; rows.push([it.sup,it.code,it.name,UNIT_AR[it.unit]||it.unit,c.sys,c.ordered||"",c.act??"",c.diff??"",ST_LBL[c.status],c.price??"",Math.round(c.tax*100),c.unitVal===null?"":Math.round(c.unitVal*1000)/1000,c.val??"",s.notes?.[it.code]||""]); });
+  const rows=[["المندوب",s.rep,"التاريخ",s.date,"السيارة",s.vehicle],["أساس الاحتساب",psetLabel(s),"قيمة العجز",fmtM(k.shortVal),"قيمة الزيادة",fmtM(k.surVal),"المطلوب",fmtM(k.due),"مبلغ الأوردر",fmtM(ordCalc(s).total)],[],["المورد","رمز الصنف","اسم الصنف","الوحدة","رصيد النظام","Ordered","الكمية الفعلية","الفرق","الحالة","السعر","الضريبة %","سعر الوحدة المحتسب","قيمة الفرق","مبلغ الأوردر","ملاحظات"]];
+  const om=new Map(ordCalc(s).rows.map(r=>[r.it.code,r.val]));
+  allItems(s).forEach(it=>{ const c=rowCalc(s,it); if(c.status==="na" && !om.has(it.code)) return; rows.push([it.sup,it.code,it.name,UNIT_AR[it.unit]||it.unit,c.sys,c.ordered||"",c.act??"",c.diff??"",ST_LBL[c.status],c.price??"",Math.round(c.tax*100),c.unitVal===null?"":Math.round(c.unitVal*1000)/1000,c.val??"",om.has(it.code)?(om.get(it.code)??""):"",s.notes?.[it.code]||""]); });
   download(`جرد_${(s.rep||"مندوب").replace(/\s+/g,"_")}_${s.date}.csv`,csv(rows),"text/csv;charset=utf-8");
 }
 function exportConsCsv(){
