@@ -248,6 +248,12 @@ dialog h3{font-size:16px;margin-bottom:10px}
 .spin{width:26px;height:26px;border:3px solid var(--line);border-top-color:var(--amber);border-radius:99px;animation:rot .8s linear infinite;margin:0 auto 10px}
 @keyframes rot{to{transform:rotate(360deg)}}
 footer{margin-top:28px;text-align:center;font-size:11.5px;color:var(--ink3)}
+details.sqlbox{border:1px solid var(--line);border-radius:12px;background:var(--card2);overflow:hidden}
+details.sqlbox summary{cursor:pointer;padding:10px 14px;font-weight:700;list-style:none;display:flex;align-items:center;gap:8px}
+details.sqlbox summary::-webkit-details-marker{display:none}
+details.sqlbox summary::after{content:"▼";margin-inline-start:auto;font-size:11px;color:var(--ink3);transition:.2s}
+details.sqlbox[open] summary::after{transform:rotate(180deg)}
+details.sqlbox pre{margin:0;padding:12px 14px;border-top:1px solid var(--line);direction:ltr;text-align:left;font:12px/1.5 ui-monospace,Consolas,monospace;overflow:auto;max-height:420px;white-space:pre;color:var(--ink)}
 
 /* ===== print ===== */
 .print-only{display:none}
@@ -381,6 +387,61 @@ footer{margin-top:28px;text-align:center;font-size:11.5px;color:var(--ink3)}
       <button class="btn s p" id="btnLegacyUp">رفع إلى السحابة</button>
       <button class="btn s ghost" id="btnLegacyDrop">تجاهل</button>
     </div>
+    <div class="card">
+      <h2>كويري SAP — كشف المصروفات <small>Query Manager · المعاملان [%0] و[%1] = من تاريخ / إلى تاريخ</small></h2>
+      <div class="row" style="margin-bottom:10px">
+        <button class="btn p" id="btnCopySql">⎘ نسخ الكويري</button>
+        <span class="muted tiny">شغّله في SAP، انسخ الناتج مع صف العناوين، والصقه في الصندوق أدناه.</span>
+      </div>
+      <details class="sqlbox"><summary>عرض نص الكويري</summary><pre id="sqlText">SELECT
+    H."RefDate" AS "تاريخ القيد",
+    H."TransId" AS "رقم الحركة",
+    H."Series" AS "السيريز",
+    H."Number" AS "رقم المستند",
+    H."TransType" AS "رمز الحركة",
+    L."Account" AS "رقم حساب المصروف",
+    A."AcctName" AS "اسم المصروف",
+    L."Debit" AS "المبلغ مدين",
+    L."Credit" AS "المبلغ دائن",
+    L."Debit" - L."Credit" AS "صافي المصروف",
+    L."LineMemo" AS "البيان",
+    H."Memo" AS "بيان القيد",
+    L."Ref1" AS "Reference 1",
+    L."Ref2" AS "Reference 2",
+    L."Ref3Line" AS "Reference 3"
+
+FROM OJDT H
+INNER JOIN JDT1 L
+    ON H."TransId" = L."TransId"
+INNER JOIN OACT A
+    ON L."Account" = A."AcctCode"
+
+WHERE
+    H."RefDate" BETWEEN '[%0]' AND '[%1]'
+    AND A."GroupMask" = 6
+
+    AND L."Account" NOT IN (
+        '6111000009','6111000003','6111000028',
+        '6111000007','6114000007','6111000001',
+        '6112000014','6111000031','6112000015',
+        '6111000026','6111000005','6111000018',
+        '6111000036','6112000001','6111000050',
+        '6111000025','6112000003','6112000008',
+        '6111000034','6114000008','6114000001',
+        '6114000004','6114000010','6111000013',
+        '6111000048','6112000006','6112000007',
+        '6112000017','6114000006','6111000024'
+    )
+
+    AND L."Account" NOT BETWEEN
+        '6113000001' AND '6113000030'
+
+ORDER BY
+    H."RefDate",
+    H."TransId",
+    L."Line_ID";</pre></details>
+    </div>
+
     <div class="card" id="importCard">
       <h2>إضافة كشف جديد</h2>
       <div class="row">
@@ -422,7 +483,7 @@ footer{margin-top:28px;text-align:center;font-size:11.5px;color:var(--ink3)}
     </div>
   </section>
 
-  <footer>شاشة عينات المصروفات — الإصدار v2.0 · مزامنة سحابية</footer>
+  <footer>شاشة عينات المصروفات — الإصدار v2.1 · مزامنة سحابية</footer>
 </div>
 
 <div class="bottombar" id="bottombar">
@@ -1005,6 +1066,11 @@ $('#btnXls').addEventListener('click',()=>{
 });
 
 /* تبويب البيانات */
+$('#btnCopySql').addEventListener('click',async()=>{
+  const txt=$('#sqlText').textContent;
+  try{await navigator.clipboard.writeText(txt);toast('تم نسخ الكويري');}
+  catch(e){const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');toast('تم نسخ الكويري');}catch(err){toast('تعذّر النسخ — افتح النص وانسخه يدوياً');}ta.remove();}
+});
 $('#btnPaste').addEventListener('click',()=>{const rows=parsePaste($('#inPaste').value);if(!rows.length){toast('لم أتعرف على بيانات — الصق مع صف العناوين');return;}importStatement($('#inName').value,rows).then(()=>{$('#inPaste').value='';$('#inName').value='';});});
 const drop=$('#drop');
 drop.addEventListener('click',()=>$('#inFile').click());
