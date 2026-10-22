@@ -128,8 +128,14 @@ alter table public.expense_sample_statements replica identity full;
 
 
 -- ----------------------------------------------------------------------------
--- 5) منح صلاحية ADMIN لحساب المالك — عدّل الإيميل هنا لو الحساب الفعلي مختلف قبل التشغيل.
+-- 5) الصلاحيات: حساب المالك mohabdalqader606@gmail.com هو الوحيد بصلاحية ADMIN على هذه الشاشة.
+--    أي صف صلاحية آخر على 'expense-samples' يُحذف (بطلب المالك: هذا الحساب فقط أدمن).
+--    لاحقاً يمكن منح VIEW/INPUT لموظفين من شاشة إدارة المستخدمين والصلاحيات.
 -- ----------------------------------------------------------------------------
+delete from public.user_screen_permissions
+where screen_id = 'expense-samples'
+  and user_id not in (select id from auth.users where email = 'mohabdalqader606@gmail.com');
+
 insert into public.user_screen_permissions (user_id, screen_id, permission)
 select id, 'expense-samples', 'ADMIN'
 from auth.users
