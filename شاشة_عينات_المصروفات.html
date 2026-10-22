@@ -386,9 +386,10 @@ details.sqlbox pre{margin:0;padding:12px 14px;border-top:1px solid var(--line);d
       <div class="row">
         <div class="grow"><label class="f">الكشف</label><select id="sSt"></select></div>
         <div class="grow"><label class="f">تجميع حسب</label>
-          <select id="sGrp"><option value="exp">اسم المصروف</option><option value="doc">رقم المستند</option><option value="date">تاريخ القيد</option></select></div>
+          <select id="sGrp"><option value="doc">القيد / المستند (للتصوير)</option><option value="exp">اسم المصروف</option><option value="date">تاريخ القيد</option></select></div>
         <div class="grow" style="flex:2 1 200px"><label class="f">بحث</label><input type="search" id="sQ" placeholder="بحث في العينات…"></div>
       </div>
+      <div class="hint" style="margin-top:6px">في تجميع <b>«القيد / المستند»</b> كل قيد مجموعة واحدة بكل سطوره من مختلف المصروفات، فتصوّره مرة واحدة وتضغط <b>«✔ الكل»</b>. اللافتة «يشمل N مصروفات» تعني أن هذا القيد له عينات في أكثر من مصروف.</div>
       <div class="chips seg" id="sDoneChips" style="margin-top:10px">
         <span class="chip on" data-v="all">الكل <span class="n" id="cAll">0</span></span>
         <span class="chip" data-v="no">⧗ لم تُصوَّر <span class="n" id="cNo">0</span></span>
@@ -517,7 +518,7 @@ ORDER BY
     </div>
   </section>
 
-  <footer>شاشة عينات المصروفات — الإصدار v2.4 · مزامنة سحابية</footer>
+  <footer>شاشة عينات المصروفات — الإصدار v2.5 · مزامنة سحابية</footer>
 </div>
 
 <div class="bottombar" id="bottombar">
@@ -582,7 +583,7 @@ let state={statements:[]};
 let pref={theme:''};
 let queue=[];                      // تعديلات بانتظار الرفع [{ids:[],patch:{}}]
 let flushing=false, lastLoad=0;
-let ui={sortL:{key:'date',dir:1},sortS:{key:'date',dir:1},tab:'list',fSt:'all',fExp:'',fQ:'',sSt:'all',sDone:'all',sGrp:'exp',sQ:'',tSt:'all',openL:new Set(),openS:new Set(),multi:new Set(),allOpenL:false,allOpenS:false};
+let ui={sortL:{key:'date',dir:1},sortS:{key:'date',dir:1},tab:'list',fSt:'all',fExp:'',fQ:'',sSt:'all',sDone:'all',sGrp:'doc',sQ:'',tSt:'all',openL:new Set(),openS:new Set(),multi:new Set(),allOpenL:false,allOpenS:false};
 
 /* ====================== تفضيلات + ثيم ====================== */
 try{pref=Object.assign(pref,JSON.parse(localStorage.getItem(LS_PREF)||'{}'));}catch(e){}
@@ -891,7 +892,8 @@ function toggleSort(st,k){if(st.key===k)st.dir=-st.dir;else{st.key=k;st.dir=(k==
 function findRow(id){for(const s of state.statements){const r=s.rows.find(x=>x.id===id);if(r)return {r,s};}return null;}
 function docSiblings(id){const f=findRow(id);if(!f||!f.r.doc)return [id];return f.s.rows.filter(r=>r.doc===f.r.doc).map(r=>r.id);}
 /* المصروفات التي يشملها كل مستند ضمن العينات المختارة (نفس الكشف) */
-function selDocExpenses(){const m=new Map();state.statements.forEach(s=>s.rows.forEach(r=>{if(!r.sel||!r.doc)return;const k=s.id+'|'+r.doc;if(!m.has(k))m.set(k,new Map());m.get(k).set(expKey(r),r.exp);}));return m;}
+function jKey(s,r){return s.id+'|'+(r.trx||r.doc);}
+function selDocExpenses(){const m=new Map();state.statements.forEach(s=>s.rows.forEach(r=>{if(!r.sel||!(r.trx||r.doc))return;const k=jKey(s,r);if(!m.has(k))m.set(k,new Map());m.get(k).set(expKey(r),r.exp);}));return m;}
 function multiHtml(exps,cur,verb){const others=Array.from(exps.entries()).filter(([k])=>k!==cur).map(([,v])=>v);if(!others.length)return '';return `<div class="multi">📎 <span><b>${verb} ${exps.size} مصروفات</b> — صورة واحدة تكفي. أيضاً: ${others.map(esc).join('، ')}</span></div>`;}
 const PALETTE=['#2563eb','#d97706','#0f8a5f','#7c3aed','#db2777','#0891b2','#ca8a04','#dc2626','#4f46e5','#059669'];
 function colorFor(key){let h=0;for(let i=0;i<key.length;i++)h=(h*31+key.charCodeAt(i))>>>0;return PALETTE[h%PALETTE.length];}
@@ -950,7 +952,7 @@ function renderList(){
         <span class="caret">▼</span></div><div class="grp-b">${sortbar(ui.sortL,'data-sortl')}${headRow(ui.sortL,'data-sortl','')}`);
     g.items.sort(sorter(ui.sortL)).forEach(x=>{
       const r=x.r;const dn=r.doc?docN.get(x.s.id+'|'+r.doc):1;const checked=ui.multi.has(r.id);
-      const de=r.doc&&docExp.get(x.s.id+'|'+r.doc);
+      const de=(r.trx||r.doc)&&docExp.get(jKey(x.s,r));
       html.push(`<div class="ln" data-id="${r.id}">
         <div class="c c-date">${esc(r.date)}${ui.fSt==='all'?'<span class="pill grey">'+esc(x.s.name)+'</span>':''}</div>
         <div class="c c-doc">${docCell(r)}${dn>1?` <span class="pill info">${dn}</span>`:''}</div>
@@ -976,31 +978,34 @@ function renderSamples(){
   if(!rows.length){$('#samplesBody').innerHTML='<div class="card empty"><div class="ic">◎</div><b>لا توجد عينات هنا</b>اختر عينات من تبويب «الكشف» أو غيّر الفلاتر.</div>';return;}
   const groups=new Map();
   rows.forEach(x=>{let k,title,sub;
-    if(ui.sGrp==='doc'){k=x.s.id+'|'+(x.r.doc||'?');title='مستند '+(x.r.doc||'بدون رقم');sub=x.r.exp+' · '+x.r.date;}
+    if(ui.sGrp==='doc'){const di=docInfo(x.r);k=jKey(x.s,x.r);title=(di.tag||'قيد')+' '+(di.no||'بدون رقم');sub=x.r.date+(di.ref?' · مرجع '+di.ref:'')+(di.jno?' · قيد '+di.jno:'');}
     else if(ui.sGrp==='date'){k=x.r.date;title=x.r.date;sub='';}
     else{k=expKey(x.r);title=x.r.exp;sub='حساب '+x.r.acct;}
     if(!groups.has(k))groups.set(k,{k,title,sub,items:[]});groups.get(k).items.push(x);});
   const forceOpen=!!ui.sQ||ui.allOpenS||ui.sGrp!=='exp';
   const docExp=selDocExpenses();
   const keys=Array.from(groups.values());
-  if(ui.sGrp==='date')keys.sort((a,b)=>dateKey(a.k)>dateKey(b.k)?1:-1);else keys.sort((a,b)=>a.title.localeCompare(b.title,'ar'));
+  if(ui.sGrp==='date')keys.sort((a,b)=>dateKey(a.k)>dateKey(b.k)?1:-1);
+  else if(ui.sGrp==='doc')keys.sort((a,b)=>{const da=dateKey(a.items[0].r.date),db=dateKey(b.items[0].r.date);return da>db?1:da<db?-1:(a.title>b.title?1:-1);});
+  else keys.sort((a,b)=>a.title.localeCompare(b.title,'ar'));
   const html=[];
   keys.forEach(g=>{
     const done=g.items.filter(x=>x.r.done).length;const amt=g.items.reduce((a,x)=>a+Math.abs(x.r.net),0);
     const open=forceOpen||ui.openS.has(g.k);const p=pct(done,g.items.length);const col=p>=100?'var(--green)':'var(--amber)';
+    if(ui.sGrp==='doc'){const ex=new Map();g.items.forEach(x=>ex.set(expKey(x.r),x.r.exp));const names=Array.from(ex.values());g.sub=(ex.size>1?`<span class="pill warn">يشمل ${ex.size} مصروفات</span> `:'')+names.map(esc).join('، ')+' · '+g.sub;}
     html.push(`<div class="grp${open?' open':''}" data-g="${esc(g.k)}"><div class="grp-h" data-gs="${esc(g.k)}" style="--gc:${col}">
         ${ring(p,col)}
-        <div class="ttl">${esc(g.title)}<small>${esc(g.sub)}${g.sub?' · ':''}${g.items.length} عينة · ${fmt(amt)}</small></div>
+        <div class="ttl">${esc(g.title)}<small>${ui.sGrp==='doc'?g.sub:esc(g.sub)}${g.sub?' · ':''}${g.items.length} ${ui.sGrp==='doc'?'سطر':'عينة'} · ${fmt(amt)}</small></div>
         <div class="meta"><b>${done} / ${g.items.length}</b>مصوّرة</div>
         ${CAN_EDIT?`<button class="btn s ghost no-print" data-doneall="${esc(g.k)}" title="تعليم الكل كمصوّر">✔ الكل</button>`:''}
         <span class="caret">▼</span></div><div class="grp-b">${sortbar(ui.sortS,'data-sorts')}${headRow(ui.sortS,'data-sorts','ملاحظة · التصوير')}`);
     g.items.sort(sorter(ui.sortS)).forEach(x=>{const r=x.r;
-      const de=r.doc&&docExp.get(x.s.id+'|'+r.doc);
+      const de=(r.trx||r.doc)&&docExp.get(jKey(x.s,r));
       html.push(`<div class="ln${r.done?' done':''}" data-id="${r.id}">
         <div class="c c-date">${esc(r.date)}${ui.sSt==='all'?'<span class="pill grey">'+esc(x.s.name)+'</span>':''}</div>
         <div class="c c-doc">${docCell(r)}</div>
         <div class="c c-trx"><span class="num">${esc(r.trx)}</span>${r.series?`<small>سيريز ${esc(r.series)}</small>`:''}</div>
-        <div class="c c-desc"><div class="desc">${esc(r.desc||r.edesc||'—')}</div><div class="sub">${ui.sGrp!=='exp'?`<span>${esc(r.exp)}</span>`:''}${r.edesc&&r.edesc!==r.desc?`<span>${esc(r.edesc)}</span>`:''}${r.r1&&!docInfo(r).isPay?`<span>Ref <span class="num">${esc(r.r1)}</span></span>`:''}${r.doneAt?`<span class="pill ok">صُوّر ${esc(String(r.doneAt).slice(0,10))}</span>`:''}</div>${de&&de.size>1?multiHtml(de,expKey(r),'هذا المستند يشمل'):''}</div>
+        <div class="c c-desc"><div class="desc">${esc(r.desc||r.edesc||'—')}</div><div class="sub">${ui.sGrp!=='exp'?`<span>${esc(r.exp)}</span>`:''}${r.edesc&&r.edesc!==r.desc?`<span>${esc(r.edesc)}</span>`:''}${r.r1&&!docInfo(r).isPay?`<span>Ref <span class="num">${esc(r.r1)}</span></span>`:''}${r.doneAt?`<span class="pill ok">صُوّر ${esc(String(r.doneAt).slice(0,10))}</span>`:''}</div>${de&&de.size>1&&ui.sGrp!=='doc'?multiHtml(de,expKey(r),'هذا المستند يشمل'):''}</div>
         <div class="c c-amt"><span class="num">${fmt(r.net)}</span><small>د.أ</small></div>
         <div class="c c-act">
           <input class="note-in${r.note?' has':''}" data-note="${r.id}" value="${esc(r.note||'')}" placeholder="✎ ملاحظة…" ${CAN_EDIT?'':'disabled'}>
@@ -1091,7 +1096,7 @@ $('#sQ').addEventListener('input',e=>{ui.sQ=e.target.value.trim();renderSamples(
 $('#btnExpandS').addEventListener('click',e=>{ui.allOpenS=!ui.allOpenS;if(!ui.allOpenS)ui.openS.clear();e.target.textContent=ui.allOpenS?'طيّ الكل':'توسيع الكل';renderSamples();});
 $('#samplesBody').addEventListener('change',e=>{
   const d=e.target.closest('[data-done]');
-  if(d){const id=d.dataset.done;patchRows([id],{done:d.checked});renderKpis();renderSamples();renderStats();renderData();if(d.checked){const f=findRow(id);const ex=f&&f.r.doc?selDocExpenses().get(f.s.id+'|'+f.r.doc):null;if(ex&&ex.size>1)toast(`تنبيه: هذا المستند له عينات في ${ex.size} مصروفات — علّم باقي سطوره إن صوّرتها`);}return;}
+  if(d){const id=d.dataset.done;patchRows([id],{done:d.checked});renderKpis();renderSamples();renderStats();renderData();if(d.checked){const f=findRow(id);const ex=f&&(f.r.trx||f.r.doc)?selDocExpenses().get(jKey(f.s,f.r)):null;if(ex&&ex.size>1)toast(`تنبيه: هذا المستند له عينات في ${ex.size} مصروفات — علّم باقي سطوره إن صوّرتها`);}return;}
   const n=e.target.closest('[data-note]');if(n){patchRows([n.dataset.note],{note:n.value.trim()});}
 });
 $('#samplesBody').addEventListener('click',e=>{
@@ -1112,7 +1117,7 @@ $('#btnPrint').addEventListener('click',()=>{
   Array.from(groups.values()).sort((a,b)=>a.exp.localeCompare(b.exp,'ar')).forEach(g=>{
     const amt=g.items.reduce((a,x)=>a+Math.abs(x.r.net),0);
     h+=`<tr class="gh"><td colspan="8">${esc(g.exp)} — حساب ${esc(g.acct)} · ${g.items.length} عينة · ${fmt(amt)}</td></tr>`;
-    g.items.forEach(x=>{const r=x.r;const e=r.doc&&docExpP.get(x.s.id+'|'+r.doc);const mu=e&&e.size>1?` [يشمل ${e.size} مصروفات]`:'';const di=docInfo(r);h+=`<tr><td style="text-align:center"><span class="box${r.done?' x':''}"></span></td><td>${esc(r.date)}</td><td>${esc(di.no)}${di.tag?' ('+esc(di.tag)+')':''}${di.ref?' مرجع '+esc(di.ref):''}</td><td>${esc(r.trx)}</td><td>${esc(r.desc||r.edesc)}${esc(mu)}</td><td style="text-align:left">${fmt(r.net)}</td><td>${esc(x.s.name)}</td><td>${esc(r.note||'')}</td></tr>`;});
+    g.items.forEach(x=>{const r=x.r;const e=(r.trx||r.doc)&&docExpP.get(jKey(x.s,r));const mu=e&&e.size>1?` [يشمل ${e.size} مصروفات]`:'';const di=docInfo(r);h+=`<tr><td style="text-align:center"><span class="box${r.done?' x':''}"></span></td><td>${esc(r.date)}</td><td>${esc(di.no)}${di.tag?' ('+esc(di.tag)+')':''}${di.ref?' مرجع '+esc(di.ref):''}</td><td>${esc(r.trx)}</td><td>${esc(r.desc||r.edesc)}${esc(mu)}</td><td style="text-align:left">${fmt(r.net)}</td><td>${esc(x.s.name)}</td><td>${esc(r.note||'')}</td></tr>`;});
   });
   $('#printArea').innerHTML=h+'</tbody></table>';window.print();
 });
