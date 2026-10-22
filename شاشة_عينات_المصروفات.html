@@ -181,7 +181,8 @@ label.f{display:block;font-size:12px;color:var(--ink2);font-weight:700;margin-bo
 .ln .c-date .pill{font-family:"Tajawal",sans-serif;font-weight:600;margin-inline-start:4px}
 .ln .c-doc,.ln .c-trx{color:var(--ink2);white-space:nowrap}
 .ln .c-doc b{color:var(--ink);font-weight:700}
-.ln .c-trx small{display:block;font-size:10.5px;color:var(--ink3);line-height:1.2}
+.ln .c-trx small,.ln .c-doc small{display:block;font-size:10.5px;color:var(--ink3);line-height:1.3}
+.ln .c-doc .dtag{display:inline-block;font-size:10px;font-weight:700;color:var(--sky);background:var(--sky-soft);border-radius:6px;padding:0 6px;margin-inline-start:5px;vertical-align:middle;line-height:1.6}
 .ln .c-desc .desc{font-weight:600;overflow-wrap:anywhere;line-height:1.4}
 .ln .c-desc .sub{font-size:11.5px;color:var(--ink3);display:flex;gap:4px 10px;flex-wrap:wrap}
 .ln .c-amt{font-weight:800;font-family:"Cairo",sans-serif;font-size:14px;white-space:nowrap;color:var(--navy2);text-align:left}
@@ -226,7 +227,7 @@ label.f{display:block;font-size:12px;color:var(--ink2);font-weight:700;margin-bo
 @media (max-width:759px){
   .ln{grid-template-columns:1fr auto;grid-template-areas:"date amt" "desc desc" "doc trx" "act act";padding:10px 14px;gap:4px 10px}
   .ln .c-date{grid-area:date}.ln .c-amt{grid-area:amt;font-size:15px}.ln .c-desc{grid-area:desc}.ln .c-doc{grid-area:doc;font-size:12px}.ln .c-trx{grid-area:trx;font-size:12px;text-align:left}.ln .c-act{grid-area:act;flex-wrap:wrap;gap:8px;margin-top:4px}
-  .ln .c-trx small{display:inline;margin-inline-start:6px}
+  .ln .c-trx small,.ln .c-doc small{display:inline;margin-inline-start:6px}
   .ln.head{display:none}
   .ln .c-act .note-in{flex:1 1 100%;width:auto;min-height:40px;font-size:13px}
   .ln .c-act .chk{flex:1 1 auto;justify-content:center;min-height:44px;font-size:13.5px}
@@ -516,7 +517,7 @@ ORDER BY
     </div>
   </section>
 
-  <footer>شاشة عينات المصروفات — الإصدار v2.3 · مزامنة سحابية</footer>
+  <footer>شاشة عينات المصروفات — الإصدار v2.4 · مزامنة سحابية</footer>
 </div>
 
 <div class="bottombar" id="bottombar">
@@ -868,6 +869,10 @@ async function uploadBundle(statements){
 
 /* ====================== أدوات على البيانات ====================== */
 function allRows(filterSt){const out=[];state.statements.forEach(s=>{if(filterSt&&filterSt!=='all'&&s.id!==filterSt)return;s.rows.forEach(r=>out.push({r,s}));});return out;}
+/* رقم المستند المعروض حسب نوع الحركة: سندات الصرف/القبض يُعرض رقم السند (Reference 1) ورقم المرجع (Reference 2) */
+const DOC_TYPES={'46':'سند صرف','24':'سند قبض','18':'فاتورة مورد','19':'إشعار دائن مورد','13':'فاتورة مبيعات','14':'إشعار دائن','30':''};
+function docInfo(r){const code=String(r.code||'').trim();const pay=code==='46'||code==='24';const no=(pay&&r.r1)?r.r1:(r.doc||'');return {no,tag:DOC_TYPES[code]||'',ref:pay?(r.r2||''):'',isPay:pay,jno:pay&&r.r1?r.doc:''};}
+function docCell(r){const d=docInfo(r);return `<b class="num">${esc(d.no||'—')}</b>${d.tag?`<span class="dtag">${esc(d.tag)}</span>`:''}${d.ref?`<small>مرجع <span class="num">${esc(d.ref)}</span></small>`:''}${d.jno?`<small>قيد <span class="num">${esc(d.jno)}</span></small>`:''}`;}
 function match(r,q){if(!q)return true;q=q.toLowerCase();return [r.desc,r.edesc,r.doc,r.trx,r.acct,r.exp,r.r1,r.r2,r.r3,r.date,String(r.net)].some(v=>String(v||'').toLowerCase().includes(q));}
 function expKey(r){return r.acct+'|'+r.exp;}
 function sortRows(a,b){const da=dateKey(a.r.date),db=dateKey(b.r.date);return (da>db?1:da<db?-1:0)||(a.r.trx>b.r.trx?1:a.r.trx<b.r.trx?-1:0);}
@@ -875,7 +880,8 @@ const SORT_KEYS=[['date','التاريخ'],['doc','رقم المستند'],['trx
 function sorter(st){const d=st.dir;return (a,b)=>{let x,y;
   if(st.key==='amt'){x=Math.abs(a.r.net);y=Math.abs(b.r.net);}
   else if(st.key==='date'){x=dateKey(a.r.date);y=dateKey(b.r.date);}
-  else if(st.key==='doc'||st.key==='trx'){x=a.r[st.key];y=b.r[st.key];const nx=Number(x),ny=Number(y);if(!isNaN(nx)&&!isNaN(ny)){x=nx;y=ny;}}
+  else if(st.key==='doc'){x=docInfo(a.r).no;y=docInfo(b.r).no;const nx=Number(x),ny=Number(y);if(!isNaN(nx)&&!isNaN(ny)){x=nx;y=ny;}}
+  else if(st.key==='trx'){x=a.r.trx;y=b.r.trx;const nx=Number(x),ny=Number(y);if(!isNaN(nx)&&!isNaN(ny)){x=nx;y=ny;}}
   else{x=a.r.desc||a.r.edesc||'';y=b.r.desc||b.r.edesc||'';}
   let c=x>y?1:x<y?-1:0;if(c===0)c=sortRows(a,b);return c*d;};}
 const HEAD_COLS=[['date','التاريخ'],['doc','رقم المستند'],['trx','رقم الحركة'],['desc','البيان'],['amt','المبلغ']];
@@ -947,9 +953,9 @@ function renderList(){
       const de=r.doc&&docExp.get(x.s.id+'|'+r.doc);
       html.push(`<div class="ln" data-id="${r.id}">
         <div class="c c-date">${esc(r.date)}${ui.fSt==='all'?'<span class="pill grey">'+esc(x.s.name)+'</span>':''}</div>
-        <div class="c c-doc"><b class="num">${esc(r.doc||'—')}</b>${dn>1?` <span class="pill info">${dn}</span>`:''}</div>
+        <div class="c c-doc">${docCell(r)}${dn>1?` <span class="pill info">${dn}</span>`:''}</div>
         <div class="c c-trx"><span class="num">${esc(r.trx)}</span>${r.series?`<small>سيريز ${esc(r.series)}</small>`:''}</div>
-        <div class="c c-desc"><div class="desc">${esc(r.desc||r.edesc||'—')}</div>${(r.edesc&&r.edesc!==r.desc)||r.r1?`<div class="sub">${r.edesc&&r.edesc!==r.desc?`<span>${esc(r.edesc)}</span>`:''}${r.r1?`<span>Ref <span class="num">${esc(r.r1)}</span></span>`:''}</div>`:''}${de?`<div class="multi">📎 <span><b>المستند مختار كعينة</b> في: ${Array.from(de.values()).map(esc).join('، ')} — إن أضفته هنا تكفي صورة واحدة للجميع</span></div>`:''}${r.note?`<div class="note-v">✎ ${esc(r.note)}</div>`:''}</div>
+        <div class="c c-desc"><div class="desc">${esc(r.desc||r.edesc||'—')}</div>${(r.edesc&&r.edesc!==r.desc)||(r.r1&&!docInfo(r).isPay)?`<div class="sub">${r.edesc&&r.edesc!==r.desc?`<span>${esc(r.edesc)}</span>`:''}${r.r1&&!docInfo(r).isPay?`<span>Ref <span class="num">${esc(r.r1)}</span></span>`:''}</div>`:''}${de?`<div class="multi">📎 <span><b>المستند مختار كعينة</b> في: ${Array.from(de.values()).map(esc).join('، ')} — إن أضفته هنا تكفي صورة واحدة للجميع</span></div>`:''}${r.note?`<div class="note-v">✎ ${esc(r.note)}</div>`:''}</div>
         <div class="c c-amt"><span class="num">${fmt(r.net)}</span><small>د.أ</small></div>
         <div class="c c-act">
           <input type="checkbox" class="mchk" data-multi="${r.id}" ${checked?'checked':''} title="تحديد متعدد">
@@ -992,9 +998,9 @@ function renderSamples(){
       const de=r.doc&&docExp.get(x.s.id+'|'+r.doc);
       html.push(`<div class="ln${r.done?' done':''}" data-id="${r.id}">
         <div class="c c-date">${esc(r.date)}${ui.sSt==='all'?'<span class="pill grey">'+esc(x.s.name)+'</span>':''}</div>
-        <div class="c c-doc"><b class="num">${esc(r.doc||'—')}</b></div>
+        <div class="c c-doc">${docCell(r)}</div>
         <div class="c c-trx"><span class="num">${esc(r.trx)}</span>${r.series?`<small>سيريز ${esc(r.series)}</small>`:''}</div>
-        <div class="c c-desc"><div class="desc">${esc(r.desc||r.edesc||'—')}</div><div class="sub">${ui.sGrp!=='exp'?`<span>${esc(r.exp)}</span>`:''}${r.edesc&&r.edesc!==r.desc?`<span>${esc(r.edesc)}</span>`:''}${r.r1?`<span>Ref <span class="num">${esc(r.r1)}</span></span>`:''}${r.doneAt?`<span class="pill ok">صُوّر ${esc(String(r.doneAt).slice(0,10))}</span>`:''}</div>${de&&de.size>1?multiHtml(de,expKey(r),'هذا المستند يشمل'):''}</div>
+        <div class="c c-desc"><div class="desc">${esc(r.desc||r.edesc||'—')}</div><div class="sub">${ui.sGrp!=='exp'?`<span>${esc(r.exp)}</span>`:''}${r.edesc&&r.edesc!==r.desc?`<span>${esc(r.edesc)}</span>`:''}${r.r1&&!docInfo(r).isPay?`<span>Ref <span class="num">${esc(r.r1)}</span></span>`:''}${r.doneAt?`<span class="pill ok">صُوّر ${esc(String(r.doneAt).slice(0,10))}</span>`:''}</div>${de&&de.size>1?multiHtml(de,expKey(r),'هذا المستند يشمل'):''}</div>
         <div class="c c-amt"><span class="num">${fmt(r.net)}</span><small>د.أ</small></div>
         <div class="c c-act">
           <input class="note-in${r.note?' has':''}" data-note="${r.id}" value="${esc(r.note||'')}" placeholder="✎ ملاحظة…" ${CAN_EDIT?'':'disabled'}>
@@ -1106,7 +1112,7 @@ $('#btnPrint').addEventListener('click',()=>{
   Array.from(groups.values()).sort((a,b)=>a.exp.localeCompare(b.exp,'ar')).forEach(g=>{
     const amt=g.items.reduce((a,x)=>a+Math.abs(x.r.net),0);
     h+=`<tr class="gh"><td colspan="8">${esc(g.exp)} — حساب ${esc(g.acct)} · ${g.items.length} عينة · ${fmt(amt)}</td></tr>`;
-    g.items.forEach(x=>{const r=x.r;const e=r.doc&&docExpP.get(x.s.id+'|'+r.doc);const mu=e&&e.size>1?` [يشمل ${e.size} مصروفات]`:'';h+=`<tr><td style="text-align:center"><span class="box${r.done?' x':''}"></span></td><td>${esc(r.date)}</td><td>${esc(r.doc)}</td><td>${esc(r.trx)}</td><td>${esc(r.desc||r.edesc)}${esc(mu)}</td><td style="text-align:left">${fmt(r.net)}</td><td>${esc(x.s.name)}</td><td>${esc(r.note||'')}</td></tr>`;});
+    g.items.forEach(x=>{const r=x.r;const e=r.doc&&docExpP.get(x.s.id+'|'+r.doc);const mu=e&&e.size>1?` [يشمل ${e.size} مصروفات]`:'';const di=docInfo(r);h+=`<tr><td style="text-align:center"><span class="box${r.done?' x':''}"></span></td><td>${esc(r.date)}</td><td>${esc(di.no)}${di.tag?' ('+esc(di.tag)+')':''}${di.ref?' مرجع '+esc(di.ref):''}</td><td>${esc(r.trx)}</td><td>${esc(r.desc||r.edesc)}${esc(mu)}</td><td style="text-align:left">${fmt(r.net)}</td><td>${esc(x.s.name)}</td><td>${esc(r.note||'')}</td></tr>`;});
   });
   $('#printArea').innerHTML=h+'</tbody></table>';window.print();
 });
@@ -1116,7 +1122,7 @@ $('#btnXls').addEventListener('click',()=>{
   if(typeof XLSX==='undefined'){toast('مكتبة Excel غير محمّلة — تأكد من الاتصال بالإنترنت');return;}
   const rows=allRows(ui.sSt).filter(x=>x.r.sel).sort(sortRows);
   if(!rows.length){toast('لا توجد عينات للتصدير');return;}
-  const data=rows.map(x=>({'الكشف':x.s.name,'تاريخ القيد':x.r.date,'رقم الحركة':x.r.trx,'السيريز':x.r.series,'رقم المستند':x.r.doc,'رمز الحركة':x.r.code,'رقم حساب المصروف':x.r.acct,'اسم المصروف':x.r.exp,'المبلغ مدين':x.r.debit,'المبلغ دائن':x.r.credit,'صافي المصروف':x.r.net,'البيان':x.r.desc,'بيان القيد':x.r.edesc,'Reference 1':x.r.r1,'Reference 2':x.r.r2,'Reference 3':x.r.r3,'تم التصوير':x.r.done?'نعم':'لا','تاريخ التصوير':String(x.r.doneAt||'').slice(0,10),'ملاحظة':x.r.note||''}));
+  const data=rows.map(x=>({'الكشف':x.s.name,'تاريخ القيد':x.r.date,'رقم الحركة':x.r.trx,'السيريز':x.r.series,'رقم المستند':x.r.doc,'نوع المستند':docInfo(x.r).tag,'رقم السند':docInfo(x.r).isPay?docInfo(x.r).no:'','المرجع':docInfo(x.r).ref,'رمز الحركة':x.r.code,'رقم حساب المصروف':x.r.acct,'اسم المصروف':x.r.exp,'المبلغ مدين':x.r.debit,'المبلغ دائن':x.r.credit,'صافي المصروف':x.r.net,'البيان':x.r.desc,'بيان القيد':x.r.edesc,'Reference 1':x.r.r1,'Reference 2':x.r.r2,'Reference 3':x.r.r3,'تم التصوير':x.r.done?'نعم':'لا','تاريخ التصوير':String(x.r.doneAt||'').slice(0,10),'ملاحظة':x.r.note||''}));
   const wb=XLSX.utils.book_new();
   const ws=XLSX.utils.json_to_sheet(data);ws['!views']=[{RTL:true}];XLSX.utils.book_append_sheet(wb,ws,'العينات');
   const st=expStats(ui.sSt).map(t=>({'اسم المصروف':t.exp,'رقم الحساب':t.acct,'عدد السطور':t.n,'إجمالي المبلغ':t.amt,'عدد العينات':t.sel,'تغطية العدد %':pct(t.sel,t.n),'مبلغ العينات':t.selAmt,'تغطية المبلغ %':pct(t.selAmt,t.amt),'مصوّر':t.done,'الإنجاز %':pct(t.done,t.sel)}));
