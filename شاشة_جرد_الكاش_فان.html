@@ -354,7 +354,7 @@ let S = {sessions:[], custom:[]};
 let cur = null;          // current session id
 let view = "welcome";    // welcome | session | cons
 let tab = "entry";       // entry | report
-let filt = "all";
+let filt = "rep";
 let q = "";
 let showFull = false;
 
@@ -734,7 +734,8 @@ function renderSession(m,s){
   <div id="paneReport" class="${tab==="report"?"":"hidden"}"></div>`;
 
   const bind=(id,key)=>{ const el=$("#"+id); el.addEventListener("input",()=>{ s[key]=el.value; save(); if(key==="rep"||key==="date"||key==="vehicle") renderSide(); }); };
-  bind("fRep","rep"); bind("fDate","date"); bind("fVeh","vehicle"); bind("fBy","by"); bind("fTime","time");
+  bind("fRep","rep"); $("#fRep").addEventListener("change",()=>{ if(tab==="entry") renderEntry(s); });
+  bind("fDate","date"); bind("fVeh","vehicle"); bind("fBy","by"); bind("fTime","time");
   m.querySelectorAll(".tab").forEach(b=>b.onclick=()=>{ tab=b.dataset.t; render(); });
   const pchg=()=>{ save(); renderSide(); if(tab==="entry"){ fillRows(s); updK(s); $("#fcus").value=pset(s).f; $("#fseg").querySelectorAll("button").forEach(b=>b.classList.toggle("on",+b.dataset.v===pset(s).f)); } else render(); };
   $("#fseg").onclick=e=>{ const b=e.target.closest("button"); if(!b||!CAN_EDIT) return; s.factor=+b.dataset.v; pchg(); };
@@ -768,7 +769,7 @@ function renderEntry(s){
   <div class="hint warn ${k.noPrice?"":"hidden"}" id="kNp">⚠ يوجد <b id="kNpN">${k.noPrice}</b> صنف بفروقات بدون سعر — أدخل سعره في عمود السعر.</div>
   <div class="tools">
     <div class="seg" id="seg">
-      ${[["all","الكل"],["sys","برصيد بالنظام"],["todo","غير مُدخل"],["diff","الفروقات"],["ok","المطابق"]].map(([v,l])=>`<button data-f="${v}" class="${filt===v?"on":""}">${l}</button>`).join("")}
+      ${[["rep",`أصناف المندوب (${repCodes(s).size})`],["all","الكل"],["sys","برصيد بالنظام"],["todo","غير مُدخل"],["diff","الفروقات"],["ok","المطابق"]].map(([v,l])=>`<button data-f="${v}" class="${filt===v?"on":""}">${l}</button>`).join("")}
     </div>
     <input class="search" id="q" placeholder="بحث بالرمز أو الاسم…" value="${esc(q)}">
     <label class="chk" title="عند التفعيل: أي صنف له رصيد بالنظام وخانته فارغة يُعتبر فعلياً = صفر (عجز كامل)"><input type="checkbox" id="bz" ${s.blankZero?"checked":""} ${isRO(s)?"disabled":""}> الخانة الفارغة = صفر</label>
@@ -787,9 +788,18 @@ function renderEntry(s){
   $("#bz").onchange=e=>{ s.blankZero=e.target.checked; save(); fillRows(s); updK(s); renderSide(); };
   fillRows(s);
 }
+let _rc=null;
+function repCodes(s){
+  const set=new Set();
+  const take=x=>{ Object.keys(x.stock||{}).forEach(c=>set.add(c)); Object.entries(x.actual||{}).forEach(([c,v])=>{ if(String(v).trim()!=="") set.add(c); }); };
+  take(s);
+  const rep=(s.rep||"").trim(); if(rep) S.sessions.forEach(x=>{ if(x!==s && (x.rep||"").trim()===rep) take(x); });
+  return set;
+}
 function rowVisible(s,it,c){
   if(q){ const t=(it.code+" "+it.name).toLowerCase(); if(!t.includes(q.toLowerCase())) return false; }
   switch(filt){
+    case "rep": return (_rc||repCodes(s)).has(it.code);
     case "sys": return Math.abs(c.sys)>EPS;
     case "todo": return c.status==="nc" || (c.status!=="na" && (c.raw===undefined||String(c.raw).trim()==="") && Math.abs(c.sys)>EPS);
     case "diff": return c.status==="bad"||c.status==="sur"||c.status==="nc";
@@ -802,6 +812,7 @@ function stCell(c){
 }
 function fillRows(s){
   const tb=$("#tb"); if(!tb) return;
+  _rc=repCodes(s);
   const items=allItems(s); let html=""; let lastSup=null; let n=0;
   const groups={}; items.forEach(it=>{ (groups[it.sup]=groups[it.sup]||[]).push(it); });
   Object.keys(groups).forEach(sup=>{
@@ -825,7 +836,8 @@ function fillRows(s){
       </tr>`;
     });
   });
-  if(!n) html=`<tr><td colspan="12" class="empty">لا توجد أصناف ضمن هذا الفلتر</td></tr>`;
+  _rc=null;
+  if(!n) html=`<tr><td colspan="12" class="empty">${filt==="rep"&&!q?"لا توجد أصناف لهذا المندوب بعد — اختر اسم المندوب وارفع كشف رصيد النظام، أو اضغط «الكل» لعرض كل أصناف النموذج.":"لا توجد أصناف ضمن هذا الفلتر"}</td></tr>`;
   tb.innerHTML=html;
 }
 document.addEventListener("input",e=>{
@@ -1031,7 +1043,7 @@ function openSess(id){ cur=id; view="session"; tab="report"; render(); }
 function newSession(){
   if(!CAN_EDIT){ toast("صلاحيتك عرض فقط"); return; }
   const s={id:uid(),rep:"",date:today(),vehicle:"",by:"",time:"",stock:null,fileName:"",actual:{},notes:{},blankZero:true,locked:false,created:Date.now()};
-  S.sessions.push(s); cur=s.id; view="session"; tab="entry"; filt="all"; q=""; save(); render();
+  S.sessions.push(s); cur=s.id; view="session"; tab="entry"; filt="rep"; q=""; save(); render();
   setTimeout(()=>$("#fRep")?.focus(),50);
 }
 function delSession(id){
