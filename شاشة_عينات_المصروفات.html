@@ -1,0 +1,837 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#132840">
+<title>عينات المصروفات — مركز الكيلاني</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cairo:wght@600;700;800&family=Tajawal:wght@400;500;700&display=swap">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  --ink:#132840; --ink2:#5c6b80; --paper:#f3f5f9; --card:#ffffff; --line:#e1e6ee; --line2:#eef1f6;
+  --accent:#c1592a; --accent-ink:#ffffff; --accent-soft:#fbe9e0;
+  --teal:#1f6f5c; --teal-soft:#e2f2ee;
+  --warn:#8a6d00; --warn-soft:#fdf6da;
+  --danger:#b23a2e; --danger-soft:#fbe7e4;
+  --blue:#2c5fa8; --blue-soft:#e4ecf9;
+  --shadow:0 1px 2px rgba(19,40,64,.06),0 4px 14px rgba(19,40,64,.05);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ink:#eef2f8; --ink2:#a9b6c9; --paper:#0e1826; --card:#152139; --line:#293a56; --line2:#1d2c45;
+    --accent:#e58a54; --accent-ink:#241205; --accent-soft:#3a2415;
+    --teal:#5cd8b3; --teal-soft:#123227;
+    --warn:#e6c94f; --warn-soft:#2e2810;
+    --danger:#e57a6c; --danger-soft:#391a17;
+    --blue:#7fa8e8; --blue-soft:#172a48;
+    --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="dark"]{
+  --ink:#eef2f8; --ink2:#a9b6c9; --paper:#0e1826; --card:#152139; --line:#293a56; --line2:#1d2c45;
+  --accent:#e58a54; --accent-ink:#241205; --accent-soft:#3a2415;
+  --teal:#5cd8b3; --teal-soft:#123227;
+  --warn:#e6c94f; --warn-soft:#2e2810;
+  --danger:#e57a6c; --danger-soft:#391a17;
+  --blue:#7fa8e8; --blue-soft:#172a48;
+  --shadow:0 1px 2px rgba(0,0,0,.3),0 6px 18px rgba(0,0,0,.35);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--paper);color:var(--ink);direction:rtl;font-family:"Tajawal","Cairo",system-ui,"Segoe UI",Tahoma,Arial,sans-serif;font-size:14px;line-height:1.55;font-variant-numeric:tabular-nums;-webkit-tap-highlight-color:transparent}
+h1,h2,h3{font-family:"Cairo","Tajawal",sans-serif;text-wrap:balance;margin:0}
+button{font:inherit}
+.shell{max-width:1180px;margin:0 auto;padding-inline:16px;padding-block:10px 90px}
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding-block:6px 12px}
+.brand{display:flex;align-items:center;gap:10px}
+.brand .mark{width:38px;height:38px;border-radius:10px;background:linear-gradient(155deg,var(--accent),#e0824c);display:flex;align-items:center;justify-content:center;color:var(--accent-ink);font-weight:800;font-family:"Cairo",sans-serif;font-size:15px;flex:none;box-shadow:var(--shadow)}
+.brand-text b{display:block;font-size:16px;font-weight:800}
+.brand-text span{display:block;font-size:11.5px;color:var(--ink2)}
+.top-actions{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+
+/* KPI strip */
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;box-shadow:var(--shadow);min-width:0}
+.kpi .lbl{font-size:11px;color:var(--ink2);font-weight:700}
+.kpi .val{font-size:22px;font-weight:800;font-family:"Cairo",sans-serif;line-height:1.2;margin-top:2px}
+.kpi .sub{font-size:11px;color:var(--ink2)}
+.kpi.main{background:linear-gradient(145deg,var(--teal),#2a8f78);color:#fff;border-color:transparent}
+.kpi.main .lbl,.kpi.main .sub{color:rgba(255,255,255,.8)}
+.bar{height:7px;border-radius:99px;background:var(--line2);overflow:hidden;margin-top:6px}
+.bar>i{display:block;height:100%;background:var(--teal);border-radius:99px;transition:width .3s}
+.kpi.main .bar{background:rgba(255,255,255,.25)}
+.kpi.main .bar>i{background:#fff}
+@media (max-width:720px){.kpis{grid-template-columns:repeat(2,1fr)}.kpi .val{font-size:18px}}
+
+/* tabs */
+nav.tabs{display:flex;gap:4px;margin-bottom:12px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+nav.tabs::-webkit-scrollbar{display:none}
+nav.tabs button{appearance:none;border:none;background:transparent;color:var(--ink2);font-weight:700;font-size:13.5px;padding:10px 8px;cursor:pointer;border-bottom:2.5px solid transparent;margin-bottom:-1px;display:flex;align-items:center;gap:6px;white-space:nowrap}
+nav.tabs button.on{color:var(--ink);border-color:var(--accent)}
+nav.tabs button .n{background:var(--line2);color:var(--ink2);border-radius:99px;padding:0 7px;font-size:11px;min-width:20px;text-align:center}
+nav.tabs button.on .n{background:var(--accent-soft);color:var(--accent)}
+.panel{display:none}.panel.on{display:block}
+
+/* cards & controls */
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:14px;margin-bottom:12px}
+.card h2{font-size:15px;margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.card h2 small{font-weight:500;color:var(--ink2);font-size:12px}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.grow{flex:1 1 180px}
+input[type=text],input[type=number],input[type=search],select,textarea{width:100%;font:inherit;color:var(--ink);background:var(--card);border:1px solid var(--line);border-radius:10px;padding:9px 11px;outline:none;min-height:40px}
+input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+textarea{min-height:140px;resize:vertical;font-family:ui-monospace,Consolas,monospace;font-size:12px;direction:ltr;text-align:left}
+label.f{display:block;font-size:12px;color:var(--ink2);font-weight:700;margin-bottom:4px}
+.btn{appearance:none;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;padding:8px 13px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:6px;min-height:38px;white-space:nowrap}
+.btn:hover{border-color:var(--ink2)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.btn.p{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.t{background:var(--teal);border-color:var(--teal);color:#fff}
+.btn.d{color:var(--danger);border-color:var(--danger-soft);background:var(--danger-soft)}
+.btn.s{padding:5px 10px;min-height:32px;font-size:12.5px;border-radius:8px}
+.btn.ghost{background:transparent}
+.muted{color:var(--ink2)}
+.tiny{font-size:11.5px}
+.hint{font-size:12px;color:var(--ink2);margin-top:6px}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--card);border-radius:99px;padding:5px 11px;font-size:12px;font-weight:700;cursor:pointer;color:var(--ink2);display:inline-flex;gap:6px;align-items:center}
+.chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent)}
+.chip .n{opacity:.8;font-weight:500}
+.pill{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:99px;font-size:11px;font-weight:700}
+.pill.ok{background:var(--teal-soft);color:var(--teal)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.pill.bad{background:var(--danger-soft);color:var(--danger)}
+.pill.info{background:var(--blue-soft);color:var(--blue)}
+.pill.grey{background:var(--line2);color:var(--ink2)}
+.empty{text-align:center;padding:36px 12px;color:var(--ink2)}
+.empty b{display:block;font-size:15px;color:var(--ink);margin-bottom:4px}
+
+/* groups */
+.grp{border:1px solid var(--line);border-radius:12px;margin-bottom:10px;background:var(--card);overflow:hidden}
+.grp-h{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;user-select:none;background:var(--line2)}
+.grp-h .ttl{font-weight:800;font-family:"Cairo",sans-serif;font-size:13.5px;flex:1;min-width:0}
+.grp-h .ttl small{display:block;font-weight:500;font-family:"Tajawal",sans-serif;color:var(--ink2);font-size:11.5px}
+.grp-h .meta{text-align:left;font-size:11.5px;color:var(--ink2);white-space:nowrap}
+.grp-h .meta b{color:var(--ink);display:block;font-size:13px}
+.grp-h .caret{transition:transform .2s;color:var(--ink2);font-size:12px}
+.grp.open .grp-h .caret{transform:rotate(180deg)}
+.grp-b{display:none}
+.grp.open .grp-b{display:block}
+.grp .bar{margin:0;border-radius:0;height:4px}
+
+/* line rows */
+.ln{display:grid;grid-template-columns:92px 1fr auto;gap:4px 10px;padding:9px 12px;border-top:1px solid var(--line2);align-items:center}
+.ln:hover{background:color-mix(in srgb,var(--accent-soft) 35%,transparent)}
+.ln .d{font-size:12px;color:var(--ink2);line-height:1.35}
+.ln .d b{display:block;color:var(--ink);font-size:13px}
+.ln .t{min-width:0}
+.ln .t .desc{font-weight:600;overflow-wrap:anywhere}
+.ln .t .sub{font-size:11.5px;color:var(--ink2);display:flex;gap:8px;flex-wrap:wrap}
+.ln .amt{font-weight:800;font-family:"Cairo",sans-serif;font-size:14px;text-align:left;white-space:nowrap}
+.ln .act{display:flex;gap:6px;align-items:center;justify-content:flex-end;grid-column:1/-1}
+@media (min-width:760px){
+  .ln{grid-template-columns:100px 1fr 110px auto}
+  .ln .act{grid-column:auto}
+}
+.ln.done{opacity:.72}
+.ln.done .desc{text-decoration:line-through;text-decoration-color:var(--teal)}
+.chk{display:inline-flex;align-items:center;gap:7px;cursor:pointer;font-weight:700;font-size:12.5px;padding:6px 10px;border-radius:9px;border:1px solid var(--line);background:var(--card);min-height:36px}
+.chk input{width:20px;height:20px;accent-color:var(--teal);margin:0;cursor:pointer}
+.chk.on{background:var(--teal-soft);border-color:var(--teal);color:var(--teal)}
+.note-in{font:inherit;font-size:12px;border:1px dashed var(--line);border-radius:8px;padding:4px 8px;background:transparent;color:var(--ink);min-width:120px;max-width:100%}
+.note-in:focus{border-style:solid;border-color:var(--accent);outline:none}
+
+/* table */
+.tbl-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px}
+table{border-collapse:collapse;width:100%;font-size:12.5px;min-width:620px}
+th,td{padding:8px 9px;border-bottom:1px solid var(--line2);text-align:right;white-space:nowrap}
+th{background:var(--line2);font-weight:800;font-size:11.5px;color:var(--ink2);position:sticky;top:0}
+td.num,th.num{text-align:left;font-variant-numeric:tabular-nums}
+tr.tot td{font-weight:800;background:var(--line2)}
+.mini-bar{display:inline-block;width:70px;height:6px;border-radius:99px;background:var(--line);vertical-align:middle;margin-inline-start:6px;overflow:hidden}
+.mini-bar i{display:block;height:100%;background:var(--teal)}
+.mini-bar.cov i{background:var(--blue)}
+
+/* sticky bottom bar (mobile selection) */
+.bottombar{position:fixed;inset-inline:0;bottom:0;background:var(--card);border-top:1px solid var(--line);box-shadow:0 -4px 18px rgba(0,0,0,.08);padding:10px 14px calc(10px + env(safe-area-inset-bottom));display:none;z-index:50}
+.bottombar.on{display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.bottombar b{font-family:"Cairo",sans-serif}
+
+/* statement list */
+.st-item{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--line2);flex-wrap:wrap}
+.st-item:first-child{border-top:none}
+.st-item .nm{font-weight:800;flex:1 1 160px;min-width:0}
+.st-item .nm small{display:block;font-weight:500;color:var(--ink2);font-size:11.5px}
+
+/* toast + dialog */
+.toast{position:fixed;bottom:84px;inset-inline:0;margin:auto;width:max-content;max-width:90vw;background:var(--ink);color:var(--paper);padding:10px 16px;border-radius:12px;font-weight:700;font-size:13px;opacity:0;transform:translateY(8px);transition:.25s;z-index:99;pointer-events:none}
+.toast.on{opacity:1;transform:none}
+dialog{border:none;border-radius:16px;padding:0;background:var(--card);color:var(--ink);max-width:min(560px,94vw);width:100%;box-shadow:0 20px 60px rgba(0,0,0,.3)}
+dialog::backdrop{background:rgba(10,20,35,.5)}
+dialog .dl{padding:16px}
+dialog h3{font-size:16px;margin-bottom:10px}
+.drop{border:2px dashed var(--line);border-radius:12px;padding:16px;text-align:center;color:var(--ink2);cursor:pointer;transition:.15s}
+.drop.over{border-color:var(--accent);background:var(--accent-soft)}
+.theme-btn{width:38px;height:38px;border-radius:10px;padding:0;justify-content:center}
+footer{margin-top:24px;text-align:center;font-size:11.5px;color:var(--ink2)}
+
+/* print */
+.print-only{display:none}
+@media print{
+  @page{size:A4;margin:12mm}
+  body{background:#fff;color:#000;font-size:11.5px}
+  .shell{padding:0;max-width:none}
+  .topbar,.kpis,nav.tabs,.panel,.bottombar,.toast,footer,.no-print{display:none !important}
+  .print-only{display:block}
+  .pr h1{font-size:16px;margin-bottom:4px}
+  .pr .pm{font-size:11px;color:#444;margin-bottom:10px}
+  .pr table{min-width:0;width:100%;font-size:11px}
+  .pr th,.pr td{border:1px solid #999;padding:4px 6px;white-space:normal;color:#000;background:#fff}
+  .pr th{background:#eee}
+  .pr .gh td{background:#f3f3f3;font-weight:800}
+  .pr .box{display:inline-block;width:13px;height:13px;border:1.5px solid #000;border-radius:2px;vertical-align:middle}
+  .pr .box.x{background:#000}
+  .pr tr{break-inside:avoid}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="topbar">
+    <div class="brand">
+      <div class="mark">ك</div>
+      <div class="brand-text"><b>عينات المصروفات</b><span>مركز الكيلاني للأغذية — اختيار العينات وتتبع التصوير</span></div>
+    </div>
+    <div class="top-actions">
+      <span class="pill grey tiny" id="saveState">محفوظ على هذا الجهاز</span>
+      <button class="btn theme-btn" id="themeBtn" title="الوضع الليلي">◐</button>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="kpi main">
+      <div class="lbl">الإنجاز الكلي — جميع الكشوفات</div>
+      <div class="val" id="kAll">0%</div>
+      <div class="sub" id="kAllSub">0 من 0 عينة مصوّرة</div>
+      <div class="bar"><i id="kAllBar" style="width:0%"></i></div>
+    </div>
+    <div class="kpi">
+      <div class="lbl">العينات المختارة</div>
+      <div class="val" id="kSel">0</div>
+      <div class="sub" id="kSelSub">من 0 سطر مصروف</div>
+    </div>
+    <div class="kpi">
+      <div class="lbl">متبقٍ للتصوير</div>
+      <div class="val" id="kLeft">0</div>
+      <div class="sub" id="kLeftSub">—</div>
+    </div>
+    <div class="kpi">
+      <div class="lbl">تغطية المبلغ بالعينات</div>
+      <div class="val" id="kCov">0%</div>
+      <div class="sub" id="kCovSub">—</div>
+    </div>
+  </div>
+
+  <nav class="tabs" id="tabs">
+    <button data-tab="list" class="on">الكشف <span class="n" id="nList">0</span></button>
+    <button data-tab="samples">العينات المختارة <span class="n" id="nSamples">0</span></button>
+    <button data-tab="stats">الإحصائيات</button>
+    <button data-tab="data">البيانات <span class="n" id="nSt">0</span></button>
+  </nav>
+
+  <!-- ====== الكشف ====== -->
+  <section class="panel on" id="tab-list">
+    <div class="card">
+      <div class="row">
+        <div class="grow"><label class="f">الكشف</label><select id="fSt"></select></div>
+        <div class="grow" style="flex:2 1 220px"><label class="f">بحث (بيان، رقم مستند، رقم حركة، حساب…)</label><input type="search" id="fQ" placeholder="اكتب للبحث…"></div>
+        <div style="flex:0 0 auto;align-self:flex-end;display:flex;gap:6px">
+          <button class="btn" id="btnExpand">توسيع الكل</button>
+          <button class="btn" id="btnAuto">اختيار تلقائي</button>
+        </div>
+      </div>
+      <div class="chips" id="fExp" style="margin-top:10px"></div>
+      <div class="hint">اضغط <b>«عينة»</b> على السطر لنقله إلى العينات المختارة. الزر <b>«المستند كاملاً»</b> ينقل كل سطور نفس رقم المستند دفعة واحدة. باقي الكشف يبقى كما هو.</div>
+    </div>
+    <div id="listBody"></div>
+  </section>
+
+  <!-- ====== العينات المختارة ====== -->
+  <section class="panel" id="tab-samples">
+    <div class="card">
+      <div class="row">
+        <div class="grow"><label class="f">الكشف</label><select id="sSt"></select></div>
+        <div class="grow"><label class="f">الحالة</label>
+          <select id="sDone"><option value="all">الكل</option><option value="no">غير مصوّرة فقط</option><option value="yes">المصوّرة فقط</option></select></div>
+        <div class="grow"><label class="f">تجميع حسب</label>
+          <select id="sGrp"><option value="exp">اسم المصروف</option><option value="doc">رقم المستند</option><option value="date">تاريخ القيد</option></select></div>
+        <div class="grow" style="flex:2 1 200px"><label class="f">بحث</label><input type="search" id="sQ" placeholder="بحث في العينات…"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn t" id="btnPrint">🖨 طباعة قائمة العينات</button>
+        <button class="btn" id="btnXls">⬇ تصدير العينات Excel</button>
+        <button class="btn" id="btnExpandS">توسيع الكل</button>
+        <label class="chk" style="margin-inline-start:auto"><input type="checkbox" id="optDoc" checked> تعليم التصوير يشمل كل سطور نفس المستند</label>
+      </div>
+    </div>
+    <div id="samplesBody"></div>
+  </section>
+
+  <!-- ====== الإحصائيات ====== -->
+  <section class="panel" id="tab-stats">
+    <div class="card">
+      <h2>نسبة الإنجاز والتغطية حسب المصروف <small>الكشف: <select id="tSt" style="width:auto;display:inline-block;min-height:30px;padding:3px 8px"></select></small></h2>
+      <div class="tbl-wrap"><table id="tblExp"></table></div>
+      <div class="hint"><b>تغطية العدد</b> = عدد العينات المختارة ÷ عدد سطور المصروف. <b>تغطية المبلغ</b> = مبلغ العينات ÷ إجمالي المصروف. <b>الإنجاز</b> = العينات المصوّرة ÷ العينات المختارة.</div>
+    </div>
+    <div class="card">
+      <h2>حسب الكشف</h2>
+      <div class="tbl-wrap"><table id="tblSt"></table></div>
+    </div>
+  </section>
+
+  <!-- ====== البيانات ====== -->
+  <section class="panel" id="tab-data">
+    <div class="card">
+      <h2>إضافة كشف جديد</h2>
+      <div class="row">
+        <div class="grow"><label class="f">اسم الكشف (مثل: مصاريف 01-2025)</label><input type="text" id="inName" placeholder="اسم الكشف"></div>
+      </div>
+      <div style="margin-top:10px">
+        <label class="f">الصق بيانات الكويري هنا (نسخ من Excel مع صف العناوين)</label>
+        <textarea id="inPaste" placeholder="تاريخ القيد	رقم الحركة	السيريز	رقم المستند	رمز الحركة	رقم حساب المصروف	اسم المصروف	المبلغ مدين	المبلغ دائن	صافي المصروف	البيان	بيان القيد	Reference 1	Reference 2	Reference 3"></textarea>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn p" id="btnPaste">إضافة من النص الملصق</button>
+        <span class="muted tiny">أو</span>
+        <div class="drop grow" id="drop">اختر ملف Excel / CSV أو اسحبه هنا<input type="file" id="inFile" accept=".xlsx,.xls,.csv,.txt,.tsv" hidden></div>
+      </div>
+      <div class="hint">إذا كان اسم الكشف موجوداً مسبقاً تُدمج البيانات معه مع <b>الحفاظ على العينات المختارة وحالة التصوير</b> للسطور المطابقة. الأعمدة المطلوبة: تاريخ القيد، رقم الحركة، رقم المستند، رقم حساب المصروف، اسم المصروف، صافي المصروف، البيان (الباقي اختياري).</div>
+    </div>
+
+    <div class="card">
+      <h2>الكشوفات المحفوظة</h2>
+      <div id="stList"></div>
+    </div>
+
+    <div class="card">
+      <h2>نسخ احتياطي ونقل بين الأجهزة</h2>
+      <div class="row">
+        <button class="btn" id="btnBackup">⬇ حفظ نسخة (JSON)</button>
+        <button class="btn" id="btnRestore">⬆ استرجاع نسخة</button>
+        <input type="file" id="inRestore" accept=".json" hidden>
+        <button class="btn" id="btnShare">مشاركة النسخة (موبايل)</button>
+        <button class="btn d" id="btnWipe" style="margin-inline-start:auto">مسح كل البيانات</button>
+      </div>
+      <div class="hint">البيانات محفوظة في متصفح هذا الجهاز فقط. لنقلها إلى الموبايل: احفظ نسخة JSON وأرسلها لنفسك (واتساب/إيميل) ثم افتح الشاشة على الموبايل واعمل «استرجاع نسخة». عند الاسترجاع تُدمج الكشوفات بالاسم، وتُحفظ أحدث حالة لكل سطر.</div>
+    </div>
+  </section>
+
+  <footer>شاشة عينات المصروفات — الإصدار v1.0</footer>
+</div>
+
+<div class="bottombar" id="bottombar">
+  <div><b id="bbN">0</b> سطر محدد</div>
+  <div class="row">
+    <button class="btn s" id="bbClear">إلغاء</button>
+    <button class="btn s p" id="bbMove">نقل إلى العينات</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="print-only pr" id="printArea"></div>
+
+<dialog id="dlgAuto">
+  <div class="dl">
+    <h3>اختيار تلقائي للعينات</h3>
+    <p class="muted tiny" style="margin-top:0">يُطبَّق على السطور غير المختارة الظاهرة حالياً (حسب الكشف والمصروف والبحث).</p>
+    <div class="row">
+      <div class="grow"><label class="f">الطريقة</label>
+        <select id="aMethod">
+          <option value="pct">نسبة % من عدد سطور كل مصروف</option>
+          <option value="n">عدد ثابت لكل مصروف</option>
+          <option value="amt">كل السطور التي مبلغها ≥ حدّ معين</option>
+        </select></div>
+      <div class="grow"><label class="f" id="aValLbl">القيمة</label><input type="number" id="aVal" value="10" min="0" step="any"></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div class="grow"><label class="f">أسلوب الانتقاء (للنسبة/العدد)</label>
+        <select id="aPick"><option value="rand">عشوائي</option><option value="top">الأعلى مبلغاً</option><option value="mix">الأعلى مبلغاً + عشوائي (نصف/نصف)</option></select></div>
+      <div class="grow"><label class="f">&nbsp;</label><label class="chk"><input type="checkbox" id="aMin1" checked> عينة واحدة على الأقل لكل مصروف</label></div>
+    </div>
+    <div class="row" style="margin-top:14px;justify-content:flex-end">
+      <button class="btn" id="aCancel">إلغاء</button>
+      <button class="btn p" id="aGo">اختيار</button>
+    </div>
+  </div>
+</dialog>
+
+<script>
+(function(){
+'use strict';
+const KEY='kilani_exp_samples_v1';
+const $=s=>document.querySelector(s);
+const $$=s=>Array.from(document.querySelectorAll(s));
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmt=n=>{n=Number(n)||0;return n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:3});};
+const pct=(a,b)=>b?Math.round(a/b*1000)/10:0;
+const pctS=(a,b)=>(b?(pct(a,b)+'%'):'—');
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,7);
+const now=()=>new Date().toISOString();
+
+let state={statements:[],settings:{docMode:true,theme:''}};
+let ui={tab:'list',fSt:'all',fExp:'',fQ:'',sSt:'all',sDone:'all',sGrp:'exp',sQ:'',tSt:'all',openL:new Set(),openS:new Set(),multi:new Set(),allOpenL:false,allOpenS:false};
+
+/* ---------- storage ---------- */
+function load(){
+  try{const raw=localStorage.getItem(KEY);if(raw){const o=JSON.parse(raw);if(o&&Array.isArray(o.statements)){state=o;state.settings=Object.assign({docMode:true,theme:''},o.settings||{});}}}catch(e){console.warn(e);}
+}
+let saveT=null;
+function save(){
+  clearTimeout(saveT);
+  saveT=setTimeout(()=>{
+    try{localStorage.setItem(KEY,JSON.stringify(state));$('#saveState').textContent='محفوظ على هذا الجهاز';$('#saveState').className='pill grey tiny';}
+    catch(e){$('#saveState').textContent='تعذّر الحفظ — المساحة ممتلئة، احفظ نسخة JSON';$('#saveState').className='pill bad tiny';}
+  },250);
+}
+
+/* ---------- parsing ---------- */
+const HEAD_MAP=[
+  ['date',/تاريخ/],['trx',/رقم\s*الحركة|رقم الحركه/],['series',/سيريز|series/i],['doc',/رقم\s*المستند|مستند/],['code',/رمز\s*الحركة|رمز/],
+  ['acct',/رقم\s*حساب|حساب\s*المصروف|رقم الحساب/],['exp',/اسم\s*المصروف|المصروف$|اسم الحساب/],['debit',/مدين/],['credit',/دائن/],['net',/صافي/],
+  ['desc',/^البيان$|^بيان$|البيان\s*$/],['edesc',/بيان\s*القيد/],['r1',/reference\s*1/i],['r2',/reference\s*2/i],['r3',/reference\s*3/i]
+];
+const DEFAULT_ORDER=['date','trx','series','doc','code','acct','exp','debit','credit','net','desc','edesc','r1','r2','r3'];
+function mapHeader(cells){
+  const m={};const used=new Set();
+  cells.forEach((h,i)=>{
+    const t=String(h||'').trim();if(!t)return;
+    for(const [k,re] of HEAD_MAP){if(used.has(k))continue;if(re.test(t)){m[k]=i;used.add(k);break;}}
+  });
+  return m;
+}
+function isHeader(cells){const m=mapHeader(cells);return m.exp!=null||m.acct!=null||(m.date!=null&&m.desc!=null);}
+function toNum(v){if(v==null||v==='')return 0;if(typeof v==='number')return v;const s=String(v).replace(/[,\s]/g,'').replace(/[٠-٩]/g,d=>'٠١٢٣٤٥٦٧٨٩'.indexOf(d));const n=parseFloat(s);return isNaN(n)?0:n;}
+function toDate(v){
+  if(v==null||v==='')return '';
+  if(v instanceof Date&&!isNaN(v))return pad(v.getDate())+'.'+pad(v.getMonth()+1)+'.'+v.getFullYear();
+  if(typeof v==='number'&&v>20000&&v<80000){const d=new Date(Math.round((v-25569)*86400000));return pad(d.getUTCDate())+'.'+pad(d.getUTCMonth()+1)+'.'+d.getUTCFullYear();}
+  const s=String(v).trim();
+  let m=s.match(/^(\d{1,2})[.\/-](\d{1,2})[.\/-](\d{2,4})/);if(m){let y=m[3].length===2?'20'+m[3]:m[3];return pad(m[1])+'.'+pad(m[2])+'.'+y;}
+  m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);if(m)return pad(m[3])+'.'+pad(m[2])+'.'+m[1];
+  return s;
+}
+function pad(n){return String(n).padStart(2,'0');}
+function dateKey(d){const m=String(d).match(/^(\d{2})\.(\d{2})\.(\d{4})$/);return m?m[3]+m[2]+m[1]:d;}
+function str(v){if(v==null)return '';if(typeof v==='number')return Number.isInteger(v)?String(v):String(v);return String(v).trim();}
+
+function rowsFromMatrix(mat){
+  if(!mat.length)return [];
+  let hi=-1;for(let i=0;i<Math.min(mat.length,10);i++){if(isHeader(mat[i])){hi=i;break;}}
+  let map;
+  if(hi>=0){map=mapHeader(mat[hi]);}
+  else{map={};DEFAULT_ORDER.forEach((k,i)=>map[k]=i);}
+  const out=[];
+  for(let i=hi+1;i<mat.length;i++){
+    const c=mat[i];if(!c||!c.length)continue;
+    const g=k=>map[k]!=null?c[map[k]]:'';
+    const exp=str(g('exp'));const acct=str(g('acct'));const desc=str(g('desc'));
+    if(!exp&&!acct&&!desc)continue;
+    const debit=toNum(g('debit')),credit=toNum(g('credit'));
+    let net=map.net!=null?toNum(g('net')):(debit-credit);
+    if(map.net!=null&&net===0&&(debit||credit))net=debit-credit;
+    const r={date:toDate(g('date')),trx:str(g('trx')),series:str(g('series')),doc:str(g('doc')),code:str(g('code')),acct,exp:exp||('حساب '+acct),debit,credit,net,desc,edesc:str(g('edesc')),r1:str(g('r1')),r2:str(g('r2')),r3:str(g('r3'))};
+    r.k=[r.date,r.trx,r.series,r.doc,r.acct,r.net,r.desc].join('|');
+    out.push(r);
+  }
+  return out;
+}
+function parsePaste(txt){
+  const lines=txt.replace(/\r/g,'').split('\n').filter(l=>l.trim());
+  const tab=lines.some(l=>l.includes('\t'));
+  const mat=lines.map(l=>tab?l.split('\t'):splitCsv(l));
+  return rowsFromMatrix(mat);
+}
+function splitCsv(line){const out=[];let cur='',q=false;for(let i=0;i<line.length;i++){const ch=line[i];if(q){if(ch==='"'){if(line[i+1]==='"'){cur+='"';i++;}else q=false;}else cur+=ch;}else{if(ch==='"')q=true;else if(ch===','||ch===';'){out.push(cur);cur='';}else cur+=ch;}}out.push(cur);return out;}
+
+function addStatement(name,rows){
+  name=(name||'').trim()||('كشف '+new Date().toLocaleDateString('en-GB'));
+  if(!rows.length){toast('لم يتم التعرف على أي سطر — تأكد من صف العناوين');return;}
+  let st=state.statements.find(s=>s.name===name);
+  // de-dup keys within imported rows
+  const seen={};rows.forEach(r=>{const n=(seen[r.k]||0)+1;seen[r.k]=n;if(n>1)r.k+='#'+n;});
+  if(st){
+    const old=new Map(st.rows.map(r=>[r.k,r]));
+    let kept=0;
+    rows.forEach(r=>{const o=old.get(r.k);r.id=o?o.id:uid();if(o){r.sel=o.sel;r.done=o.done;r.note=o.note;r.selAt=o.selAt;r.doneAt=o.doneAt;if(o.sel)kept++;}else{r.sel=false;r.done=false;r.note='';}});
+    st.rows=rows;st.updatedAt=now();
+    toast(`تم تحديث «${name}»: ${rows.length} سطر، حافظنا على ${kept} عينة`);
+  }else{
+    rows.forEach(r=>{r.id=uid();r.sel=false;r.done=false;r.note='';});
+    st={id:uid(),name,createdAt:now(),updatedAt:now(),rows};
+    state.statements.push(st);
+    toast(`تمت إضافة «${name}»: ${rows.length} سطر`);
+  }
+  ui.fSt=st.id;ui.sSt='all';
+  save();renderAll();setTab('list');
+}
+
+/* ---------- helpers over data ---------- */
+function allRows(filterSt){
+  const out=[];
+  state.statements.forEach(s=>{if(filterSt&&filterSt!=='all'&&s.id!==filterSt)return;s.rows.forEach(r=>out.push({r,s}));});
+  return out;
+}
+function match(r,q){if(!q)return true;q=q.toLowerCase();return [r.desc,r.edesc,r.doc,r.trx,r.acct,r.exp,r.r1,r.r2,r.r3,r.date,String(r.net)].some(v=>String(v||'').toLowerCase().includes(q));}
+function expKey(r){return r.acct+'|'+r.exp;}
+function sortRows(a,b){return (dateKey(a.r.date)>dateKey(b.r.date)?1:dateKey(a.r.date)<dateKey(b.r.date)?-1:0)||(a.r.trx>b.r.trx?1:a.r.trx<b.r.trx?-1:0);}
+function findRow(id){for(const s of state.statements){const r=s.rows.find(x=>x.id===id);if(r)return {r,s};}return null;}
+
+/* ---------- render: KPI + tabs ---------- */
+function renderKpis(){
+  let tot=0,sel=0,done=0,amt=0,selAmt=0;
+  state.statements.forEach(s=>s.rows.forEach(r=>{tot++;amt+=Math.abs(r.net);if(r.sel){sel++;selAmt+=Math.abs(r.net);if(r.done)done++;}}));
+  $('#kAll').textContent=pctS(done,sel).replace('—','0%');
+  $('#kAllSub').textContent=`${done} من ${sel} عينة مصوّرة`;
+  $('#kAllBar').style.width=pct(done,sel)+'%';
+  $('#kSel').textContent=sel;$('#kSelSub').textContent=`من ${tot} سطر مصروف (${pctS(sel,tot)})`;
+  $('#kLeft').textContent=sel-done;$('#kLeftSub').textContent=sel-done?'عينة لم تُصوَّر بعد':(sel?'اكتمل التصوير ✔':'—');
+  $('#kCov').textContent=pctS(selAmt,amt).replace('—','0%');$('#kCovSub').textContent=`${fmt(selAmt)} من ${fmt(amt)}`;
+  $('#nList').textContent=tot-sel;$('#nSamples').textContent=sel;$('#nSt').textContent=state.statements.length;
+}
+function fillStSelect(sel,val){
+  const opts=['<option value="all">كل الكشوفات</option>'].concat(state.statements.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`));
+  sel.innerHTML=opts.join('');
+  if(!state.statements.some(s=>s.id===val))val='all';
+  sel.value=val;return val;
+}
+
+/* ---------- render: الكشف ---------- */
+function renderList(){
+  ui.fSt=fillStSelect($('#fSt'),ui.fSt);
+  const rows=allRows(ui.fSt).filter(x=>!x.r.sel);
+  // expense chips
+  const byExp=new Map();
+  rows.forEach(x=>{const k=expKey(x.r);if(!byExp.has(k))byExp.set(k,{k,exp:x.r.exp,acct:x.r.acct,n:0});byExp.get(k).n++;});
+  const chips=['<span class="chip'+(ui.fExp?'':' on')+'" data-exp="">الكل <span class="n">'+rows.length+'</span></span>'];
+  Array.from(byExp.values()).sort((a,b)=>a.exp.localeCompare(b.exp,'ar')).forEach(e=>chips.push(`<span class="chip${ui.fExp===e.k?' on':''}" data-exp="${esc(e.k)}">${esc(e.exp)} <span class="n">${e.n}</span></span>`));
+  $('#fExp').innerHTML=chips.join('');
+  if(ui.fExp&&!byExp.has(ui.fExp))ui.fExp='';
+
+  const vis=rows.filter(x=>(!ui.fExp||expKey(x.r)===ui.fExp)&&match(x.r,ui.fQ)).sort(sortRows);
+  if(!state.statements.length){$('#listBody').innerHTML='<div class="card empty"><b>لا توجد كشوفات بعد</b>اذهب إلى تبويب «البيانات» والصق بيانات الكويري أو ارفع ملف Excel.</div>';return;}
+  if(!vis.length){$('#listBody').innerHTML='<div class="card empty"><b>لا توجد سطور مطابقة</b>كل سطور هذا المصروف أصبحت ضمن العينات، أو غيّر البحث.</div>';return;}
+
+  // totals per expense (all rows incl. selected) for coverage
+  const totals=new Map();
+  allRows(ui.fSt).forEach(x=>{const k=expKey(x.r);const t=totals.get(k)||{n:0,amt:0,sel:0,selAmt:0};t.n++;t.amt+=Math.abs(x.r.net);if(x.r.sel){t.sel++;t.selAmt+=Math.abs(x.r.net);}totals.set(k,t);});
+  // doc counts (lines per document inside same statement)
+  const docN=new Map();
+  allRows(ui.fSt).forEach(x=>{if(!x.r.doc)return;const k=x.s.id+'|'+x.r.doc;docN.set(k,(docN.get(k)||0)+1);});
+
+  const groups=new Map();
+  vis.forEach(x=>{const k=expKey(x.r);if(!groups.has(k))groups.set(k,{k,exp:x.r.exp,acct:x.r.acct,items:[]});groups.get(k).items.push(x);});
+  const forceOpen=!!ui.fQ||!!ui.fExp||ui.allOpenL;
+  const html=[];
+  Array.from(groups.values()).sort((a,b)=>a.exp.localeCompare(b.exp,'ar')).forEach(g=>{
+    const t=totals.get(g.k);const open=forceOpen||ui.openL.has(g.k);
+    const gAmt=g.items.reduce((a,x)=>a+Math.abs(x.r.net),0);
+    html.push(`<div class="grp${open?' open':''}" data-g="${esc(g.k)}">
+      <div class="grp-h" data-gh="${esc(g.k)}">
+        <span class="caret">▼</span>
+        <div class="ttl">${esc(g.exp)}<small>حساب ${esc(g.acct)} · ${g.items.length} سطر متبقٍ · ${fmt(gAmt)}</small></div>
+        <div class="meta"><b>${t.sel} / ${t.n} عينة</b>تغطية ${pctS(t.sel,t.n)} عدداً · ${pctS(t.selAmt,t.amt)} مبلغاً</div>
+      </div>
+      <div class="bar"><i style="width:${pct(t.sel,t.n)}%;background:var(--blue)"></i></div>
+      <div class="grp-b">`);
+    g.items.forEach(x=>{
+      const r=x.r;const dn=r.doc?docN.get(x.s.id+'|'+r.doc):1;const checked=ui.multi.has(r.id);
+      html.push(`<div class="ln" data-id="${r.id}">
+        <div class="d"><b>${esc(r.date)}</b>${ui.fSt==='all'?'<span class="pill grey tiny">'+esc(x.s.name)+'</span>':''}</div>
+        <div class="t"><div class="desc">${esc(r.desc||r.edesc||'—')}</div>
+          <div class="sub"><span>مستند <b>${esc(r.doc||'—')}</b>${dn>1?` <span class="pill info">${dn} سطور</span>`:''}</span><span>حركة ${esc(r.trx)}</span>${r.series?`<span>سيريز ${esc(r.series)}</span>`:''}${r.r1?`<span>Ref ${esc(r.r1)}</span>`:''}${r.edesc&&r.edesc!==r.desc?`<span>${esc(r.edesc)}</span>`:''}</div></div>
+        <div class="amt">${fmt(r.net)}</div>
+        <div class="act">
+          <label class="chk${checked?' on':''}" title="تحديد متعدد"><input type="checkbox" data-multi="${r.id}" ${checked?'checked':''}></label>
+          <button class="btn s p" data-sel="${r.id}">＋ عينة</button>
+          ${dn>1?`<button class="btn s" data-seldoc="${r.id}">المستند كاملاً</button>`:''}
+        </div>
+      </div>`);
+    });
+    html.push('</div></div>');
+  });
+  $('#listBody').innerHTML=html.join('');
+  renderBottom();
+}
+function renderBottom(){const n=ui.multi.size;$('#bottombar').classList.toggle('on',n>0&&ui.tab==='list');$('#bbN').textContent=n;}
+
+/* ---------- render: العينات ---------- */
+function renderSamples(){
+  ui.sSt=fillStSelect($('#sSt'),ui.sSt);
+  $('#optDoc').checked=!!state.settings.docMode;
+  const rows=allRows(ui.sSt).filter(x=>x.r.sel&&match(x.r,ui.sQ)&&(ui.sDone==='all'||(ui.sDone==='yes')===!!x.r.done)).sort(sortRows);
+  if(!rows.length){$('#samplesBody').innerHTML='<div class="card empty"><b>لا توجد عينات هنا</b>اختر عينات من تبويب «الكشف» أو غيّر الفلاتر.</div>';return;}
+  const groups=new Map();
+  rows.forEach(x=>{
+    let k,title,sub;
+    if(ui.sGrp==='doc'){k=x.s.id+'|'+(x.r.doc||'?');title='مستند '+(x.r.doc||'بدون رقم');sub=x.r.exp+' · '+x.r.date;}
+    else if(ui.sGrp==='date'){k=x.r.date;title=x.r.date;sub='';}
+    else{k=expKey(x.r);title=x.r.exp;sub='حساب '+x.r.acct;}
+    if(!groups.has(k))groups.set(k,{k,title,sub,items:[]});groups.get(k).items.push(x);
+  });
+  const forceOpen=!!ui.sQ||ui.allOpenS||ui.sGrp!=='exp';
+  const html=[];
+  const keys=Array.from(groups.values());
+  if(ui.sGrp==='date')keys.sort((a,b)=>dateKey(a.k)>dateKey(b.k)?1:-1);else keys.sort((a,b)=>a.title.localeCompare(b.title,'ar'));
+  keys.forEach(g=>{
+    const done=g.items.filter(x=>x.r.done).length;const amt=g.items.reduce((a,x)=>a+Math.abs(x.r.net),0);
+    const open=forceOpen||ui.openS.has(g.k);
+    html.push(`<div class="grp${open?' open':''}" data-g="${esc(g.k)}">
+      <div class="grp-h" data-gs="${esc(g.k)}">
+        <span class="caret">▼</span>
+        <div class="ttl">${esc(g.title)}<small>${esc(g.sub)}${g.sub?' · ':''}${g.items.length} عينة · ${fmt(amt)}</small></div>
+        <div class="meta"><b>${done} / ${g.items.length} مصوّرة</b>${pctS(done,g.items.length)}</div>
+        <button class="btn s ghost no-print" data-doneall="${esc(g.k)}" title="تعليم الكل كمصوّر">✔ الكل</button>
+      </div>
+      <div class="bar"><i style="width:${pct(done,g.items.length)}%"></i></div>
+      <div class="grp-b">`);
+    g.items.forEach(x=>{
+      const r=x.r;
+      html.push(`<div class="ln${r.done?' done':''}" data-id="${r.id}">
+        <div class="d"><b>${esc(r.date)}</b>${ui.sSt==='all'?'<span class="pill grey tiny">'+esc(x.s.name)+'</span>':''}</div>
+        <div class="t"><div class="desc">${esc(r.desc||r.edesc||'—')}</div>
+          <div class="sub"><span>مستند <b>${esc(r.doc||'—')}</b></span><span>حركة ${esc(r.trx)}</span>${ui.sGrp!=='exp'?`<span>${esc(r.exp)}</span>`:''}${r.r1?`<span>Ref ${esc(r.r1)}</span>`:''}${r.doneAt?`<span class="pill ok">صُوّر ${esc(r.doneAt.slice(0,10))}</span>`:''}</div></div>
+        <div class="amt">${fmt(r.net)}</div>
+        <div class="act">
+          <input class="note-in" data-note="${r.id}" value="${esc(r.note||'')}" placeholder="ملاحظة…">
+          <label class="chk${r.done?' on':''}"><input type="checkbox" data-done="${r.id}" ${r.done?'checked':''}> تم التصوير</label>
+          <button class="btn s ghost" data-unsel="${r.id}" title="إرجاع إلى الكشف">↩</button>
+        </div>
+      </div>`);
+    });
+    html.push('</div></div>');
+  });
+  $('#samplesBody').innerHTML=html.join('');
+}
+
+/* ---------- render: الإحصائيات ---------- */
+function expStats(filterSt){
+  const m=new Map();
+  allRows(filterSt).forEach(x=>{const k=expKey(x.r);const t=m.get(k)||{exp:x.r.exp,acct:x.r.acct,n:0,amt:0,sel:0,selAmt:0,done:0,doneAmt:0};t.n++;t.amt+=Math.abs(x.r.net);if(x.r.sel){t.sel++;t.selAmt+=Math.abs(x.r.net);if(x.r.done){t.done++;t.doneAmt+=Math.abs(x.r.net);}}m.set(k,t);});
+  return Array.from(m.values()).sort((a,b)=>a.exp.localeCompare(b.exp,'ar'));
+}
+function renderStats(){
+  ui.tSt=fillStSelect($('#tSt'),ui.tSt);
+  const rows=expStats(ui.tSt);
+  const T={n:0,amt:0,sel:0,selAmt:0,done:0};
+  const tr=rows.map(t=>{Object.keys(T).forEach(k=>T[k]+=t[k]);
+    const prog=pct(t.done,t.sel);const cls=t.sel?(prog>=100?'ok':prog>0?'warn':'bad'):'grey';
+    return `<tr><td>${esc(t.exp)}<br><span class="muted tiny">${esc(t.acct)}</span></td><td class="num">${t.n}</td><td class="num">${fmt(t.amt)}</td><td class="num">${t.sel}</td>
+      <td class="num">${pctS(t.sel,t.n)}<span class="mini-bar cov"><i style="width:${pct(t.sel,t.n)}%"></i></span></td>
+      <td class="num">${pctS(t.selAmt,t.amt)}</td><td class="num">${t.done}</td>
+      <td class="num"><span class="pill ${cls}">${t.sel?prog+'%':'لا عينات'}</span><span class="mini-bar"><i style="width:${prog}%"></i></span></td></tr>`;});
+  $('#tblExp').innerHTML=`<thead><tr><th>المصروف</th><th class="num">السطور</th><th class="num">إجمالي المبلغ</th><th class="num">العينات</th><th class="num">تغطية العدد</th><th class="num">تغطية المبلغ</th><th class="num">مصوّر</th><th class="num">الإنجاز</th></tr></thead>
+    <tbody>${tr.join('')||'<tr><td colspan="8" class="muted">لا بيانات</td></tr>'}</tbody>
+    <tfoot><tr class="tot"><td>الإجمالي</td><td class="num">${T.n}</td><td class="num">${fmt(T.amt)}</td><td class="num">${T.sel}</td><td class="num">${pctS(T.sel,T.n)}</td><td class="num">${pctS(T.selAmt,T.amt)}</td><td class="num">${T.done}</td><td class="num">${pctS(T.done,T.sel)}</td></tr></tfoot>`;
+
+  const st=state.statements.map(s=>{let n=0,amt=0,sel=0,selAmt=0,done=0;s.rows.forEach(r=>{n++;amt+=Math.abs(r.net);if(r.sel){sel++;selAmt+=Math.abs(r.net);if(r.done)done++;}});
+    const prog=pct(done,sel);return `<tr><td>${esc(s.name)}</td><td class="num">${n}</td><td class="num">${fmt(amt)}</td><td class="num">${sel}</td><td class="num">${pctS(sel,n)}</td><td class="num">${pctS(selAmt,amt)}</td><td class="num">${done}</td><td class="num"><span class="pill ${sel?(prog>=100?'ok':prog>0?'warn':'bad'):'grey'}">${sel?prog+'%':'—'}</span></td></tr>`;});
+  $('#tblSt').innerHTML=`<thead><tr><th>الكشف</th><th class="num">السطور</th><th class="num">المبلغ</th><th class="num">العينات</th><th class="num">تغطية العدد</th><th class="num">تغطية المبلغ</th><th class="num">مصوّر</th><th class="num">الإنجاز</th></tr></thead><tbody>${st.join('')||'<tr><td colspan="8" class="muted">لا بيانات</td></tr>'}</tbody>`;
+}
+
+/* ---------- render: البيانات ---------- */
+function renderData(){
+  if(!state.statements.length){$('#stList').innerHTML='<div class="empty">لا توجد كشوفات محفوظة.</div>';return;}
+  $('#stList').innerHTML=state.statements.map(s=>{const sel=s.rows.filter(r=>r.sel).length,done=s.rows.filter(r=>r.done).length;
+    return `<div class="st-item"><div class="nm">${esc(s.name)}<small>${s.rows.length} سطر · ${sel} عينة · ${done} مصوّرة · آخر تحديث ${esc((s.updatedAt||s.createdAt||'').slice(0,10))}</small></div>
+      <button class="btn s" data-ren="${s.id}">إعادة تسمية</button><button class="btn s" data-clrsel="${s.id}">إلغاء كل العينات</button><button class="btn s d" data-del="${s.id}">حذف</button></div>`;}).join('');
+}
+
+function renderAll(){renderKpis();renderList();renderSamples();renderStats();renderData();}
+
+/* ---------- actions ---------- */
+function setSel(ids,val){
+  const t=now();let n=0;
+  ids.forEach(id=>{const f=findRow(id);if(!f)return;if(f.r.sel!==val){f.r.sel=val;n++;}if(val){f.r.selAt=f.r.selAt||t;}else{f.r.done=false;f.r.doneAt='';}});
+  if(n){save();renderAll();}
+  return n;
+}
+function docSiblings(id){const f=findRow(id);if(!f||!f.r.doc)return [id];return f.s.rows.filter(r=>r.doc===f.r.doc).map(r=>r.id);}
+function setDone(ids,val){
+  const t=now();
+  ids.forEach(id=>{const f=findRow(id);if(!f||!f.r.sel)return;f.r.done=val;f.r.doneAt=val?t:'';});
+  save();renderKpis();renderSamples();renderStats();renderData();
+}
+function toast(msg){const el=$('#toast');el.textContent=msg;el.classList.add('on');clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('on'),2600);}
+function setTab(t){ui.tab=t;$$('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));$$('.panel').forEach(p=>p.classList.toggle('on',p.id==='tab-'+t));renderBottom();window.scrollTo({top:0});}
+
+/* tabs */
+$('#tabs').addEventListener('click',e=>{const b=e.target.closest('button[data-tab]');if(b)setTab(b.dataset.tab);});
+
+/* list filters */
+$('#fSt').addEventListener('change',e=>{ui.fSt=e.target.value;ui.fExp='';ui.multi.clear();renderList();});
+$('#fQ').addEventListener('input',e=>{ui.fQ=e.target.value.trim();renderList();});
+$('#fExp').addEventListener('click',e=>{const c=e.target.closest('.chip');if(!c)return;ui.fExp=c.dataset.exp;renderList();});
+$('#btnExpand').addEventListener('click',e=>{ui.allOpenL=!ui.allOpenL;if(!ui.allOpenL)ui.openL.clear();e.target.textContent=ui.allOpenL?'طيّ الكل':'توسيع الكل';renderList();});
+$('#listBody').addEventListener('click',e=>{
+  const sel=e.target.closest('[data-sel]');if(sel){setSel([sel.dataset.sel],true);toast('أُضيفت إلى العينات');return;}
+  const sd=e.target.closest('[data-seldoc]');if(sd){const n=setSel(docSiblings(sd.dataset.seldoc),true);toast(`أُضيف ${n} سطر من المستند إلى العينات`);return;}
+  const gh=e.target.closest('[data-gh]');if(gh){const k=gh.dataset.gh;const g=gh.closest('.grp');const open=g.classList.toggle('open');if(open)ui.openL.add(k);else{ui.openL.delete(k);if(ui.allOpenL){ui.allOpenL=false;$('#btnExpand').textContent='توسيع الكل';}}return;}
+});
+$('#listBody').addEventListener('change',e=>{const m=e.target.closest('[data-multi]');if(!m)return;if(m.checked)ui.multi.add(m.dataset.multi);else ui.multi.delete(m.dataset.multi);m.closest('.chk').classList.toggle('on',m.checked);renderBottom();});
+$('#bbClear').addEventListener('click',()=>{ui.multi.clear();renderList();});
+$('#bbMove').addEventListener('click',()=>{const n=setSel(Array.from(ui.multi),true);ui.multi.clear();renderBottom();toast(`نُقل ${n} سطر إلى العينات`);});
+
+/* auto select */
+const dlg=$('#dlgAuto');
+$('#btnAuto').addEventListener('click',()=>dlg.showModal());
+$('#aCancel').addEventListener('click',()=>dlg.close());
+$('#aMethod').addEventListener('change',e=>{$('#aValLbl').textContent=e.target.value==='pct'?'النسبة %':e.target.value==='n'?'العدد لكل مصروف':'الحد الأدنى للمبلغ';$('#aPick').disabled=e.target.value==='amt';});
+$('#aGo').addEventListener('click',()=>{
+  const method=$('#aMethod').value,val=parseFloat($('#aVal').value)||0,pick=$('#aPick').value,min1=$('#aMin1').checked;
+  const rows=allRows(ui.fSt).filter(x=>!x.r.sel&&(!ui.fExp||expKey(x.r)===ui.fExp)&&match(x.r,ui.fQ));
+  const groups=new Map();rows.forEach(x=>{const k=expKey(x.r);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(x.r);});
+  const ids=[];
+  groups.forEach(list=>{
+    if(method==='amt'){list.forEach(r=>{if(Math.abs(r.net)>=val)ids.push(r.id);});if(min1&&!list.some(r=>Math.abs(r.net)>=val)&&list.length){ids.push(list.slice().sort((a,b)=>Math.abs(b.net)-Math.abs(a.net))[0].id);}return;}
+    let n=method==='pct'?Math.ceil(list.length*val/100):Math.round(val);
+    if(min1)n=Math.max(1,n);n=Math.min(n,list.length);if(n<=0)return;
+    const byAmt=list.slice().sort((a,b)=>Math.abs(b.net)-Math.abs(a.net));
+    let chosen=[];
+    if(pick==='top')chosen=byAmt.slice(0,n);
+    else if(pick==='rand')chosen=shuffle(list.slice()).slice(0,n);
+    else{const t=Math.ceil(n/2);chosen=byAmt.slice(0,t);const rest=shuffle(list.filter(r=>!chosen.includes(r)));chosen=chosen.concat(rest.slice(0,n-t));}
+    chosen.forEach(r=>ids.push(r.id));
+  });
+  dlg.close();
+  const n=setSel(ids,true);toast(`تم اختيار ${n} عينة تلقائياً`);
+});
+function shuffle(a){for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[a[i],a[j]]=[a[j],a[i]];}return a;}
+
+/* samples */
+$('#sSt').addEventListener('change',e=>{ui.sSt=e.target.value;renderSamples();});
+$('#sDone').addEventListener('change',e=>{ui.sDone=e.target.value;renderSamples();});
+$('#sGrp').addEventListener('change',e=>{ui.sGrp=e.target.value;renderSamples();});
+$('#sQ').addEventListener('input',e=>{ui.sQ=e.target.value.trim();renderSamples();});
+$('#optDoc').addEventListener('change',e=>{state.settings.docMode=e.target.checked;save();});
+$('#btnExpandS').addEventListener('click',e=>{ui.allOpenS=!ui.allOpenS;if(!ui.allOpenS)ui.openS.clear();e.target.textContent=ui.allOpenS?'طيّ الكل':'توسيع الكل';renderSamples();});
+$('#samplesBody').addEventListener('change',e=>{
+  const d=e.target.closest('[data-done]');if(d){const id=d.dataset.done;const ids=state.settings.docMode?docSiblings(id):[id];setDone(ids,d.checked);if(ids.length>1&&d.checked)toast(`عُلِّم ${ids.filter(i=>{const f=findRow(i);return f&&f.r.sel;}).length} سطر من نفس المستند كمصوّر`);return;}
+  const n=e.target.closest('[data-note]');if(n){const f=findRow(n.dataset.note);if(f){f.r.note=n.value.trim();save();}}
+});
+$('#samplesBody').addEventListener('click',e=>{
+  const u=e.target.closest('[data-unsel]');if(u){setSel([u.dataset.unsel],false);toast('أُرجعت إلى الكشف');return;}
+  const da=e.target.closest('[data-doneall]');if(da){e.stopPropagation();const g=da.closest('.grp');const ids=Array.from(g.querySelectorAll('[data-done]')).map(x=>x.dataset.done);const allDone=ids.every(id=>{const f=findRow(id);return f&&f.r.done;});setDone(ids,!allDone);ui.openS.add(da.dataset.doneall);renderSamples();toast(allDone?'أُلغي تعليم التصوير للمجموعة':'عُلِّمت المجموعة كمصوّرة');return;}
+  const gh=e.target.closest('[data-gs]');if(gh){const k=gh.dataset.gs;const g=gh.closest('.grp');const open=g.classList.toggle('open');if(open)ui.openS.add(k);else{ui.openS.delete(k);if(ui.allOpenS){ui.allOpenS=false;$('#btnExpandS').textContent='توسيع الكل';}}}
+});
+
+/* print */
+$('#btnPrint').addEventListener('click',()=>{
+  const rows=allRows(ui.sSt).filter(x=>x.r.sel&&match(x.r,ui.sQ)&&(ui.sDone==='all'||(ui.sDone==='yes')===!!x.r.done)).sort(sortRows);
+  const groups=new Map();rows.forEach(x=>{const k=expKey(x.r);if(!groups.has(k))groups.set(k,{exp:x.r.exp,acct:x.r.acct,items:[]});groups.get(k).items.push(x);});
+  const stName=ui.sSt==='all'?'كل الكشوفات':(state.statements.find(s=>s.id===ui.sSt)||{}).name;
+  const done=rows.filter(x=>x.r.done).length;
+  let h=`<h1>قائمة عينات المصروفات — ${esc(stName)}</h1><div class="pm">تاريخ الطباعة ${new Date().toLocaleDateString('en-GB')} · ${rows.length} عينة · مصوّر ${done} (${pctS(done,rows.length)})</div>
+  <table><thead><tr><th style="width:22px">✔</th><th>التاريخ</th><th>رقم المستند</th><th>رقم الحركة</th><th>البيان</th><th>المبلغ</th><th>الكشف</th><th>ملاحظة</th></tr></thead><tbody>`;
+  Array.from(groups.values()).sort((a,b)=>a.exp.localeCompare(b.exp,'ar')).forEach(g=>{
+    const amt=g.items.reduce((a,x)=>a+Math.abs(x.r.net),0);
+    h+=`<tr class="gh"><td colspan="8">${esc(g.exp)} — حساب ${esc(g.acct)} · ${g.items.length} عينة · ${fmt(amt)}</td></tr>`;
+    g.items.forEach(x=>{const r=x.r;h+=`<tr><td style="text-align:center"><span class="box${r.done?' x':''}"></span></td><td>${esc(r.date)}</td><td>${esc(r.doc)}</td><td>${esc(r.trx)}</td><td>${esc(r.desc||r.edesc)}</td><td style="text-align:left">${fmt(r.net)}</td><td>${esc(x.s.name)}</td><td>${esc(r.note||'')}</td></tr>`;});
+  });
+  h+='</tbody></table>';
+  $('#printArea').innerHTML=h;window.print();
+});
+
+/* export excel */
+$('#btnXls').addEventListener('click',()=>{
+  if(typeof XLSX==='undefined'){toast('مكتبة Excel غير محمّلة — تأكد من الاتصال بالإنترنت');return;}
+  const rows=allRows(ui.sSt).filter(x=>x.r.sel).sort(sortRows);
+  if(!rows.length){toast('لا توجد عينات للتصدير');return;}
+  const data=rows.map(x=>({'الكشف':x.s.name,'تاريخ القيد':x.r.date,'رقم الحركة':x.r.trx,'السيريز':x.r.series,'رقم المستند':x.r.doc,'رمز الحركة':x.r.code,'رقم حساب المصروف':x.r.acct,'اسم المصروف':x.r.exp,'المبلغ مدين':x.r.debit,'المبلغ دائن':x.r.credit,'صافي المصروف':x.r.net,'البيان':x.r.desc,'بيان القيد':x.r.edesc,'Reference 1':x.r.r1,'Reference 2':x.r.r2,'Reference 3':x.r.r3,'تم التصوير':x.r.done?'نعم':'لا','تاريخ التصوير':(x.r.doneAt||'').slice(0,10),'ملاحظة':x.r.note||''}));
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.json_to_sheet(data);ws['!views']=[{RTL:true}];XLSX.utils.book_append_sheet(wb,ws,'العينات');
+  const st=expStats(ui.sSt).map(t=>({'اسم المصروف':t.exp,'رقم الحساب':t.acct,'عدد السطور':t.n,'إجمالي المبلغ':t.amt,'عدد العينات':t.sel,'تغطية العدد %':pct(t.sel,t.n),'مبلغ العينات':t.selAmt,'تغطية المبلغ %':pct(t.selAmt,t.amt),'مصوّر':t.done,'الإنجاز %':pct(t.done,t.sel)}));
+  const ws2=XLSX.utils.json_to_sheet(st);ws2['!views']=[{RTL:true}];XLSX.utils.book_append_sheet(wb,ws2,'الإحصائيات');
+  XLSX.writeFile(wb,'عينات_المصروفات_'+new Date().toISOString().slice(0,10)+'.xlsx');
+});
+
+/* data tab */
+$('#btnPaste').addEventListener('click',()=>{const rows=parsePaste($('#inPaste').value);if(!rows.length){toast('لم أتعرف على بيانات — الصق مع صف العناوين');return;}addStatement($('#inName').value,rows);$('#inPaste').value='';$('#inName').value='';});
+const drop=$('#drop');
+drop.addEventListener('click',()=>$('#inFile').click());
+drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over');});
+drop.addEventListener('dragleave',()=>drop.classList.remove('over'));
+drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over');if(e.dataTransfer.files[0])readFile(e.dataTransfer.files[0]);});
+$('#inFile').addEventListener('change',e=>{if(e.target.files[0])readFile(e.target.files[0]);e.target.value='';});
+function readFile(f){
+  const name=$('#inName').value.trim()||f.name.replace(/\.[^.]+$/,'');
+  if(/\.(csv|txt|tsv)$/i.test(f.name)){const rd=new FileReader();rd.onload=()=>addStatement(name,parsePaste(rd.result));rd.readAsText(f,'utf-8');return;}
+  if(typeof XLSX==='undefined'){toast('مكتبة Excel غير محمّلة — الصق البيانات كنص بدلاً من ذلك');return;}
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      const wb=XLSX.read(rd.result,{type:'array',cellDates:true});
+      let all=[];
+      wb.SheetNames.forEach(sn=>{const mat=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:''});const rows=rowsFromMatrix(mat);if(rows.length)all=all.concat(rows);});
+      addStatement(name,all);
+    }catch(err){console.error(err);toast('تعذّر قراءة الملف');}
+  };
+  rd.readAsArrayBuffer(f);
+}
+$('#stList').addEventListener('click',e=>{
+  const ren=e.target.closest('[data-ren]');if(ren){const s=state.statements.find(x=>x.id===ren.dataset.ren);const n=prompt('الاسم الجديد للكشف:',s.name);if(n&&n.trim()){s.name=n.trim();save();renderAll();}return;}
+  const cs=e.target.closest('[data-clrsel]');if(cs){const s=state.statements.find(x=>x.id===cs.dataset.clrsel);if(confirm(`إلغاء جميع العينات في «${s.name}»؟ (تُمسح حالة التصوير أيضاً)`)){s.rows.forEach(r=>{r.sel=false;r.done=false;r.doneAt='';});save();renderAll();}return;}
+  const del=e.target.closest('[data-del]');if(del){const s=state.statements.find(x=>x.id===del.dataset.del);if(confirm(`حذف الكشف «${s.name}» بكل سطوره وعيناته؟`)){state.statements=state.statements.filter(x=>x!==s);save();renderAll();}}
+});
+
+/* backup / restore */
+function backupBlob(){return new Blob([JSON.stringify({app:'kilani_exp_samples',v:1,exportedAt:now(),state})],{type:'application/json'});}
+function backupName(){return 'عينات_المصروفات_نسخة_'+new Date().toISOString().slice(0,10)+'.json';}
+$('#btnBackup').addEventListener('click',()=>{const a=document.createElement('a');a.href=URL.createObjectURL(backupBlob());a.download=backupName();a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);});
+$('#btnShare').addEventListener('click',async()=>{
+  const file=new File([backupBlob()],backupName(),{type:'application/json'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){try{await navigator.share({files:[file],title:'نسخة عينات المصروفات'});}catch(e){}}
+  else{toast('المشاركة غير مدعومة هنا — استخدم «حفظ نسخة»');}
+});
+$('#btnRestore').addEventListener('click',()=>$('#inRestore').click());
+$('#inRestore').addEventListener('change',e=>{
+  const f=e.target.files[0];e.target.value='';if(!f)return;
+  const rd=new FileReader();
+  rd.onload=()=>{
+    try{
+      const o=JSON.parse(rd.result);const inc=o.state||o;if(!inc||!Array.isArray(inc.statements))throw new Error('bad');
+      let added=0,merged=0;
+      inc.statements.forEach(is=>{
+        const ex=state.statements.find(s=>s.name===is.name);
+        if(!ex){state.statements.push(is);added++;return;}
+        merged++;
+        const map=new Map(ex.rows.map(r=>[r.k,r]));
+        is.rows.forEach(ir=>{const er=map.get(ir.k);if(!er){ex.rows.push(ir);return;}
+          // أحدث حالة تفوز
+          const it=ir.doneAt||ir.selAt||'',et=er.doneAt||er.selAt||'';
+          if(ir.sel&&!er.sel){er.sel=true;er.selAt=ir.selAt;}
+          if(ir.done&&!er.done&&er.sel){er.done=true;er.doneAt=ir.doneAt;}
+          if(it>et&&ir.note)er.note=ir.note;
+        });
+        ex.updatedAt=now();
+      });
+      if(inc.settings)state.settings=Object.assign(state.settings,inc.settings);
+      save();renderAll();toast(`تم الاسترجاع: ${added} كشف جديد، ${merged} كشف مدموج`);
+    }catch(err){toast('ملف النسخة غير صالح');}
+  };
+  rd.readAsText(f,'utf-8');
+});
+$('#btnWipe').addEventListener('click',()=>{if(confirm('مسح كل الكشوفات والعينات من هذا الجهاز؟ لا يمكن التراجع.')&&confirm('متأكد؟ يُنصح بحفظ نسخة JSON أولاً.')){state={statements:[],settings:{docMode:true,theme:state.settings.theme}};save();ui.multi.clear();renderAll();toast('تم المسح');}});
+
+/* theme */
+function applyTheme(){const t=state.settings.theme||'';if(t)document.documentElement.setAttribute('data-theme',t);else document.documentElement.removeAttribute('data-theme');}
+$('#themeBtn').addEventListener('click',()=>{const cur=state.settings.theme||(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');state.settings.theme=cur==='dark'?'light':'dark';applyTheme();save();});
+
+/* init */
+load();applyTheme();renderAll();
+})();
+</script>
+</body>
+</html>
