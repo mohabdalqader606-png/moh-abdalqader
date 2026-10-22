@@ -152,6 +152,29 @@ table.g tr.row:hover td{background:#f8fbfe}
 .sync.ok{background:rgba(26,127,75,.35)} .sync.busy{background:rgba(201,162,39,.35)} .sync.err{background:rgba(180,35,24,.6)}
 .who{font-size:12px;opacity:.8;direction:ltr;white-space:nowrap}
 body.ro .ne{display:none!important}
+.fadd{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-start;margin-top:12px}
+.fsr{flex-basis:100%;max-height:260px;overflow:auto}
+.fsi{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 8px;border-bottom:1px solid var(--line);font-size:13px}
+.fsi .code{font-weight:700;direction:ltr}
+.ftag{display:inline-block;font-size:10.5px;background:#eef4ff;color:#3538cd;border-radius:10px;padding:0 7px;margin-inline-start:4px;font-weight:400}
+.ftag.man{background:#fef0c7;color:#93370d}
+.cform{background:#fff;border:1px solid var(--line);border-radius:12px;padding:20px 22px;max-width:1050px;margin:0 auto}
+.cform .rh{display:flex;justify-content:space-between;align-items:center;border-bottom:3px solid var(--navy);padding-bottom:6px;margin-bottom:8px}
+.cform .co{color:var(--navy);font-weight:700;font-size:13px} .cform h1{margin:0;font-size:22px;color:var(--navy-d)}
+.fmeta{display:grid;grid-template-columns:repeat(3,1fr);gap:4px 16px;margin-bottom:8px;font-size:13px}
+.fmeta div{border-bottom:1px dotted #888;padding:4px 0} .fmeta b{color:var(--navy)}
+.ftab{width:100%;border-collapse:collapse;table-layout:fixed;font-size:12px}
+.ftab th{background:var(--navy);color:#fff;padding:5px 3px}
+.ftab td{border:1px solid #b9c6d4;padding:2px 4px;text-align:center;height:20px}
+.ftab td.fnm{text-align:right;unicode-bidi:plaintext} .ftab td.fcode{direction:ltr;font-weight:700} .ftab td.fnum{color:#667085;font-size:11px}
+.ftab td.fq{background:#fffdf3} .ftab tr.fblank td{height:22px}
+.ftab tr.fsup td{background:var(--navy-l);text-align:right;font-weight:700;border-top:2px solid var(--navy);padding:4px 6px}
+.ftab .gi{display:inline-block;background:var(--navy);color:#fff;border-radius:3px;padding:0 6px;margin-left:4px;font-size:11px}
+.ftab .cnt{color:#667085;font-weight:400;font-size:11px}
+.fh2{font-size:15px;color:var(--navy-d);margin:14px 0 6px}
+.cform .sig{display:grid;grid-template-columns:repeat(3,1fr);gap:30px;margin-top:36px;text-align:center;font-size:13px;page-break-inside:avoid}
+.cform .sig div{border-top:1px solid #444;padding-top:4px}
+@media print{ .cform{border:0;padding:0;max-width:none} .ftab tr{page-break-inside:avoid} .ftab tr.fsup{page-break-after:avoid} .ftab th,.ftab tr.fsup td,.ftab td.fq{-webkit-print-color-adjust:exact;print-color-adjust:exact} }
 .tbtn.on{background:#fff;color:var(--navy-d);border-color:#fff;font-weight:700}
 .restore-hint{margin-top:14px;font-size:13px;color:var(--mute)}
 .rep tr.sub td{background:#f2f5f9;font-weight:700;color:var(--navy-d)}
@@ -230,6 +253,7 @@ body.ro .ne{display:none!important}
   <button class="tbtn gold ne" id="btnNew">+ جرد مندوب جديد</button>
   <button class="tbtn" id="btnCons">التقرير المجمّع</button>
   <button class="tbtn" id="btnValue">قيمة مستودع المندوب</button>
+  <button class="tbtn" id="btnForm">نموذج الجرد</button>
   <button class="tbtn" id="btnPrices">الأسعار والضريبة</button>
   <input type="file" id="fPrice" accept=".txt,.tsv,.csv,text/plain" multiple class="hidden">
   <button class="tbtn" id="btnBackup">نسخة احتياطية</button>
@@ -341,7 +365,7 @@ const SCREEN_ID = 'cash-van-count';
 let sb=null, USER=null, PERM=null, CAN_EDIT=false;
 const synced={}; let settingsSynced=""; let saving=false, saveAgain=false, saveTimer=null;
 function setSync(state,msg){ const el=$("#sync"); if(!el) return; el.className="sync "+state; el.textContent=msg; }
-function settingsObj(){ return {custom:S.custom||[],over:S.over||{},priceFile:S.priceFile||null,priceAt:S.priceAt||null,taxFile:S.taxFile||null,taxAt:S.taxAt||null}; }
+function settingsObj(){ return {custom:S.custom||[],formAdd:S.formAdd||[],over:S.over||{},priceFile:S.priceFile||null,priceAt:S.priceAt||null,taxFile:S.taxFile||null,taxAt:S.taxAt||null}; }
 async function fetchAllItems(){
   const out=[]; let from=0; const step=1000;
   for(;;){ const {data,error}=await sb.from('cash_van_items').select('item_code,item_name,vendor,uom,tax_pct,price').order('item_code').range(from,from+step-1);
@@ -360,12 +384,13 @@ async function cloudLoad(){
   S.sessions=(c.data||[]).map(r=>r.data).filter(x=>x&&x.id);
   S.sessions.forEach(s=>synced[s.id]=JSON.stringify(s));
   const g=(st.data&&st.data.data)||{};
-  S.custom=g.custom||[]; S.over=g.over||{}; S.priceFile=g.priceFile||null; S.priceAt=g.priceAt||null; S.taxFile=g.taxFile||null; S.taxAt=g.taxAt||null;
+  S.custom=g.custom||[]; S.formAdd=g.formAdd||[]; S.over=g.over||{}; S.priceFile=g.priceFile||null; S.priceAt=g.priceAt||null; S.taxFile=g.taxFile||null; S.taxAt=g.taxAt||null;
   settingsSynced=JSON.stringify(settingsObj());
   DB={}; items.forEach(r=>{ DB[r.item_code]=[r.item_name||"",(r.vendor||"").replace(/\s*\/\s*/g," / "),r.uom||"",+r.tax_pct||0,(r.price===null||r.price===undefined)?null:+r.price]; });
+  formDirty();
   setSync("ok","✔ محفوظ على السيرفر");
 }
-function save(){ if(!CAN_EDIT) return; setSync("busy","جارِ الحفظ…"); clearTimeout(saveTimer); saveTimer=setTimeout(cloudSave,700); }
+function save(){ formDirty(); if(!CAN_EDIT) return; setSync("busy","جارِ الحفظ…"); clearTimeout(saveTimer); saveTimer=setTimeout(cloudSave,700); }
 async function cloudSave(){
   if(!CAN_EDIT||!sb) return;
   if(saving){ saveAgain=true; return; }
@@ -405,11 +430,35 @@ function evalQty(str){
 }
 
 /* ================= items for a session ================= */
-function allItems(sess){
+/* ---- نموذج الجرد = الأصناف الأساسية + المضافة يدوياً + كل صنف جُرد لأي مندوب (رصيد نظام أو كمية فعلية) ---- */
+let _formCache=null;
+function formDirty(){ _formCache=null; }
+function itemFromCode(code,src,desc){ const r=rec(code); return {code,name:r.name||desc||"(غير معرّف في القائمة)",sup:(r.sup||"").trim()||OTHER_SUP,unit:r.unit||"",src}; }
+function formItems(){
+  if(_formCache) return _formCache;
   const map=new Map(); const order=[];
   const add=(it)=>{ if(!map.has(it.code)){ map.set(it.code,it); order.push(it.code);} };
   MASTER.forEach(m=>add({code:m[0],name:m[1],sup:m[2],unit:m[3],src:"m"}));
   (S.custom||[]).forEach(c=>add({code:c.code,name:c.name,sup:c.sup||OTHER_SUP,unit:c.unit||"Piece",src:"c"}));
+  (S.formAdd||[]).forEach(c=>add(itemFromCode(c,"f")));
+  const counted=new Map();
+  S.sessions.forEach(s=>{
+    const codes=new Set();
+    Object.entries(s.stock||{}).forEach(([c,v])=>{ if(Math.abs(+v.inStock||0)>EPS) codes.add(c); });
+    Object.entries(s.actual||{}).forEach(([c,v])=>{ if(String(v).trim()!=="") codes.add(c); });
+    codes.forEach(c=>{ if(!counted.has(c)) counted.set(c,{reps:new Set(),desc:s.stock?.[c]?.desc}); counted.get(c).reps.add(s.rep||"—"); });
+  });
+  [...counted.keys()].sort().forEach(c=>{ if(!map.has(c)) add(itemFromCode(c,"a",counted.get(c).desc)); });
+  order.forEach(c=>{ const k=counted.get(c); map.get(c).reps = k?[...k.reps]:[]; });
+  const sups=[]; order.forEach(c=>{ const s=map.get(c).sup; if(!sups.includes(s)) sups.push(s); });
+  if(sups.includes(OTHER_SUP)){ sups.splice(sups.indexOf(OTHER_SUP),1); sups.push(OTHER_SUP); }
+  _formCache = sups.flatMap(s=>order.filter(c=>map.get(c).sup===s).map(c=>map.get(c)));
+  return _formCache;
+}
+function allItems(sess){
+  const map=new Map(); const order=[];
+  const add=(it)=>{ if(!map.has(it.code)){ map.set(it.code,it); order.push(it.code);} };
+  formItems().forEach(add);
   if(sess&&sess.stock){
     Object.keys(sess.stock).forEach(code=>{ if(!map.has(code)){ const st=sess.stock[code]; const r=rec(code); add({code,name:r.name||st.desc||"(غير معرّف في القائمة)",sup:r.sup||OTHER_SUP,unit:r.unit||"",src:"p"}); } });
   }
@@ -484,6 +533,7 @@ function render(){ renderSide(); const m=$("#main");
   document.querySelectorAll(".top .tbtn").forEach(b=>b.classList.remove("on"));
   if(view==="cons"){ $("#btnCons").classList.add("on"); return renderCons(m); }
   if(view==="value"){ $("#btnValue").classList.add("on"); return renderValue(m); }
+  if(view==="form"){ $("#btnForm").classList.add("on"); return renderForm(m); }
   const s=S.sessions.find(x=>x.id===cur);
   if(!s){ view="welcome"; return renderWelcome(m); }
   renderSession(m,s);
@@ -595,6 +645,57 @@ function exportValueCsv(){
   sess.forEach(s=>{ valCalc(s).rows.forEach(({it,c,sv,av})=>rows.push([s.rep,s.date,s.vehicle,psetLabel(s),it.sup,it.code,it.name,UNIT_AR[it.unit]||it.unit,c.unitVal===null?"":Math.round(c.unitVal*1000)/1000,c.sys,sv===null?"":Math.round(sv*1000)/1000,c.act??"",av===null?"":Math.round(av*1000)/1000,c.diff??"",c.val??"",ST_LBL[c.status]])); });
   download(`قيمة_مستودع_المندوب_${vRep?vRep.replace(/\s+/g,"_"):"الجميع"}_${today()}.csv`,csv(rows),"text/csv;charset=utf-8");
 }
+
+/* ================= نموذج الجرد (للطباعة) ================= */
+let fRep="", fBlank=15, fShowAuto=true;
+function renderForm(m){
+  const items=formItems().filter(it=>fShowAuto||it.src!=="a");
+  const nAuto=formItems().filter(it=>it.src==="a").length, nMan=formItems().filter(it=>it.src==="f"||it.src==="c").length;
+  const g={}; items.forEach(it=>{(g[it.sup]=g[it.sup]||[]).push(it);});
+  const sups=Object.keys(g); let n=0;
+  const repOpts=REPS.map(r=>`<option ${r===fRep?"selected":""}>${esc(r)}</option>`).join("");
+  let rows="";
+  sups.forEach((sup,gi)=>{
+    rows+=`<tbody class="grp"><tr class="fsup"><td colspan="6"><span class="gi">${gi+1}</span> المورد: <b dir="auto">${esc(sup)}</b> <span class="cnt">(${g[sup].length} صنف)</span></td></tr>`;
+    g[sup].forEach(it=>{ n++;
+      const tag = it.src==="a" ? `<span class="ftag noprint" title="جُرد لدى: ${esc((it.reps||[]).join("، "))}">من الجرد</span>` : it.src==="f" ? `<span class="ftag man noprint">مضاف يدوياً</span>${CAN_EDIT?` <button class="del noprint" title="إزالة من النموذج" onclick="formRemove('${esc(it.code)}')">×</button>`:""}` : "";
+      rows+=`<tr><td class="n fnum">${n}</td><td class="fcode">${esc(it.code)}</td><td class="fnm" dir="auto">${esc(it.name)} ${tag}</td><td class="fu">${esc(it.unit||"")}</td><td class="fq"></td><td></td></tr>`; });
+    rows+=`<tr class="fblank"><td class="fnum">+</td><td></td><td></td><td></td><td class="fq"></td><td></td></tr></tbody>`;
+  });
+  let extra=""; for(let i=1;i<=fBlank;i++) extra+=`<tr class="fblank"><td class="fnum">${i}</td><td></td><td></td><td></td><td></td><td class="fq"></td><td></td></tr>`;
+  m.innerHTML=`
+  <div class="card noprint">
+    <div class="cfilter">
+      <div class="fld"><label>اسم المندوب على النموذج</label><select id="frep"><option value="">— فارغ (يُكتب باليد) —</option>${repOpts}</select></div>
+      <div class="fld"><label>أسطر «أصناف أخرى» فارغة</label><input id="fbl" type="number" min="0" max="60" value="${fBlank}" style="width:90px"></div>
+      <label class="chk" style="margin-bottom:8px"><input type="checkbox" id="fauto" ${fShowAuto?"checked":""}> تضمين الأصناف المضافة من الجرودات (${nAuto})</label>
+      <button class="btn" onclick="window.print()">🖨 طباعة / حفظ PDF</button>
+    </div>
+    ${CAN_EDIT?`<div class="fadd"><div class="fld" style="flex:1;min-width:240px"><label>إضافة صنف للنموذج من قائمة الأصناف (${Object.keys(DB).length})</label><input id="fsq" placeholder="اكتب الرمز أو جزءاً من الاسم…" autocomplete="off"></div><div id="fsr" class="fsr"></div></div>`:""}
+    <div class="hint" style="margin-top:8px">النموذج = ${MASTER.length} صنف أساسي + ${nMan} مضاف يدوياً + ${nAuto} صنف ظهر برصيد أو جُرد لدى أحد المندوبين (يُضاف تلقائياً). المجموع ${items.length} صنف في ${sups.length} مورد.</div>
+  </div>
+  <div class="cform">
+    <div class="rh"><div><div class="co">مركز الكيلاني للأغذية — التدقيق الداخلي</div><h1>نموذج جرد الكاش فان</h1></div><div class="hint">عدد الأصناف: <span class="n">${items.length}</span> · عدد الموردين: <span class="n">${sups.length}</span></div></div>
+    <div class="fmeta"><div><b>اسم المندوب:</b> ${esc(fRep)}</div><div><b>رقم السيارة:</b></div><div><b>المستودع:</b></div>
+      <div><b>التاريخ:</b> &nbsp;&nbsp;&nbsp;/&nbsp;&nbsp;&nbsp;&nbsp;/ ${new Date().getFullYear()}</div><div><b>وقت بدء الجرد:</b></div><div><b>وقت الانتهاء:</b></div></div>
+    <table class="ftab"><colgroup><col style="width:5%"><col style="width:11%"><col style="width:51%"><col style="width:8%"><col style="width:11%"><col style="width:14%"></colgroup>
+      <thead><tr><th>#</th><th>رمز الصنف</th><th>اسم الصنف</th><th>الوحدة</th><th>الكمية الفعلية</th><th>ملاحظات</th></tr></thead>${rows}</table>
+    ${fBlank?`<h2 class="fh2">أصناف أخرى غير مدرجة</h2>
+    <table class="ftab"><colgroup><col style="width:5%"><col style="width:11%"><col style="width:36%"><col style="width:15%"><col style="width:8%"><col style="width:11%"><col style="width:14%"></colgroup>
+      <thead><tr><th>#</th><th>رمز الصنف</th><th>اسم الصنف</th><th>المورد</th><th>الوحدة</th><th>الكمية الفعلية</th><th>ملاحظات</th></tr></thead><tbody>${extra}</tbody></table>`:""}
+    <div class="sig"><div>المندوب<br><b>${esc(fRep)}</b></div><div>المدقق / أمين المستودع</div><div>الاعتماد</div></div>
+  </div>`;
+  $("#frep").onchange=e=>{ fRep=e.target.value; renderForm(m); };
+  $("#fbl").onchange=e=>{ fBlank=Math.max(0,Math.min(60,parseInt(e.target.value)||0)); renderForm(m); };
+  $("#fauto").onchange=e=>{ fShowAuto=e.target.checked; renderForm(m); };
+  const sq=$("#fsq");
+  if(sq){ sq.oninput=()=>{ const q=sq.value.trim().toLowerCase(); const box=$("#fsr"); if(q.length<2){ box.innerHTML=""; return; }
+    const inForm=new Set(formItems().map(i=>i.code));
+    const res=Object.keys(DB).filter(c=>(c+" "+(DB[c][0]||"")).toLowerCase().includes(q)).slice(0,25);
+    box.innerHTML=res.length?res.map(c=>`<div class="fsi"><span class="code">${esc(c)}</span> <span dir="auto">${esc(DB[c][0]||"")}</span> <span class="hint">· ${esc(DB[c][1]||"")} · ${esc(DB[c][2]||"")}</span> ${inForm.has(c)?'<span class="ftag">بالنموذج</span>':`<button class="btn sm" onclick="formAdd('${esc(c)}')">+ إضافة</button>`}</div>`).join(""):'<div class="hint">لا نتائج</div>'; }; }
+}
+function formAdd(code){ if(!CAN_EDIT) return; S.formAdd=S.formAdd||[]; if(!S.formAdd.includes(code)) S.formAdd.push(code); save(); render(); toast("أُضيف "+code+" لنموذج الجرد"); }
+function formRemove(code){ if(!CAN_EDIT) return; S.formAdd=(S.formAdd||[]).filter(c=>c!==code); save(); render(); }
 
 function renderSession(m,s){
   const k=stats(s);
@@ -945,6 +1046,7 @@ function toggleLock(id){ const s=S.sessions.find(x=>x.id===id); if(!s||!CAN_EDIT
 $("#btnNew").onclick=newSession;
 $("#btnCons").onclick=()=>{ view="cons"; render(); };
 $("#btnValue").onclick=()=>{ view="value"; render(); };
+$("#btnForm").onclick=()=>{ view="form"; render(); };
 
 /* ----- PDF upload ----- */
 function pickPdf(){ const f=$("#fPdf"); f.value=""; f.click(); }
@@ -1047,14 +1149,24 @@ function parseTSV(text){
   return rows;
 }
 const numP = s => { const t=String(s||"").replace(/[^\d.\-]/g,""); return t===""||t==="-"?null:parseFloat(t); };
+async function readText(f){
+  const b=new Uint8Array(await f.arrayBuffer());
+  if(b[0]===0xFF&&b[1]===0xFE) return new TextDecoder("utf-16le").decode(b);
+  if(b[0]===0xFE&&b[1]===0xFF) return new TextDecoder("utf-16be").decode(b);
+  return new TextDecoder("utf-8").decode(b);
+}
 async function handlePriceFiles(files){
   if(!CAN_EDIT){ toast("صلاحيتك عرض فقط"); return; }
   let pr=0, tx=0, other=0; const now=new Date().toISOString();
   S.over=S.over||{}; toast("جارِ رفع الأسعار للسيرفر…");
   try{
-  for(const f of files){
-    const rows=parseTSV(await f.text()); if(!rows.length) continue;
-    const h=rows[0].map(x=>x.trim());
+  // اقرأ كل الملفات أولاً ورتّبها: الأسعار ← بيانات الأصناف (أسماء الموردين) ← All_Items (رموز الموردين)
+  const parsed=[];
+  for(const f of files){ const rows=parseTSV(await readText(f)); if(!rows.length) continue; const h=rows[0].map(x=>x.trim());
+    const iV=h.indexOf("Preferred Vendor"); const coded=iV>=0 && rows.slice(1,200).filter(r=>/^V\d+$/i.test((r[iV]||"").trim())).length>20;
+    parsed.push({f,rows,h,rank: h.indexOf("Price")>=0?0:(coded?2:1)}); }
+  parsed.sort((a,b)=>a.rank-b.rank);
+  for(const {f,rows,h} of parsed){
     const iCode=h.indexOf("Item No."), iPrice=h.indexOf("Price"), iTax=h.indexOf("Sales Tax Definition");
     if(iCode<0){ other++; continue; }
     if(iPrice>=0){ // price list export → cash_van_items.price (blank = no Cach Van price)
@@ -1067,11 +1179,18 @@ async function handlePriceFiles(files){
       await pushItems(up);
       S.priceFile=f.name; S.priceAt=Date.now();
     } else if(iTax>=0){ // item master export (2nd "Item No." column holds the code)
-      const iC2=h.lastIndexOf("Item No."), iDesc=h.indexOf("Item Description"), iVen=h.indexOf("Preferred Vendor"), iU=h.indexOf("Inventory UoM");
+      const iC2=h.lastIndexOf("Item No."), iDesc=h.indexOf("Item Description"), iVen=h.indexOf("Preferred Vendor"), iU=h.indexOf("Inventory UoM"), iCU=h.indexOf("Inventory Counting UoM Name");
       const up=[]; const seen=new Set();
+      // ربط رمز المورد ← اسمه من الأصناف المعروفة مسبقاً (لملف All_Items)
+      const vmap={}; const vcnt={};
+      rows.slice(1).forEach(r=>{ const c=(r[iC2]||"").trim(), v=(r[iVen]||"").trim(); const nm=(DB[c]||[])[1];
+        if(/^V\d+$/i.test(v) && nm && !/^V\d+$/i.test(nm)){ const k=v+"|"+nm; vcnt[k]=(vcnt[k]||0)+1; if(!vmap[v]||vcnt[k]>vcnt[v+"|"+vmap[v]]) vmap[v]=nm; } });
       rows.slice(1).forEach(r=>{ const c=(r[iC2]||"").trim(); if(!/^[A-Z]{2,4}\d{4,6}$/.test(c)||seen.has(c)) return; seen.add(c);
-        const m=String(r[iTax]||"").match(/(\d+(?:\.\d+)?)\s*%/); const t=m?parseFloat(m[1])/100:0;
-        const nm=(r[iDesc]||"").replace(/\s+/g," ").trim(), ven=(r[iVen]||"").replace(/\s+/g," ").trim(), u=(r[iU]||"").trim();
+        const m=String(r[iTax]||"").match(/(\d+(?:\.\d+)?)\s*%?\s*$/); const t=m?parseFloat(m[1])/100:0;
+        const old=DB[c]||[];
+        const nm=(r[iDesc]||"").replace(/\s+/g," ").trim()||old[0]||"";
+        let ven=(r[iVen]||"").replace(/\s+/g," ").trim(); if(!ven||/^V\d+$/i.test(ven)) ven=(old[1]&&!/^V\d+$/i.test(old[1]))?old[1]:(vmap[ven]||ven);   // All_Items: Preferred Vendor = رمز المورد — نحافظ على الاسم الموجود
+        let u=(r[iU]||"").trim(); if(!u||/^\d+$/.test(u)) u=old[2]||(iCU>=0?(r[iCU]||"").trim():"")||u;   // All_Items: Inventory UoM = رقم — نحافظ على الوحدة الموجودة
         up.push({item_code:c,item_name:nm,vendor:ven,uom:u,tax_pct:t,updated_at:now});
         const d=DB[c]=DB[c]||["","","",0,null]; d[0]=nm; d[1]=ven.replace(/\s*\/\s*/g," / "); d[2]=u; d[3]=t;
         if(S.over[c]){ delete S.over[c].tax; delete S.over[c].name; delete S.over[c].sup; delete S.over[c].unit; if(!Object.keys(S.over[c]).length) delete S.over[c]; }
@@ -1098,7 +1217,7 @@ function openPrices(){
     </div>
     ${S.priceFile||S.taxFile?`<div class="hint" style="margin:6px 0">آخر تحديث: ${S.priceFile?"أسعار من «"+esc(S.priceFile)+"» "+new Date(S.priceAt).toLocaleString("en-GB"):""} ${S.taxFile?"· ضريبة من «"+esc(S.taxFile)+"»":""}</div>`:""}
     <div class="hint" style="margin:10px 0">السعر قبل الضريبة. الضريبة حسب Sales Tax Definition لكل صنف. المبلغ = الفرق × السعر × المعامل (+ الضريبة إن فُعّلت).</div>
-    <div class="drop ${CAN_EDIT?"":"hidden"}" id="pdrop" style="padding:12px"><b>تحديث الأسعار أو الضريبة</b><div class="sub">ارفع ملف قائمة الأسعار (Price List) أو ملف بيانات الأصناف (Item Master Data) المصدَّر من SAP كنص (txt)</div></div>
+    <div class="drop ${CAN_EDIT?"":"hidden"}" id="pdrop" style="padding:12px"><b>تحديث الأسعار أو الضريبة</b><div class="sub">ارفع ملف قائمة الأسعار (Price List) أو ملف بيانات الأصناف (Item Master Data / All Items) المصدَّر من SAP كنص (txt)</div></div>
     <div class="fld" style="margin-top:12px"><label>بحث عن صنف</label><input id="psq" placeholder="الرمز أو الاسم…"></div>
     <div id="pres" style="max-height:240px;overflow:auto;margin-top:6px"></div>
     <div class="acts"><button class="btn ghost" id="pClose">إغلاق</button>${ovr.length&&CAN_EDIT?`<button class="btn danger" id="pReset">إلغاء كل التعديلات (${ovr.length})</button>`:""}</div>`);
