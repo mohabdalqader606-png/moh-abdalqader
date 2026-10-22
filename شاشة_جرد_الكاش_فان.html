@@ -675,7 +675,7 @@ function exportValueCsv(){
 }
 
 /* ================= نموذج الجرد (للطباعة) ================= */
-let fRep="", fBlank=15, fShowAuto=true;
+let fRep="", fBlank=15, fShowAuto=true, fSort="sup";
 function renderForm(m){
   const items=formItems().filter(it=>fShowAuto||it.src!=="a");
   const nAuto=formItems().filter(it=>it.src==="a").length, nMan=formItems().filter(it=>it.src==="f"||it.src==="c").length;
@@ -683,6 +683,11 @@ function renderForm(m){
   const sups=Object.keys(g); let n=0;
   const repOpts=REPS.map(r=>`<option ${r===fRep?"selected":""}>${esc(r)}</option>`).join("");
   let rows="";
+  const itTag=it=> it.src==="a" ? `<span class="ftag noprint" title="جُرد لدى: ${esc((it.reps||[]).join("، "))}">من الجرد</span>` : it.src==="f" ? `<span class="ftag man noprint">مضاف يدوياً</span>${CAN_EDIT?` <button class="del noprint" title="إزالة من النموذج" onclick="formRemove('${esc(it.code)}')">×</button>`:""}` : "";
+  if(fSort==="code"){
+    rows='<tbody>'+[...items].sort((a,b)=>a.code.localeCompare(b.code)).map(it=>{ n++;
+      return `<tr><td class="n fnum">${n}</td><td class="fcode">${esc(it.code)}</td><td class="fnm" dir="auto">${esc(it.name)} ${itTag(it)}</td><td class="fu">${esc(it.unit||"")}</td><td class="fq"></td><td></td></tr>`; }).join("")+'</tbody>';
+  } else
   sups.forEach((sup,gi)=>{
     rows+=`<tbody class="grp"><tr class="fsup"><td colspan="6"><span class="gi">${gi+1}</span> المورد: <b dir="auto">${esc(sup)}</b> <span class="cnt">(${g[sup].length} صنف)</span></td></tr>`;
     g[sup].forEach(it=>{ n++;
@@ -696,6 +701,7 @@ function renderForm(m){
     <div class="cfilter">
       <div class="fld"><label>اسم المندوب على النموذج</label><select id="frep"><option value="">— فارغ (يُكتب باليد) —</option>${repOpts}</select></div>
       <div class="fld"><label>أسطر «أصناف أخرى» فارغة</label><input id="fbl" type="number" min="0" max="60" value="${fBlank}" style="width:90px"></div>
+      <div class="fld"><label>ترتيب النموذج</label><div class="seg" id="fsort"><button data-v="sup" class="${fSort==="sup"?"on":""}">حسب المورد</button><button data-v="code" class="${fSort==="code"?"on":""}">حسب رمز الصنف</button></div></div>
       <label class="chk" style="margin-bottom:8px"><input type="checkbox" id="fauto" ${fShowAuto?"checked":""}> تضمين الأصناف المضافة من الجرودات (${nAuto})</label>
       <button class="btn" onclick="window.print()">🖨 طباعة / حفظ PDF</button>
     </div>
@@ -703,7 +709,7 @@ function renderForm(m){
     <div class="hint" style="margin-top:8px">النموذج = ${MASTER.length} صنف أساسي + ${nMan} مضاف يدوياً + ${nAuto} صنف ظهر برصيد أو جُرد لدى أحد المندوبين (يُضاف تلقائياً). المجموع ${items.length} صنف في ${sups.length} مورد.</div>
   </div>
   <div class="cform">
-    <div class="rh"><div><div class="co">مركز الكيلاني للأغذية — التدقيق الداخلي</div><h1>نموذج جرد الكاش فان</h1></div><div class="hint">عدد الأصناف: <span class="n">${items.length}</span> · عدد الموردين: <span class="n">${sups.length}</span></div></div>
+    <div class="rh"><div><div class="co">مركز الكيلاني للأغذية — التدقيق الداخلي</div><h1>نموذج جرد الكاش فان</h1></div><div class="hint">عدد الأصناف: <span class="n">${items.length}</span>${fSort==="sup"?` · عدد الموردين: <span class="n">${sups.length}</span>`:" · مرتّب حسب رمز الصنف"}</div></div>
     <div class="fmeta"><div><b>اسم المندوب:</b> ${esc(fRep)}</div><div><b>رقم السيارة:</b></div><div><b>المستودع:</b></div>
       <div><b>التاريخ:</b> &nbsp;&nbsp;&nbsp;/&nbsp;&nbsp;&nbsp;&nbsp;/ ${new Date().getFullYear()}</div><div><b>وقت بدء الجرد:</b></div><div><b>وقت الانتهاء:</b></div></div>
     <table class="ftab"><colgroup><col style="width:5%"><col style="width:11%"><col style="width:51%"><col style="width:8%"><col style="width:11%"><col style="width:14%"></colgroup>
@@ -716,6 +722,7 @@ function renderForm(m){
   $("#frep").onchange=e=>{ fRep=e.target.value; renderForm(m); };
   $("#fbl").onchange=e=>{ fBlank=Math.max(0,Math.min(60,parseInt(e.target.value)||0)); renderForm(m); };
   $("#fauto").onchange=e=>{ fShowAuto=e.target.checked; renderForm(m); };
+  $("#fsort").onclick=e=>{ const b=e.target.closest("button"); if(b){ fSort=b.dataset.v; renderForm(m); } };
   const sq=$("#fsq");
   if(sq){ sq.oninput=()=>{ const q=sq.value.trim().toLowerCase(); const box=$("#fsr"); if(q.length<2){ box.innerHTML=""; return; }
     const inForm=new Set(formItems().map(i=>i.code));
