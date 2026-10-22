@@ -141,6 +141,24 @@ table.g tr.row:hover td{background:#f8fbfe}
 .mbox .dueb b{color:var(--bad);font-size:17px}
 .mbox .ordb{background:#f4f0ff;border-color:#d9d0fb} .mbox .ordb b{color:#6941c6;font-size:17px}
 .kpi.ord .v{color:#6941c6}
+.memo .mref{text-align:left;font-size:13px;line-height:1.8}
+.mto{border:1px solid var(--line);border-radius:8px;padding:8px 12px;margin:6px 0 10px;font-size:14px;line-height:2}
+.mto span{color:var(--mute);display:inline-block;min-width:70px}
+.mbody{font-size:14px;line-height:2;margin:10px 0}
+.mamt{display:flex;gap:16px;align-items:center;flex-wrap:wrap;border:2px solid var(--bad);background:var(--bad-bg);border-radius:10px;padding:10px 14px;margin:14px 0}
+.mamt span{display:block;font-size:12px;color:var(--mute)} .mamt b{font-size:22px;color:var(--bad)} .mamt .w{font-size:15px;font-weight:700;color:var(--navy-d)}
+.msig{display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:40px;text-align:center;font-size:13px;page-break-inside:avoid}
+.msig div{border-top:1px solid #444;padding-top:5px} .msig span{display:block;margin-top:22px;color:var(--mute)}
+.tdwrap{display:flex;gap:10px;flex-wrap:wrap}
+.tdrep{border:1px solid var(--line);border-radius:10px;padding:8px 12px;display:flex;gap:8px;align-items:center}
+.tdrep.done{background:var(--ok-bg);border-color:#b7e1c8}
+.srep{display:inline-block;padding:2px 8px;border-radius:14px;background:var(--nc-bg);margin:2px;font-size:12.5px}
+.srep small{font-size:10.5px;opacity:.85} .srep.ok{background:var(--ok-bg);color:var(--ok)} .srep.bad{background:var(--bad-bg);color:var(--bad)} .srep.sur{background:var(--sur-bg);color:var(--sur)} .srep.extra{background:#eef4ff;color:#3538cd}
+.rep tr.istoday td{outline:2px solid var(--gold);outline-offset:-2px}
+.rep tr.fx td{background:#fffaf0}
+.pickrep{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:10px 0}
+.hbar{height:9px;background:var(--nc-bg);border-radius:6px;overflow:hidden} .hbar i{display:block;height:100%;background:var(--bad)}
+@media print{ .mamt,.srep,.rep tr.fx td,.hbar i{-webkit-print-color-adjust:exact;print-color-adjust:exact} }
 .pinfo{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .pinfo div{border:1px solid var(--line);border-radius:8px;padding:6px 9px}
 .pinfo span{display:block;font-size:11px;color:var(--mute)}
@@ -256,6 +274,8 @@ body.ro .ne{display:none!important}
   <button class="tbtn" id="btnCons">التقرير المجمّع</button>
   <button class="tbtn" id="btnValue">قيمة مستودع المندوب</button>
   <button class="tbtn" id="btnForm">نموذج الجرد</button>
+  <button class="tbtn ne" id="btnSched">جدول الجرد</button>
+  <button class="tbtn" id="btnHist">سجل المندوب</button>
   <button class="tbtn" id="btnPrices">الأسعار والضريبة</button>
   <input type="file" id="fPrice" accept=".txt,.tsv,.csv,text/plain" multiple class="hidden">
   <button class="tbtn" id="btnBackup">نسخة احتياطية</button>
@@ -367,7 +387,7 @@ const SCREEN_ID = 'cash-van-count';
 let sb=null, USER=null, PERM=null, CAN_EDIT=false;
 const synced={}; let settingsSynced=""; let saving=false, saveAgain=false, saveTimer=null;
 function setSync(state,msg){ const el=$("#sync"); if(!el) return; el.className="sync "+state; el.textContent=msg; }
-function settingsObj(){ return {custom:S.custom||[],formAdd:S.formAdd||[],over:S.over||{},priceFile:S.priceFile||null,priceAt:S.priceAt||null,taxFile:S.taxFile||null,taxAt:S.taxAt||null}; }
+function settingsObj(){ return {custom:S.custom||[],formAdd:S.formAdd||[],schedule:S.schedule||null,over:S.over||{},priceFile:S.priceFile||null,priceAt:S.priceAt||null,taxFile:S.taxFile||null,taxAt:S.taxAt||null}; }
 async function fetchAllItems(){
   const out=[]; let from=0; const step=1000;
   for(;;){ const {data,error}=await sb.from('cash_van_items').select('item_code,item_name,vendor,uom,tax_pct,price').order('item_code').range(from,from+step-1);
@@ -386,7 +406,7 @@ async function cloudLoad(){
   S.sessions=(c.data||[]).map(r=>r.data).filter(x=>x&&x.id);
   S.sessions.forEach(s=>synced[s.id]=JSON.stringify(s));
   const g=(st.data&&st.data.data)||{};
-  S.custom=g.custom||[]; S.formAdd=g.formAdd||[]; S.over=g.over||{}; S.priceFile=g.priceFile||null; S.priceAt=g.priceAt||null; S.taxFile=g.taxFile||null; S.taxAt=g.taxAt||null;
+  S.custom=g.custom||[]; S.formAdd=g.formAdd||[]; S.schedule=g.schedule||null; S.over=g.over||{}; S.priceFile=g.priceFile||null; S.priceAt=g.priceAt||null; S.taxFile=g.taxFile||null; S.taxAt=g.taxAt||null;
   settingsSynced=JSON.stringify(settingsObj());
   DB={}; items.forEach(r=>{ DB[r.item_code]=[r.item_name||"",(r.vendor||"").replace(/\s*\/\s*/g," / "),r.uom||"",+r.tax_pct||0,(r.price===null||r.price===undefined)?null:+r.price]; });
   formDirty();
@@ -559,6 +579,8 @@ function render(){ renderSide(); const m=$("#main");
   if(view==="cons"){ $("#btnCons").classList.add("on"); return renderCons(m); }
   if(view==="value"){ $("#btnValue").classList.add("on"); return renderValue(m); }
   if(view==="form"){ $("#btnForm").classList.add("on"); return renderForm(m); }
+  if(view==="sched"){ $("#btnSched").classList.add("on"); return renderSchedule(m); }
+  if(view==="hist"){ $("#btnHist").classList.add("on"); return renderHistory(m); }
   const s=S.sessions.find(x=>x.id===cur);
   if(!s){ view="welcome"; return renderWelcome(m); }
   renderSession(m,s);
@@ -764,9 +786,11 @@ function renderSession(m,s){
   <div class="tabs noprint">
     <button class="tab ${tab==="entry"?"on":""}" data-t="entry">إدخال الكميات الفعلية</button>
     <button class="tab ${tab==="report"?"on":""}" data-t="report">تقرير الجرد</button>
+    <button class="tab ${tab==="memo"?"on":""}" data-t="memo">مذكرة خصم</button>
   </div>
   <div id="paneEntry" class="${tab==="entry"?"":"hidden"}"></div>
-  <div id="paneReport" class="${tab==="report"?"":"hidden"}"></div>`;
+  <div id="paneReport" class="${tab==="report"?"":"hidden"}"></div>
+  <div id="paneMemo" class="${tab==="memo"?"":"hidden"}"></div>`;
 
   const bind=(id,key)=>{ const el=$("#"+id); el.addEventListener("input",()=>{ s[key]=el.value; save(); if(key==="rep"||key==="date"||key==="vehicle") renderSide(); }); };
   bind("fRep","rep"); $("#fRep").addEventListener("change",()=>{ if(tab==="entry") renderEntry(s); });
@@ -784,7 +808,7 @@ function renderSession(m,s){
     dz.ondragleave=()=>dz.classList.remove("over");
     dz.ondrop=e=>{e.preventDefault();dz.classList.remove("over"); const f=e.dataTransfer.files[0]; if(f) handlePdf(f);};
   }
-  if(tab==="entry") renderEntry(s); else renderReport(s);
+  if(tab==="entry") renderEntry(s); else if(tab==="memo") renderMemo(s); else renderReport(s);
 }
 
 /* ---------- entry pane ---------- */
@@ -999,6 +1023,202 @@ function renderReport(s){
   $("#sf").onchange=e=>{ showFull=e.target.checked; renderReport(s); };
 }
 
+/* ================= التفقيط (المبلغ بالحروف) ================= */
+function tafqitInt(n){
+  n=Math.floor(n); if(n===0) return "صفر";
+  const ones=["","واحد","اثنان","ثلاثة","أربعة","خمسة","ستة","سبعة","ثمانية","تسعة","عشرة","أحد عشر","اثنا عشر","ثلاثة عشر","أربعة عشر","خمسة عشر","ستة عشر","سبعة عشر","ثمانية عشر","تسعة عشر"];
+  const tens=["","","عشرون","ثلاثون","أربعون","خمسون","ستون","سبعون","ثمانون","تسعون"];
+  const hund=["","مائة","مائتان","ثلاثمائة","أربعمائة","خمسمائة","ستمائة","سبعمائة","ثمانمائة","تسعمائة"];
+  const b1000=x=>{ const h=Math.floor(x/100), r=x%100, p=[]; if(h) p.push(hund[h]);
+    if(r){ if(r<20) p.push(ones[r]); else p.push((r%10?ones[r%10]+" و":"")+tens[Math.floor(r/10)]); } return p.join(" و"); };
+  const scale=(x,one,two,few,many)=> x===1?one : x===2?two : (x<=10? b1000(x)+" "+few : b1000(x)+" "+many);
+  const parts=[]; const mil=Math.floor(n/1e6), th=Math.floor((n%1e6)/1000), rest=n%1000;
+  if(mil) parts.push(scale(mil,"مليون","مليونان","ملايين","مليون"));
+  if(th) parts.push(scale(th,"ألف","ألفان","آلاف","ألف"));
+  if(rest) parts.push(b1000(rest));
+  return parts.join(" و");
+}
+function countNoun(n,one,two,plural,sing){
+  if(n===1) return one+" واحد"; if(n===2) return two;
+  const r=n%100; return tafqitInt(n)+" "+((r>=3&&r<=10)?plural:sing);
+}
+function tafqitJOD(v){
+  v=Math.round((+v||0)*1000)/1000; const d=Math.floor(v), f=Math.round((v-d)*1000);
+  let s=d?countNoun(d,"دينار","ديناران","دنانير","دينار"):""; if(f) s+=(s?" و":"")+countNoun(f,"فلس","فلسان","فلوس","فلس"); if(!s) s="صفر دينار";
+  return "فقط "+s+" لا غير";
+}
+function memoNo(s){ return "CV-"+(s.date||"").replace(/-/g,"")+"-"+(s.id||"").slice(-4).toUpperCase(); }
+function renderMemo(s){
+  const p=$("#paneMemo"); if(!s.stock){ p.innerHTML=`<div class="card empty">ارفع كشف رصيد النظام وأدخل الجرد أولاً.</div>`; return; }
+  const k=stats(s), P=pset(s);
+  const bad=allItems(s).map(it=>({it,c:rowCalc(s,it)})).filter(r=>r.c.status==="bad");
+  const sur=allItems(s).map(it=>({it,c:rowCalc(s,it)})).filter(r=>r.c.status==="sur");
+  let n=0;
+  p.innerHTML=`
+  <div class="repbar noprint">
+    <button class="btn" onclick="window.print()">🖨 طباعة / حفظ PDF</button>
+    ${s.locked?"":`<span class="hint" style="color:var(--bad)">⚠ الجرد غير مُقفل — المبلغ قد يتغيّر. يُفضّل إقفال الجرد قبل إصدار المذكرة.</span>`}
+    ${k.noPrice?`<span class="hint" style="color:var(--bad)">⚠ ${k.noPrice} صنف بفروقات بدون سعر — غير داخل بالمبلغ.</span>`:""}
+  </div>
+  <div class="rep memo">
+    <div class="rh"><div><div class="co">مركز الكيلاني للأغذية — التدقيق الداخلي</div><h1>مذكرة خصم — عجز جرد الكاش فان</h1></div>
+      <div class="mref"><div>الرقم: <b class="n">${esc(memoNo(s))}</b></div><div>التاريخ: <b>${esc(dAr(today()))}</b></div></div></div>
+    <div class="mto">
+      <div><span>إلى:</span> قسم الموارد البشرية / الرواتب</div>
+      <div><span>من:</span> التدقيق الداخلي</div>
+      <div><span>الموضوع:</span> خصم قيمة عجز جرد مستودع السيارة للمندوب <b>${esc(s.rep||"")}</b></div>
+    </div>
+    <p class="mbody">بتاريخ <b>${esc(dAr(s.date))}</b> تم جرد مستودع السيارة${s.vehicle?` رقم <b>${esc(s.vehicle)}</b>`:""} العائد للمندوب <b>${esc(s.rep||"")}</b>${s.by?` بحضور ${esc(s.by)}`:""}، ومطابقته مع رصيد النظام (Stock Status)، وتبيّن وجود عجز في <b>${bad.length}</b> صنف كما هو مبيّن أدناه.
+    احتُسبت القيمة على أساس <b>${esc(psetLabel(s))}</b>.</p>
+    ${bad.length?`<table><thead><tr><th>#</th><th>رمز الصنف</th><th>اسم الصنف</th><th>الوحدة</th><th>رصيد النظام</th><th>الفعلي</th><th>كمية العجز</th><th>سعر الوحدة المحتسب</th><th>قيمة العجز</th></tr></thead><tbody>
+      ${bad.map(({it,c})=>{ n++; return `<tr><td class="n">${n}</td><td class="n"><b>${esc(it.code)}</b></td><td class="nm">${esc(it.name)}</td><td>${esc(UNIT_AR[it.unit]||it.unit||"")}</td><td class="n">${fmt(c.sys)}</td><td class="n">${fmt(c.act)}</td><td class="n" style="color:var(--bad);font-weight:700">${fmt(Math.abs(c.diff))}</td><td class="n">${c.unitVal===null?"—":fmtM(c.unitVal)}</td><td class="n"><b>${c.val===null?"—":fmtM(-c.val)}</b></td></tr>`; }).join("")}
+      <tr class="tot"><td colspan="8">إجمالي قيمة العجز</td><td class="n">${fmtM(k.shortVal)}</td></tr></tbody></table>`:'<div class="okline">لا يوجد عجز في هذا الجرد.</div>'}
+    ${P.offset&&k.surVal>EPS?`<p class="mbody">ويُخصم من ذلك قيمة أصناف الزيادة (${sur.length} صنف) بمبلغ <b class="n">${fmtM(k.surVal)}</b> د.أ وفق مبدأ المقاصة.</p>`:""}
+    <div class="mamt"><div><span>المبلغ المطلوب خصمه</span><b class="n">${fmtM(k.due)} د.أ</b></div><div class="w">${esc(tafqitJOD(k.due))}</div></div>
+    <p class="mbody">يُرجى خصم المبلغ أعلاه من مستحقات المندوب المذكور حسب الأصول، وإعلام التدقيق الداخلي بتاريخ الخصم.</p>
+    <div class="msig">
+      <div>المندوب — اطّلعت ووافقت<br><b>${esc(s.rep||"")}</b><span>التوقيع: ..................</span></div>
+      <div>المدقق الداخلي<br><b>&nbsp;</b><span>التوقيع: ..................</span></div>
+      <div>المدير المالي<br><b>&nbsp;</b><span>التوقيع: ..................</span></div>
+      <div>الموارد البشرية / الرواتب<br><b>&nbsp;</b><span>تاريخ الخصم: ..........</span></div>
+    </div>
+  </div>`;
+}
+
+/* ================= جدول الجرد المفاجئ ================= */
+const FIXED_DEFAULT={reps:["بلال الرفاعي","محمد حمدان"],days:[6,2]};   // السبت والثلاثاء
+function sched(){ S.schedule=S.schedule||{days:{},fixed:FIXED_DEFAULT}; S.schedule.days=S.schedule.days||{}; S.schedule.fixed=S.schedule.fixed||FIXED_DEFAULT; return S.schedule; }
+function schedStart(){ const k=Object.keys(sched().days).sort(); return k[0]||null; }
+function schedFor(date){ const sc=sched(); const dt=new Date(date+"T00:00:00"); const wd=dt.getDay();
+  if(wd===5) return null;
+  const st=schedStart(); if(!st||date<st) return {fixed:[],surp:[],all:[],before:true};
+  const fixed=sc.fixed.days.includes(wd)?sc.fixed.reps.slice():[];
+  const surp=(sc.days[date]||[]).slice();
+  return {fixed,surp,all:fixed.concat(surp)}; }
+function countedOn(rep,date){ return S.sessions.some(s=>(s.rep||"").trim()===rep && s.date===date); }
+function isoAdd(d,n){ const x=new Date(d+"T00:00:00"); x.setDate(x.getDate()+n); return x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+String(x.getDate()).padStart(2,"0"); }
+let scMonth=null;
+function renderSchedule(m){
+  if(!CAN_EDIT){ m.innerHTML='<div class="card empty">جدول الجرد المفاجئ متاح لصلاحية الإدخال فقط.</div>'; return; }
+  const sc=sched(); const td=today();
+  const dates=Object.keys(sc.days).sort();
+  const months=[...new Set(dates.map(d=>d.slice(0,7)).concat([td.slice(0,7)]))].sort();
+  if(!scMonth||!months.includes(scMonth)) scMonth=months.includes(td.slice(0,7))?td.slice(0,7):months[months.length-1];
+  const [yy,mm]=scMonth.split("-").map(Number); const last=new Date(yy,mm,0).getDate();
+  const surpReps=REPS.filter(r=>!sc.fixed.reps.includes(r));
+  // today panel
+  const tdS=schedFor(td);
+  const todayHtml = !tdS ? '<div class="hint">اليوم جمعة — عطلة.</div>' : !tdS.all.length ? '<div class="hint">لا يوجد جرد مجدول اليوم.</div>' :
+    tdS.all.map(r=>{ const done=countedOn(r,td); const fx=tdS.fixed.includes(r); return `<div class="tdrep ${done?"done":""}"><b>${esc(r)}</b> <span class="chip ${fx?"":"sur"}">${fx?"ثابت":"مفاجئ"}</span> ${done?'<span class="chip ok">✔ تم الجرد</span>':`<button class="btn sm" onclick="startCount('${esc(r)}')">+ ابدأ الجرد</button>`}</div>`; }).join("");
+  // month table + stats
+  const st={}; [...sc.fixed.reps,...surpReps].forEach(r=>st[r]={plan:0,done:0,missed:0,extra:0});
+  let rows=""; let anyPlan=false;
+  for(let d=1; d<=last; d++){
+    const ds=scMonth+"-"+String(d).padStart(2,"0"); const s=schedFor(ds); if(!s||s.before) continue;
+    if(s.all.length) anyPlan=true;
+    const cell=list=>list.map(r=>{ const done=countedOn(r,ds); const cls=done?"ok":(ds<td?"bad":(ds===td?"sur":"")); const lbl=done?"✔":(ds<td?"✖ فائت":(ds===td?"اليوم":"")); 
+      st[r]=st[r]||{plan:0,done:0,missed:0,extra:0}; st[r].plan++; if(done) st[r].done++; else if(ds<td) st[r].missed++;
+      return `<span class="srep ${cls}">${esc(r)} ${lbl?`<small>${lbl}</small>`:""}</span>`; }).join(" ");
+    const extra=S.sessions.filter(x=>x.date===ds && !s.all.includes((x.rep||"").trim())).map(x=>{ const r=(x.rep||"").trim(); st[r]=st[r]||{plan:0,done:0,missed:0,extra:0}; st[r].extra++; return `<span class="srep extra">${esc(r)} <small>غير مجدول</small></span>`; }).join(" ");
+    const dn=["الأحد","الاثنين","الثلاثاء","الأربعاء","الخميس","الجمعة","السبت"][new Date(ds+"T00:00:00").getDay()];
+    rows+=`<tr class="${ds===td?"istoday":""} ${s.fixed.length?"fx":""}"><td>${dn}</td><td class="n">${d}/${mm}</td><td class="nm">${cell(s.fixed)}</td><td class="nm">${cell(s.surp)} ${extra}</td>
+      <td class="noprint">${(sc.days[ds]||[]).length||true?`<button class="linkbtn" onclick="editDay('${ds}')">تعديل</button>`:""}</td></tr>`;
+  }
+  const stRows=Object.entries(st).filter(([r,o])=>o.plan||o.extra).map(([r,o])=>`<tr><td class="nm">${esc(r)}${sc.fixed.reps.includes(r)?' <span class="chip">ثابت</span>':""}</td><td class="n">${o.plan}</td><td class="n" style="color:var(--ok);font-weight:700">${o.done}</td><td class="n" style="color:var(--bad);font-weight:700">${o.missed||""}</td><td class="n">${o.extra||""}</td></tr>`).join("");
+  m.innerHTML=`
+  <div class="card noprint"><div class="cfilter">
+    <div class="fld"><label>الشهر</label><select id="scm">${months.map(x=>`<option ${x===scMonth?"selected":""}>${x}</option>`).join("")}</select></div>
+    <button class="btn" onclick="genMonth()">+ إنشاء جدول شهر جديد</button>
+    <button class="btn ghost" onclick="$('#fSched').click()">استيراد جدول (ملف)</button>
+    <button class="btn ghost" onclick="window.print()">🖨 طباعة</button>
+    <input type="file" id="fSched" accept=".json" class="hidden">
+  </div>
+  <div class="hint" style="margin-top:8px">القاعدة: الجمعة عطلة · ${esc(sc.fixed.reps.join(" و "))} ثابتان كل سبت وثلاثاء + مندوب مفاجئ · باقي الأيام مندوبان مفاجئان · لا يتكرر المندوب خلال يومي عمل متتاليين. الجدول سرّي ومحفوظ على السيرفر فقط.</div></div>
+  <div class="card noprint"><h3 style="margin:0 0 8px;color:var(--navy-d)">جرد اليوم — ${esc(dAr(td))}</h3><div class="tdwrap">${todayHtml}</div></div>
+  <div class="rep">
+    <div class="rh"><div><div class="co">مركز الكيلاني للأغذية — التدقيق الداخلي</div><h1>جدول جرد الكاش فان — ${scMonth}</h1></div><div class="conf">سري — لا يُعمَّم على المندوبين</div></div>
+    ${anyPlan?`<table><thead><tr><th>اليوم</th><th>التاريخ</th><th>جرد ثابت</th><th>جرد مفاجئ</th><th class="noprint"></th></tr></thead><tbody>${rows}</tbody></table>`:'<div class="empty">لا يوجد جدول لهذا الشهر — اضغط «إنشاء جدول شهر جديد» أو «استيراد جدول».</div>'}
+    ${stRows?`<h2>تنفيذ الجدول حسب المندوب — ${scMonth}</h2><table><thead><tr><th>المندوب</th><th>مجدول</th><th>تم</th><th>فائت</th><th>جرد غير مجدول</th></tr></thead><tbody>${stRows}</tbody></table>`:""}
+  </div>`;
+  $("#scm").onchange=e=>{ scMonth=e.target.value; renderSchedule(m); };
+  $("#fSched").onchange=async e=>{ const f=e.target.files[0]; e.target.value=""; if(!f) return;
+    try{ const o=JSON.parse(await f.text()); const days=o.days||o; let n=0;
+      Object.entries(days).forEach(([d,list])=>{ if(/^\d{4}-\d{2}-\d{2}$/.test(d)&&Array.isArray(list)){ sched().days[d]=list.map(String); n++; } });
+      save(); renderSchedule(m); toast("تم استيراد "+n+" يوم"); }catch(err){ alert("ملف الجدول غير صالح"); } };
+}
+function startCount(rep){ newSession(); const s=S.sessions.find(x=>x.id===cur); if(s){ s.rep=rep; save(); render(); } }
+function editDay(ds){
+  const sc=sched(); const cur=new Set(sc.days[ds]||[]); const surpReps=REPS.filter(r=>!sc.fixed.reps.includes(r));
+  const d=modal(`<h3>الجرد المفاجئ — ${esc(dAr(ds))}</h3><div class="hint">اختر المندوبين المفاجئين لهذا اليوم (الثابتان يُضافان تلقائياً السبت والثلاثاء).</div>
+    <div class="pickrep">${surpReps.map(r=>`<label class="chk"><input type="checkbox" value="${esc(r)}" ${cur.has(r)?"checked":""}> ${esc(r)}</label>`).join("")}</div>
+    <div class="acts"><button class="btn" id="edOk">حفظ</button><button class="btn ghost" id="edNo">إلغاء</button></div>`);
+  d.querySelector("#edNo").onclick=()=>d.remove();
+  d.querySelector("#edOk").onclick=()=>{ const v=[...d.querySelectorAll("input:checked")].map(i=>i.value); if(v.length) sc.days[ds]=v; else delete sc.days[ds]; save(); d.remove(); render(); };
+}
+function genMonth(){
+  const sc=sched(); const td=today();
+  const lastPlanned=Object.keys(sc.days).sort().pop();
+  let start = lastPlanned && lastPlanned>=td ? isoAdd(lastPlanned,1) : isoAdd(td,1);
+  const [y,mo]=start.split("-").map(Number); const end=new Date(y,mo,0); const endIso=end.getFullYear()+"-"+String(end.getMonth()+1).padStart(2,"0")+"-"+String(end.getDate()).padStart(2,"0");
+  const surpReps=REPS.filter(r=>!sc.fixed.reps.includes(r));
+  if(!confirm(`إنشاء جدول مفاجئ من ${dAr(start)} إلى ${dAr(endIso)} لـ ${surpReps.length} مندوب؟`)) return;
+  const rnd=()=>{ const a=new Uint32Array(1); crypto.getRandomValues(a); return a[0]/4294967296; };
+  const cnt={}; surpReps.forEach(r=>cnt[r]=0); const recent=[];
+  // نبدأ من آخر يومي عمل مجدولين لمنع التكرار
+  Object.keys(sc.days).sort().slice(-2).forEach(d=>recent.push(sc.days[d]));
+  for(let ds=start; ds<=endIso; ds=isoAdd(ds,1)){
+    const wd=new Date(ds+"T00:00:00").getDay(); if(wd===5) continue;
+    const n=sc.fixed.days.includes(wd)?1:2;
+    const block=new Set(recent.slice(-2).flat());
+    let pool=surpReps.filter(r=>!block.has(r)); if(pool.length<n) pool=surpReps.slice();
+    pool=pool.map(r=>({r,k:cnt[r]+rnd()*0.9})).sort((a,b)=>a.k-b.k).map(x=>x.r);
+    const pick=pool.slice(0,n); pick.forEach(r=>cnt[r]++); sc.days[ds]=pick; recent.push(pick);
+  }
+  scMonth=start.slice(0,7); save(); render(); toast("تم إنشاء الجدول — راجعه ويمكن تعديل أي يوم");
+}
+
+/* ================= سجل المندوب ================= */
+let hRep="";
+function renderHistory(m){
+  const reps=[...new Set(S.sessions.map(s=>(s.rep||"").trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"ar"));
+  if(!hRep||!reps.includes(hRep)) hRep=reps[0]||"";
+  const ss=S.sessions.filter(s=>(s.rep||"").trim()===hRep&&s.stock).sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+  const rows=ss.map(s=>({s,k:stats(s),o:ordCalc(s)}));
+  const T=rows.reduce((a,{k})=>{a.inc+=k.inc;a.ok+=k.ok;a.sv+=k.shortVal;a.uv+=k.surVal;a.due+=k.due;return a;},{inc:0,ok:0,sv:0,uv:0,due:0});
+  const maxDue=Math.max(1,...rows.map(r=>r.k.due));
+  // recurring shortage items
+  const it={}; ss.forEach(s=>allItems(s).forEach(x=>{ const c=rowCalc(s,x); if(c.status!=="bad") return; const o=it[x.code]=it[x.code]||{x,n:0,q:0,v:0,dates:[]}; o.n++; o.q+=Math.abs(c.diff); o.v+=c.val===null?0:-c.val; o.dates.push(s.date); }));
+  const itArr=Object.values(it).sort((a,b)=>b.n-a.n||b.v-a.v);
+  m.innerHTML=`
+  <div class="card noprint"><div class="cfilter">
+    <div class="fld"><label>المندوب</label><select id="hr">${reps.map(r=>`<option ${r===hRep?"selected":""}>${esc(r)}</option>`).join("")}</select></div>
+    <button class="btn" onclick="window.print()">🖨 طباعة / حفظ PDF</button>
+  </div></div>
+  ${!rows.length?'<div class="card empty">لا توجد جرودات لهذا المندوب.</div>':`
+  <div class="rep">
+    <div class="rh"><div><div class="co">مركز الكيلاني للأغذية — التدقيق الداخلي</div><h1>سجل المندوب — ${esc(hRep)}</h1>
+      <div class="note">من ${esc(dAr(rows[0].s.date))} إلى ${esc(dAr(rows[rows.length-1].s.date))}</div></div><div class="conf">سري</div></div>
+    <div class="rk">
+      <div><span>عدد الجرودات</span><b class="n">${rows.length}</b></div>
+      <div><span>متوسط المطابقة</span><b class="n">${T.inc?Math.round(T.ok/T.inc*1000)/10:0}%</b></div>
+      <div><span>إجمالي قيمة العجز</span><b class="n" style="color:var(--bad)">${fmtM(T.sv)}</b></div>
+      <div><span>إجمالي قيمة الزيادة</span><b class="n" style="color:var(--sur)">${fmtM(T.uv)}</b></div>
+      <div><span>إجمالي المطلوب</span><b class="n" style="color:var(--bad)">${fmtM(T.due)}</b></div>
+      <div><span>آخر جرد</span><b style="font-size:13px">${esc(dAr(rows[rows.length-1].s.date))}</b></div>
+    </div>
+    <h2>الجرودات</h2>
+    <table><thead><tr><th>#</th><th>التاريخ</th><th>مشمول</th><th>مطابق</th><th>عجز</th><th>زيادة</th><th>المطابقة</th><th>المعامل</th><th>قيمة العجز</th><th>المطلوب</th><th style="width:22%">المطلوب (مقارنة)</th><th>مبلغ الأوردر</th><th>الحالة</th></tr></thead><tbody>
+      ${rows.map(({s,k,o},i)=>`<tr><td class="n">${i+1}</td><td><a href="#" onclick="openSess('${s.id}');return false" style="color:inherit">${esc(dAr(s.date))}</a></td><td class="n">${k.inc}</td><td class="n">${k.ok}</td><td class="n" style="color:var(--bad);font-weight:700">${k.bad||""}</td><td class="n" style="color:var(--sur);font-weight:700">${k.sur||""}</td><td class="n"><b>${k.acc}%</b></td><td class="n">×${pset(s).f}</td><td class="n" style="color:var(--bad)">${fmtM(k.shortVal)}</td><td class="n"><b>${fmtM(k.due)}</b></td><td><div class="hbar"><i style="width:${Math.round(k.due/maxDue*100)}%"></i></div></td><td class="n" style="color:#6941c6">${fmtM(o.total)}</td><td>${s.locked?"مُقفل":"مفتوح"}</td></tr>`).join("")}
+      <tr class="tot"><td colspan="2">المجموع</td><td class="n">${T.inc}</td><td class="n">${T.ok}</td><td colspan="4"></td><td class="n">${fmtM(T.sv)}</td><td class="n">${fmtM(T.due)}</td><td colspan="3"></td></tr>
+    </tbody></table>
+    <h2>الأصناف التي تكرر فيها العجز</h2>
+    ${itArr.length?`<table><thead><tr><th>#</th><th>رمز الصنف</th><th>اسم الصنف</th><th>مرات العجز</th><th>إجمالي الكمية</th><th>إجمالي القيمة</th><th>التواريخ</th></tr></thead><tbody>
+      ${itArr.map((o,i)=>`<tr><td class="n">${i+1}</td><td class="n"><b>${esc(o.x.code)}</b></td><td class="nm">${esc(o.x.name)}</td><td class="n" style="color:var(--bad);font-weight:700">${o.n}</td><td class="n">${fmt(o.q)} ${esc(UNIT_AR[o.x.unit]||"")}</td><td class="n">${fmtM(o.v)}</td><td style="font-size:11px">${o.dates.map(d=>esc(d.slice(5).split("-").reverse().join("/"))).join("، ")}</td></tr>`).join("")}
+    </tbody></table>`:'<div class="okline">لا يوجد عجز في جرودات هذا المندوب.</div>'}
+  </div>`}`;
+  const sel=$("#hr"); if(sel) sel.onchange=e=>{ hRep=e.target.value; renderHistory(m); };
+}
+
 /* ================= consolidated ================= */
 let cFrom="", cTo="", cRep="";
 function renderCons(m){
@@ -1091,13 +1311,35 @@ function delSession(id){
   if(!confirm(`حذف جرد ${s.rep||""} بتاريخ ${dAr(s.date)}؟ لا يمكن التراجع.`)) return;
   S.sessions=S.sessions.filter(x=>x.id!==id); cur=null; view="welcome"; save(); render();
 }
-function toggleLock(id){ const s=S.sessions.find(x=>x.id===id); if(!s||!CAN_EDIT) return;
+function blankWithStock(s){
+  if(!s.stock) return [];
+  return allItems(s).filter(it=>{ const st=s.stock[it.code]; const raw=s.actual?.[it.code];
+    return st && Math.abs(+st.inStock||0)>EPS && (raw===undefined||String(raw).trim()===""); });
+}
+function toggleLock(id,force){ const s=S.sessions.find(x=>x.id===id); if(!s||!CAN_EDIT) return;
   if(!s.locked && !s.rep){ toast("اختر اسم المندوب أولاً"); return; }
+  if(!s.locked && !force){
+    const bl=blankWithStock(s);
+    if(bl.length){
+      const vals=bl.map(it=>({it,c:rowCalc(s,it)}));
+      const tot=vals.reduce((a,{c})=>a+(c.unitVal===null?0:c.sys*c.unitVal),0);
+      const d=modal(`<h3>⚠ أصناف لها رصيد ولم تُعبّأ (${bl.length})</h3>
+        <p class="hint" style="font-size:13px">${s.blankZero?`الخانة الفارغة تُحسب <b>صفراً</b> — أي أن هذه الأصناف ستُعتبر <b style="color:var(--bad)">عجزاً كاملاً</b> بقيمة تقريبية <b class="n" style="color:var(--bad)">${fmtM(tot)}</b> د.أ.`:"هذه الأصناف ستظهر «لم يُجرد» بالتقرير."} تأكد أنها فعلاً غير موجودة بالسيارة قبل الإقفال.</p>
+        <div style="max-height:260px;overflow:auto;border:1px solid var(--line);border-radius:8px"><table class="g"><thead><tr><th>الرمز</th><th>الصنف</th><th>رصيد النظام</th><th>القيمة</th></tr></thead><tbody>
+        ${vals.map(({it,c})=>`<tr><td class="code">${esc(it.code)}</td><td class="nm" style="min-width:0;font-size:12px">${esc(it.name)}</td><td class="n">${fmt(c.sys)} ${esc(UNIT_AR[it.unit]||"")}</td><td class="n">${c.unitVal===null?"—":fmtM(c.sys*c.unitVal)}</td></tr>`).join("")}</tbody></table></div>
+        <div class="acts"><button class="btn" id="lkFill">رجوع للتعبئة</button><button class="btn danger" id="lkGo">إقفال على أي حال</button></div>`);
+      d.querySelector("#lkFill").onclick=()=>{ d.remove(); filt="todo"; tab="entry"; render(); };
+      d.querySelector("#lkGo").onclick=()=>{ d.remove(); toggleLock(id,true); };
+      return;
+    }
+  }
   s.locked=!s.locked; s.lockedAt=s.locked?Date.now():null; save(); render(); toast(s.locked?"تم إقفال الجرد":"تم فتح الجرد للتعديل"); }
 $("#btnNew").onclick=newSession;
 $("#btnCons").onclick=()=>{ view="cons"; render(); };
 $("#btnValue").onclick=()=>{ view="value"; render(); };
 $("#btnForm").onclick=()=>{ view="form"; render(); };
+$("#btnSched").onclick=()=>{ view="sched"; render(); };
+$("#btnHist").onclick=()=>{ const s=S.sessions.find(x=>x.id===cur); if(view==="session"&&s&&s.rep) hRep=s.rep.trim(); view="hist"; render(); };
 
 /* ----- PDF upload ----- */
 function pickPdf(){ const f=$("#fPdf"); f.value=""; f.click(); }
