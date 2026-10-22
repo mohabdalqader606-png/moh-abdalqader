@@ -374,7 +374,7 @@ details.sqlbox pre{margin:0;padding:12px 14px;border-top:1px solid var(--line);d
       </div>
       <div class="chips" id="fExp" style="margin-top:10px"></div>
       <div class="row" id="fSummary" style="margin-top:10px;gap:6px"></div>
-      <div class="hint">اضغط <b>«＋ عينة»</b> على السطر لنقله إلى العينات المختارة. الزر <b>«المستند كاملاً»</b> ينقل كل سطور نفس رقم المستند دفعة واحدة. باقي الكشف يبقى كما هو.</div>
+      <div class="hint">اضغط <b>«＋ عينة»</b> على السطر لنقله إلى العينات المختارة، وباقي الكشف يبقى كما هو. الرقم الأزرق بجانب رقم المستند يعني أن السند له أكثر من سطر.</div>
     </div>
     <div id="listBody"></div>
   </section>
@@ -395,7 +395,6 @@ details.sqlbox pre{margin:0;padding:12px 14px;border-top:1px solid var(--line);d
       </div>
       <div class="row" style="margin-top:10px">
         <button class="btn s" id="btnExpandS">توسيع الكل</button>
-        <label class="chk" style="margin-inline-start:auto;font-size:12px"><input type="checkbox" id="optDoc" checked> التصوير يشمل كل سطور نفس المستند</label>
       </div>
     </div>
     <div id="samplesBody"></div>
@@ -517,7 +516,7 @@ ORDER BY
     </div>
   </section>
 
-  <footer>شاشة عينات المصروفات — الإصدار v2.2 · مزامنة سحابية</footer>
+  <footer>شاشة عينات المصروفات — الإصدار v2.3 · مزامنة سحابية</footer>
 </div>
 
 <div class="bottombar" id="bottombar">
@@ -579,7 +578,7 @@ const pad=n=>String(n).padStart(2,'0');
 
 let sb=null, SESSION=null, PERM=null, CAN_EDIT=false, rtChannel=null;
 let state={statements:[]};
-let pref={docMode:true,theme:''};
+let pref={theme:''};
 let queue=[];                      // تعديلات بانتظار الرفع [{ids:[],patch:{}}]
 let flushing=false, lastLoad=0;
 let ui={sortL:{key:'date',dir:1},sortS:{key:'date',dir:1},tab:'list',fSt:'all',fExp:'',fQ:'',sSt:'all',sDone:'all',sGrp:'exp',sQ:'',tSt:'all',openL:new Set(),openS:new Set(),multi:new Set(),allOpenL:false,allOpenS:false};
@@ -956,7 +955,6 @@ function renderList(){
           <input type="checkbox" class="mchk" data-multi="${r.id}" ${checked?'checked':''} title="تحديد متعدد">
           <button class="ib${r.note?' has':''}" data-lnote="${r.id}" title="ملاحظة">✎</button>
           <button class="btn xs add" data-sel="${r.id}">＋ عينة</button>
-          ${dn>1?`<button class="lnk" data-seldoc="${r.id}" title="نقل كل سطور المستند">المستند كاملاً (${dn})</button>`:''}
         </div></div>`);
     });
     html.push('</div></div>');
@@ -965,7 +963,7 @@ function renderList(){
 }
 function renderBottom(){const n=ui.multi.size;$('#bottombar').classList.toggle('on',n>0&&ui.tab==='list'&&CAN_EDIT);$('#bbN').textContent=n;}
 function renderSamples(){
-  ui.sSt=fillStSelect($('#sSt'),ui.sSt);$('#optDoc').checked=!!pref.docMode;
+  ui.sSt=fillStSelect($('#sSt'),ui.sSt);
   const base=allRows(ui.sSt).filter(x=>x.r.sel&&match(x.r,ui.sQ));
   const cY=base.filter(x=>x.r.done).length;$('#cAll').textContent=base.length;$('#cYes').textContent=cY;$('#cNo').textContent=base.length-cY;
   const rows=base.filter(x=>ui.sDone==='all'||(ui.sDone==='yes')===!!x.r.done).sort(sortRows);
@@ -1049,7 +1047,6 @@ $('#btnExpand').addEventListener('click',e=>{ui.allOpenL=!ui.allOpenL;if(!ui.all
 $('#listBody').addEventListener('click',e=>{
   const so=e.target.closest('[data-sortl]');if(so){toggleSort(ui.sortL,so.dataset.sortl);const y=window.scrollY;renderList();window.scrollTo(0,y);return;}
   const sel=e.target.closest('[data-sel]');if(sel){if(patchRows([sel.dataset.sel],{sel:true})){renderAll();toast('أُضيفت إلى العينات');}return;}
-  const sd=e.target.closest('[data-seldoc]');if(sd){const n=patchRows(docSiblings(sd.dataset.seldoc),{sel:true});if(n){renderAll();toast(`أُضيف ${n} سطر من المستند إلى العينات`);}return;}
   const ln=e.target.closest('[data-lnote]');if(ln){const f=findRow(ln.dataset.lnote);if(!f)return;const v=prompt('ملاحظة على هذا السطر:',f.r.note||'');if(v===null)return;patchRows([f.r.id],{note:v.trim()});renderList();return;}
   const gh=e.target.closest('[data-gh]');if(gh){const k=gh.dataset.gh;const open=gh.closest('.grp').classList.toggle('open');if(open)ui.openL.add(k);else{ui.openL.delete(k);if(ui.allOpenL){ui.allOpenL=false;$('#btnExpand').textContent='توسيع الكل';}}}
 });
@@ -1085,11 +1082,10 @@ $('#sSt').addEventListener('change',e=>{ui.sSt=e.target.value;renderSamples();})
 $('#sDoneChips').addEventListener('click',e=>{const c=e.target.closest('.chip');if(!c)return;ui.sDone=c.dataset.v;$$('#sDoneChips .chip').forEach(x=>x.classList.toggle('on',x===c));renderSamples();});
 $('#sGrp').addEventListener('change',e=>{ui.sGrp=e.target.value;renderSamples();});
 $('#sQ').addEventListener('input',e=>{ui.sQ=e.target.value.trim();renderSamples();});
-$('#optDoc').addEventListener('change',e=>{pref.docMode=e.target.checked;savePref();});
 $('#btnExpandS').addEventListener('click',e=>{ui.allOpenS=!ui.allOpenS;if(!ui.allOpenS)ui.openS.clear();e.target.textContent=ui.allOpenS?'طيّ الكل':'توسيع الكل';renderSamples();});
 $('#samplesBody').addEventListener('change',e=>{
   const d=e.target.closest('[data-done]');
-  if(d){const id=d.dataset.done;const ids=(pref.docMode?docSiblings(id):[id]).filter(i=>{const f=findRow(i);return f&&f.r.sel;});const n=patchRows(ids,{done:d.checked});renderKpis();renderSamples();renderStats();renderData();if(n>1&&d.checked){const f=findRow(id);const ex=f?selDocExpenses().get(f.s.id+'|'+f.r.doc):null;toast(ex&&ex.size>1?`عُلِّم ${n} سطر من نفس المستند كمصوّر — يشمل ${ex.size} مصروفات`:`عُلِّم ${n} سطر من نفس المستند كمصوّر`);}return;}
+  if(d){const id=d.dataset.done;patchRows([id],{done:d.checked});renderKpis();renderSamples();renderStats();renderData();if(d.checked){const f=findRow(id);const ex=f&&f.r.doc?selDocExpenses().get(f.s.id+'|'+f.r.doc):null;if(ex&&ex.size>1)toast(`تنبيه: هذا المستند له عينات في ${ex.size} مصروفات — علّم باقي سطوره إن صوّرتها`);}return;}
   const n=e.target.closest('[data-note]');if(n){patchRows([n.dataset.note],{note:n.value.trim()});}
 });
 $('#samplesBody').addEventListener('click',e=>{
