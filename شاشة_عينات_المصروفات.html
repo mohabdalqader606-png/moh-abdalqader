@@ -224,9 +224,21 @@ label.f{display:block;font-size:12px;color:var(--ink2);font-weight:700;margin-bo
 .ro .c-act .btn,.ro .c-act .chk input,.ro .c-act .ib,.ro .c-act .lnk{pointer-events:none;opacity:.6}
 @media (min-width:760px){
   .ln{grid-template-columns:88px 112px 96px minmax(0,1fr) 110px auto}
-  .ln .c-date .pill{display:none}
+  .ln .c-date .pill{display:inline-block;font-size:10px;padding:0 6px;margin:0;max-width:100%;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+  .ln .c-date{white-space:normal;line-height:1.3}
   .sortbar{display:none}
 }
+@media (min-width:760px){
+  .flat .ln{grid-template-columns:88px 112px 96px minmax(0,1fr) 150px 110px auto}
+  .flat .ln .c-exp{font-size:12px;color:var(--ink2);white-space:normal;line-height:1.3}
+  .flat .ln.head .c-exp{white-space:nowrap}
+}
+@media (max-width:759px){
+  .flat .ln{grid-template-areas:"date amt" "desc desc" "exp exp" "doc trx" "act act"}
+  .flat .ln .c-exp{grid-area:exp;font-size:12px;color:var(--amber2);font-weight:700}
+}
+.flat .grp-h{cursor:default}
+.more-btn{display:block;margin:10px auto}
 @media (min-width:760px) and (max-width:1000px){.ln{grid-template-columns:84px 104px 88px minmax(0,1fr) 100px auto}.ln .c-trx small{display:none}}
 @media (max-width:759px){
   .ln{grid-template-columns:1fr auto;grid-template-areas:"date amt" "desc desc" "doc trx" "act act";padding:10px 14px;gap:4px 10px}
@@ -398,6 +410,7 @@ details.sqlbox pre{margin:0;padding:12px 14px;border-top:1px solid var(--line);d
             <option value="name">الاسم (أ-ي)</option><option value="amt">إجمالي المبلغ</option><option value="left">السطور المتبقية</option><option value="n">عدد السطور</option><option value="sel">عدد العينات</option><option value="covN">تغطية العدد %</option><option value="covA">تغطية المبلغ %</option><option value="max">أكبر سطر</option>
           </select><button class="btn" id="gDir" title="عكس الاتجاه" style="padding-inline:10px">▼</button></div></div>
         <div style="flex:0 0 auto;align-self:flex-end;display:flex;gap:6px">
+          <div class="chips seg" id="viewMode" style="flex-wrap:nowrap"><span class="chip on" data-v="grp">حسب المصروف</span><span class="chip" data-v="flat">كل القيود</span></div>
           <button class="btn" id="btnExpand">توسيع الكل</button>
           <button class="btn n" id="btnAuto">✦ اختيار تلقائي</button>
         </div>
@@ -554,11 +567,12 @@ ORDER BY
         <span class="muted tiny">أو</span>
         <div class="drop grow" id="drop">📄 اختر ملف Excel / CSV أو اسحبه هنا<input type="file" id="inFile" accept=".xlsx,.xls,.csv,.txt,.tsv" hidden></div>
       </div>
-      <div class="hint">إذا كان اسم الكشف موجوداً مسبقاً تُدمج البيانات معه مع <b>الحفاظ على العينات المختارة وحالة التصوير</b> للسطور المطابقة. الأعمدة المطلوبة: تاريخ القيد، رقم الحركة، رقم المستند، رقم حساب المصروف، اسم المصروف، صافي المصروف، البيان (الباقي اختياري).</div>
+      <div class="hint">إعادة رفع نفس الكشف (حتى باسم مختلف) <b>تحدّث الكشف الموجود</b> ولا تضيفه من جديد، مع <b>الحفاظ على العينات المختارة وحالة التصوير</b> للسطور المطابقة. الأعمدة المطلوبة: تاريخ القيد، رقم الحركة، رقم المستند، رقم حساب المصروف، اسم المصروف، صافي المصروف، البيان (الباقي اختياري).</div>
     </div>
 
     <div class="card">
       <h2>الكشوفات المحفوظة <small>مشتركة على السحابة لكل من له صلاحية</small></h2>
+      <div id="dupWarn"></div>
       <div id="stList"></div>
     </div>
 
@@ -581,7 +595,7 @@ ORDER BY
     </div>
   </section>
 
-  <footer>شاشة عينات المصروفات — الإصدار v2.9 · مزامنة سحابية</footer>
+  <footer>شاشة عينات المصروفات — الإصدار v2.11 · مزامنة سحابية</footer>
 </div>
 
 <div class="bottombar" id="bottombar">
@@ -663,8 +677,8 @@ let state={statements:[],filing:{},reqs:[]}; // filing: key statementId|acct →
 let filingOk=true, reqOk=true;
 let pref={theme:''};
 let queue=[];                      // تعديلات بانتظار الرفع [{ids:[],patch:{}}]
-let flushing=false, lastLoad=0;
-let ui={gSort:'name',gDir:1,sortL:{key:'date',dir:1},sortS:{key:'date',dir:1},tab:'list',fSt:'all',fExp:'',fQ:'',sSt:'all',sDone:'all',sGrp:'doc',sQ:'',tSt:'all',openL:new Set(),openS:new Set(),multi:new Set(),allOpenL:false,allOpenS:false};
+let flushing=false, lastLoad=0, importing=false;
+let ui={view:'grp',flatLimit:300,gSort:'name',gDir:1,sortL:{key:'date',dir:1},sortS:{key:'date',dir:1},tab:'list',fSt:'all',fExp:'',fQ:'',sSt:'all',sDone:'all',sGrp:'doc',sQ:'',tSt:'all',openL:new Set(),openS:new Set(),multi:new Set(),allOpenL:false,allOpenS:false};
 
 /* ====================== تفضيلات + ثيم ====================== */
 try{pref=Object.assign(pref,JSON.parse(localStorage.getItem(LS_PREF)||'{}'));}catch(e){}
@@ -680,7 +694,7 @@ applyTheme();
 
 /* ====================== كاش محلي + طابور ====================== */
 function saveCache(){try{localStorage.setItem(LS_CACHE,JSON.stringify({t:now(),statements:state.statements,filing:state.filing,reqs:state.reqs}));}catch(e){}}
-function loadCache(){try{const o=JSON.parse(localStorage.getItem(LS_CACHE)||'null');if(o&&Array.isArray(o.statements)){state.statements=o.statements;state.filing=o.filing||{};state.reqs=o.reqs||[];return true;}}catch(e){}return false;}
+function loadCache(){try{const o=JSON.parse(localStorage.getItem(LS_CACHE)||'null');if(o&&Array.isArray(o.statements)){state.statements=o.statements;state.filing=o.filing||{};state.reqs=o.reqs||[];dedupeStatements();return true;}}catch(e){}return false;}
 function saveQueue(){try{localStorage.setItem(LS_QUEUE,JSON.stringify(queue));}catch(e){}}
 function loadQueue(){try{queue=JSON.parse(localStorage.getItem(LS_QUEUE)||'[]')||[];}catch(e){queue=[];}}
 const SHORT={ok:'متزامن',busy:'مزامنة…',off:'غير متصل'};
@@ -742,6 +756,7 @@ const DATA_KEYS=['date','trx','series','doc','code','acct','exp','debit','credit
 function toServerRow(stId,r){const data={};DATA_KEYS.forEach(k=>data[k]=r[k]);return {id:r.id,statement_id:stId,k:r.k,data,sel:!!r.sel,done:!!r.done,note:r.note||'',sel_at:r.selAt||null,done_at:r.doneAt||null,updated_at:now()};}
 function fromServerRow(x){return Object.assign({},x.data||{},{id:x.id,k:x.k,sel:!!x.sel,done:!!x.done,note:x.note||'',selAt:x.sel_at||'',doneAt:x.done_at||''});}
 
+function dedupeStatements(){const seen=new Set();state.statements=state.statements.filter(s=>{if(seen.has(s.id))return false;seen.add(s.id);return true;});}
 async function fetchAll(){
   const {data:sts,error:e1}=await sb.from(T_ST).select('*').order('created_at');
   if(e1)throw e1;
@@ -754,11 +769,12 @@ async function fetchAll(){
   try{const {data:rq,error:er}=await sb.from(T_REQ).select('*').order('created_at');if(er)throw er;reqOk=true;state.reqs=(rq||[]).map(fromServerReq);}
   catch(e){reqOk=false;console.warn('requirements table unavailable',e&&e.message);}
   // طبّق التعديلات المعلّقة فوق البيانات القادمة من السيرفر
+  dedupeStatements();
   queue.forEach(op=>applyPatchLocal(op.ids,op.patch,false));
   lastLoad=Date.now();saveCache();
 }
 async function reload(silent){
-  if(!sb||!SESSION)return;
+  if(!sb||!SESSION||importing)return;
   if(!silent)setSync('busy','جاري التحميل…');
   try{await fetchAll();renderAll();if(!silent)toast('تم التحديث من السحابة');}
   catch(e){console.error(e);if(!silent)toast('تعذّر التحميل من السحابة — تُعرض آخر نسخة محلية');}
@@ -810,7 +826,13 @@ async function importStatement(name,rows,opts){
   if(!navigator.onLine){toast('الاستيراد يحتاج اتصالاً بالإنترنت');return;}
   name=(name||'').trim()||('كشف '+new Date().toLocaleDateString('en-GB'));
   if(!rows.length){toast('لم يتم التعرف على أي سطر — تأكد من صف العناوين');return;}
-  let st=state.statements.find(s=>s.name===name);const isNew=!st;
+  let st=state.statements.find(s=>s.name===name);
+  if(!st&&!opts.keepIncoming){ // نفس الكشف باسم مختلف؟ اعتمد تطابق السطور
+    const keys=new Set(rows.map(r=>r.k));let best=null,bestOv=0;
+    state.statements.forEach(x=>{if(!x.rows.length)return;let c=0;x.rows.forEach(r=>{if(keys.has(r.k))c++;});const ov=c/Math.min(rows.length,x.rows.length);if(ov>bestOv){bestOv=ov;best=x;}});
+    if(best&&bestOv>=0.5){st=best;const old=st.name;if(name&&name!==old&&!state.statements.some(x=>x!==st&&x.name===name)){st.name=name;}toast(`تم التعرف على الكشف الموجود «${old}» (تطابق ${Math.round(bestOv*100)}%) — سيُحدَّث بدل إضافته من جديد`);}
+  }
+  const isNew=!st;
   let kept=0,toDelete=[];
   if(st){
     const old=new Map(st.rows.map(r=>[r.k,r]));
@@ -824,7 +846,7 @@ async function importStatement(name,rows,opts){
     st={id:uid(),name,createdAt:now(),updatedAt:now(),rows:[]};
   }
   rows.forEach(r=>{delete r._sel;delete r._done;delete r._note;delete r._selAt;delete r._doneAt;});
-  setSync('busy','جاري الرفع…');
+  setSync('busy','جاري الرفع…');importing=true;
   try{
     const {error:e1}=await sb.from(T_ST).upsert({id:st.id,name:st.name,updated_at:now()},{onConflict:'id'});if(e1)throw e1;
     for(let i=0;i<rows.length;i+=CHUNK){
@@ -832,9 +854,12 @@ async function importStatement(name,rows,opts){
       setSync('busy',`جاري الرفع… ${Math.min(i+CHUNK,rows.length)}/${rows.length}`);
     }
     for(let i=0;i<toDelete.length;i+=200){const {error}=await sb.from(T_ROWS).delete().in('id',toDelete.slice(i,i+200));if(error)throw error;}
-  }catch(e){console.error(e);toast('فشل الرفع إلى السحابة: '+(e.message||e));syncStatus();return;}
+  }catch(e){console.error(e);importing=false;toast('فشل الرفع إلى السحابة: '+(e.message||e));syncStatus();return;}
+  importing=false;
   st.rows=rows;st.updatedAt=now();
-  if(isNew)state.statements.push(st);
+  const idx=state.statements.findIndex(x=>x.id===st.id);
+  if(idx>=0)state.statements[idx]=st;else state.statements.push(st);
+  dedupeStatements();
   saveCache();syncStatus();
   toast(isNew?`تمت إضافة «${name}»: ${rows.length} سطر`:`تم تحديث «${name}»: ${rows.length} سطر، حافظنا على ${kept} عينة`);
   ui.fSt=st.id;renderAll();if(!opts.stay)setTab('list');
@@ -862,9 +887,10 @@ function clearSelections(id){
 /* تحديث لحظي */
 function subscribeRealtime(){
   if(rtChannel)return;
-  let reloadT=null;const schedReload=()=>{clearTimeout(reloadT);reloadT=setTimeout(()=>reload(true),1200);};
+  let reloadT=null;const schedReload=()=>{clearTimeout(reloadT);reloadT=setTimeout(()=>{if(importing){schedReload();return;}reload(true);},1200);};
   rtChannel=sb.channel('exp-samples-'+SCREEN_ID)
     .on('postgres_changes',{event:'*',schema:'public',table:T_ROWS},p=>{
+      if(importing)return;
       const pending=new Set();queue.forEach(op=>op.ids.forEach(i=>pending.add(i)));
       if(p.eventType==='UPDATE'||p.eventType==='INSERT'){
         const x=p.new;if(!x||pending.has(x.id))return;
@@ -888,6 +914,7 @@ function subscribeRealtime(){
       saveCache();renderAllDebounced();
     })
     .on('postgres_changes',{event:'*',schema:'public',table:T_ST},p=>{
+      if(importing)return;
       if(p.eventType==='DELETE'){const id=p.old&&p.old.id;state.statements=state.statements.filter(s=>s.id!==id);saveCache();renderAllDebounced();}
       else if(p.new){const s=state.statements.find(x=>x.id===p.new.id);if(s){s.name=p.new.name;s.updatedAt=p.new.updated_at;renderAllDebounced();}else schedReload();}
     })
@@ -1023,16 +1050,17 @@ async function deleteReq(id){
 function match(r,q){if(!q)return true;q=q.toLowerCase();return [r.desc,r.edesc,r.doc,r.trx,r.acct,r.exp,r.r1,r.r2,r.r3,r.date,String(r.net)].some(v=>String(v||'').toLowerCase().includes(q));}
 function expKey(r){return r.acct+'|'+r.exp;}
 function sortRows(a,b){const da=dateKey(a.r.date),db=dateKey(b.r.date);return (da>db?1:da<db?-1:0)||(a.r.trx>b.r.trx?1:a.r.trx<b.r.trx?-1:0);}
-const SORT_KEYS=[['date','التاريخ'],['doc','رقم المستند'],['trx','رقم الحركة'],['amt','المبلغ'],['desc','البيان']];
+const SORT_KEYS=[['date','التاريخ'],['doc','رقم المستند'],['trx','رقم الحركة'],['amt','المبلغ'],['desc','البيان'],['exp','المصروف']];
 function sorter(st){const d=st.dir;return (a,b)=>{let x,y;
   if(st.key==='amt'){x=Math.abs(a.r.net);y=Math.abs(b.r.net);}
   else if(st.key==='date'){x=dateKey(a.r.date);y=dateKey(b.r.date);}
   else if(st.key==='doc'){x=docInfo(a.r).no;y=docInfo(b.r).no;const nx=Number(x),ny=Number(y);if(!isNaN(nx)&&!isNaN(ny)){x=nx;y=ny;}}
   else if(st.key==='trx'){x=a.r.trx;y=b.r.trx;const nx=Number(x),ny=Number(y);if(!isNaN(nx)&&!isNaN(ny)){x=nx;y=ny;}}
+  else if(st.key==='exp'){const c=a.r.exp.localeCompare(b.r.exp,'ar');return (c||sortRows(a,b))*d;}
   else{x=a.r.desc||a.r.edesc||'';y=b.r.desc||b.r.edesc||'';}
   let c=x>y?1:x<y?-1:0;if(c===0)c=sortRows(a,b);return c*d;};}
 const HEAD_COLS=[['date','التاريخ'],['doc','رقم المستند'],['trx','رقم الحركة'],['desc','البيان'],['amt','المبلغ']];
-function headRow(st,attr,actLabel){return `<div class="ln head">${HEAD_COLS.map(([k,l])=>`<div class="c c-${k}${st.key===k?' on':''}" ${attr}="${k}">${l}${st.key===k?`<i>${st.dir>0?'▲':'▼'}</i>`:''}</div>`).join('')}<div class="c c-act">${actLabel||''}</div></div>`;}
+function headRow(st,attr,actLabel,withExp){const cols=withExp?HEAD_COLS.slice(0,4).concat([['exp','المصروف']],HEAD_COLS.slice(4)):HEAD_COLS;return `<div class="ln head">${cols.map(([k,l])=>`<div class="c c-${k}${st.key===k?' on':''}" ${attr}="${k}">${l}${st.key===k?`<i>${st.dir>0?'▲':'▼'}</i>`:''}</div>`).join('')}<div class="c c-act">${actLabel||''}</div></div>`;}
 function sortbar(st,attr){return `<div class="sortbar"><span>ترتيب:</span>${SORT_KEYS.map(([k,l])=>`<button type="button" ${attr}="${k}" class="${st.key===k?'on':''}">${l}${st.key===k?`<i>${st.dir>0?'▲':'▼'}</i>`:''}</button>`).join('')}</div>`;}
 function toggleSort(st,k){if(st.key===k)st.dir=-st.dir;else{st.key=k;st.dir=(k==='amt')?-1:1;}}
 function findRow(id){for(const s of state.statements){const r=s.rows.find(x=>x.id===id);if(r)return {r,s};}return null;}
@@ -1063,7 +1091,24 @@ function fillStSelect(sel,val){
   sel.innerHTML=['<option value="all">كل الكشوفات</option>'].concat(state.statements.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`)).join('');
   if(!state.statements.some(s=>s.id===val))val='all';sel.value=val;return val;
 }
+function lineHtml(x,docN,docExp,withExp){
+  const r=x.r;const dn=r.doc?docN.get(x.s.id+'|'+r.doc):1;const checked=ui.multi.has(r.id);
+  const de=(r.trx||r.doc)&&docExp.get(jKey(x.s,r));
+  return `<div class="ln" data-id="${r.id}">
+        <div class="c c-date">${esc(r.date)}${ui.fSt==='all'?'<span class="pill grey">'+esc(x.s.name)+'</span>':''}</div>
+        <div class="c c-doc">${docCell(r)}${dn>1?` <span class="pill info">${dn}</span>`:''}</div>
+        <div class="c c-trx"><span class="num">${esc(r.trx)}</span>${r.series?`<small>سيريز ${esc(r.series)}</small>`:''}</div>
+        <div class="c c-desc"><div class="desc">${esc(r.desc||r.edesc||'—')}</div>${(r.edesc&&r.edesc!==r.desc)||(r.r1&&!docInfo(r).isPay)?`<div class="sub">${r.edesc&&r.edesc!==r.desc?`<span>${esc(r.edesc)}</span>`:''}${r.r1&&!docInfo(r).isPay?`<span>Ref <span class="num">${esc(r.r1)}</span></span>`:''}</div>`:''}${de?`<div class="multi">📎 <span><b>لهذا القيد عينة</b> في: ${Array.from(de.values()).map(esc).join('، ')} — إن أضفت هذا السطر تُصوَّر فاتورته مع فواتيرها بسحبة واحدة للقيد</span></div>`:''}${r.note?`<div class="note-v">✎ ${esc(r.note)}</div>`:''}</div>
+        ${withExp?`<div class="c c-exp">${esc(r.exp)}<br><span class="muted tiny num">${esc(r.acct)}</span></div>`:''}
+        <div class="c c-amt"><span class="num">${fmt(r.net)}</span><small>د.أ</small></div>
+        <div class="c c-act">
+          <input type="checkbox" class="mchk" data-multi="${r.id}" ${checked?'checked':''} title="تحديد متعدد">
+          <button class="ib${r.note?' has':''}" data-lnote="${r.id}" title="ملاحظة">✎</button>
+          <button class="btn xs add" data-sel="${r.id}">＋ عينة</button>
+        </div></div>`;
+}
 function renderList(){
+  if(!ui.fStTouched&&ui.fSt==='all'&&state.statements.length){ui.fSt=state.statements[state.statements.length-1].id;}
   ui.fSt=fillStSelect($('#fSt'),ui.fSt);
   const rows=allRows(ui.fSt).filter(x=>!x.r.sel);
   const byExp=new Map();
@@ -1090,6 +1135,16 @@ function renderList(){
   const docExp=selDocExpenses();
   const forceOpen=!!ui.fQ||!!ui.fExp||ui.allOpenL;
   const html=[];
+  if(ui.view==='flat'){
+    const sorted=vis.slice().sort(sorter(ui.sortL));const shown=sorted.slice(0,ui.flatLimit);
+    const amtAll=vis.reduce((a,x)=>a+Math.abs(x.r.net),0);
+    const h=[`<div class="flat"><div class="grp open"><div class="grp-h" style="--gc:var(--navy2)"><div class="ttl">كل القيود<small>${vis.length} سطر متبقٍ في ${groups.size} مصروف · ${fmt(amtAll)}${vis.length>shown.length?` · معروض ${shown.length}`:''}</small></div></div><div class="grp-b">${sortbar(ui.sortL,'data-sortl')}${headRow(ui.sortL,'data-sortl','',true)}`];
+    shown.forEach(x=>h.push(lineHtml(x,docN,docExp,true)));
+    h.push('</div></div>');
+    if(vis.length>shown.length)h.push(`<button class="btn more-btn" id="btnMore">عرض المزيد (${vis.length-shown.length} متبقٍ)</button>`);
+    h.push('</div>');
+    $('#listBody').innerHTML=h.join('');renderBottom();return;
+  }
   const gval=g=>{const t=totals.get(g.k)||{n:0,amt:0,sel:0,selAmt:0};switch(ui.gSort){case 'amt':return t.amt;case 'left':return g.items.length;case 'n':return t.n;case 'sel':return t.sel;case 'covN':return pct(t.sel,t.n);case 'covA':return pct(t.selAmt,t.amt);case 'max':return Math.max(...g.items.map(x=>Math.abs(x.r.net)));default:return null;}};
   Array.from(groups.values()).sort((a,b)=>{if(ui.gSort==='name')return a.exp.localeCompare(b.exp,'ar')*ui.gDir;const c=gval(b)-gval(a);return (c||a.exp.localeCompare(b.exp,'ar'))*ui.gDir;}).forEach(g=>{
     const t=totals.get(g.k);const open=forceOpen||ui.openL.has(g.k);const col=colorFor(g.k);
@@ -1100,21 +1155,7 @@ function renderList(){
         ${ui.fSt!=='all'&&CAN_EDIT?`<button class="fbtn no-print" data-filing="${ui.fSt}|${esc(g.acct)}" data-exp="${esc(g.exp)}" title="البوكس فايل والترتيب">📦</button>`:''}
         <div class="meta"><b>${t.sel} / ${t.n} عينة</b>${pctS(t.selAmt,t.amt)} من المبلغ</div>
         <span class="caret">▼</span></div><div class="grp-b">${sortbar(ui.sortL,'data-sortl')}${headRow(ui.sortL,'data-sortl','')}`);
-    g.items.sort(sorter(ui.sortL)).forEach(x=>{
-      const r=x.r;const dn=r.doc?docN.get(x.s.id+'|'+r.doc):1;const checked=ui.multi.has(r.id);
-      const de=(r.trx||r.doc)&&docExp.get(jKey(x.s,r));
-      html.push(`<div class="ln" data-id="${r.id}">
-        <div class="c c-date">${esc(r.date)}${ui.fSt==='all'?'<span class="pill grey">'+esc(x.s.name)+'</span>':''}</div>
-        <div class="c c-doc">${docCell(r)}${dn>1?` <span class="pill info">${dn}</span>`:''}</div>
-        <div class="c c-trx"><span class="num">${esc(r.trx)}</span>${r.series?`<small>سيريز ${esc(r.series)}</small>`:''}</div>
-        <div class="c c-desc"><div class="desc">${esc(r.desc||r.edesc||'—')}</div>${(r.edesc&&r.edesc!==r.desc)||(r.r1&&!docInfo(r).isPay)?`<div class="sub">${r.edesc&&r.edesc!==r.desc?`<span>${esc(r.edesc)}</span>`:''}${r.r1&&!docInfo(r).isPay?`<span>Ref <span class="num">${esc(r.r1)}</span></span>`:''}</div>`:''}${de?`<div class="multi">📎 <span><b>لهذا القيد عينة</b> في: ${Array.from(de.values()).map(esc).join('، ')} — إن أضفت هذا السطر تُصوَّر فاتورته مع فواتيرها بسحبة واحدة للقيد</span></div>`:''}${r.note?`<div class="note-v">✎ ${esc(r.note)}</div>`:''}</div>
-        <div class="c c-amt"><span class="num">${fmt(r.net)}</span><small>د.أ</small></div>
-        <div class="c c-act">
-          <input type="checkbox" class="mchk" data-multi="${r.id}" ${checked?'checked':''} title="تحديد متعدد">
-          <button class="ib${r.note?' has':''}" data-lnote="${r.id}" title="ملاحظة">✎</button>
-          <button class="btn xs add" data-sel="${r.id}">＋ عينة</button>
-        </div></div>`);
-    });
+    g.items.sort(sorter(ui.sortL)).forEach(x=>html.push(lineHtml(x,docN,docExp,false)));
     html.push('</div></div>');
   });
   $('#listBody').innerHTML=html.join('');renderBottom();
@@ -1199,7 +1240,9 @@ function renderStats(){
   $('#tblSt').innerHTML=`<thead><tr><th>الكشف</th><th class="num">السطور</th><th class="num">المبلغ</th><th class="num">العينات</th><th class="num">تغطية العدد</th><th class="num">تغطية المبلغ</th><th class="num">مصوّر</th><th class="num">الإنجاز</th></tr></thead><tbody>${st.join('')||'<tr><td colspan="8" class="muted">لا بيانات</td></tr>'}</tbody>`;
 }
 function renderData(){
-  if(!state.statements.length){$('#stList').innerHTML='<div class="empty"><div class="ic">☁</div>لا توجد كشوفات محفوظة.</div>';return;}
+  if(!state.statements.length){$('#dupWarn').innerHTML='';$('#stList').innerHTML='<div class="empty"><div class="ic">☁</div>لا توجد كشوفات محفوظة.</div>';return;}
+  const dupWarn=[];for(let i=0;i<state.statements.length;i++)for(let j=i+1;j<state.statements.length;j++){const a=state.statements[i],b=state.statements[j];if(!a.rows.length||!b.rows.length)continue;const ka=new Set(a.rows.map(r=>r.k));let c=0;b.rows.forEach(r=>{if(ka.has(r.k))c++;});const ov=c/Math.min(a.rows.length,b.rows.length);if(ov>=0.5)dupWarn.push({a:a.id,b:b.id,an:a.name,text:`«${esc(a.name)}» و«${esc(b.name)}» متطابقان بنسبة ${Math.round(ov*100)}% — نفس الكشف رُفع مرتين باسمين مختلفين، فتظهر سطوره مكررة في عرض «كل الكشوفات».`});}
+  $('#dupWarn').innerHTML=dupWarn.map(w=>`<div class="banner warn">⚠️ ${w.text}${CAN_EDIT?` <button class="btn s p" data-merge="${w.a}|${w.b}">دمج في «${esc(w.an)}» وحذف الآخر</button>`:''}</div>`).join('');
   $('#stList').innerHTML=state.statements.map(s=>{const sel=s.rows.filter(r=>r.sel).length,done=s.rows.filter(r=>r.done).length;
     return `<div class="st-item"><div class="ic">📄</div><div class="nm">${esc(s.name)}<small>${s.rows.length} سطر · ${sel} عينة · ${done} مصوّرة (${pctS(done,sel)}) · آخر تحديث ${esc(String(s.updatedAt||s.createdAt||'').slice(0,10))}</small></div>
       ${CAN_EDIT?`<button class="btn s" data-ren="${s.id}">إعادة تسمية</button><button class="btn s" data-clrsel="${s.id}">إلغاء كل العينات</button><button class="btn s d" data-del="${s.id}">حذف</button>`:''}</div>`;}).join('');
@@ -1244,15 +1287,17 @@ function setTab(t){ui.tab=t;$$('#tabs button').forEach(b=>b.classList.toggle('on
 /* ====================== أحداث ====================== */
 $('#tabs').addEventListener('click',e=>{const b=e.target.closest('button[data-tab]');if(b)setTab(b.dataset.tab);});
 $('#btnRefresh').addEventListener('click',()=>reload(false));
-$('#fSt').addEventListener('change',e=>{ui.fSt=e.target.value;ui.fExp='';ui.multi.clear();renderList();});
+$('#fSt').addEventListener('change',e=>{ui.fSt=e.target.value;ui.fStTouched=true;ui.fExp='';ui.multi.clear();renderList();});
 $('#fQ').addEventListener('input',e=>{ui.fQ=e.target.value.trim();renderList();});
 $('#fExp').addEventListener('click',e=>{const c=e.target.closest('.chip');if(!c)return;ui.fExp=c.dataset.exp;renderList();});
 $('#fExpSel').addEventListener('change',e=>{ui.fExp=e.target.value;ui.multi.clear();renderList();});
+$('#viewMode').addEventListener('click',e=>{const c=e.target.closest('.chip');if(!c)return;ui.view=c.dataset.v;ui.flatLimit=300;$$('#viewMode .chip').forEach(x=>x.classList.toggle('on',x===c));$('#btnExpand').style.display=ui.view==='flat'?'none':'';renderList();});
 $('#gSort').addEventListener('change',e=>{ui.gSort=e.target.value;ui.gDir=1;$('#gDir').textContent='▼';renderList();});
 $('#gDir').addEventListener('click',()=>{ui.gDir=-ui.gDir;$('#gDir').textContent=ui.gDir>0?'▼':'▲';renderList();});
 $('#btnExpand').addEventListener('click',e=>{ui.allOpenL=!ui.allOpenL;if(!ui.allOpenL)ui.openL.clear();e.target.textContent=ui.allOpenL?'طيّ الكل':'توسيع الكل';renderList();});
 $('#listBody').addEventListener('click',e=>{
   const so=e.target.closest('[data-sortl]');if(so){toggleSort(ui.sortL,so.dataset.sortl);const y=window.scrollY;renderList();window.scrollTo(0,y);return;}
+  if(e.target.closest('#btnMore')){ui.flatLimit+=300;const y=window.scrollY;renderList();window.scrollTo(0,y);return;}
   const sel=e.target.closest('[data-sel]');if(sel){if(patchRows([sel.dataset.sel],{sel:true})){renderAll();toast('أُضيفت إلى العينات');}return;}
   const ln=e.target.closest('[data-lnote]');if(ln){const f=findRow(ln.dataset.lnote);if(!f)return;const v=prompt('ملاحظة على هذا السطر:',f.r.note||'');if(v===null)return;patchRows([f.r.id],{note:v.trim()});renderList();return;}
   const gh=e.target.closest('[data-gh]');if(gh){const k=gh.dataset.gh;const open=gh.closest('.grp').classList.toggle('open');if(open)ui.openL.add(k);else{ui.openL.delete(k);if(ui.allOpenL){ui.allOpenL=false;$('#btnExpand').textContent='توسيع الكل';}}}
@@ -1375,6 +1420,26 @@ function readFile(f){
   const rd=new FileReader();
   rd.onload=()=>{try{const wb=XLSX.read(rd.result,{type:'array',cellDates:true});let all=[];wb.SheetNames.forEach(sn=>{const mat=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:''});const rows=rowsFromMatrix(mat);if(rows.length)all=all.concat(rows);});importStatement(name,all);}catch(err){console.error(err);toast('تعذّر قراءة الملف');}};
   rd.readAsArrayBuffer(f);
+}
+$('#dupWarn').addEventListener('click',e=>{const m=e.target.closest('[data-merge]');if(!m)return;const [a,b]=m.dataset.merge.split('|');mergeStatements(a,b);});
+async function mergeStatements(aId,bId){
+  const a=state.statements.find(x=>x.id===aId),b=state.statements.find(x=>x.id===bId);if(!a||!b)return;
+  if(!confirm(`دمج «${b.name}» داخل «${a.name}» ثم حذف «${b.name}»؟ تُحفظ العينات والتصوير والملاحظات من الاثنين.`))return;
+  if(!navigator.onLine){toast('الدمج يحتاج اتصالاً بالإنترنت');return;}
+  setSync('busy','جاري الدمج…');importing=true;
+  try{
+    const ka=new Map(a.rows.map(r=>[r.k,r]));const move=[];const patch=[];
+    b.rows.forEach(r=>{const ar=ka.get(r.k);if(!ar){move.push(r);}else{const before={sel:ar.sel,done:ar.done,note:ar.note};mergeState(ar,r);if(ar.sel!==before.sel||ar.done!==before.done||ar.note!==before.note)patch.push(ar);}});
+    for(let i=0;i<move.length;i+=200){const {error}=await sb.from(T_ROWS).update({statement_id:a.id,updated_at:now()}).in('id',move.slice(i,i+200).map(r=>r.id));if(error)throw error;}
+    for(const ar of patch){const {error}=await sb.from(T_ROWS).update({sel:ar.sel,done:ar.done,note:ar.note,sel_at:ar.selAt||null,done_at:ar.doneAt||null,updated_at:now()}).eq('id',ar.id);if(error)throw error;}
+    // البوكس فايل: انقل ما ليس موجوداً في الهدف
+    for(const [k,f] of Object.entries(state.filing)){if(!k.startsWith(b.id+'|'))continue;const acct=k.split('|')[1];if(filingOf(a.id,acct))continue;const exp=(a.rows.find(r=>r.acct===acct)||{}).exp||'';await saveFiling(a.id,acct,exp,f.box,f.seq,f.note);}
+    const {error:ed}=await sb.from(T_ST).delete().eq('id',b.id);if(ed)throw ed;
+    a.rows=a.rows.concat(move);a.updatedAt=now();state.statements=state.statements.filter(x=>x.id!==b.id);
+    Object.keys(state.filing).forEach(k=>{if(k.startsWith(b.id+'|'))delete state.filing[k];});
+    state.reqs.forEach(r=>{if(r.st===b.id)r.st=a.id;});
+    importing=false;saveCache();await reload(true);toast(`تم الدمج في «${a.name}»`);
+  }catch(e){importing=false;console.error(e);toast('تعذّر الدمج: '+(e.message||e));syncStatus();}
 }
 $('#stList').addEventListener('click',e=>{
   const ren=e.target.closest('[data-ren]');if(ren){renameStatement(ren.dataset.ren);return;}
