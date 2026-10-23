@@ -557,12 +557,46 @@ ORDER BY
     H."RefDate",
     H."TransId",
     L."Line_ID";</pre></details>
+      <details class="sqlbox" style="margin-top:8px"><summary>كويري لحساب محدد (لإضافة حركات حساب آخر) — [%2] = رقم الحساب</summary>
+        <div class="row" style="padding:10px 14px 0"><button class="btn s p" id="btnCopySql2">⎘ نسخ كويري الحساب المحدد</button><span class="muted tiny">بعد تشغيله الصق الناتج واختر «أضف إلى كشف موجود».</span></div>
+        <pre id="sqlText2">SELECT
+    H."RefDate" AS "تاريخ القيد",
+    H."TransId" AS "رقم الحركة",
+    H."Series" AS "السيريز",
+    H."Number" AS "رقم المستند",
+    H."TransType" AS "رمز الحركة",
+    L."Account" AS "رقم حساب المصروف",
+    A."AcctName" AS "اسم المصروف",
+    L."Debit" AS "المبلغ مدين",
+    L."Credit" AS "المبلغ دائن",
+    L."Debit" - L."Credit" AS "صافي المصروف",
+    L."LineMemo" AS "البيان",
+    H."Memo" AS "بيان القيد",
+    L."Ref1" AS "Reference 1",
+    L."Ref2" AS "Reference 2",
+    L."Ref3Line" AS "Reference 3"
+
+FROM OJDT H
+INNER JOIN JDT1 L
+    ON H."TransId" = L."TransId"
+INNER JOIN OACT A
+    ON L."Account" = A."AcctCode"
+
+WHERE
+    H."RefDate" BETWEEN '[%0]' AND '[%1]'
+    AND L."Account" = '[%2]'
+
+ORDER BY
+    H."RefDate",
+    H."TransId",
+    L."Line_ID";</pre></details>
     </div>
 
     <div class="card" id="importCard">
       <h2>إضافة كشف جديد</h2>
       <div class="row">
-        <div class="grow"><label class="f">اسم الكشف (مثل: مصاريف 01-2025)</label><input type="text" id="inName" placeholder="اسم الكشف"></div>
+        <div class="grow"><label class="f">إلى أين؟</label><select id="inTarget"><option value="">كشف جديد</option></select></div>
+        <div class="grow" id="inNameWrap"><label class="f">اسم الكشف الجديد (مثل: مصاريف 2025)</label><input type="text" id="inName" placeholder="اسم الكشف"></div>
       </div>
       <div style="margin-top:10px">
         <label class="f">الصق بيانات الكويري هنا (نسخ من Excel مع صف العناوين)</label>
@@ -573,7 +607,7 @@ ORDER BY
         <span class="muted tiny">أو</span>
         <div class="drop grow" id="drop">📄 اختر ملف Excel / CSV أو اسحبه هنا<input type="file" id="inFile" accept=".xlsx,.xls,.csv,.txt,.tsv" hidden></div>
       </div>
-      <div class="hint">إعادة رفع نفس الكشف (حتى باسم مختلف) <b>تحدّث الكشف الموجود</b> ولا تضيفه من جديد، مع <b>الحفاظ على العينات المختارة وحالة التصوير</b> للسطور المطابقة. الأعمدة المطلوبة: تاريخ القيد، رقم الحركة، رقم المستند، رقم حساب المصروف، اسم المصروف، صافي المصروف، البيان (الباقي اختياري).</div>
+      <div class="hint">اختر <b>«أضف إلى كشف موجود»</b> لإضافة حركات حساب آخر إلى نفس الكشف: الرفع يحدّث فقط <b>الحسابات الموجودة فيه</b> ويترك باقي حسابات الكشف كما هي. إعادة رفع نفس الكشف (حتى باسم مختلف) <b>تحدّث الموجود</b> ولا تضيفه من جديد، مع <b>الحفاظ على العينات وحالة التصوير</b> للسطور المطابقة. الأعمدة المطلوبة: تاريخ القيد، رقم الحركة، رقم المستند، رقم حساب المصروف، اسم المصروف، صافي المصروف، البيان (الباقي اختياري).</div>
     </div>
 
     <div class="card">
@@ -607,7 +641,7 @@ ORDER BY
     </div>
   </section>
 
-  <footer>شاشة عينات المصروفات — الإصدار v2.16 · مزامنة سحابية</footer>
+  <footer>شاشة عينات المصروفات — الإصدار v2.17 · مزامنة سحابية</footer>
 </div>
 
 <div class="bottombar" id="bottombar">
@@ -836,9 +870,10 @@ async function importStatement(name,rows,opts){
   opts=opts||{};
   if(!CAN_EDIT){toast('صلاحيتك عرض فقط');return;}
   if(!navigator.onLine){toast('الاستيراد يحتاج اتصالاً بالإنترنت');return;}
-  name=(name||'').trim()||('كشف '+new Date().toLocaleDateString('en-GB'));
   if(!rows.length){toast('لم يتم التعرف على أي سطر — تأكد من صف العناوين');return;}
-  let st=state.statements.find(s=>s.name===name);
+  let st=opts.targetId?state.statements.find(s=>s.id===opts.targetId):null;
+  name=(name||'').trim()||(st?st.name:('كشف '+new Date().toLocaleDateString('en-GB')));
+  if(!st)st=state.statements.find(s=>s.name===name);
   if(!st&&!opts.keepIncoming){ // نفس الكشف باسم مختلف؟ اعتمد تطابق السطور
     const keys=new Set(rows.map(r=>r.k));let best=null,bestOv=0;
     state.statements.forEach(x=>{if(!x.rows.length)return;let c=0;x.rows.forEach(r=>{if(keys.has(r.k))c++;});const ov=c/Math.min(rows.length,x.rows.length);if(ov>bestOv){bestOv=ov;best=x;}});
@@ -852,12 +887,17 @@ async function importStatement(name,rows,opts){
       if(o){r.id=o.id;r.sel=o.sel;r.done=o.done;r.note=o.note;r.selAt=o.selAt;r.doneAt=o.doneAt;if(opts.keepIncoming)mergeState(r,Object.assign({},r,{sel:!!r._sel,done:!!r._done,note:r._note,selAt:r._selAt,doneAt:r._doneAt}));if(r.sel)kept++;old.delete(r.k);}
       else{r.id=uid();if(!opts.keepIncoming){r.sel=false;r.done=false;r.note='';}else{r.sel=!!r._sel;r.done=!!r._done;r.note=r._note||'';r.selAt=r._selAt||'';r.doneAt=r._doneAt||'';}}
     });
-    toDelete=Array.from(old.values()).map(r=>r.id);
+    // الرفع مرجعي فقط للحسابات التي يحتويها: سطور الحسابات الأخرى في الكشف تبقى كما هي
+    const upAccts=new Set(rows.map(r=>r.acct));
+    const keepOld=Array.from(old.values()).filter(r=>!upAccts.has(r.acct));
+    toDelete=Array.from(old.values()).filter(r=>upAccts.has(r.acct)).map(r=>r.id);
+    rows=rows.concat(keepOld);
   }else{
     rows.forEach(r=>{r.id=uid();if(opts.keepIncoming){r.sel=!!r._sel;r.done=!!r._done;r.note=r._note||'';r.selAt=r._selAt||'';r.doneAt=r._doneAt||'';}else{r.sel=false;r.done=false;r.note='';}});
     st={id:uid(),name,createdAt:now(),updatedAt:now(),rows:[]};
   }
   rows.forEach(r=>{delete r._sel;delete r._done;delete r._note;delete r._selAt;delete r._doneAt;});
+  kept=rows.filter(r=>r.sel).length;
   setSync('busy','جاري الرفع…');importing=true;
   try{
     const {error:e1}=await sb.from(T_ST).upsert({id:st.id,name:st.name,updated_at:now()},{onConflict:'id'});if(e1)throw e1;
@@ -873,7 +913,7 @@ async function importStatement(name,rows,opts){
   if(idx>=0)state.statements[idx]=st;else state.statements.push(st);
   dedupeStatements();
   saveCache();syncStatus();
-  toast(isNew?`تمت إضافة «${name}»: ${rows.length} سطر`:`تم تحديث «${name}»: ${rows.length} سطر، حافظنا على ${kept} عينة`);
+  toast(isNew?`تمت إضافة «${name}»: ${rows.length} سطر`:`تم تحديث «${st.name}»: الآن ${rows.length} سطر، حافظنا على ${kept} عينة`);
   ui.fSt=st.id;renderAll();if(!opts.stay)setTab('list');autoMergeDuplicates();
 }
 async function deleteStatement(id){
@@ -1262,6 +1302,7 @@ function renderStats(){
   $('#tblSt').innerHTML=`<thead><tr><th>الكشف</th><th class="num">السطور</th><th class="num">المبلغ</th><th class="num">العينات</th><th class="num">تغطية العدد</th><th class="num">تغطية المبلغ</th><th class="num">مصوّر</th><th class="num">الإنجاز</th></tr></thead><tbody>${st.join('')||'<tr><td colspan="8" class="muted">لا بيانات</td></tr>'}</tbody>`;
 }
 function renderData(){
+  {const sel=$('#inTarget');const cur=ui.inTarget||'';sel.innerHTML=['<option value="">كشف جديد</option>'].concat(state.statements.map(s=>`<option value="${s.id}">أضف إلى كشف موجود: ${esc(s.name)}</option>`)).join('');sel.value=state.statements.some(s=>s.id===cur)?cur:'';$('#inNameWrap').style.display=sel.value?'none':'';}
   if(!state.statements.length){$('#dupWarn').innerHTML='';$('#dupWarnList').innerHTML='';$('#stList').innerHTML='<div class="empty"><div class="ic">☁</div>لا توجد كشوفات محفوظة.</div>';return;}
   const dupWarn=[];for(let i=0;i<state.statements.length;i++)for(let j=i+1;j<state.statements.length;j++){const a=state.statements[i],b=state.statements[j];if(!a.rows.length||!b.rows.length)continue;const ka=new Set(a.rows.map(r=>r.k));let c=0;b.rows.forEach(r=>{if(ka.has(r.k))c++;});const ov=c/Math.min(a.rows.length,b.rows.length);if(ov>=0.5)dupWarn.push({a:a.id,b:b.id,an:a.name,text:`«${esc(a.name)}» و«${esc(b.name)}» متطابقان بنسبة ${Math.round(ov*100)}% — يُدمجان تلقائياً عند الاتصال بالسحابة.`});}
   const dupHtml=dupWarn.map(w=>`<div class="banner warn">⚠️ ${w.text}${CAN_EDIT?` <button class="btn s p" data-merge="${w.a}|${w.b}">دمج في «${esc(w.an)}» وحذف الآخر — تبقى كل العينات</button>`:''}</div>`).join('');
@@ -1436,12 +1477,15 @@ $('#reqsBody').addEventListener('click',e=>{
   const bx=e.target.closest('[data-rqbox]');if(bx){const r=state.reqs.find(x=>x.id===bx.dataset.rqbox);if(!r)return;const box=prompt('رقم البوكس فايل:',r.box||'');if(box===null)return;const seq=prompt('الترتيب داخل البوكس:',r.seq===''?'':r.seq);if(seq===null)return;patchReq(r.id,{box:box.trim(),seq:seq.trim()});}
 });
 /* تبويب البيانات */
+function copyText(txt){return navigator.clipboard.writeText(txt).then(()=>toast('تم نسخ الكويري')).catch(()=>{const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');toast('تم نسخ الكويري');}catch(err){toast('تعذّر النسخ — افتح النص وانسخه يدوياً');}ta.remove();});}
+$('#btnCopySql2').addEventListener('click',e=>{e.preventDefault();copyText($('#sqlText2').textContent);});
 $('#btnCopySql').addEventListener('click',async()=>{
   const txt=$('#sqlText').textContent;
   try{await navigator.clipboard.writeText(txt);toast('تم نسخ الكويري');}
   catch(e){const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');toast('تم نسخ الكويري');}catch(err){toast('تعذّر النسخ — افتح النص وانسخه يدوياً');}ta.remove();}
 });
-$('#btnPaste').addEventListener('click',()=>{const rows=parsePaste($('#inPaste').value);if(!rows.length){toast('لم أتعرف على بيانات — الصق مع صف العناوين');return;}importStatement($('#inName').value,rows).then(()=>{$('#inPaste').value='';$('#inName').value='';});});
+$('#btnPaste').addEventListener('click',()=>{const rows=parsePaste($('#inPaste').value);if(!rows.length){toast('لم أتعرف على بيانات — الصق مع صف العناوين');return;}importStatement($('#inName').value,rows,{targetId:$('#inTarget').value||null}).then(()=>{$('#inPaste').value='';$('#inName').value='';});});
+$('#inTarget').addEventListener('change',e=>{ui.inTarget=e.target.value;$('#inNameWrap').style.display=e.target.value?'none':'';});
 const drop=$('#drop');
 drop.addEventListener('click',()=>$('#inFile').click());
 drop.addEventListener('dragover',e=>{e.preventDefault();drop.classList.add('over');});
@@ -1449,11 +1493,11 @@ drop.addEventListener('dragleave',()=>drop.classList.remove('over'));
 drop.addEventListener('drop',e=>{e.preventDefault();drop.classList.remove('over');if(e.dataTransfer.files[0])readFile(e.dataTransfer.files[0]);});
 $('#inFile').addEventListener('change',e=>{if(e.target.files[0])readFile(e.target.files[0]);e.target.value='';});
 function readFile(f){
-  const name=$('#inName').value.trim()||f.name.replace(/\.[^.]+$/,'');
-  if(/\.(csv|txt|tsv)$/i.test(f.name)){const rd=new FileReader();rd.onload=()=>importStatement(name,parsePaste(rd.result));rd.readAsText(f,'utf-8');return;}
+  const name=$('#inName').value.trim()||f.name.replace(/\.[^.]+$/,'');const tgt={targetId:$('#inTarget').value||null};
+  if(/\.(csv|txt|tsv)$/i.test(f.name)){const rd=new FileReader();rd.onload=()=>importStatement(name,parsePaste(rd.result),tgt);rd.readAsText(f,'utf-8');return;}
   if(typeof XLSX==='undefined'){toast('مكتبة Excel غير محمّلة — الصق البيانات كنص بدلاً من ذلك');return;}
   const rd=new FileReader();
-  rd.onload=()=>{try{const wb=XLSX.read(rd.result,{type:'array',cellDates:true});let all=[];wb.SheetNames.forEach(sn=>{const mat=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:''});const rows=rowsFromMatrix(mat);if(rows.length)all=all.concat(rows);});importStatement(name,all);}catch(err){console.error(err);toast('تعذّر قراءة الملف');}};
+  rd.onload=()=>{try{const wb=XLSX.read(rd.result,{type:'array',cellDates:true});let all=[];wb.SheetNames.forEach(sn=>{const mat=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:''});const rows=rowsFromMatrix(mat);if(rows.length)all=all.concat(rows);});importStatement(name,all,tgt);}catch(err){console.error(err);toast('تعذّر قراءة الملف');}};
   rd.readAsArrayBuffer(f);
 }
 document.addEventListener('click',e=>{const m=e.target.closest('[data-merge]');if(!m)return;const [a,b]=m.dataset.merge.split('|');mergeStatements(a,b);});
