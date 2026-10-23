@@ -596,7 +596,7 @@ ORDER BY
     </div>
   </section>
 
-  <footer>شاشة عينات المصروفات — الإصدار v2.12 · مزامنة سحابية</footer>
+  <footer>شاشة عينات المصروفات — الإصدار v2.13 · مزامنة سحابية</footer>
 </div>
 
 <div class="bottombar" id="bottombar">
@@ -777,7 +777,7 @@ async function fetchAll(){
 async function reload(silent){
   if(!sb||!SESSION||importing)return;
   if(!silent)setSync('busy','جاري التحميل…');
-  try{await fetchAll();renderAll();if(!silent)toast('تم التحديث من السحابة');}
+  try{await fetchAll();renderAll();if(!silent)toast('تم التحديث من السحابة');autoMergeDuplicates();}
   catch(e){console.error(e);if(!silent)toast('تعذّر التحميل من السحابة — تُعرض آخر نسخة محلية');}
   syncStatus();
 }
@@ -863,7 +863,7 @@ async function importStatement(name,rows,opts){
   dedupeStatements();
   saveCache();syncStatus();
   toast(isNew?`تمت إضافة «${name}»: ${rows.length} سطر`:`تم تحديث «${name}»: ${rows.length} سطر، حافظنا على ${kept} عينة`);
-  ui.fSt=st.id;renderAll();if(!opts.stay)setTab('list');
+  ui.fSt=st.id;renderAll();if(!opts.stay)setTab('list');autoMergeDuplicates();
 }
 async function deleteStatement(id){
   const s=state.statements.find(x=>x.id===id);if(!s)return;
@@ -966,7 +966,7 @@ async function afterLogin(){
   try{await fetchAll();}
   catch(e){console.error(e);if(!loadCache()){renderUnauthorized('warn','تعذّر تحميل البيانات',e.message||'خطأ غير معروف');return;}toast('تعذّر الاتصال — تُعرض آخر نسخة محلية');}
   $('#gate').classList.add('hidden');$('#app').classList.remove('hidden');
-  renderAll();syncStatus();flush();subscribeRealtime();checkLegacy();
+  renderAll();syncStatus();flush();subscribeRealtime();checkLegacy();autoMergeDuplicates();
 }
 async function boot(){
   if(typeof supabase==='undefined'){gate('<div class="gate"><h1>⚠️ تعذّر تحميل مكتبة الاتصال</h1><p class="sub">تأكد من الاتصال بالإنترنت ثم حدّث الصفحة.</p></div>');return;}
@@ -1242,7 +1242,7 @@ function renderStats(){
 }
 function renderData(){
   if(!state.statements.length){$('#dupWarn').innerHTML='';$('#dupWarnList').innerHTML='';$('#stList').innerHTML='<div class="empty"><div class="ic">☁</div>لا توجد كشوفات محفوظة.</div>';return;}
-  const dupWarn=[];for(let i=0;i<state.statements.length;i++)for(let j=i+1;j<state.statements.length;j++){const a=state.statements[i],b=state.statements[j];if(!a.rows.length||!b.rows.length)continue;const ka=new Set(a.rows.map(r=>r.k));let c=0;b.rows.forEach(r=>{if(ka.has(r.k))c++;});const ov=c/Math.min(a.rows.length,b.rows.length);if(ov>=0.5)dupWarn.push({a:a.id,b:b.id,an:a.name,text:`«${esc(a.name)}» و«${esc(b.name)}» متطابقان بنسبة ${Math.round(ov*100)}% — نفس الكشف رُفع مرتين باسمين مختلفين، فتظهر سطوره مكررة في عرض «كل الكشوفات».`});}
+  const dupWarn=[];for(let i=0;i<state.statements.length;i++)for(let j=i+1;j<state.statements.length;j++){const a=state.statements[i],b=state.statements[j];if(!a.rows.length||!b.rows.length)continue;const ka=new Set(a.rows.map(r=>r.k));let c=0;b.rows.forEach(r=>{if(ka.has(r.k))c++;});const ov=c/Math.min(a.rows.length,b.rows.length);if(ov>=0.5)dupWarn.push({a:a.id,b:b.id,an:a.name,text:`«${esc(a.name)}» و«${esc(b.name)}» متطابقان بنسبة ${Math.round(ov*100)}% — يُدمجان تلقائياً عند الاتصال بالسحابة.`});}
   const dupHtml=dupWarn.map(w=>`<div class="banner warn">⚠️ ${w.text}${CAN_EDIT?` <button class="btn s p" data-merge="${w.a}|${w.b}">دمج في «${esc(w.an)}» وحذف الآخر — تبقى كل العينات</button>`:''}</div>`).join('');
   $('#dupWarn').innerHTML=dupHtml;$('#dupWarnList').innerHTML=dupHtml;
   $('#stList').innerHTML=state.statements.map(s=>{const sel=s.rows.filter(r=>r.sel).length,done=s.rows.filter(r=>r.done).length;
@@ -1424,11 +1424,24 @@ function readFile(f){
   rd.readAsArrayBuffer(f);
 }
 document.addEventListener('click',e=>{const m=e.target.closest('[data-merge]');if(!m)return;const [a,b]=m.dataset.merge.split('|');mergeStatements(a,b);});
-async function mergeStatements(aId,bId){
+function findDupPair(){
+  const L=state.statements;
+  for(let i=0;i<L.length;i++)for(let j=i+1;j<L.length;j++){const a=L[i],b=L[j];if(!a.rows.length||!b.rows.length)continue;const ka=new Set(a.rows.map(r=>r.k));let c=0;b.rows.forEach(r=>{if(ka.has(r.k))c++;});if(c/Math.min(a.rows.length,b.rows.length)>=0.5){const older=(a.createdAt||'')<=(b.createdAt||'')?a:b;const newer=older===a?b:a;return {keep:older,drop:newer};}}
+  return null;
+}
+let autoMerging=false;
+async function autoMergeDuplicates(){
+  if(autoMerging||importing||!CAN_EDIT||!navigator.onLine||!sb||!SESSION)return;
+  autoMerging=true;let n=0;
+  try{for(let guard=0;guard<20;guard++){const pr=findDupPair();if(!pr)break;const ok=await mergeStatements(pr.keep.id,pr.drop.id,true);if(!ok)break;n++;}}
+  finally{autoMerging=false;}
+  if(n){renderAll();toast(`تم دمج ${n} كشف مكرر تلقائياً — العينات محفوظة`);}
+}
+async function mergeStatements(aId,bId,silent){
   const a=state.statements.find(x=>x.id===aId),b=state.statements.find(x=>x.id===bId);if(!a||!b)return;
   const selA=a.rows.filter(r=>r.sel).length,selB=b.rows.filter(r=>r.sel).length;
-  if(!confirm(`دمج «${b.name}» داخل «${a.name}» ثم حذف «${b.name}»؟\nتُحفظ كل العينات (${selA} + ${selB}) وحالة التصوير والملاحظات من الاثنين.`))return;
-  if(!navigator.onLine){toast('الدمج يحتاج اتصالاً بالإنترنت');return;}
+  if(!silent&&!confirm(`دمج «${b.name}» داخل «${a.name}» ثم حذف «${b.name}»؟\nتُحفظ كل العينات (${selA} + ${selB}) وحالة التصوير والملاحظات من الاثنين.`))return false;
+  if(!navigator.onLine){toast('الدمج يحتاج اتصالاً بالإنترنت');return false;}
   setSync('busy','جاري الدمج…');importing=true;
   try{
     const ka=new Map(a.rows.map(r=>[r.k,r]));const move=[];const patch=[];
@@ -1441,8 +1454,9 @@ async function mergeStatements(aId,bId){
     a.rows=a.rows.concat(move);a.updatedAt=now();state.statements=state.statements.filter(x=>x.id!==b.id);
     Object.keys(state.filing).forEach(k=>{if(k.startsWith(b.id+'|'))delete state.filing[k];});
     state.reqs.forEach(r=>{if(r.st===b.id)r.st=a.id;});
-    importing=false;saveCache();await reload(true);toast(`تم الدمج في «${a.name}»`);
-  }catch(e){importing=false;console.error(e);toast('تعذّر الدمج: '+(e.message||e));syncStatus();}
+    importing=false;saveCache();if(!silent){await reload(true);toast(`تم الدمج في «${a.name}»`);}
+    return true;
+  }catch(e){importing=false;console.error(e);toast('تعذّر الدمج: '+(e.message||e));syncStatus();return false;}
 }
 $('#stList').addEventListener('click',e=>{
   const ren=e.target.closest('[data-ren]');if(ren){renameStatement(ren.dataset.ren);return;}
