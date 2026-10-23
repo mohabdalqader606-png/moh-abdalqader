@@ -417,7 +417,7 @@ details.sqlbox pre{margin:0;padding:12px 14px;border-top:1px solid var(--line);d
       </div>
       <div class="chips" id="fExp" style="margin-top:10px"></div>
       <div class="row" id="fSummary" style="margin-top:10px;gap:6px"></div>
-      <div class="hint">اضغط <b>«＋ عينة»</b> على السطر لنقله إلى العينات المختارة، وباقي الكشف يبقى كما هو. الرقم الأزرق بجانب رقم المستند يعني أن السند له أكثر من سطر.</div>
+      <div class="hint">اضغط <b>«＋ عينة»</b> على السطر لنقله إلى العينات المختارة، وباقي الكشف يبقى كما هو. سطور نفس القيد التي تحت <b>نفس الحساب</b> تُعدّ فاتورة واحدة وتُنقل معاً تلقائياً. الرقم الأزرق بجانب رقم المستند يعني أن القيد له أكثر من سطر.</div>
     </div>
     <div id="dupWarnList"></div>
     <div id="listBody"></div>
@@ -596,7 +596,7 @@ ORDER BY
     </div>
   </section>
 
-  <footer>شاشة عينات المصروفات — الإصدار v2.13 · مزامنة سحابية</footer>
+  <footer>شاشة عينات المصروفات — الإصدار v2.14 · مزامنة سحابية</footer>
 </div>
 
 <div class="bottombar" id="bottombar">
@@ -1065,6 +1065,9 @@ function headRow(st,attr,actLabel,withExp){const cols=withExp?HEAD_COLS.slice(0,
 function sortbar(st,attr){return `<div class="sortbar"><span>ترتيب:</span>${SORT_KEYS.map(([k,l])=>`<button type="button" ${attr}="${k}" class="${st.key===k?'on':''}">${l}${st.key===k?`<i>${st.dir>0?'▲':'▼'}</i>`:''}</button>`).join('')}</div>`;}
 function toggleSort(st,k){if(st.key===k)st.dir=-st.dir;else{st.key=k;st.dir=(k==='amt')?-1:1;}}
 function findRow(id){for(const s of state.statements){const r=s.rows.find(x=>x.id===id);if(r)return {r,s};}return null;}
+function invKey(r){return (r.trx||r.doc)+'|'+r.acct;}
+function invoiceSiblings(id){const f=findRow(id);if(!f||!(f.r.trx||f.r.doc))return [id];const k=invKey(f.r);return f.s.rows.filter(r=>invKey(r)===k).map(r=>r.id);}
+function expandInvoice(ids){const out=new Set();ids.forEach(id=>invoiceSiblings(id).forEach(x=>out.add(x)));return Array.from(out);}
 function docSiblings(id){const f=findRow(id);if(!f||!f.r.doc)return [id];return f.s.rows.filter(r=>r.doc===f.r.doc).map(r=>r.id);}
 /* المصروفات التي يشملها كل مستند ضمن العينات المختارة (نفس الكشف) */
 function jKey(s,r){return s.id+'|'+(r.trx||r.doc);}
@@ -1099,7 +1102,7 @@ function lineHtml(x,docN,docExp,withExp){
         <div class="c c-date">${esc(r.date)}${ui.fSt==='all'?'<span class="pill grey">'+esc(x.s.name)+'</span>':''}</div>
         <div class="c c-doc">${docCell(r)}${dn>1?` <span class="pill info">${dn}</span>`:''}</div>
         <div class="c c-trx"><span class="num">${esc(r.trx)}</span>${r.series?`<small>سيريز ${esc(r.series)}</small>`:''}</div>
-        <div class="c c-desc"><div class="desc">${esc(r.desc||r.edesc||'—')}</div>${(r.edesc&&r.edesc!==r.desc)||(r.r1&&!docInfo(r).isPay)?`<div class="sub">${r.edesc&&r.edesc!==r.desc?`<span>${esc(r.edesc)}</span>`:''}${r.r1&&!docInfo(r).isPay?`<span>Ref <span class="num">${esc(r.r1)}</span></span>`:''}</div>`:''}${de?`<div class="multi">📎 <span><b>لهذا القيد عينة</b> في: ${Array.from(de.values()).map(esc).join('، ')} — إن أضفت هذا السطر تُصوَّر فاتورته مع فواتيرها بسحبة واحدة للقيد</span></div>`:''}${r.note?`<div class="note-v">✎ ${esc(r.note)}</div>`:''}</div>
+        <div class="c c-desc"><div class="desc">${esc(r.desc||r.edesc||'—')}</div>${(r.edesc&&r.edesc!==r.desc)||(r.r1&&!docInfo(r).isPay)?`<div class="sub">${r.edesc&&r.edesc!==r.desc?`<span>${esc(r.edesc)}</span>`:''}${r.r1&&!docInfo(r).isPay?`<span>Ref <span class="num">${esc(r.r1)}</span></span>`:''}</div>`:''}${(()=>{if(!de)return '';const others=Array.from(de.entries()).filter(([k])=>k!==expKey(r)).map(([,v])=>v);return others.length?`<div class="multi">📎 <span><b>لهذا القيد عينة</b> في: ${others.map(esc).join('، ')} — إن أضفت هذا السطر تُصوَّر فاتورته مع فواتيرها بسحبة واحدة للقيد</span></div>`:'';})()}${r.note?`<div class="note-v">✎ ${esc(r.note)}</div>`:''}</div>
         ${withExp?`<div class="c c-exp">${esc(r.exp)}<br><span class="muted tiny num">${esc(r.acct)}</span></div>`:''}
         <div class="c c-amt"><span class="num">${fmt(r.net)}</span><small>د.أ</small></div>
         <div class="c c-act">
@@ -1300,13 +1303,13 @@ $('#btnExpand').addEventListener('click',e=>{ui.allOpenL=!ui.allOpenL;if(!ui.all
 $('#listBody').addEventListener('click',e=>{
   const so=e.target.closest('[data-sortl]');if(so){toggleSort(ui.sortL,so.dataset.sortl);const y=window.scrollY;renderList();window.scrollTo(0,y);return;}
   if(e.target.closest('#btnMore')){ui.flatLimit+=300;const y=window.scrollY;renderList();window.scrollTo(0,y);return;}
-  const sel=e.target.closest('[data-sel]');if(sel){if(patchRows([sel.dataset.sel],{sel:true})){renderAll();toast('أُضيفت إلى العينات');}return;}
+  const sel=e.target.closest('[data-sel]');if(sel){const ids=expandInvoice([sel.dataset.sel]);const n=patchRows(ids,{sel:true});if(n){renderAll();toast(n>1?`أُضيفت إلى العينات مع ${n-1} سطر آخر من نفس الفاتورة`:'أُضيفت إلى العينات');}return;}
   const ln=e.target.closest('[data-lnote]');if(ln){const f=findRow(ln.dataset.lnote);if(!f)return;const v=prompt('ملاحظة على هذا السطر:',f.r.note||'');if(v===null)return;patchRows([f.r.id],{note:v.trim()});renderList();return;}
   const gh=e.target.closest('[data-gh]');if(gh){const k=gh.dataset.gh;const open=gh.closest('.grp').classList.toggle('open');if(open)ui.openL.add(k);else{ui.openL.delete(k);if(ui.allOpenL){ui.allOpenL=false;$('#btnExpand').textContent='توسيع الكل';}}}
 });
 $('#listBody').addEventListener('change',e=>{const m=e.target.closest('[data-multi]');if(!m)return;if(m.checked)ui.multi.add(m.dataset.multi);else ui.multi.delete(m.dataset.multi);renderBottom();});
 $('#bbClear').addEventListener('click',()=>{ui.multi.clear();renderList();});
-$('#bbMove').addEventListener('click',()=>{const n=patchRows(Array.from(ui.multi),{sel:true});ui.multi.clear();renderAll();toast(`نُقل ${n} سطر إلى العينات`);});
+$('#bbMove').addEventListener('click',()=>{const n=patchRows(expandInvoice(Array.from(ui.multi)),{sel:true});ui.multi.clear();renderAll();toast(`نُقل ${n} سطر إلى العينات`);});
 
 const dlg=$('#dlgAuto');
 $('#btnAuto').addEventListener('click',()=>{if(!CAN_EDIT){toast('صلاحيتك عرض فقط');return;}dlg.showModal();});
@@ -1329,7 +1332,7 @@ $('#aGo').addEventListener('click',()=>{
     else{const t=Math.ceil(n/2);chosen=byAmt.slice(0,t);const rest=shuffle(list.filter(r=>!chosen.includes(r)));chosen=chosen.concat(rest.slice(0,n-t));}
     chosen.forEach(r=>ids.push(r.id));
   });
-  dlg.close();const n=patchRows(ids,{sel:true});renderAll();toast(`تم اختيار ${n} عينة تلقائياً`);
+  dlg.close();const n=patchRows(expandInvoice(ids),{sel:true});renderAll();toast(`تم اختيار ${n} عينة تلقائياً`);
 });
 
 $('#sSt').addEventListener('change',e=>{ui.sSt=e.target.value;renderSamples();});
@@ -1340,12 +1343,12 @@ $('#sQ').addEventListener('input',e=>{ui.sQ=e.target.value.trim();renderSamples(
 $('#btnExpandS').addEventListener('click',e=>{ui.allOpenS=!ui.allOpenS;if(!ui.allOpenS)ui.openS.clear();e.target.textContent=ui.allOpenS?'طيّ الكل':'توسيع الكل';renderSamples();});
 $('#samplesBody').addEventListener('change',e=>{
   const d=e.target.closest('[data-done]');
-  if(d){const id=d.dataset.done;patchRows([id],{done:d.checked});renderKpis();renderSamples();renderStats();renderData();if(d.checked){const f=findRow(id);const ex=f&&(f.r.trx||f.r.doc)?selDocExpenses().get(jKey(f.s,f.r)):null;if(ex&&ex.size>1)toast(`تنبيه: في هذا القيد فواتير لـ ${ex.size} مصروفات — صوّر الباقي ما دام القيد بيدك`);}return;}
+  if(d){const id=d.dataset.done;const ids=expandInvoice([id]).filter(i=>{const f=findRow(i);return f&&f.r.sel;});patchRows(ids,{done:d.checked});renderKpis();renderSamples();renderStats();renderData();if(d.checked){const f=findRow(id);const ex=f&&(f.r.trx||f.r.doc)?selDocExpenses().get(jKey(f.s,f.r)):null;if(ex&&ex.size>1)toast(`تنبيه: في هذا القيد فواتير لـ ${ex.size} مصروفات — صوّر الباقي ما دام القيد بيدك`);}return;}
   const n=e.target.closest('[data-note]');if(n){patchRows([n.dataset.note],{note:n.value.trim()});}
 });
 $('#samplesBody').addEventListener('click',e=>{
   const so=e.target.closest('[data-sorts]');if(so){toggleSort(ui.sortS,so.dataset.sorts);const y=window.scrollY;renderSamples();window.scrollTo(0,y);return;}
-  const u=e.target.closest('[data-unsel]');if(u){patchRows([u.dataset.unsel],{sel:false});renderAll();toast('أُرجعت إلى الكشف');return;}
+  const u=e.target.closest('[data-unsel]');if(u){const n=patchRows(expandInvoice([u.dataset.unsel]),{sel:false});renderAll();toast(n>1?`أُرجع ${n} سطر (نفس الفاتورة) إلى الكشف`:'أُرجعت إلى الكشف');return;}
   const da=e.target.closest('[data-doneall]');if(da){e.stopPropagation();const ids=Array.from(da.closest('.grp').querySelectorAll('[data-done]')).map(x=>x.dataset.done);const allDone=ids.every(id=>{const f=findRow(id);return f&&f.r.done;});patchRows(ids,{done:!allDone});ui.openS.add(da.dataset.doneall);renderKpis();renderSamples();renderStats();renderData();toast(allDone?'أُلغي تعليم التصوير للمجموعة':'عُلِّمت المجموعة كمصوّرة');return;}
   const gh=e.target.closest('[data-gs]');if(gh){const k=gh.dataset.gs;const open=gh.closest('.grp').classList.toggle('open');if(open)ui.openS.add(k);else{ui.openS.delete(k);if(ui.allOpenS){ui.allOpenS=false;$('#btnExpandS').textContent='توسيع الكل';}}}
 });
@@ -1429,6 +1432,15 @@ function findDupPair(){
   for(let i=0;i<L.length;i++)for(let j=i+1;j<L.length;j++){const a=L[i],b=L[j];if(!a.rows.length||!b.rows.length)continue;const ka=new Set(a.rows.map(r=>r.k));let c=0;b.rows.forEach(r=>{if(ka.has(r.k))c++;});if(c/Math.min(a.rows.length,b.rows.length)>=0.5){const older=(a.createdAt||'')<=(b.createdAt||'')?a:b;const newer=older===a?b:a;return {keep:older,drop:newer};}}
   return null;
 }
+function reconcileInvoices(){
+  if(!CAN_EDIT)return 0;
+  const toSel=[],toDone=[];
+  state.statements.forEach(s=>{const g=new Map();s.rows.forEach(r=>{if(!(r.trx||r.doc))return;const k=invKey(r);if(!g.has(k))g.set(k,[]);g.get(k).push(r);});
+    g.forEach(list=>{if(list.length<2)return;const anySel=list.some(r=>r.sel);if(!anySel)return;const anyDone=list.some(r=>r.done);list.forEach(r=>{if(!r.sel)toSel.push(r.id);if(anyDone&&!r.done)toDone.push(r.id);});});});
+  if(toSel.length)patchRows(toSel,{sel:true});
+  if(toDone.length)patchRows(toDone,{done:true});
+  return toSel.length+toDone.length;
+}
 let autoMerging=false;
 async function autoMergeDuplicates(){
   if(autoMerging||importing||!CAN_EDIT||!navigator.onLine||!sb||!SESSION)return;
@@ -1436,6 +1448,7 @@ async function autoMergeDuplicates(){
   try{for(let guard=0;guard<20;guard++){const pr=findDupPair();if(!pr)break;const ok=await mergeStatements(pr.keep.id,pr.drop.id,true);if(!ok)break;n++;}}
   finally{autoMerging=false;}
   if(n){renderAll();toast(`تم دمج ${n} كشف مكرر تلقائياً — العينات محفوظة`);}
+  const fixed=reconcileInvoices();if(fixed){renderAll();toast(`أُكملت ${fixed} سطر من فواتير مختارة جزئياً (نفس القيد ونفس الحساب)`);}
 }
 async function mergeStatements(aId,bId,silent){
   const a=state.statements.find(x=>x.id===aId),b=state.statements.find(x=>x.id===bId);if(!a||!b)return;
