@@ -1073,116 +1073,9 @@ LEFT JOIN OPOR PO ON X."BaseType"=22 AND PO."DocEntry"=X."BaseEntry"
 LEFT JOIN OPDN GR ON GR."DocEntry"=X."GE"
 LEFT JOIN OIPF LC ON LC."DocEntry"=X."LE"
 LEFT JOIN OUSR U ON U."USERID"=X."UserSign"
-WHERE X."F1"+X."F2"+X."F3"+X."F4"+X."F5"+X."F7"+X."F8"+X."F9">0 OR IFNULL(X."RQ",0)<X."Quantity"
-ORDER BY X."F1"+X."F2"+X."F3"+X."F4"+X."F5"+X."F7"+X."F8"+X."F9" DESC,IFNULL((X."UPF"-X."LastUPF")*X."BQ"*X."Rate",0) DESC
-</script>
-<script type="text/plain" id="sql_q13all">
-/* SELECT T0."DocDate" FROM OPCH T0 WHERE T0."DocDate" BETWEEN [%0] AND [%1] */
-SELECT P0."DocEntry" AS "فتح فاتورة الشراء",
-X."DocNum" AS "رقم الفاتورة",
-X."DocDate" AS "التاريخ",
-X."CreateDate" AS "تاريخ الادخال",
-DAYS_BETWEEN(X."DocDate",X."CreateDate") AS "ايام التأخير",
-CASE WHEN X."isIns"='Y' THEN 'فاتورة حجز' ELSE 'فاتورة عادية' END AS "نوع الفاتورة",
-B0."CardCode" AS "فتح المورد",
-X."CardName" AS "المورد",
-M0."ItemCode" AS "فتح الصنف",
-X."Dscription" AS "اسم الصنف",
-X."Quantity" AS "الكمية المفوترة",
-X."unitMsr" AS "الوحدة",
-X."Cur" AS "العملة",
-X."Rate" AS "سعر الصرف",
-X."PriceBefDi" AS "السعر بعملة الفاتورة",
-ROUND(X."UPF",4) AS "سعر المنشأ للوحدة بالعملة",
-ROUND(X."LastUPF",4) AS "اخر سعر منشأ بنفس العملة",
-LI."DocRate" AS "سعر صرف اخر شراء",
-ROUND((X."UPF"-X."LastUPF")*100/NULLIF(X."LastUPF",0),2) AS "نسبة التغير بالعملة",
-ROUND((X."UPF"-X."LastUPF")*X."BQ",3) AS "اثر التغير بالعملة",
-ROUND((X."UPF"-X."LastUPF")*X."BQ"*X."Rate",3) AS "اثر التغير بالدينار",
-LI."DocEntry" AS "فتح اخر فاتورة شراء",
-LI."DocDate" AS "تاريخ اخر شراء",
-LI."CardName" AS "مورد اخر شراء",
-PO."DocEntry" AS "فتح امر الشراء",
-X."BaseP" AS "سعر امر الشراء",
-X."BaseQ" AS "كمية امر الشراء",
-GR."DocEntry" AS "فتح سند الاستلام",
-X."RQ" AS "الكمية المستلمة",
-X."GD" AS "تاريخ الاستلام",
-LC."DocEntry" AS "فتح اخر تكاليف استيراد",
-LC."DocDate" AS "تاريخ اخر تكاليف استيراد",
-ROUND(X."LineTotal",3) AS "قيمة المنشأ بالدينار",
-ROUND(X."Frt",3) AS "مصاريف الفاتورة المحملة بالدينار",
-ROUND(IFNULL(X."LCAmt",0),3) AS "تكاليف مستند الاستيراد بالدينار",
-ROUND(X."Frt"+IFNULL(X."LCAmt",0),3) AS "اجمالي تكاليف الاستيراد بالدينار",
-ROUND((X."Frt"*X."RQ"/NULLIF(X."Quantity",0)+IFNULL(X."LCAmt",0))*100/NULLIF(X."LineTotal"*X."RQ"/NULLIF(X."Quantity",0),0),2) AS "نسبة تكاليف الاستيراد",
-ROUND((X."LineTotal"+X."Frt")/NULLIF(X."BQ",0)+IFNULL(X."LCAmt",0)/NULLIF(X."RQ"*X."F",0),3) AS "الكلفة الواصلة للوحدة بالدينار",
-DAYS_BETWEEN(X."DocDate",CURRENT_DATE) AS "ايام منذ الفاتورة",
-X."F1"+X."F2"+X."F3"+X."F4"+X."F5"+X."F7"+X."F8"+X."F9" AS "درجة الخطورة",
-RTRIM(
-CASE WHEN X."F5"=1 THEN '✖ رقم فاتورة المورد مكرر / ' ELSE '' END||
-CASE WHEN X."F7"=1 THEN '✖ المستلم اكثر من المفوتر / ' ELSE '' END||
-CASE WHEN X."F9"=1 THEN '✖ لم يستلم بعد 120 يوم / ' ELSE '' END||
-CASE WHEN X."F8"=1 THEN '✖ استلام بدون تكاليف استيراد بعد 30 يوم / ' ELSE '' END||
-CASE WHEN X."F2"=1 THEN '✖ سعر اعلى من امر الشراء / ' ELSE '' END||
-CASE WHEN X."F3"=1 THEN '✖ كمية اكبر من امر الشراء / ' ELSE '' END||
-CASE WHEN X."F4"=1 THEN '✖ فاتورة بدون امر شراء / ' ELSE '' END||
-CASE WHEN X."F1"=1 THEN '✖ ارتفاع سعر المنشأ اكثر من 5% / ' ELSE '' END||
-CASE WHEN X."F9"=0 AND IFNULL(X."RQ",0)<X."Quantity" THEN 'بانتظار الاستلام / ' ELSE '' END
-,' /') AS "التنبيه",
-U."U_NAME" AS "المستخدم"
-FROM (
-SELECT Y.*,LP."LUP" AS "LastUPF",
-CASE WHEN LP."LUP">0 AND Y."UPF">LP."LUP"*1.05 THEN 1 ELSE 0 END AS "F1",
-CASE WHEN Y."BaseP">0 AND Y."PriceBefDi">Y."BaseP"*1.005 THEN 1 ELSE 0 END AS "F2",
-CASE WHEN Y."BaseQ" IS NOT NULL AND Y."Quantity">Y."BaseQ"+0.0001 THEN 1 ELSE 0 END AS "F3",
-CASE WHEN Y."BaseType"<>22 THEN 1 ELSE 0 END AS "F4",
-CASE WHEN Y."DupN">0 AND IFNULL(TRIM(Y."NumAtCard"),'')<>'' THEN 1 ELSE 0 END AS "F5",
-CASE WHEN IFNULL(Y."RQ",0)>Y."Quantity"+0.0001 THEN 1 ELSE 0 END AS "F7",
-CASE WHEN Y."RQ">0 AND Y."LE" IS NULL AND DAYS_BETWEEN(Y."GD",CURRENT_DATE)>30 THEN 1 ELSE 0 END AS "F8",
-CASE WHEN IFNULL(Y."RQ",0)<Y."Quantity" AND DAYS_BETWEEN(Y."DocDate",CURRENT_DATE)>120 THEN 1 ELSE 0 END AS "F9"
-FROM (
-SELECT T0."DocEntry",T0."DocNum",T0."DocDate",T0."CreateDate",T0."isIns",T0."NumAtCard",T0."CardCode",T0."CardName",T0."DocCur" AS "Cur",IFNULL(NULLIF(T0."DocRate",0),1) AS "Rate",T0."UserSign",T1."ItemCode",T1."Dscription",T1."Quantity",T1."unitMsr",T1."PriceBefDi",T1."BaseType",T1."BaseEntry",T1."LineTotal",
-IFNULL(NULLIF(T1."NumPerMsr",0),1) AS "F",
-T1."Quantity"*IFNULL(NULLIF(T1."NumPerMsr",0),1) AS "BQ",
-COALESCE(NULLIF(T1."TotalFrgn",0),T1."LineTotal")/NULLIF(T1."Quantity"*IFNULL(NULLIF(T1."NumPerMsr",0),1),0) AS "UPF",
-IFNULL(HF."HF",0)*T1."LineTotal"/NULLIF(SUM(T1."LineTotal") OVER (PARTITION BY T0."DocEntry"),0)+IFNULL(LF."LF",0) AS "Frt",
-PL."PriceBefDi" AS "BaseP",PL."Quantity" AS "BaseQ",
-G."RQ",G."GE",G."GD",G."LE",G."LCAmt",
-(SELECT MAX(H."DocEntry") FROM OPCH H INNER JOIN PCH1 D ON D."DocEntry"=H."DocEntry" WHERE D."ItemCode"=T1."ItemCode" AND H."DocCur"=T0."DocCur" AND H."CANCELED"='N' AND H."DocDate"<T0."DocDate" AND D."LineTotal">0) AS "LastE",
-(SELECT COUNT(*) FROM OPCH Z WHERE Z."CardCode"=T0."CardCode" AND Z."NumAtCard"=T0."NumAtCard" AND Z."DocEntry"<>T0."DocEntry" AND Z."CANCELED"='N') AS "DupN"
-FROM OPCH T0
-INNER JOIN PCH1 T1 ON T1."DocEntry"=T0."DocEntry"
-LEFT JOIN (SELECT "DocEntry",SUM("LineTotal") AS "HF" FROM PCH3 GROUP BY "DocEntry") HF ON HF."DocEntry"=T0."DocEntry"
-LEFT JOIN (SELECT "DocEntry","LineNum",SUM("LineTotal") AS "LF" FROM PCH2 GROUP BY "DocEntry","LineNum") LF ON LF."DocEntry"=T1."DocEntry" AND LF."LineNum"=T1."LineNum"
-LEFT JOIN POR1 PL ON T1."BaseType"=22 AND PL."DocEntry"=T1."BaseEntry" AND PL."LineNum"=T1."BaseLine"
-LEFT JOIN (SELECT D."BaseEntry",D."BaseLine",SUM(D."Quantity") AS "RQ",MAX(D."DocEntry") AS "GE",MIN(H."DocDate") AS "GD",MAX(F."LE") AS "LE",SUM(F."LCE") AS "LCAmt" FROM PDN1 D INNER JOIN OPDN H ON H."DocEntry"=D."DocEntry"
-LEFT JOIN (SELECT K."BaseEntry",K."OrigLine",SUM(IFNULL(Z."TtlExpndLC",0)+IFNULL(Z."TtlCustLC",0)) AS "LCE",MAX(K."FD") AS "LE" FROM (
-SELECT A."BaseEntry",A."OrigLine",A."LineNum",COALESCE(E4."C",E3."C",E2."C",E1."C",A."DocEntry") AS "FD" FROM IPF1 A
-LEFT JOIN (SELECT "BaseEntry" AS "P",MAX("DocEntry") AS "C" FROM IPF1 WHERE "BaseType"=69 GROUP BY "BaseEntry") E1 ON E1."P"=A."DocEntry"
-LEFT JOIN (SELECT "BaseEntry" AS "P",MAX("DocEntry") AS "C" FROM IPF1 WHERE "BaseType"=69 GROUP BY "BaseEntry") E2 ON E2."P"=E1."C"
-LEFT JOIN (SELECT "BaseEntry" AS "P",MAX("DocEntry") AS "C" FROM IPF1 WHERE "BaseType"=69 GROUP BY "BaseEntry") E3 ON E3."P"=E2."C"
-LEFT JOIN (SELECT "BaseEntry" AS "P",MAX("DocEntry") AS "C" FROM IPF1 WHERE "BaseType"=69 GROUP BY "BaseEntry") E4 ON E4."P"=E3."C"
-WHERE A."BaseType"=20) K
-INNER JOIN IPF1 Z ON Z."DocEntry"=K."FD" AND Z."LineNum"=K."LineNum"
-GROUP BY K."BaseEntry",K."OrigLine") F ON F."BaseEntry"=D."DocEntry" AND F."OrigLine"=D."LineNum"
-WHERE D."BaseType"=18 AND H."CANCELED"='N' GROUP BY D."BaseEntry",D."BaseLine") G ON G."BaseEntry"=T1."DocEntry" AND G."BaseLine"=T1."LineNum"
-WHERE T0."CreateDate" BETWEEN [%0] AND [%1]
-AND T0."CANCELED"='N'
-AND T0."DocType"='I'
-) Y
-LEFT JOIN (SELECT D."DocEntry",D."ItemCode",MAX(COALESCE(NULLIF(D."TotalFrgn",0),D."LineTotal")/NULLIF(D."Quantity"*IFNULL(NULLIF(D."NumPerMsr",0),1),0)) AS "LUP" FROM PCH1 D INNER JOIN OPCH H ON H."DocEntry"=D."DocEntry" WHERE H."DocDate">=ADD_DAYS(CURRENT_DATE,-1100) AND D."LineTotal">0 GROUP BY D."DocEntry",D."ItemCode") LP ON LP."DocEntry"=Y."LastE" AND LP."ItemCode"=Y."ItemCode"
-) X
-LEFT JOIN OPCH P0 ON P0."DocEntry"=X."DocEntry"
-LEFT JOIN OCRD B0 ON B0."CardCode"=X."CardCode"
-LEFT JOIN OITM M0 ON M0."ItemCode"=X."ItemCode"
-LEFT JOIN OPCH LI ON LI."DocEntry"=X."LastE"
-LEFT JOIN OPOR PO ON X."BaseType"=22 AND PO."DocEntry"=X."BaseEntry"
-LEFT JOIN OPDN GR ON GR."DocEntry"=X."GE"
-LEFT JOIN OIPF LC ON LC."DocEntry"=X."LE"
-LEFT JOIN OUSR U ON U."USERID"=X."UserSign"
-/* نسخة كاملة لتبويب متابعة المشتريات: كل أسطر فواتير الشراء بلا فلتر التنبيهات */
+/* كل أسطر فواتير الشراء؛ التنبيه يظهر على الأسطر المخالفة فقط، والترتيب من الأخطر */
 WHERE 1=1
-ORDER BY X."DocDate",X."DocNum"
+ORDER BY X."F1"+X."F2"+X."F3"+X."F4"+X."F5"+X."F7"+X."F8"+X."F9" DESC,IFNULL((X."UPF"-X."LastUPF")*X."BQ"*X."Rate",0) DESC
 </script>
 <script type="text/plain" id="sql_q14">
 /* SELECT T0."DocDate" FROM OINV T0 WHERE T0."DocDate" BETWEEN [%0] AND [%1] */
@@ -1820,7 +1713,7 @@ act:["بيع بعد الارتداد: من وافق؟ وهل كان نقدياً
 {t:"فواتير الشراء: السعر والاستلام وتكاليف الاستيراد", m:"أمر شراء ← فاتورة حجز ← سند استلام ← تكاليف استيراد · يومياً للسعر، وأسبوعياً على 6 أشهر للاستلام والتكاليف", open:"فاتورة الشراء · المورد · الصنف · أمر الشراء · سند الاستلام · آخر تكاليف استيراد · آخر فاتورة شراء",
 goal:"رقابة السعر والمطابقة في دورة الاستيراد. سعر المنشأ يُقارن بالعملة الأجنبية بآخر شراء بنفس العملة، فالارتفاع من المورد لا من الصرف. ويتتبع كل سطر للأمام: ما استُلم منه، وتكاليف الاستيراد المحمّلة عليه من آخر مستند في سلسلة التكاليف، مع شحن ذيل الفاتورة موزعاً على الأسطر.",
 shows:[["سعر المنشأ بالعملة وسعر الصرف","مقابل آخر شراء بنفس العملة وسعر صرفه"],["تكاليف الاستيراد بالدينار","مصاريف الفاتورة المحمّلة + آخر مستند تكاليف (السلسلة حتى 5 مستندات)"],["الكلفة الواصلة للوحدة","المنشأ + كل التكاليف، الأساس الذي يُبنى عليه هامش البيع"],["✖ المستلم أكثر من المفوتر / لم يُستلم بعد 120 يوماً",""],["✖ استلام بدون تكاليف استيراد بعد 30 يوماً","كلفة الباتش ناقصة فتظهر الهوامش أعلى من حقيقتها"],["✖ سعر أو كمية أعلى من أمر الشراء / بدون أمر شراء / ارتفاع السعر أكثر من 5%",""]],
-read:"يُشغّل يومياً على فواتير الأمس، وأسبوعياً على آخر 6 أشهر. يفترض بقاء ترتيب الأسطر نفسه عبر سلسلة مستندات التكاليف. انسخه كاملاً حتى سطر ORDER BY لأنه طويل.",
+read:"يُشغّل يومياً على فواتير الأمس، وأسبوعياً على آخر 6 أشهر. يُخرج كل أسطر الفواتير مرتبة من الأخطر؛ الأسطر السليمة تظهر بلا تنبيه (أو «بانتظار الاستلام»)، وهو نفسه مصدر الكلفة لتبويب متابعة المشتريات. يفترض بقاء ترتيب الأسطر نفسه عبر سلسلة مستندات التكاليف. انسخه كاملاً حتى سطر ORDER BY لأنه طويل.",
 act:["ارتفاع السعر: مبرر المشتريات وعرض أسعار بديل.","لم يُستلم بعد 120 يوماً: أين الشحنة؟","استلام بلا تكاليف: الضغط على قسم الاستيراد لإدخالها، وإلا فهوامش كل الكويريات لهذه الأصناف مضللة.","تأكد ألا يتكرر الشحن بين ذيل الفاتورة ومستند التكاليف."]},
 
 {t:"مبيعات الموظفين مقابل سياسة الكلفة + 10%", m:"عميل E أو قائمة 5 أو مندوب «موظفين» · كلفة الباتش الحالية · أسبوعي", open:"فتح الفاتورة · فتح العميل · فتح الصنف",
@@ -1860,7 +1753,7 @@ const QDEF=[
  {id:'q16',n:"فصل المهام التفصيلي مستنداً بمستند",short:"فصل المهام التفصيلي",g:CHECKS[15],doc:"رقم المستند",date:"تاريخ المستند",dims:["اسم المستخدم", "نوع الحركة", "اسم الطرف"],ms:["المبلغ"],flags:["الملاحظات"],text:[],cols:["فتح المستخدم", "رمز المستخدم", "اسم المستخدم", "نوع الحركة", "رقم المستند", "فتح فاتورة", "فتح اشعار دائن", "فتح سند قبض", "فتح امر شراء", "فتح فاتورة شراء", "فتح سند صرف", "فتح القيد", "فتح ادخال مخزون", "فتح اخراج مخزون", "فتح الطرف", "اسم الطرف", "تاريخ المستند", "تاريخ الادخال", "ايام التأخير", "المبلغ", "درجة الخطورة", "الملاحظات"]},
 ];
 /* ================= utils ================= */
-const VERSION='v2.25';
+const VERSION='v2.26';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nf0=new Intl.NumberFormat('en-US',{maximumFractionDigits:0,minimumFractionDigits:0});
@@ -3458,12 +3351,12 @@ PV.settings=(T,el)=>{const M=T.M;const props=new Map();const DI=T.DS&&T.DS.items
 /* ===== التحميل: منطقة إسقاط واحدة مع التعرّف التلقائي على نوع الملف ===== */
 PV.up=(T,el)=>{const DS=T.DS||{};const order=['track','lc','rcv','cls','items','org','q13'];
   const need={track:'مطلوب — Excel بكل أوراقه الشهرية',lc:'مطلوب للكلفة والمستودع — تقرير Landed Cost من SAP (Reference 1 = رقم الطلبية)',rcv:'مطلوب للوزن وتاريخ الاستلام وشحن ذيل الفاتورة — تقرير الفواتير والاستلامات',cls:'مفضّل لنوع التخزين ووزن الوحدة — كويري تصنيف الأصناف (Storage / UnitWeight)',items:'بديل أو مكمّل — All Items من SAP (المستودع الافتراضي، الخصائص، الباركود، التعرفة)',org:'اختياري — رمز الصنف وبلده',q13:'بديل للكلفة إن لم يتوفر تقرير Landed Cost — كويري 13'};
-  let h='<div class="card"><h3>ارفع الملفات دفعة واحدة <span class="hint">يتعرّف التبويب على نوع كل ملف من عناوينه: ملف التتبع (Excel)، تقرير Landed Cost، تقرير الاستلامات، تصنيف الأصناف، All Items، ملف البلد، أو كويري 13</span></h3><div class="drop" id="puDrop"><div class="big">اسحب الملفات هنا أو اضغط للاختيار</div><div style="color:var(--ink2)">xlsx للتتبع · txt / csv لباقي التقارير (UTF-16 أو UTF-8) · يمكن اختيار عدة ملفات معاً</div><input type="file" multiple accept=".xlsx,.txt,.csv,.tsv,.tab" style="display:none"></div><textarea class="paste" id="puPaste" placeholder="أو الصق ناتج أي كويري هنا (مع سطر العناوين)..." style="margin-top:8px;min-height:60px"></textarea><div style="margin-top:6px"><button class="btn pri" id="puGo">تحليل النص الملصوق</button> <button class="btn" id="puCp13">نسخ كويري 13 الكامل (كل الأسطر)</button></div><div class="msg" id="pumsg"></div></div>';
+  let h='<div class="card"><h3>ارفع الملفات دفعة واحدة <span class="hint">يتعرّف التبويب على نوع كل ملف من عناوينه: ملف التتبع (Excel)، تقرير Landed Cost، تقرير الاستلامات، تصنيف الأصناف، All Items، ملف البلد، أو كويري 13</span></h3><div class="drop" id="puDrop"><div class="big">اسحب الملفات هنا أو اضغط للاختيار</div><div style="color:var(--ink2)">xlsx للتتبع · txt / csv لباقي التقارير (UTF-16 أو UTF-8) · يمكن اختيار عدة ملفات معاً</div><input type="file" multiple accept=".xlsx,.txt,.csv,.tsv,.tab" style="display:none"></div><textarea class="paste" id="puPaste" placeholder="أو الصق ناتج أي كويري هنا (مع سطر العناوين)..." style="margin-top:8px;min-height:60px"></textarea><div style="margin-top:6px"><button class="btn pri" id="puGo">تحليل النص الملصوق</button> <button class="btn" id="puCp13">نسخ كويري 13 (كل أسطر الفواتير)</button></div><div class="msg" id="pumsg"></div></div>';
   h+='<div class="card"><h3>المصادر</h3><div class="tw short"><table class="t"><thead><tr><th class="tx">المصدر</th><th>الحالة</th><th class="tx">الملف</th><th>الأسطر</th><th>التحميل</th><th></th></tr></thead><tbody>'+order.map(k=>{const D=DS[k];return '<tr><td class="tx"><b>'+PROC_SRC[k].t+'</b><div class="code">'+need[k]+'</div></td><td>'+(D?'<span class="pill g">محمّل</span>':(k==='track'||k==='lc'||k==='rcv'?'<span class="pill w">غير محمّل</span>':'<span class="pill n">—</span>'))+'</td><td class="tx">'+(D?esc(D.src):'')+'</td><td>'+(D?FI(D.rows.length)+' '+PROC_SRC[k].u:'')+'</td><td>'+(D?fmtDay(Math.floor(Date.parse(D.loaded)/DAY)):'')+'</td><td>'+(D?'<button class="btn sm warn" data-del="'+k+'">حذف</button>':'')+'</td></tr>';}).join('')+'</tbody></table></div></div>';
-  h+='<div class="card"><h3>الأعمدة المتوقعة لكل تقرير</h3><ul style="margin:0;padding-right:18px;line-height:1.9;font-size:12px"><li><b>كويري 13 الكامل:</b> كويري 13 المعتمد في تبويب «فواتير الشراء» يُخرج الأسطر التي عليها تنبيه أو لم تُستلم بالكامل فقط؛ لهذا التبويب استخدم زر «نسخ كويري 13 الكامل» أعلاه (نفس الأعمدة بلا فلتر) فيخرج كل أسطر كل فاتورة.</li><li><b>تقرير Landed Cost:</b> Landed Cost No · Landed Cost Date · Reference 1 · Vendor Name · Base Document Type · Item Code · Item Description · Warehouse · Quantity · Price Currency · Exchange Rate · Base Doc. Price · Base Doc. Value · FOB Value · Landed Cost Amount</li><li><b>تقرير الفواتير والاستلامات:</b> رقم الفاتورة · تاريخ الفاتورة · ملاحظات الفاتورة · عملة المستند · سعر الصرف · اسم المورد · رقم مستند الاستلام · تاريخ الاستلام · رمز الصنف · اسم الصنف · رمز المستودع · الكمية (الفاتورة) · الكمية (الاستلام) · وحدة الشراء · وزن الوحدة · إجمالي الوزن · سعر الوحدة · المبلغ بعد خصم السطر</li><li><b>تصنيف الأصناف:</b> Item No. · Item Description · التصنيف · UoM · UnitWeight · Storage · ItemStatus</li><li><b>ملف البلد:</b> عمود رمز الصنف وعمود الدولة</li><li><b>ملف التتبع:</b> Order No. · Supplier · AP Reserve · Amount · Invoice No. · Invoice Date · Details · Shipping Date · Arrival Date · B/L No. · Container No. · SZ · Weight · Date Discharge · Duartion · Date Exit · Date Of Reciving · Customs Decleration No. · Decleration Date · Reference No. · Track Color</li></ul></div>';
+  h+='<div class="card"><h3>الأعمدة المتوقعة لكل تقرير</h3><ul style="margin:0;padding-right:18px;line-height:1.9;font-size:12px"><li><b>كويري 13:</b> يُخرج كل أسطر فواتير الشراء في الفترة (التنبيه يظهر على الأسطر المخالفة فقط)؛ هو نفسه كويري تبويب «فواتير الشراء».</li><li><b>تقرير Landed Cost:</b> Landed Cost No · Landed Cost Date · Reference 1 · Vendor Name · Base Document Type · Item Code · Item Description · Warehouse · Quantity · Price Currency · Exchange Rate · Base Doc. Price · Base Doc. Value · FOB Value · Landed Cost Amount</li><li><b>تقرير الفواتير والاستلامات:</b> رقم الفاتورة · تاريخ الفاتورة · ملاحظات الفاتورة · عملة المستند · سعر الصرف · اسم المورد · رقم مستند الاستلام · تاريخ الاستلام · رمز الصنف · اسم الصنف · رمز المستودع · الكمية (الفاتورة) · الكمية (الاستلام) · وحدة الشراء · وزن الوحدة · إجمالي الوزن · سعر الوحدة · المبلغ بعد خصم السطر</li><li><b>تصنيف الأصناف:</b> Item No. · Item Description · التصنيف · UoM · UnitWeight · Storage · ItemStatus</li><li><b>ملف البلد:</b> عمود رمز الصنف وعمود الدولة</li><li><b>ملف التتبع:</b> Order No. · Supplier · AP Reserve · Amount · Invoice No. · Invoice Date · Details · Shipping Date · Arrival Date · B/L No. · Container No. · SZ · Weight · Date Discharge · Duartion · Date Exit · Date Of Reciving · Customs Decleration No. · Decleration Date · Reference No. · Track Color</li></ul></div>';
   el.innerHTML=h;
   const d=$('puDrop'),inp=d.querySelector('input');d.onclick=e=>{if(e.target.closest('button'))return;inp.click();};d.ondragover=e=>{e.preventDefault();d.classList.add('ov');};d.ondragleave=()=>d.classList.remove('ov');d.ondrop=e=>{e.preventDefault();d.classList.remove('ov');procFiles(T,[...e.dataTransfer.files]);};inp.onchange=e=>{procFiles(T,[...e.target.files]);e.target.value='';};
-  $('puCp13').onclick=()=>{const s=$('sql_q13all');if(s){copyText(forQM(s.textContent.trim()));toast('نُسخ كويري 13 الكامل — بلا فلتر التنبيهات');}else toast('نص الكويري غير متوفر');};
+  $('puCp13').onclick=()=>{const s=$('sql_q13');if(s){copyText(forQM(s.textContent.trim()));toast('نُسخ كويري 13 — كل أسطر الفواتير');}else toast('نص الكويري غير متوفر');};
   $('puGo').onclick=()=>{const t=$('puPaste').value;if(!t.trim())return;procIngest(T,[{name:'نص ملصوق',text:t}]);};
   el.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>{const k=b.dataset.del;if(!confirm('حذف «'+PROC_SRC[k].t+'» من الجهاز؟'))return;delete T.DS[k];deleteData(PROC_SRC[k].k);procBuild(T);T.ts={};renderTabs();renderProc(T);});
   if(T.msg){const m=$('pumsg');if(m){m.innerHTML=T.msg;m.className='msg'+(T.msgErr?' err':'');}T.msg='';}};
