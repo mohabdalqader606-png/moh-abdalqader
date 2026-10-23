@@ -419,6 +419,7 @@ details.sqlbox pre{margin:0;padding:12px 14px;border-top:1px solid var(--line);d
       <div class="row" id="fSummary" style="margin-top:10px;gap:6px"></div>
       <div class="hint">اضغط <b>«＋ عينة»</b> على السطر لنقله إلى العينات المختارة، وباقي الكشف يبقى كما هو. الرقم الأزرق بجانب رقم المستند يعني أن السند له أكثر من سطر.</div>
     </div>
+    <div id="dupWarnList"></div>
     <div id="listBody"></div>
   </section>
 
@@ -595,7 +596,7 @@ ORDER BY
     </div>
   </section>
 
-  <footer>شاشة عينات المصروفات — الإصدار v2.11 · مزامنة سحابية</footer>
+  <footer>شاشة عينات المصروفات — الإصدار v2.12 · مزامنة سحابية</footer>
 </div>
 
 <div class="bottombar" id="bottombar">
@@ -1240,9 +1241,10 @@ function renderStats(){
   $('#tblSt').innerHTML=`<thead><tr><th>الكشف</th><th class="num">السطور</th><th class="num">المبلغ</th><th class="num">العينات</th><th class="num">تغطية العدد</th><th class="num">تغطية المبلغ</th><th class="num">مصوّر</th><th class="num">الإنجاز</th></tr></thead><tbody>${st.join('')||'<tr><td colspan="8" class="muted">لا بيانات</td></tr>'}</tbody>`;
 }
 function renderData(){
-  if(!state.statements.length){$('#dupWarn').innerHTML='';$('#stList').innerHTML='<div class="empty"><div class="ic">☁</div>لا توجد كشوفات محفوظة.</div>';return;}
+  if(!state.statements.length){$('#dupWarn').innerHTML='';$('#dupWarnList').innerHTML='';$('#stList').innerHTML='<div class="empty"><div class="ic">☁</div>لا توجد كشوفات محفوظة.</div>';return;}
   const dupWarn=[];for(let i=0;i<state.statements.length;i++)for(let j=i+1;j<state.statements.length;j++){const a=state.statements[i],b=state.statements[j];if(!a.rows.length||!b.rows.length)continue;const ka=new Set(a.rows.map(r=>r.k));let c=0;b.rows.forEach(r=>{if(ka.has(r.k))c++;});const ov=c/Math.min(a.rows.length,b.rows.length);if(ov>=0.5)dupWarn.push({a:a.id,b:b.id,an:a.name,text:`«${esc(a.name)}» و«${esc(b.name)}» متطابقان بنسبة ${Math.round(ov*100)}% — نفس الكشف رُفع مرتين باسمين مختلفين، فتظهر سطوره مكررة في عرض «كل الكشوفات».`});}
-  $('#dupWarn').innerHTML=dupWarn.map(w=>`<div class="banner warn">⚠️ ${w.text}${CAN_EDIT?` <button class="btn s p" data-merge="${w.a}|${w.b}">دمج في «${esc(w.an)}» وحذف الآخر</button>`:''}</div>`).join('');
+  const dupHtml=dupWarn.map(w=>`<div class="banner warn">⚠️ ${w.text}${CAN_EDIT?` <button class="btn s p" data-merge="${w.a}|${w.b}">دمج في «${esc(w.an)}» وحذف الآخر — تبقى كل العينات</button>`:''}</div>`).join('');
+  $('#dupWarn').innerHTML=dupHtml;$('#dupWarnList').innerHTML=dupHtml;
   $('#stList').innerHTML=state.statements.map(s=>{const sel=s.rows.filter(r=>r.sel).length,done=s.rows.filter(r=>r.done).length;
     return `<div class="st-item"><div class="ic">📄</div><div class="nm">${esc(s.name)}<small>${s.rows.length} سطر · ${sel} عينة · ${done} مصوّرة (${pctS(done,sel)}) · آخر تحديث ${esc(String(s.updatedAt||s.createdAt||'').slice(0,10))}</small></div>
       ${CAN_EDIT?`<button class="btn s" data-ren="${s.id}">إعادة تسمية</button><button class="btn s" data-clrsel="${s.id}">إلغاء كل العينات</button><button class="btn s d" data-del="${s.id}">حذف</button>`:''}</div>`;}).join('');
@@ -1421,10 +1423,11 @@ function readFile(f){
   rd.onload=()=>{try{const wb=XLSX.read(rd.result,{type:'array',cellDates:true});let all=[];wb.SheetNames.forEach(sn=>{const mat=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:''});const rows=rowsFromMatrix(mat);if(rows.length)all=all.concat(rows);});importStatement(name,all);}catch(err){console.error(err);toast('تعذّر قراءة الملف');}};
   rd.readAsArrayBuffer(f);
 }
-$('#dupWarn').addEventListener('click',e=>{const m=e.target.closest('[data-merge]');if(!m)return;const [a,b]=m.dataset.merge.split('|');mergeStatements(a,b);});
+document.addEventListener('click',e=>{const m=e.target.closest('[data-merge]');if(!m)return;const [a,b]=m.dataset.merge.split('|');mergeStatements(a,b);});
 async function mergeStatements(aId,bId){
   const a=state.statements.find(x=>x.id===aId),b=state.statements.find(x=>x.id===bId);if(!a||!b)return;
-  if(!confirm(`دمج «${b.name}» داخل «${a.name}» ثم حذف «${b.name}»؟ تُحفظ العينات والتصوير والملاحظات من الاثنين.`))return;
+  const selA=a.rows.filter(r=>r.sel).length,selB=b.rows.filter(r=>r.sel).length;
+  if(!confirm(`دمج «${b.name}» داخل «${a.name}» ثم حذف «${b.name}»؟\nتُحفظ كل العينات (${selA} + ${selB}) وحالة التصوير والملاحظات من الاثنين.`))return;
   if(!navigator.onLine){toast('الدمج يحتاج اتصالاً بالإنترنت');return;}
   setSync('busy','جاري الدمج…');importing=true;
   try{
