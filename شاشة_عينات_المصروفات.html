@@ -240,6 +240,25 @@ label.f{display:block;font-size:12px;color:var(--ink2);font-weight:700;margin-bo
   .ln .c-act .ib{width:40px;height:40px}
   .mchk{width:22px;height:22px}
 }
+/* ===== requirements ===== */
+.rq{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;padding:10px 14px;border-top:1px solid var(--line2);align-items:center}
+.rq:first-child{border-top:none}
+.rq:hover{background:var(--card2)}
+.rq .t .ttl2{font-weight:700;font-size:13.5px;overflow-wrap:anywhere}
+.rq .t .sub{font-size:11.5px;color:var(--ink3);display:flex;gap:4px 10px;flex-wrap:wrap;margin-top:2px;align-items:center}
+.rq.done{background:color-mix(in srgb,var(--green-soft) 45%,transparent)}
+.rq.done .ttl2{text-decoration:line-through;text-decoration-color:var(--green);text-decoration-thickness:2px;color:var(--ink2)}
+.rq .act{display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:nowrap}
+.tpl{display:inline-block;margin:3px;padding:5px 11px;border:1px solid var(--line);border-radius:99px;background:var(--card);font-size:12px;font-weight:700;color:var(--ink2);cursor:pointer}
+.tpl:hover{border-color:var(--amber);color:var(--amber2);background:var(--amber-soft)}
+.tpl-cat{font-size:12px;font-weight:800;color:var(--ink2);margin:8px 0 2px;font-family:"Cairo",sans-serif}
+@media (max-width:759px){
+  .rq{grid-template-columns:1fr}
+  .rq .act{flex-wrap:wrap;gap:8px;margin-top:4px}
+  .rq .act .note-in{flex:1 1 100%;width:auto;min-height:40px;font-size:13px}
+  .rq .act .chk{flex:1 1 auto;justify-content:center;min-height:44px;font-size:13.5px}
+  .rq .act .ib{width:40px;height:40px}
+}
 /* ===== tables ===== */
 .tbl-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px}
 table{border-collapse:collapse;width:100%;font-size:12.5px;min-width:640px}
@@ -360,6 +379,7 @@ details.sqlbox pre{margin:0;padding:12px 14px;border-top:1px solid var(--line);d
   <nav class="tabs" id="tabs">
     <button data-tab="list" class="on">الكشف <span class="n" id="nList">0</span></button>
     <button data-tab="samples">العينات <span class="n" id="nSamples">0</span></button>
+    <button data-tab="reqs">متطلبات أخرى <span class="n" id="nReqs">0</span></button>
     <button data-tab="stats">الإحصائيات</button>
     <button data-tab="data">البيانات <span class="n" id="nSt">0</span></button>
   </nav>
@@ -411,12 +431,46 @@ details.sqlbox pre{margin:0;padding:12px 14px;border-top:1px solid var(--line);d
     <div id="samplesBody"></div>
   </section>
 
+  <!-- ====== متطلبات أخرى ====== -->
+  <section class="panel" id="tab-reqs">
+    <div class="card" id="reqAddCard">
+      <h2>إضافة متطلب <small>أي مستند مطلوب تصويره غير القيود: كشف الضمان، شهادات فوائد البنوك، عقود…</small></h2>
+      <div class="row">
+        <div class="grow" style="flex:2 1 240px"><label class="f">اسم المتطلب</label><input type="text" id="rqTitle" placeholder="مثال: شهادة فوائد بنك الإسكان 2025"></div>
+        <div class="grow"><label class="f">التصنيف</label><input type="text" id="rqCat" list="rqCatList" placeholder="الضمان الاجتماعي / البنوك / الضرائب…"><datalist id="rqCatList"></datalist></div>
+        <div class="grow"><label class="f">الكشف / الفترة</label><select id="rqSt"></select></div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <div class="grow" style="flex:0 1 160px"><label class="f">البوكس فايل</label><input type="text" id="rqBox" placeholder="اختياري"></div>
+        <div class="grow" style="flex:0 1 140px"><label class="f">الترتيب</label><input type="number" id="rqSeq" placeholder="اختياري" min="0" step="1"></div>
+        <div style="align-self:flex-end"><button class="btn p" id="rqAdd">＋ إضافة</button></div>
+      </div>
+      <details class="sqlbox" style="margin-top:10px"><summary>قوالب جاهزة — اضغط لإضافة متطلب بسرعة</summary><div id="rqTemplates" style="padding:10px 14px;border-top:1px solid var(--line)"></div></details>
+    </div>
+    <div class="card">
+      <div class="row">
+        <div class="grow"><label class="f">الكشف</label><select id="rqFSt"></select></div>
+        <div class="grow" style="flex:2 1 200px"><label class="f">بحث</label><input type="search" id="rqQ" placeholder="بحث في المتطلبات…"></div>
+      </div>
+      <div class="chips seg" id="rqDoneChips" style="margin-top:10px">
+        <span class="chip on" data-v="all">الكل <span class="n" id="rqAll">0</span></span>
+        <span class="chip" data-v="no">⧗ لم تُصوَّر <span class="n" id="rqNo">0</span></span>
+        <span class="chip" data-v="yes">✔ مصوّرة <span class="n" id="rqYes">0</span></span>
+      </div>
+    </div>
+    <div id="reqsBody"></div>
+  </section>
+
   <!-- ====== الإحصائيات ====== -->
   <section class="panel" id="tab-stats">
     <div class="card">
       <h2>الإنجاز والتغطية حسب المصروف <small>الكشف: <select id="tSt" style="width:auto;display:inline-block;min-height:32px;padding:3px 30px 3px 10px"></select></small></h2>
       <div class="tbl-wrap"><table id="tblExp"></table></div>
       <div class="hint"><b>تغطية العدد</b> = عدد العينات المختارة ÷ عدد سطور المصروف. <b>تغطية المبلغ</b> = مبلغ العينات ÷ إجمالي المصروف. <b>الإنجاز</b> = العينات المصوّرة ÷ العينات المختارة.</div>
+    </div>
+    <div class="card">
+      <h2>المتطلبات الأخرى حسب التصنيف</h2>
+      <div class="tbl-wrap"><table id="tblReq"></table></div>
     </div>
     <div class="card">
       <h2>حسب الكشف</h2>
@@ -527,7 +581,7 @@ ORDER BY
     </div>
   </section>
 
-  <footer>شاشة عينات المصروفات — الإصدار v2.8 · مزامنة سحابية</footer>
+  <footer>شاشة عينات المصروفات — الإصدار v2.9 · مزامنة سحابية</footer>
 </div>
 
 <div class="bottombar" id="bottombar">
@@ -590,7 +644,7 @@ ORDER BY
 const SUPABASE_URL='https://fxjdmqqmcgccocfbgopm.supabase.co';
 const SUPABASE_KEY='sb_publishable_NGtGX9SN8hXSoq-JRidGcQ_NfAyYCP5';
 const SCREEN_ID='expense-samples';
-const T_ST='expense_sample_statements', T_ROWS='expense_sample_rows', T_FILE='expense_sample_filing';
+const T_ST='expense_sample_statements', T_ROWS='expense_sample_rows', T_FILE='expense_sample_filing', T_REQ='expense_sample_requirements';
 const LS_CACHE='kilani_exp_samples_cache_v2', LS_QUEUE='kilani_exp_samples_queue_v2', LS_PREF='kilani_exp_samples_pref_v2', LS_LEGACY='kilani_exp_samples_v1';
 const PAGE=1000, CHUNK=400;
 
@@ -605,8 +659,8 @@ const now=()=>new Date().toISOString();
 const pad=n=>String(n).padStart(2,'0');
 
 let sb=null, SESSION=null, PERM=null, CAN_EDIT=false, rtChannel=null;
-let state={statements:[],filing:{}}; // filing: key statementId|acct → {box,seq,note}
-let filingOk=true;
+let state={statements:[],filing:{},reqs:[]}; // filing: key statementId|acct → {box,seq,note} · reqs: متطلبات أخرى
+let filingOk=true, reqOk=true;
 let pref={theme:''};
 let queue=[];                      // تعديلات بانتظار الرفع [{ids:[],patch:{}}]
 let flushing=false, lastLoad=0;
@@ -625,8 +679,8 @@ $('#themeBtn').addEventListener('click',()=>{const cur=pref.theme||(matchMedia('
 applyTheme();
 
 /* ====================== كاش محلي + طابور ====================== */
-function saveCache(){try{localStorage.setItem(LS_CACHE,JSON.stringify({t:now(),statements:state.statements,filing:state.filing}));}catch(e){}}
-function loadCache(){try{const o=JSON.parse(localStorage.getItem(LS_CACHE)||'null');if(o&&Array.isArray(o.statements)){state.statements=o.statements;state.filing=o.filing||{};return true;}}catch(e){}return false;}
+function saveCache(){try{localStorage.setItem(LS_CACHE,JSON.stringify({t:now(),statements:state.statements,filing:state.filing,reqs:state.reqs}));}catch(e){}}
+function loadCache(){try{const o=JSON.parse(localStorage.getItem(LS_CACHE)||'null');if(o&&Array.isArray(o.statements)){state.statements=o.statements;state.filing=o.filing||{};state.reqs=o.reqs||[];return true;}}catch(e){}return false;}
 function saveQueue(){try{localStorage.setItem(LS_QUEUE,JSON.stringify(queue));}catch(e){}}
 function loadQueue(){try{queue=JSON.parse(localStorage.getItem(LS_QUEUE)||'[]')||[];}catch(e){queue=[];}}
 const SHORT={ok:'متزامن',busy:'مزامنة…',off:'غير متصل'};
@@ -697,6 +751,8 @@ async function fetchAll(){
   state.statements=(sts||[]).map(s=>({id:s.id,name:s.name,createdAt:s.created_at,updatedAt:s.updated_at,rows:byS.get(s.id)||[]}));
   try{const {data:fl,error:ef}=await sb.from(T_FILE).select('*');if(ef)throw ef;filingOk=true;const f={};(fl||[]).forEach(x=>{f[x.id]={box:x.box||'',seq:x.seq==null?'':x.seq,note:x.note||''};});state.filing=f;}
   catch(e){filingOk=false;console.warn('filing table unavailable',e&&e.message);}
+  try{const {data:rq,error:er}=await sb.from(T_REQ).select('*').order('created_at');if(er)throw er;reqOk=true;state.reqs=(rq||[]).map(fromServerReq);}
+  catch(e){reqOk=false;console.warn('requirements table unavailable',e&&e.message);}
   // طبّق التعديلات المعلّقة فوق البيانات القادمة من السيرفر
   queue.forEach(op=>applyPatchLocal(op.ids,op.patch,false));
   lastLoad=Date.now();saveCache();
@@ -821,6 +877,11 @@ function subscribeRealtime(){
         state.statements.forEach(s=>{s.rows=s.rows.filter(r=>r.id!==id);});saveCache();renderAllDebounced();
       }
     })
+    .on('postgres_changes',{event:'*',schema:'public',table:T_REQ},p=>{
+      if(p.eventType==='DELETE'){if(p.old&&p.old.id)state.reqs=state.reqs.filter(r=>r.id!==p.old.id);}
+      else if(p.new){const nr=fromServerReq(p.new);const i=state.reqs.findIndex(r=>r.id===nr.id);if(i>=0)state.reqs[i]=nr;else state.reqs.push(nr);}
+      saveCache();renderAllDebounced();
+    })
     .on('postgres_changes',{event:'*',schema:'public',table:T_FILE},p=>{
       if(p.eventType==='DELETE'){if(p.old&&p.old.id)delete state.filing[p.old.id];}
       else if(p.new){state.filing[p.new.id]={box:p.new.box||'',seq:p.new.seq==null?'':p.new.seq,note:p.new.note||''};}
@@ -925,6 +986,40 @@ function openFiling(stId,acct,exp){
   $('#flTitle').textContent=exp;$('#flSub').textContent=`حساب ${acct} · ${stName}`;$('#flBox').value=f.box;$('#flSeq').value=f.seq;$('#flNote').value=f.note;
   const dl=$('#dlgFile');dl.dataset.st=stId;dl.dataset.acct=acct;dl.dataset.exp=exp;dl.showModal();setTimeout(()=>$('#flBox').focus(),50);
 }
+/* متطلبات أخرى (مستندات غير القيود: كشف الضمان، شهادات فوائد البنوك…) */
+function fromServerReq(x){return {id:x.id,st:x.statement_id||'',title:x.title||'',cat:x.category||'',done:!!x.done,doneAt:x.done_at||'',note:x.note||'',box:x.box||'',seq:x.seq==null?'':x.seq,createdAt:x.created_at||''};}
+function toServerReq(r){return {id:r.id,statement_id:r.st||null,title:r.title,category:r.cat||'',done:!!r.done,done_at:r.doneAt||null,note:r.note||'',box:r.box||'',seq:r.seq===''?null:Number(r.seq),updated_at:now()};}
+const REQ_TEMPLATES=[
+  ['الضمان الاجتماعي',['كشف الضمان الاجتماعي السنوي','براءة ذمة الضمان الاجتماعي','كشوف الاشتراكات الشهرية']],
+  ['البنوك',['شهادات فوائد البنوك','كشوف حسابات البنوك','شهادات أرصدة البنوك','عقود التسهيلات والقروض']],
+  ['الضرائب',['إقرارات ضريبة المبيعات','شهادات الخصم من المنبع','براءة ذمة ضريبة الدخل','إيصالات دفع الضريبة']],
+  ['التأمين',['بوالص التأمين الصحي','بوالص تأمين السيارات والممتلكات']],
+  ['عقود ورخص',['عقود الإيجار','رخص المهن','عقود الصيانة والخدمات']],
+  ['أخرى',['كشف الرواتب السنوي','محاضر الجرد','قرارات مجلس الإدارة']],
+];
+async function reqWrite(op){
+  if(!CAN_EDIT){toast('صلاحيتك عرض فقط');return false;}
+  if(!reqOk){toast('جدول المتطلبات غير موجود بعد — شغّل ملف SQL الإضافة (Batch 11)');return false;}
+  const {error}=await op();if(error){toast('تعذّر الحفظ: '+error.message);return false;}
+  saveCache();return true;
+}
+async function addReq(title,cat,st,box,seq){
+  title=(title||'').trim();if(!title){toast('اكتب اسم المتطلب');return;}
+  const r={id:uid(),st:st||'',title,cat:(cat||'').trim(),done:false,doneAt:'',note:'',box:(box||'').trim(),seq:seq===undefined?'':String(seq).trim(),createdAt:now()};
+  if(await reqWrite(()=>sb.from(T_REQ).insert(toServerReq(r)))){state.reqs.push(r);saveCache();renderAll();toast('أُضيف المتطلب');}
+}
+async function patchReq(id,patch){
+  const r=state.reqs.find(x=>x.id===id);if(!r)return;
+  const before=Object.assign({},r);Object.assign(r,patch);
+  if('done' in patch){r.doneAt=patch.done?now():'';}
+  if(!(await reqWrite(()=>sb.from(T_REQ).update(toServerReq(r)).eq('id',id)))){Object.assign(r,before);}
+  renderAll();
+}
+async function deleteReq(id){
+  const r=state.reqs.find(x=>x.id===id);if(!r)return;
+  if(!confirm(`حذف «${r.title}»؟`))return;
+  if(await reqWrite(()=>sb.from(T_REQ).delete().eq('id',id))){state.reqs=state.reqs.filter(x=>x.id!==id);saveCache();renderAll();}
+}
 function match(r,q){if(!q)return true;q=q.toLowerCase();return [r.desc,r.edesc,r.doc,r.trx,r.acct,r.exp,r.r1,r.r2,r.r3,r.date,String(r.net)].some(v=>String(v||'').toLowerCase().includes(q));}
 function expKey(r){return r.acct+'|'+r.exp;}
 function sortRows(a,b){const da=dateKey(a.r.date),db=dateKey(b.r.date);return (da>db?1:da<db?-1:0)||(a.r.trx>b.r.trx?1:a.r.trx<b.r.trx?-1:0);}
@@ -954,9 +1049,11 @@ function ring(p,color){const r=18,c=2*Math.PI*r;return `<div class="ring" style=
 function renderKpis(){
   let tot=0,sel=0,done=0,amt=0,selAmt=0;
   state.statements.forEach(s=>s.rows.forEach(r=>{tot++;amt+=Math.abs(r.net);if(r.sel){sel++;selAmt+=Math.abs(r.net);if(r.done)done++;}}));
-  $('#kAll').textContent=sel?pct(done,sel)+'%':'0%';
-  $('#kAllSub').textContent=`${done} من ${sel} عينة مصوّرة`;
-  $('#kAllBar').style.width=pct(done,sel)+'%';
+  const rqN=state.reqs.length,rqD=state.reqs.filter(r=>r.done).length;const allN=sel+rqN,allD=done+rqD;
+  $('#kAll').textContent=allN?pct(allD,allN)+'%':'0%';
+  $('#kAllSub').textContent=`${allD} من ${allN} مصوّرة`+(rqN?` · عينات ${done}/${sel} · متطلبات ${rqD}/${rqN}`:'');
+  $('#kAllBar').style.width=pct(allD,allN)+'%';
+  $('#nReqs').textContent=rqN-rqD;
   $('#kSel').innerHTML=sel+`<small>عينة</small>`;$('#kSelSub').textContent=`من ${tot} سطر مصروف (${pctS(sel,tot)})`;
   $('#kLeft').textContent=sel-done;$('#kLeftSub').textContent=sel-done?'عينة لم تُصوَّر بعد':(sel?'اكتمل التصوير ✔':'—');
   $('#kCov').textContent=amt?pct(selAmt,amt)+'%':'0%';$('#kCovSub').textContent=`${fmt(selAmt)} من ${fmt(amt)}`;
@@ -1096,6 +1193,9 @@ function renderStats(){
     <tfoot><tr class="tot"><td>الإجمالي</td><td></td><td class="num">${T.n}</td><td class="num">${fmt(T.amt)}</td><td class="num">${T.sel}</td><td class="num">${pctS(T.sel,T.n)}</td><td class="num">${pctS(T.selAmt,T.amt)}</td><td class="num">${T.done}</td><td class="num">${pctS(T.done,T.sel)}</td></tr></tfoot>`;
   const st=state.statements.map(s=>{let n=0,amt=0,sel=0,selAmt=0,done=0;s.rows.forEach(r=>{n++;amt+=Math.abs(r.net);if(r.sel){sel++;selAmt+=Math.abs(r.net);if(r.done)done++;}});const prog=pct(done,sel);
     return `<tr><td>${esc(s.name)}</td><td class="num">${n}</td><td class="num">${fmt(amt)}</td><td class="num">${sel}</td><td class="num">${pctS(sel,n)}</td><td class="num">${pctS(selAmt,amt)}</td><td class="num">${done}</td><td class="num"><span class="pill ${sel?(prog>=100?'ok':prog>0?'warn':'bad'):'grey'}">${sel?prog+'%':'—'}</span></td></tr>`;});
+  const rc=new Map();state.reqs.forEach(r=>{const k=r.cat||'بدون تصنيف';const t=rc.get(k)||{n:0,done:0};t.n++;if(r.done)t.done++;rc.set(k,t);});
+  const rqRows=Array.from(rc.entries()).sort((a,b)=>a[0].localeCompare(b[0],'ar')).map(([k,t])=>{const pr=pct(t.done,t.n);return `<tr><td>${esc(k)}</td><td class="num">${t.n}</td><td class="num">${t.done}</td><td class="num"><span class="pill ${pr>=100?'ok':pr>0?'warn':'bad'}">${pr}%</span><span class="mini-bar"><i style="width:${pr}%"></i></span></td></tr>`;});
+  $('#tblReq').innerHTML=`<thead><tr><th>التصنيف</th><th class="num">المتطلبات</th><th class="num">مصوّر</th><th class="num">الإنجاز</th></tr></thead><tbody>${rqRows.join('')||'<tr><td colspan="4" class="muted">لا متطلبات</td></tr>'}</tbody>`;
   $('#tblSt').innerHTML=`<thead><tr><th>الكشف</th><th class="num">السطور</th><th class="num">المبلغ</th><th class="num">العينات</th><th class="num">تغطية العدد</th><th class="num">تغطية المبلغ</th><th class="num">مصوّر</th><th class="num">الإنجاز</th></tr></thead><tbody>${st.join('')||'<tr><td colspan="8" class="muted">لا بيانات</td></tr>'}</tbody>`;
 }
 function renderData(){
@@ -1104,7 +1204,40 @@ function renderData(){
     return `<div class="st-item"><div class="ic">📄</div><div class="nm">${esc(s.name)}<small>${s.rows.length} سطر · ${sel} عينة · ${done} مصوّرة (${pctS(done,sel)}) · آخر تحديث ${esc(String(s.updatedAt||s.createdAt||'').slice(0,10))}</small></div>
       ${CAN_EDIT?`<button class="btn s" data-ren="${s.id}">إعادة تسمية</button><button class="btn s" data-clrsel="${s.id}">إلغاء كل العينات</button><button class="btn s d" data-del="${s.id}">حذف</button>`:''}</div>`;}).join('');
 }
-function renderAll(){renderKpis();renderList();renderSamples();renderStats();renderData();}
+function fillStSelectOpt(sel,val,firstLabel){sel.innerHTML=[`<option value="">${firstLabel}</option>`].concat(state.statements.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`)).join('');if(!state.statements.some(s=>s.id===val))val='';sel.value=val;return val;}
+function renderReqs(){
+  ui.rqSt=fillStSelect($('#rqFSt'),ui.rqSt||'all');
+  ui.rqAddSt=fillStSelectOpt($('#rqSt'),ui.rqAddSt||'','عام (بدون كشف)');
+  $('#reqAddCard').classList.toggle('hidden',!CAN_EDIT);
+  const cats=Array.from(new Set(state.reqs.map(r=>r.cat).filter(Boolean).concat(REQ_TEMPLATES.map(t=>t[0]))));
+  $('#rqCatList').innerHTML=cats.map(c=>`<option value="${esc(c)}">`).join('');
+  $('#rqTemplates').innerHTML=REQ_TEMPLATES.map(([c,items])=>`<div class="tpl-cat">${esc(c)}</div>${items.map(t=>`<span class="tpl" data-tpl="${esc(t)}" data-cat="${esc(c)}">＋ ${esc(t)}</span>`).join('')}`).join('');
+  const q=(ui.rqQ||'').toLowerCase();
+  const base=state.reqs.filter(r=>(ui.rqSt==='all'||r.st===ui.rqSt)&&(!q||[r.title,r.cat,r.note,r.box].some(v=>String(v||'').toLowerCase().includes(q))));
+  const y=base.filter(r=>r.done).length;$('#rqAll').textContent=base.length;$('#rqYes').textContent=y;$('#rqNo').textContent=base.length-y;
+  const rows=base.filter(r=>(ui.rqDone||'all')==='all'||((ui.rqDone==='yes')===!!r.done));
+  if(!rows.length){$('#reqsBody').innerHTML='<div class="card empty"><div class="ic">🗂</div><b>لا توجد متطلبات هنا</b>أضف متطلباً من الأعلى أو استخدم القوالب الجاهزة.</div>';return;}
+  const groups=new Map();rows.forEach(r=>{const k=r.cat||'بدون تصنيف';if(!groups.has(k))groups.set(k,[]);groups.get(k).push(r);});
+  const html=[];
+  Array.from(groups.entries()).sort((a,b)=>a[0].localeCompare(b[0],'ar')).forEach(([cat,items])=>{
+    const done=items.filter(r=>r.done).length;const p=pct(done,items.length);const col=p>=100?'var(--green)':'var(--amber)';
+    html.push(`<div class="grp open"><div class="grp-h" style="--gc:${col};cursor:default">${ring(p,col)}<div class="ttl">${esc(cat)}<small>${items.length} متطلب</small></div><div class="meta"><b>${done} / ${items.length}</b>مصوّرة</div></div><div class="grp-b">`);
+    items.sort((a,b)=>(a.done===b.done?0:a.done?1:-1)||a.title.localeCompare(b.title,'ar')).forEach(r=>{
+      const stName=r.st?((state.statements.find(s=>s.id===r.st)||{}).name||''):'عام';
+      const fp=(r.box||r.seq!=='')?`<span class="pill box tiny">📦 ${r.box?'بوكس '+esc(r.box):''}${r.box&&r.seq!==''?' · ':''}${r.seq!==''?'ترتيب '+esc(r.seq):''}</span>`:'';
+      html.push(`<div class="rq${r.done?' done':''}" data-rq="${r.id}">
+        <div class="t"><div class="ttl2">${esc(r.title)}</div><div class="sub"><span class="pill grey">${esc(stName)}</span>${fp}${r.doneAt?`<span class="pill ok">صُوّر ${esc(String(r.doneAt).slice(0,10))}</span>`:''}</div></div>
+        <div class="act">
+          <input class="note-in${r.note?' has':''}" data-rqnote="${r.id}" value="${esc(r.note||'')}" placeholder="✎ ملاحظة…" ${CAN_EDIT?'':'disabled'}>
+          <label class="chk${r.done?' on':''}"><input type="checkbox" data-rqdone="${r.id}" ${r.done?'checked':''} ${CAN_EDIT?'':'disabled'}> ${r.done?'تم التصوير':'لم يُصوَّر'}</label>
+          ${CAN_EDIT?`<button class="ib" data-rqbox="${r.id}" title="البوكس فايل والترتيب">📦</button><button class="ib" data-rqdel="${r.id}" title="حذف">🗑</button>`:''}
+        </div></div>`);
+    });
+    html.push('</div></div>');
+  });
+  $('#reqsBody').innerHTML=html.join('');
+}
+function renderAll(){renderKpis();renderList();renderSamples();renderReqs();renderStats();renderData();}
 function toast(msg){const el=$('#toast');el.textContent=msg;el.classList.add('on');clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('on'),2800);}
 function setTab(t){ui.tab=t;$$('#tabs button').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));$$('.panel').forEach(p=>p.classList.toggle('on',p.id==='tab-'+t));renderBottom();window.scrollTo({top:0});}
 
@@ -1197,6 +1330,7 @@ $('#btnXls').addEventListener('click',()=>{
   const ws=XLSX.utils.json_to_sheet(data);ws['!views']=[{RTL:true}];XLSX.utils.book_append_sheet(wb,ws,'العينات');
   const st=expStats(ui.sSt).map(t=>({'اسم المصروف':t.exp,'رقم الحساب':t.acct,'عدد السطور':t.n,'إجمالي المبلغ':t.amt,'عدد العينات':t.sel,'تغطية العدد %':pct(t.sel,t.n),'مبلغ العينات':t.selAmt,'تغطية المبلغ %':pct(t.selAmt,t.amt),'مصوّر':t.done,'الإنجاز %':pct(t.done,t.sel)}));
   const ws2=XLSX.utils.json_to_sheet(st);ws2['!views']=[{RTL:true}];XLSX.utils.book_append_sheet(wb,ws2,'الإحصائيات');
+  if(state.reqs.length){const rq=state.reqs.map(r=>({'التصنيف':r.cat,'المتطلب':r.title,'الكشف':r.st?((state.statements.find(s=>s.id===r.st)||{}).name||''):'عام','تم التصوير':r.done?'نعم':'لا','تاريخ التصوير':String(r.doneAt||'').slice(0,10),'البوكس فايل':r.box,'الترتيب':r.seq,'ملاحظة':r.note}));const ws3=XLSX.utils.json_to_sheet(rq);ws3['!views']=[{RTL:true}];XLSX.utils.book_append_sheet(wb,ws3,'متطلبات أخرى');}
   XLSX.writeFile(wb,'عينات_المصروفات_'+new Date().toISOString().slice(0,10)+'.xlsx');
 });
 
@@ -1205,6 +1339,22 @@ $('#flCancel').addEventListener('click',()=>$('#dlgFile').close());
 $('#flSave').addEventListener('click',async()=>{const dl=$('#dlgFile');const ok=await saveFiling(dl.dataset.st,dl.dataset.acct,dl.dataset.exp,$('#flBox').value.trim(),$('#flSeq').value.trim(),$('#flNote').value.trim());if(ok){dl.close();renderAll();toast('تم حفظ البوكس فايل');}});
 $('#flSeq').addEventListener('keydown',e=>{if(e.key==='Enter')$('#flSave').click();});
 document.addEventListener('click',e=>{const b=e.target.closest('[data-filing]');if(!b)return;e.stopPropagation();const [st,acct]=b.dataset.filing.split('|');openFiling(st,acct,b.dataset.exp||'');},true);
+/* متطلبات أخرى */
+$('#rqAdd').addEventListener('click',()=>{addReq($('#rqTitle').value,$('#rqCat').value,$('#rqSt').value,$('#rqBox').value,$('#rqSeq').value).then(()=>{$('#rqTitle').value='';$('#rqBox').value='';$('#rqSeq').value='';});});
+$('#rqTitle').addEventListener('keydown',e=>{if(e.key==='Enter')$('#rqAdd').click();});
+$('#rqSt').addEventListener('change',e=>{ui.rqAddSt=e.target.value;});
+$('#rqTemplates').addEventListener('click',e=>{const t=e.target.closest('[data-tpl]');if(!t)return;$('#rqTitle').value=t.dataset.tpl;$('#rqCat').value=t.dataset.cat;$('#rqTitle').focus();});
+$('#rqFSt').addEventListener('change',e=>{ui.rqSt=e.target.value;renderReqs();});
+$('#rqQ').addEventListener('input',e=>{ui.rqQ=e.target.value.trim();renderReqs();});
+$('#rqDoneChips').addEventListener('click',e=>{const c=e.target.closest('.chip');if(!c)return;ui.rqDone=c.dataset.v;$$('#rqDoneChips .chip').forEach(x=>x.classList.toggle('on',x===c));renderReqs();});
+$('#reqsBody').addEventListener('change',e=>{
+  const d=e.target.closest('[data-rqdone]');if(d){patchReq(d.dataset.rqdone,{done:d.checked});return;}
+  const n=e.target.closest('[data-rqnote]');if(n){patchReq(n.dataset.rqnote,{note:n.value.trim()});}
+});
+$('#reqsBody').addEventListener('click',e=>{
+  const del=e.target.closest('[data-rqdel]');if(del){deleteReq(del.dataset.rqdel);return;}
+  const bx=e.target.closest('[data-rqbox]');if(bx){const r=state.reqs.find(x=>x.id===bx.dataset.rqbox);if(!r)return;const box=prompt('رقم البوكس فايل:',r.box||'');if(box===null)return;const seq=prompt('الترتيب داخل البوكس:',r.seq===''?'':r.seq);if(seq===null)return;patchReq(r.id,{box:box.trim(),seq:seq.trim()});}
+});
 /* تبويب البيانات */
 $('#btnCopySql').addEventListener('click',async()=>{
   const txt=$('#sqlText').textContent;
