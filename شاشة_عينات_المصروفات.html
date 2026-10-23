@@ -191,6 +191,7 @@ label.f{display:block;font-size:12px;color:var(--ink2);font-weight:700;margin-bo
 .ln .c-desc .sub{font-size:11.5px;color:var(--ink3);display:flex;gap:4px 10px;flex-wrap:wrap}
 .ln .c-amt{font-weight:800;font-family:"Cairo",sans-serif;font-size:14px;white-space:nowrap;color:var(--navy2);text-align:left}
 :root[data-theme="dark"] .ln .c-amt,:root.sys-dark:not([data-theme="light"]) .ln .c-amt{color:var(--sky)}
+.ln .c-amt.neg{color:var(--red)}
 .ln .c-amt small{font-size:10px;color:var(--ink3);font-weight:600;margin-inline-start:3px;font-family:"Tajawal",sans-serif}
 .ln .c-act{display:flex;gap:5px;align-items:center;justify-content:flex-end;flex-wrap:nowrap}
 .ln.issel{background:color-mix(in srgb,var(--amber-soft) 55%,transparent);box-shadow:inset 4px 0 0 var(--amber)}
@@ -485,7 +486,7 @@ details.sqlbox pre{margin:0;padding:12px 14px;border-top:1px solid var(--line);d
     <div class="card">
       <h2>الإنجاز والتغطية حسب المصروف <small>الكشف: <select id="tSt" style="width:auto;display:inline-block;min-height:32px;padding:3px 30px 3px 10px"></select></small></h2>
       <div class="tbl-wrap"><table id="tblExp"></table></div>
-      <div class="hint"><b>تغطية العدد</b> = عدد العينات المختارة ÷ عدد سطور المصروف. <b>تغطية المبلغ</b> = مبلغ العينات ÷ إجمالي المصروف. <b>الإنجاز</b> = العينات المصوّرة ÷ العينات المختارة.</div>
+      <div class="hint"><b>تغطية العدد</b> = عدد العينات المختارة ÷ عدد سطور المصروف. <b>تغطية المبلغ</b> = صافي مبلغ العينات ÷ صافي إجمالي المصروف (بالتقاص: القيد وعكسه يلغيان بعضهما). <b>الإنجاز</b> = العينات المصوّرة ÷ العينات المختارة.</div>
     </div>
     <div class="card">
       <h2>المتطلبات الأخرى حسب التصنيف</h2>
@@ -641,7 +642,7 @@ ORDER BY
     </div>
   </section>
 
-  <footer>شاشة عينات المصروفات — الإصدار v2.17 · مزامنة سحابية</footer>
+  <footer>شاشة عينات المصروفات — الإصدار v2.18 · مزامنة سحابية</footer>
 </div>
 
 <div class="bottombar" id="bottombar">
@@ -1132,7 +1133,7 @@ function ring(p,color){const r=18,c=2*Math.PI*r;return `<div class="ring" style=
 /* ====================== عرض ====================== */
 function renderKpis(){
   let tot=0,sel=0,done=0,amt=0,selAmt=0;
-  state.statements.forEach(s=>s.rows.forEach(r=>{tot++;amt+=Math.abs(r.net);if(r.sel){sel++;selAmt+=Math.abs(r.net);if(r.done)done++;}}));
+  state.statements.forEach(s=>s.rows.forEach(r=>{tot++;amt+=(r.net);if(r.sel){sel++;selAmt+=(r.net);if(r.done)done++;}}));
   const rqN=state.reqs.length,rqD=state.reqs.filter(r=>r.done).length;const allN=sel+rqN,allD=done+rqD;
   $('#kAll').textContent=allN?pct(allD,allN)+'%':'0%';
   $('#kAllSub').textContent=`${allD} من ${allN} مصوّرة`+(rqN?` · عينات ${done}/${sel} · متطلبات ${rqD}/${rqN}`:'');
@@ -1150,14 +1151,14 @@ function fillStSelect(sel,val){
 function lineHtml(x,docN,docExp,withExp){
   const r=x.r;const dn=r.doc?docN.get(x.s.id+'|'+r.doc):1;const checked=ui.multi.has(r.id);
   const de=(r.trx||r.doc)&&docExp.get(jKey(x.s,r));
-  const selMark=r.sel?`<span class="pill ${r.done?'ok':'warn'}">${r.done?'✔ مصوّرة':'◎ عينة'}</span>`:'';
+  const selMark=(r.sel?`<span class="pill ${r.done?'ok':'warn'}">${r.done?'✔ مصوّرة':'◎ عينة'}</span>`:'')+(r.net<0||/reversal/i.test(r.desc||'')?'<span class="pill bad">↩ عكس قيد</span>':'');
   return `<div class="ln${r.sel?' issel':''}${r.done?' done':''}" data-id="${r.id}">
         <div class="c c-date">${esc(r.date)}${selMark}${ui.fSt==='all'?'<span class="pill grey">'+esc(x.s.name)+'</span>':''}</div>
         <div class="c c-doc">${docCell(r)}${dn>1?` <span class="pill info">${dn}</span>`:''}</div>
         <div class="c c-trx"><span class="num">${esc(r.trx)}</span>${r.series?`<small>سيريز ${esc(r.series)}</small>`:''}</div>
         <div class="c c-desc"><div class="desc">${esc(r.desc||r.edesc||'—')}</div>${(r.edesc&&r.edesc!==r.desc)||(r.r1&&!docInfo(r).isPay)?`<div class="sub">${r.edesc&&r.edesc!==r.desc?`<span>${esc(r.edesc)}</span>`:''}${r.r1&&!docInfo(r).isPay?`<span>Ref <span class="num">${esc(r.r1)}</span></span>`:''}</div>`:''}${(()=>{if(!de)return '';const others=Array.from(de.entries()).filter(([k])=>k!==expKey(r)).map(([,v])=>v);return others.length?`<div class="multi">📎 <span><b>لهذا القيد عينة</b> في: ${others.map(esc).join('، ')} — إن أضفت هذا السطر تُصوَّر فاتورته مع فواتيرها بسحبة واحدة للقيد</span></div>`:'';})()}${r.note?`<div class="note-v">✎ ${esc(r.note)}</div>`:''}</div>
         ${withExp?`<div class="c c-exp">${esc(r.exp)}<br><span class="muted tiny num">${esc(r.acct)}</span></div>`:''}
-        <div class="c c-amt"><span class="num">${fmt(r.net)}</span><small>د.أ</small></div>
+        <div class="c c-amt${r.net<0?' neg':''}"><span class="num">${fmt(r.net)}</span><small>د.أ</small></div>
         <div class="c c-act">${r.sel?`
           <button class="ib${r.note?' has':''}" data-lnote="${r.id}" title="ملاحظة">✎</button>
           <label class="chk${r.done?' on':''}"><input type="checkbox" data-ldone="${r.id}" ${r.done?'checked':''} ${CAN_EDIT?'':'disabled'}> ${r.done?'تم التصوير':'لم يُصوَّر'}</label>
@@ -1186,20 +1187,20 @@ function renderList(){
   if(!state.statements.length){$('#listBody').innerHTML='<div class="card empty"><div class="ic">📋</div><b>لا توجد كشوفات بعد</b>اذهب إلى تبويب «البيانات» والصق بيانات الكويري أو ارفع ملف Excel.</div>';renderBottom();return;}
   if(!vis.length){$('#listBody').innerHTML=`<div class="card empty"><div class="ic">✅</div><b>لا توجد سطور مطابقة</b>${ui.show==='left'?'كل سطور هذا المصروف أصبحت ضمن العينات — اختر «الكل» لرؤيتها هنا، أو غيّر البحث.':'غيّر الفلتر أو البحث.'}</div>`;renderBottom();return;}
   const totals=new Map();
-  allRows(ui.fSt).forEach(x=>{const k=expKey(x.r);const t=totals.get(k)||{n:0,amt:0,sel:0,selAmt:0};t.n++;t.amt+=Math.abs(x.r.net);if(x.r.sel){t.sel++;t.selAmt+=Math.abs(x.r.net);}totals.set(k,t);});
+  allRows(ui.fSt).forEach(x=>{const k=expKey(x.r);const t=totals.get(k)||{n:0,amt:0,sel:0,selAmt:0};t.n++;t.amt+=(x.r.net);if(x.r.sel){t.sel++;t.selAmt+=(x.r.net);}totals.set(k,t);});
   const docN=new Map();
   allRows(ui.fSt).forEach(x=>{if(!x.r.doc)return;const k=x.s.id+'|'+x.r.doc;docN.set(k,(docN.get(k)||0)+1);});
   const groups=new Map();
   vis.forEach(x=>{const k=expKey(x.r);if(!groups.has(k))groups.set(k,{k,exp:x.r.exp,acct:x.r.acct,items:[]});groups.get(k).items.push(x);});
   {let tn=0,ts=0,ta=0,tsa=0;totals.forEach((t,k)=>{if(ui.fExp&&k!==ui.fExp)return;tn+=t.n;ts+=t.sel;ta+=t.amt;tsa+=t.selAmt;});
-   const vAmt=vis.reduce((a,x)=>a+Math.abs(x.r.net),0);
+   const vAmt=vis.reduce((a,x)=>a+(x.r.net),0);
    $('#fSummary').innerHTML=`<span class="pill grey">${groups.size} مصروف</span><span class="pill grey">${vis.length} سطر${ui.show==='left'?' متبقٍ':''} · ${fmt(vAmt)}</span><span class="pill info">عينات: ${ts} / ${tn} (${pctS(ts,tn)})</span><span class="pill info">تغطية المبلغ ${pctS(tsa,ta)}</span>`;}
   const docExp=selDocExpenses();
   const forceOpen=!!ui.fQ||!!ui.fExp||ui.allOpenL;
   const html=[];
   if(ui.view==='flat'){
     const sorted=vis.slice().sort(sorter(ui.sortL));const shown=sorted.slice(0,ui.flatLimit);
-    const amtAll=vis.reduce((a,x)=>a+Math.abs(x.r.net),0);
+    const amtAll=vis.reduce((a,x)=>a+(x.r.net),0);
     const h=[`<div class="flat"><div class="grp open"><div class="grp-h" style="--gc:var(--navy2)"><div class="ttl">كل القيود<small>${vis.length} سطر${ui.show==='left'?' متبقٍ':''} في ${groups.size} مصروف · ${fmt(amtAll)}${vis.length>shown.length?` · معروض ${shown.length}`:''}</small></div></div><div class="grp-b">${sortbar(ui.sortL,'data-sortl')}${headRow(ui.sortL,'data-sortl','',true)}`];
     shown.forEach(x=>h.push(lineHtml(x,docN,docExp,true)));
     h.push('</div></div>');
@@ -1207,10 +1208,10 @@ function renderList(){
     h.push('</div>');
     $('#listBody').innerHTML=h.join('');renderBottom();return;
   }
-  const gval=g=>{const t=totals.get(g.k)||{n:0,amt:0,sel:0,selAmt:0};switch(ui.gSort){case 'amt':return t.amt;case 'left':return g.items.length;case 'n':return t.n;case 'sel':return t.sel;case 'covN':return pct(t.sel,t.n);case 'covA':return pct(t.selAmt,t.amt);case 'max':return Math.max(...g.items.map(x=>Math.abs(x.r.net)));default:return null;}};
+  const gval=g=>{const t=totals.get(g.k)||{n:0,amt:0,sel:0,selAmt:0};switch(ui.gSort){case 'amt':return t.amt;case 'left':return g.items.length;case 'n':return t.n;case 'sel':return t.sel;case 'covN':return pct(t.sel,t.n);case 'covA':return pct(t.selAmt,t.amt);case 'max':return Math.max(...g.items.map(x=>(x.r.net)));default:return null;}};
   Array.from(groups.values()).sort((a,b)=>{if(ui.gSort==='name')return a.exp.localeCompare(b.exp,'ar')*ui.gDir;const c=gval(b)-gval(a);return (c||a.exp.localeCompare(b.exp,'ar'))*ui.gDir;}).forEach(g=>{
     const t=totals.get(g.k);const open=forceOpen||ui.openL.has(g.k);const col=colorFor(g.k);
-    const gAmt=g.items.reduce((a,x)=>a+Math.abs(x.r.net),0);
+    const gAmt=g.items.reduce((a,x)=>a+(x.r.net),0);
     html.push(`<div class="grp${open?' open':''}" data-g="${esc(g.k)}"><div class="grp-h" data-gh="${esc(g.k)}" style="--gc:${col}">
         ${ring(pct(t.sel,t.n),col)}
         <div class="ttl">${esc(g.exp)}${ui.fSt!=='all'?' '+filingPill(ui.fSt,g.acct):''}<small>حساب ${esc(g.acct)} · ${g.items.length} سطر${ui.show==='left'?' متبقٍ':ui.show==='sel'?' عينة':''} · ${fmt(gAmt)}</small></div>
@@ -1245,7 +1246,7 @@ function renderSamples(){
   else keys.sort((a,b)=>a.title.localeCompare(b.title,'ar'));
   const html=[];
   keys.forEach(g=>{
-    const done=g.items.filter(x=>x.r.done).length;const amt=g.items.reduce((a,x)=>a+Math.abs(x.r.net),0);
+    const done=g.items.filter(x=>x.r.done).length;const amt=g.items.reduce((a,x)=>a+(x.r.net),0);
     const open=forceOpen||ui.openS.has(g.k);const p=pct(done,g.items.length);const col=p>=100?'var(--green)':'var(--amber)';
     if(ui.sGrp==='doc'){const ex=new Map();g.items.forEach(x=>ex.set(expKey(x.r),x.r.exp));const names=Array.from(ex.values());g.sub=(ex.size>1?`<span class="pill warn">يشمل ${ex.size} مصروفات</span> `:'')+names.map(esc).join('، ')+' · '+g.sub;}
     html.push(`<div class="grp${open?' open':''}" data-g="${esc(g.k)}"><div class="grp-h" data-gs="${esc(g.k)}" style="--gc:${col}">
@@ -1258,7 +1259,7 @@ function renderSamples(){
     g.items.sort(sorter(ui.sortS)).forEach(x=>{const r=x.r;
       const de=(r.trx||r.doc)&&docExp.get(jKey(x.s,r));
       html.push(`<div class="ln${r.done?' done':''}" data-id="${r.id}">
-        <div class="c c-date">${esc(r.date)}${ui.sSt==='all'?'<span class="pill grey">'+esc(x.s.name)+'</span>':''}</div>
+        <div class="c c-date">${esc(r.date)}${r.net<0?'<span class="pill bad">↩ عكس</span>':''}${ui.sSt==='all'?'<span class="pill grey">'+esc(x.s.name)+'</span>':''}</div>
         <div class="c c-doc">${docCell(r)}</div>
         <div class="c c-trx"><span class="num">${esc(r.trx)}</span>${r.series?`<small>سيريز ${esc(r.series)}</small>`:''}</div>
         <div class="c c-desc"><div class="desc">${esc(r.desc||r.edesc||'—')}</div><div class="sub">${ui.sGrp!=='exp'?`<span>${esc(r.exp)} ${filingPill(x.s.id,r.acct,true)}</span>`:''}${r.edesc&&r.edesc!==r.desc?`<span>${esc(r.edesc)}</span>`:''}${r.r1&&!docInfo(r).isPay?`<span>Ref <span class="num">${esc(r.r1)}</span></span>`:''}${r.doneAt?`<span class="pill ok">صُوّر ${esc(String(r.doneAt).slice(0,10))}</span>`:''}</div>${de&&de.size>1&&ui.sGrp!=='doc'?multiHtml(de,expKey(r),'هذا المستند يشمل'):''}</div>
@@ -1275,7 +1276,7 @@ function renderSamples(){
 }
 function expStats(filterSt){
   const m=new Map();
-  allRows(filterSt).forEach(x=>{const k=expKey(x.r);const t=m.get(k)||{exp:x.r.exp,acct:x.r.acct,n:0,amt:0,sel:0,selAmt:0,done:0};t.n++;t.amt+=Math.abs(x.r.net);if(x.r.sel){t.sel++;t.selAmt+=Math.abs(x.r.net);if(x.r.done)t.done++;}m.set(k,t);});
+  allRows(filterSt).forEach(x=>{const k=expKey(x.r);const t=m.get(k)||{exp:x.r.exp,acct:x.r.acct,n:0,amt:0,sel:0,selAmt:0,done:0};t.n++;t.amt+=(x.r.net);if(x.r.sel){t.sel++;t.selAmt+=(x.r.net);if(x.r.done)t.done++;}m.set(k,t);});
   return Array.from(m.values()).sort((a,b)=>a.exp.localeCompare(b.exp,'ar'));
 }
 const STAT_COLS=[['exp','المصروف'],['box','البوكس / الترتيب'],['n','السطور'],['amt','إجمالي المبلغ'],['sel','العينات'],['covN','تغطية العدد'],['covA','تغطية المبلغ'],['done','مصوّر'],['prog','الإنجاز']];
@@ -1294,7 +1295,7 @@ function renderStats(){
   $('#tblExp').innerHTML=`<thead><tr>${STAT_COLS.map(([k,l])=>`<th class="${k==='exp'?'':'num'} sortable${ss.key===k?' on':''}" data-stsort="${k}">${l}${ss.key===k?(ss.dir>0?' ▲':' ▼'):''}</th>`).join('')}</tr></thead>
     <tbody>${tr.join('')||'<tr><td colspan="9" class="muted">لا بيانات</td></tr>'}</tbody>
     <tfoot><tr class="tot"><td>الإجمالي</td><td></td><td class="num">${T.n}</td><td class="num">${fmt(T.amt)}</td><td class="num">${T.sel}</td><td class="num">${pctS(T.sel,T.n)}</td><td class="num">${pctS(T.selAmt,T.amt)}</td><td class="num">${T.done}</td><td class="num">${pctS(T.done,T.sel)}</td></tr></tfoot>`;
-  const st=state.statements.map(s=>{let n=0,amt=0,sel=0,selAmt=0,done=0;s.rows.forEach(r=>{n++;amt+=Math.abs(r.net);if(r.sel){sel++;selAmt+=Math.abs(r.net);if(r.done)done++;}});const prog=pct(done,sel);
+  const st=state.statements.map(s=>{let n=0,amt=0,sel=0,selAmt=0,done=0;s.rows.forEach(r=>{n++;amt+=(r.net);if(r.sel){sel++;selAmt+=(r.net);if(r.done)done++;}});const prog=pct(done,sel);
     return `<tr><td>${esc(s.name)}</td><td class="num">${n}</td><td class="num">${fmt(amt)}</td><td class="num">${sel}</td><td class="num">${pctS(sel,n)}</td><td class="num">${pctS(selAmt,amt)}</td><td class="num">${done}</td><td class="num"><span class="pill ${sel?(prog>=100?'ok':prog>0?'warn':'bad'):'grey'}">${sel?prog+'%':'—'}</span></td></tr>`;});
   const rc=new Map();state.reqs.forEach(r=>{const k=r.cat||'بدون تصنيف';const t=rc.get(k)||{n:0,done:0};t.n++;if(r.done)t.done++;rc.set(k,t);});
   const rqRows=Array.from(rc.entries()).sort((a,b)=>a[0].localeCompare(b[0],'ar')).map(([k,t])=>{const pr=pct(t.done,t.n);return `<tr><td>${esc(k)}</td><td class="num">${t.n}</td><td class="num">${t.done}</td><td class="num"><span class="pill ${pr>=100?'ok':pr>0?'warn':'bad'}">${pr}%</span><span class="mini-bar"><i style="width:${pr}%"></i></span></td></tr>`;});
@@ -1346,7 +1347,7 @@ function renderReqs(){
 }
 function renderBatches(){
   const m=new Map();
-  state.statements.forEach(s=>s.rows.forEach(r=>{if(!r.sel||!r.selAt)return;const k=String(r.selAt);if(!m.has(k))m.set(k,{t:k,n:0,done:0,amt:0,exps:new Set(),st:new Set()});const b=m.get(k);b.n++;if(r.done)b.done++;b.amt+=Math.abs(r.net);b.exps.add(r.exp);b.st.add(s.name);}));
+  state.statements.forEach(s=>s.rows.forEach(r=>{if(!r.sel||!r.selAt)return;const k=String(r.selAt);if(!m.has(k))m.set(k,{t:k,n:0,done:0,amt:0,exps:new Set(),st:new Set()});const b=m.get(k);b.n++;if(r.done)b.done++;b.amt+=(r.net);b.exps.add(r.exp);b.st.add(s.name);}));
   const list=Array.from(m.values()).filter(b=>b.n>=2).sort((a,b)=>a.t<b.t?1:-1).slice(0,15);
   if(!list.length){$('#batches').innerHTML='<div class="muted tiny">لا توجد دفعات جماعية (كل العينات اختيرت فرادى).</div>';return;}
   $('#batches').innerHTML=list.map(b=>{const d=new Date(b.t);const when=isNaN(d)?b.t:d.toLocaleString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
@@ -1433,7 +1434,7 @@ $('#btnPrint').addEventListener('click',()=>{
   let h=`<h1>قائمة عينات المصروفات — ${esc(stName)}</h1><div class="pm">تاريخ الطباعة ${new Date().toLocaleDateString('en-GB')} · ${rows.length} عينة · مصوّر ${done} (${pctS(done,rows.length)})</div>
   <table><thead><tr><th style="width:22px">✔</th><th>التاريخ</th><th>رقم المستند</th><th>رقم الحركة</th><th>البيان</th><th>المبلغ</th><th>الكشف</th><th>ملاحظة</th></tr></thead><tbody>`;
   Array.from(groups.values()).sort((a,b)=>a.exp.localeCompare(b.exp,'ar')).forEach(g=>{
-    const amt=g.items.reduce((a,x)=>a+Math.abs(x.r.net),0);
+    const amt=g.items.reduce((a,x)=>a+(x.r.net),0);
     const fl=ui.sSt!=='all'?filingOf(ui.sSt,g.acct):null;
     h+=`<tr class="gh"><td colspan="8">${esc(g.exp)} — حساب ${esc(g.acct)} · ${g.items.length} عينة · ${fmt(amt)}${fl&&(fl.box||fl.seq!=='')?` · بوكس ${esc(fl.box)} ترتيب ${esc(fl.seq)}`:''}</td></tr>`;
     g.items.forEach(x=>{const r=x.r;const e=(r.trx||r.doc)&&docExpP.get(jKey(x.s,r));const mu=e&&e.size>1?` [يشمل ${e.size} مصروفات]`:'';const di=docInfo(r);h+=`<tr><td style="text-align:center"><span class="box${r.done?' x':''}"></span></td><td>${esc(r.date)}</td><td>${esc(di.no)}${di.tag?' ('+esc(di.tag)+')':''}${di.ref?' مرجع '+esc(di.ref):''}</td><td>${esc(r.trx)}</td><td>${esc(r.desc||r.edesc)}${esc(mu)}</td><td style="text-align:left">${fmt(r.net)}</td><td>${esc(x.s.name)}</td><td>${esc(r.note||'')}</td></tr>`;});
