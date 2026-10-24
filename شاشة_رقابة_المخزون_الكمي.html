@@ -681,6 +681,7 @@ html[data-theme="dark"] .xr table.xr-sum td,html[data-theme="dark"] .xr-tbl.tbl 
             <button data-rep="cdiff">فروقات الجرد</button>
             <button data-rep="profit">المبيعات والربحية</button>
             <button data-rep="combo">التقرير اليومي للمبيعات والمخزون</button>
+            <button data-rep="custom">تقرير مخصص</button>
             <div class="pill-row" id="codeModePills" style="margin-inline-start:auto;align-self:center;padding:6px 0"><span class="small muted" style="align-self:center">الرمز في التقارير:</span><button type="button" data-cm="code" title="تُجمَّع كل الوحدات التي تحمل نفس رمز المادة في سطر واحد">رمز المادة (تجميع الوحدات)</button><button type="button" data-cm="code2" title="كل وحدة (صنف) في سطر مستقل">رمز الوحدة (تفصيلي)</button></div>
           </div>
 
@@ -769,6 +770,28 @@ html[data-theme="dark"] .xr table.xr-sum td,html[data-theme="dark"] .xr-tbl.tbl 
             <div class="bd tight"><div class="tbl-wrap" id="rxTable"></div></div>
             <div class="bd tight" style="margin-top:14px"><div class="tbl-wrap" id="rxProfit"></div></div>
             <div class="bd tight" style="margin-top:14px"><details><summary class="small muted" style="cursor:pointer;padding:0 12px">كيف تم الاحتساب بالتفصيل (الورقة الرابعة في الإكسل)</summary><div class="tbl-wrap" id="rxMethod" style="margin-top:8px"></div></details></div>
+          </div>
+          <div class="sub" data-rep="custom">
+            <div class="filters" style="border-radius:0">
+              <div class="field sm"><label>من تاريخ</label><input type="date" class="in" id="ruFrom"></div>
+              <div class="field sm"><label>إلى تاريخ</label><input type="date" class="in" id="ruTo"></div>
+              <div class="field"><label>طريقة العرض</label><select class="in" id="ruMode"><option value="dept">حسب القسم — جدول لكل مستودع</option><option value="all">تجميعي — كل المستودعات في جدول واحد</option><option value="one">مستودع واحد</option><option value="item">حسب الصنف — صنف واحد عبر الأقسام</option></select></div>
+              <div class="field sm" id="ruWhWrap"><label>المستودع</label><select class="in" id="ruWh"></select></div>
+              <div class="field w2" id="ruItemWrap"><label>الصنف</label><div class="combo" id="ruItem"></div></div>
+              <div class="field sm"><label>نوع الصنف</label><select class="in" id="ruType"><option value="">الكل</option></select></div>
+              <div class="field sm"><label>التصنيف</label><select class="in" id="ruCat"><option value="">الكل</option></select></div>
+              <div class="field"><label>بحث</label><input class="in" id="ruQ" placeholder="رمز أو اسم (يمكن أكثر من كلمة بفاصلة |)"></div>
+              <div class="field sm"><label>عمود الفرق</label><select class="in" id="ruDiff"><option value="">الكل</option><option value="nz">بدون أصفار</option><option value="pos">زيادة فقط</option><option value="neg">نقص فقط</option></select></div>
+              <label class="toggle" style="padding-bottom:9px"><input type="checkbox" id="ruMoved" checked>المتحركة أو المجرودة فقط</label>
+              <label class="toggle" style="padding-bottom:9px" title="المستودع الرئيسي والتوالف"><input type="checkbox" id="ruTrusted">تضمين المستودعات المجرودة دائماً</label>
+              <span class="small muted" style="align-self:center">الأعمدة:</span>
+              <label class="toggle" style="padding-bottom:9px"><input type="checkbox" id="ruColQty" checked>الكميات</label>
+              <label class="toggle" style="padding-bottom:9px"><input type="checkbox" id="ruColCost" checked>الكلف والقيم</label>
+              <label class="toggle" style="padding-bottom:9px"><input type="checkbox" id="ruColX" checked>الربحية والدم والكيس والمبيعات</label>
+              <label class="toggle" style="padding-bottom:9px"><input type="checkbox" id="ruSum" checked>إظهار الملخص</label>
+              <div class="row"><button class="btn" id="ruToday">اليوم</button><button class="btn" id="ruMonth">الشهر الحالي</button><button class="btn" id="ruPrint"><svg><use href="#i-print"/></svg>طباعة</button><button class="btn primary" id="ruExport"><svg><use href="#i-xls"/></svg>إكسل</button></div>
+            </div>
+            <div class="bd tight" id="ruOut"></div>
           </div>
           <div class="sub" data-rep="profit">
             <div class="filters" style="border-radius:0">
@@ -977,7 +1000,7 @@ html[data-theme="dark"] .xr table.xr-sum td,html[data-theme="dark"] .xr-tbl.tbl 
 /* =========================================================
    رقابة المخزون الكمي — منطق الشاشة
    ========================================================= */
-const APP_VER = '2.8.1';
+const APP_VER = '2.9.0';
 const DB_KEY = 'kinv_ctrl_v1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -1261,7 +1284,7 @@ const addV = (a, b) => (a == null && b == null) ? null : round3((a || 0) + (b ||
 const fmtV = v => v == null ? '<span class="muted" title="لا توجد كلفة لهذا الصنف">—</span>' : fmt(v);
 /** كلفة الوحدة لصف تقرير (قد يكون مجمّعاً): إن تساوت كلف الوحدات تُعرض، وإلا المتوسط المرجّح بالكمية المرجعية */
 function rowCost(r, refQty, refVal) { const ms = r._members && r._members.length > 1 ? r._members : [r.item]; const cs = ms.map(m => costOf(m.id)); if (cs.every(c => c == null)) return null; if (cs.every(c => c === cs[0])) return cs[0]; if (refQty && refVal != null) return round3(refVal / refQty); const d = cs.filter(c => c != null); return round3(d.reduce((s, c) => s + c, 0) / d.length); }
-const itemMatchesQ = (i, q) => { if (!q) return true; const nq = normName(q), cq = normCode(q); return normName(i.name).includes(nq) || normName(i.name2 || '').includes(nq) || normCode(i.code).includes(cq) || normCode(i.code2 || '').includes(cq) || normCode(i.barcode || '').includes(cq); };
+const itemMatchesQ = (i, q) => { if (!q) return true; if (q.includes('|')) return q.split('|').map(x => x.trim()).filter(Boolean).some(x => itemMatchesQ(i, x)); const nq = normName(q), cq = normCode(q); return normName(i.name).includes(nq) || normName(i.name2 || '').includes(nq) || normCode(i.code).includes(cq) || normCode(i.code2 || '').includes(cq) || normCode(i.barcode || '').includes(cq); };
 const activeItems = () => S.items.filter(i => i.active !== false);
 const activeWhs = () => S.warehouses.filter(w => w.active !== false);
 const salesWhs = () => activeWhs().filter(w => !w.noSales); // المستودعات المسموح ترحيل المبيعات منها
@@ -1494,7 +1517,7 @@ const XS = (() => {
         if (c.f) return `<c r="${ref}"${s}><f>${xe(c.f)}</f>${typeof c.v === 'number' && isFinite(c.v) ? `<v>${c.v}</v>` : ''}</c>`;
         if (typeof c.v === 'number' && isFinite(c.v)) return `<c r="${ref}"${s}><v>${c.v}</v></c>`;
         if (c.v == null || c.v === '') return `<c r="${ref}"${s}/>`; return `<c r="${ref}"${s} t="inlineStr"><is><t xml:space="preserve">${xe(c.v)}</t></is></c>`; }).join(''); return `<row r="${ri + 1}"${r.h ? ` ht="${r.h}" customHeight="1"` : ''}>${cells}</row>`; }).join('');
-      const cols = (sh.cols || []).map((w, i) => w ? `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>` : '').join('');
+      const cols = (sh.cols || []).map((w, i) => w ? `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"${sh.hidden && sh.hidden.includes(i) ? ' hidden="1"' : ''}/>` : '').join('');
       const fz = sh.freeze; const pane = fz ? `<pane${fz.x ? ` xSplit="${fz.x}"` : ''}${fz.y ? ` ySplit="${fz.y}"` : ''} topLeftCell="${colL(fz.x || 0)}${(fz.y || 0) + 1}" activePane="bottomRight" state="frozen"/>` : '';
       const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:${colL(Math.max(0, maxC - 1))}${sh.rows.length || 1}"/><sheetViews><sheetView rightToLeft="1" workbookViewId="0"${si === 0 ? ' tabSelected="1"' : ''} showGridLines="${sh.grid === false ? 0 : 1}">${pane}</sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/>${cols ? `<cols>${cols}</cols>` : ''}<sheetData>${rowsXml}</sheetData>${sh.merges && sh.merges.length ? `<mergeCells count="${sh.merges.length}">${sh.merges.map(m => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>` : ''}<printOptions horizontalCentered="1"/><pageMargins left="0.35" right="0.35" top="0.5" bottom="0.6" header="0.5" footer="0.25"/><pageSetup paperSize="9" orientation="${sh.landscape ? 'landscape' : 'portrait'}" fitToWidth="1" fitToHeight="${sh.fitH == null ? 1 : sh.fitH}"/><headerFooter><oddFooter>&amp;C&amp;P / &amp;N</oddFooter></headerFooter></worksheet>`;
       files.push({ name: `xl/worksheets/sheet${si + 1}.xml`, data: xml }); names.push(sh.name.slice(0, 31)); });
@@ -1601,15 +1624,15 @@ function renderPage(page) {
 }
 function refreshAll() { refreshLookups(); renderPage(currentPage); }
 function refreshLookups() {
-  for (const id of ['dfWh', 'rdWh', 'rcWh', 'rmWh', 'rcdWh', 'rfWh', 'rpWh', 'rxWh']) fillSelect($('#' + id), whOpts(true), { blank: id === 'dfWh' || id === 'rmWh' || id === 'rcdWh' || id === 'rpWh' ? 'الكل' : (id === 'rfWh' || id === 'rxWh' ? 'تجميعي — كل المستودعات' : 'كل المستودعات') });
+  for (const id of ['dfWh', 'rdWh', 'rcWh', 'rmWh', 'rcdWh', 'rfWh', 'rpWh', 'rxWh', 'ruWh']) fillSelect($('#' + id), whOpts(true), { blank: id === 'dfWh' || id === 'rmWh' || id === 'rcdWh' || id === 'rpWh' ? 'الكل' : (id === 'rfWh' || id === 'rxWh' ? 'تجميعي — كل المستودعات' : 'كل المستودعات') });
   for (const id of ['omWh', 'stDefWh', 'dmWh', 'dmWhFrom', 'dmWhTo']) fillSelect($('#' + id), whOpts(), { blank: id === 'stDefWh' ? 'بدون' : null });
   fillSelect($('#slWh'), salesWhOpts()); fillSelect($('#stSalesWh'), salesWhOpts(), { blank: 'أول مستودع مسموح' });
-  for (const id of ['ifType', 'rdType', 'rbType', 'rfType', 'rpType', 'ctType']) fillSelect($('#' + id), typeOpts(), { blank: 'الكل' });
+  for (const id of ['ifType', 'rdType', 'rbType', 'rfType', 'rpType', 'ctType', 'ruType']) fillSelect($('#' + id), typeOpts(), { blank: 'الكل' });
   fillSelect($('#dfType'), docTypeOpts(), { blank: 'الكل' });
   fillSelect($('#rmType'), Object.entries(SIDE_LABEL).map(([v, l]) => ({ v, l })), { blank: 'الكل' });
   fillSelect($('#imType'), typeOpts());
   const cats = [...new Set(S.items.map(i => i.cat).filter(Boolean))].sort();
-  fillSelect($('#ifCat'), cats.map(c => ({ v: c, l: c })), { blank: 'الكل' });
+  fillSelect($('#ifCat'), cats.map(c => ({ v: c, l: c })), { blank: 'الكل' }); fillSelect($('#ruCat'), cats.map(c => ({ v: c, l: c })), { blank: 'الكل' });
   $('#catsList').innerHTML = cats.map(c => `<option value="${esc(c)}">`).join('');
   $('#unitsList').innerHTML = [...new Set(S.items.map(i => i.unit).filter(Boolean))].sort().map(c => `<option value="${esc(c)}">`).join('');
   $('#brandName').textContent = S.company || 'رقابة المخزون';
@@ -2390,11 +2413,11 @@ let rcCombo;
 function syncCodePills() { $$('#codeModePills button').forEach(b => b.classList.toggle('on', b.dataset.cm === codeMode())); }
 function showRep(name) { $$('#repTabs button[data-rep]').forEach(b => b.classList.toggle('on', b.dataset.rep === name)); $$('[data-rep].sub').forEach(s => s.classList.toggle('on', s.dataset.rep === name)); renderRep(name); }
 function renderReports() { const cur = $('#repTabs button.on')?.dataset.rep || 'daily'; renderRep(cur); }
-function renderRep(name) { ({ daily: renderRepDaily, full: renderRepFull, balances: renderRepBalances, card: renderRepCard, moves: renderRepMoves, low: renderRepLow, cdiff: renderRepCountDiff, profit: renderRepProfit, combo: renderRepCombo })[name](); }
+function renderRep(name) { ({ daily: renderRepDaily, full: renderRepFull, balances: renderRepBalances, card: renderRepCard, moves: renderRepMoves, low: renderRepLow, cdiff: renderRepCountDiff, profit: renderRepProfit, combo: renderRepCombo, custom: renderRepCustom })[name](); }
 
 /* --- تقرير الحركة والجرد (تجميعي أو حسب المستودع) --- */
 function fullData(o = null) {
-  const from = o ? o.from : ($('#rfFrom').value || todayISO()), to = o ? o.to : ($('#rfTo').value || from), wh = o ? o.wh : $('#rfWh').value, ty = o ? (o.ty || '') : $('#rfType').value, q = o ? (o.q || '') : $('#rfQ').value.trim(), onlyMoved = o ? !!o.onlyMoved : $('#rfMoved').checked, dmode = o ? (o.dmode || '') : $('#rfDiff').value;
+  const from = o ? o.from : ($('#rfFrom').value || todayISO()), to = o ? o.to : ($('#rfTo').value || from), wh = o ? o.wh : $('#rfWh').value, ty = o ? (o.ty || '') : $('#rfType').value, q = o ? (o.q || '') : $('#rfQ').value.trim(), onlyMoved = o ? !!o.onlyMoved : $('#rfMoved').checked, dmode = o ? (o.dmode || '') : $('#rfDiff').value, cat = o ? (o.cat || '') : '', fi = o ? (o.itemIds || null) : null;
   // آخر جرد لكل (صنف، مستودع) ضمن الفترة — المستودعات الوهمية لا تُجرد؛ رصيد النظام للجرد يستثني سندات تسوية الجرد نفسه
   const latest = new Map(); const Mc = new Map();
   for (const c of S.counts) { if (c.date < from || c.date > to || (wh && c.wh !== wh) || whById(c.wh)?.virtual) continue; const ck = c.date + '|' + (c.adjDocs || []).join(','); let M = Mc.get(ck); if (!M) { M = balanceMatrix({ asOf: c.date, excludeNos: c.adjDocs }); Mc.set(ck, M); } for (const l of countLinesFull(c, M)) { const k = l.itemId + '|' + c.wh; const cur = latest.get(k); if (!cur || c.date > cur.date || (c.date === cur.date && (c.createdAt || '') > (cur.createdAt || ''))) latest.set(k, { date: c.date, createdAt: c.createdAt, actual: l.actual, wh: c.wh, implied: !!l.implied }); } }
@@ -2420,7 +2443,7 @@ function fullData(o = null) {
       else if (b && !wh) { if (!a) { a = { actual: 0, whs: [], dates: new Set(), missing: [] }; byItem.set(it.id, a); } a.actual += b; a.missing.push(`${w.name} (${fmt(b)})`); } } }
   let rows = [];
   for (const it of S.items) {
-    if (ty && it.type !== ty) continue; if (q && !itemMatchesQ(it, q)) continue;
+    if (ty && it.type !== ty) continue; if (q && !itemMatchesQ(it, q)) continue; if (cat && (it.cat || '') !== cat) continue; if (fi && !fi.has(it.id)) continue;
     const r = R.get(it.id) || mk(it.id); const cnt = byItem.get(it.id);
     r.close = round3(r.open + r.inn + r.pur - r.out - r.sal); r.open = round3(r.open); for (const k of ['inn', 'pur', 'out', 'sal', 'bb']) r[k] = round3(r[k]); r.salesAmt = amtBy.get(it.id) || 0; r.vBB = valOf(it.id, r.bb);
     r.actual = cnt ? round3(cnt.actual) : null; r.diff = cnt ? round3(cnt.actual - r.close) : null; r.cwhs = cnt ? cnt.whs : []; r.cimp = cnt ? (cnt.imp || 0) : 0; r.cdates = cnt ? [...cnt.dates] : []; r.missing = cnt ? cnt.missing : [];
@@ -2464,11 +2487,11 @@ function countDiffAOA() { return [['تاريخ الجرد', 'المستودع', 
 
 /* --- المبيعات والربحية --- */
 function profitData(o = null) {
-  const from = o ? o.from : ($('#rpFrom').value || todayISO()), to = o ? o.to : ($('#rpTo').value || from), wh = o ? o.wh : $('#rpWh').value, ty = o ? '' : $('#rpType').value, q = o ? '' : $('#rpQ').value.trim();
+  const from = o ? o.from : ($('#rpFrom').value || todayISO()), to = o ? o.to : ($('#rpTo').value || from), wh = o ? o.wh : $('#rpWh').value, ty = o ? (o.ty || '') : $('#rpType').value, q = o ? (o.q || '') : $('#rpQ').value.trim(), cat = o ? (o.cat || '') : '', fi = o ? (o.itemIds || null) : null;
   const R = new Map();
   for (const d of S.docs) {
     if (d.type !== 'sales' || d.date < from || d.date > to || (wh && d.wh !== wh)) continue;
-    for (const l of d.lines) { const it = itemById(l.itemId); if (!it || (ty && it.type !== ty) || (q && !itemMatchesQ(it, q))) continue;
+    for (const l of d.lines) { const it = itemById(l.itemId); if (!it || (ty && it.type !== ty) || (q && !itemMatchesQ(it, q)) || (cat && (it.cat || '') !== cat) || (fi && !fi.has(it.id))) continue;
       let r = R.get(it.id); if (!r) { r = { item: it, qty: 0, gross: null, net: null, cogs: 0, cogsQty: 0, noCost: 0, taxes: new Set() }; R.set(it.id, r); }
       const qty = +l.qty || 0; r.qty = round3(r.qty + qty);
       if (l.amt != null) { const tax = +l.tax || 0; r.gross = addV(r.gross, +l.amt); r.net = addV(r.net, (+l.amt) / (1 + tax / 100)); r.taxes.add(tax); } // المبلغ بالملف شامل الضريبة ويُرجَع إلى ما قبلها
@@ -2509,19 +2532,21 @@ function comboData(o) {
       r.dept = best ? best.name : '';
     }
   }
-  const T = { qtyDiff: 0, vDiff: null, nCount: 0, bbCost: null, bbQty: 0, salesAmt: 0, vClose: null, vAct: null };
-  for (const r of rows) { if (r.diff != null) { T.qtyDiff = round3(T.qtyDiff + r.diff); T.vDiff = addV(T.vDiff, r.vDiff); T.nCount++; } T.bbCost = addV(T.bbCost, r.vBB); T.bbQty = round3(T.bbQty + r.bb); T.salesAmt = round3(T.salesAmt + r.salesAmt); T.vClose = addV(T.vClose, r.vClose); T.vAct = addV(T.vAct, r.vAct); }
+  const T = comboTotals(rows);
   const PT = profitTotals(prof.rows); const net = PT.net, cogs = PT.cogs, gp = PT.profit; const bb = T.bbCost || 0;
   const sum = { net, cogs, gp, gpPct: gp != null && net ? round3(gp / net * 100) : null, bb, bbPct: net ? round3(bb / net * 100) : null, gp2: gp != null ? round3(gp - bb) : null, gp2Pct: gp != null && net ? round3((gp - bb) / net * 100) : null, qtyDiff: T.qtyDiff, vDiff: T.vDiff, nCount: T.nCount, nNoAmt: PT.nNoAmt, nNoCost: PT.nNoCost };
   return { rows, prof: prof.rows, sum, T, ...o };
 }
+function comboTotals(rows) { const T = { qtyDiff: 0, vDiff: null, nCount: 0, bbCost: null, bbQty: 0, salesAmt: 0, vClose: null, vAct: null }; for (const r of rows) { if (r.diff != null) { T.qtyDiff = round3(T.qtyDiff + r.diff); T.vDiff = addV(T.vDiff, r.vDiff); T.nCount++; } T.bbCost = addV(T.bbCost, r.vBB); T.bbQty = round3(T.bbQty + r.bb); T.salesAmt = round3(T.salesAmt + r.salesAmt); T.vClose = addV(T.vClose, r.vClose); T.vAct = addV(T.vAct, r.vAct); } return T; }
 const COMBO_H = ['رمز المادة', 'الصنف', 'الوحدة', 'الرصيد الافتتاحي', 'الإدخال', 'المشتريات', 'الإخراج', 'المبيعات', 'الرصيد الدفتري', 'الجرد الفعلي', 'الفرق', 'الكلفة/وحدة', 'قيمة الدفتري', 'قيمة الفعلي', 'قيمة الفرق', 'القسم', 'نسبة ربح المادة %', 'الدم والكيس', 'كلفة الدم والكيس', 'قيمة المبيعات'];
 function comboRowsAOA(D) { return D.rows.map(r => [codeOf(r.item), r.item.name, r.item.unit, r.open, r.inn, r.pur, r.out, r.sal, r.close, r.actual ?? '', r.diff ?? '', r.cost ?? '', r.vClose ?? '', r.vAct ?? '', r.vDiff ?? '', r.dept, r.margin ?? '', r.bb || '', r.vBB || '', r.salesAmt || '']); }
 function comboSummaryRows(D) { const s = D.sum; const per = D.from === D.to ? D.from : `${D.from} - ${D.to}`; return [['التقرير اليومي للمبيعات والمخزون', ''], ['الفترة', per], ['المستودع', D.wh ? whName(D.wh) : 'كل المستودعات'], ['', ''], ['مبيعات ' + per, ''], ['قيمة المبيعات (قبل الضريبة)', s.net ?? ''], ['كلفة المبيعات', s.cogs], ['مجمل الربح قبل الدم والكيس', s.gp ?? ''], ['نسبة مجمل الربح قبل الدم والكيس %', s.gpPct ?? ''], ['الدم والكيس (بالكلفة)', s.bb], ['نسبة الدم والكيس من المبيعات %', s.bbPct ?? ''], ['مجمل الربح بعد الدم والكيس', s.gp2 ?? ''], ['نسبة مجمل الربح بعد الدم والكيس %', s.gp2Pct ?? ''], ['', ''], ['فروقات الجرد ' + per, ''], ['كمية فرق الجرد', s.qtyDiff], ['قيمة فرق الجرد', s.vDiff ?? ''], ['أصناف مجرودة', s.nCount]]; }
-function comboTableHTML(D, cls) {
+function comboTableHTML(D, cls, cg = null) {
+  const G = cg || { qty: 1, cost: 1, x: 1 }; const keep = [1, 1, 1, G.qty, G.qty, G.qty, G.qty, G.qty, G.qty, G.qty, G.qty, G.cost, G.cost, G.cost, G.cost, G.x, G.x, G.x, G.x, G.x];
   const pc = v => v == null ? '<span class="muted">—</span>' : `<span class="${v < 0 ? 'neg' : ''}">${fmt(v)}%</span>`; const sg = v => v == null ? '<span class="muted">—</span>' : `<span class="${v > 0 ? 'pos' : v < 0 ? 'neg' : ''}">${(v > 0 ? '+' : '') + fmt(v)}</span>`;
-  const T = D.T; return `<table${cls ? ` class="${cls}"` : ''}><thead><tr>${COMBO_H.map((h, i) => `<th class="${i >= 3 && i !== 15 ? 'num' : ''}">${h}</th>`).join('')}</tr></thead><tbody>${D.rows.map(r => `<tr><td class="code">${esc(codeOf(r.item))}</td>${nameCell(r.item)}<td class="muted">${esc(r.item.unit)}</td><td class="num">${fmtS(r.open)}</td><td class="num cin">${fmtS(r.inn)}</td><td class="num cin">${fmtS(r.pur)}</td><td class="num cout">${fmtS(r.out)}</td><td class="num cout">${fmtS(r.sal)}</td><td class="num"><b>${fmtS(r.close)}</b></td><td class="num">${r.actual == null ? '<span class="muted">—</span>' : fmt(r.actual)}</td><td class="num">${sg(r.diff)}</td><td class="num muted">${fmtV(r.cost)}</td><td class="num">${fmtV(r.vClose)}</td><td class="num">${r.actual == null ? '<span class="muted">—</span>' : fmtV(r.vAct)}</td><td class="num">${r.diff == null ? '<span class="muted">—</span>' : sg(r.vDiff)}</td><td>${esc(r.dept)}</td><td class="num">${pc(r.margin)}</td><td class="num">${r.bb ? fmt(r.bb) : ''}</td><td class="num">${r.bb ? fmtV(r.vBB) : ''}</td><td class="num">${r.salesAmt ? fmt(r.salesAmt) : ''}</td></tr>`).join('')}
-    <tr class="tot"><td colspan="3">الإجمالي (${D.rows.length} صنف، ${T.nCount} مجرود)</td><td class="num">${fmt(round3(D.rows.reduce((s, r) => s + r.open, 0)))}</td><td class="num">${fmt(round3(D.rows.reduce((s, r) => s + r.inn, 0)))}</td><td class="num">${fmt(round3(D.rows.reduce((s, r) => s + r.pur, 0)))}</td><td class="num">${fmt(round3(D.rows.reduce((s, r) => s + r.out, 0)))}</td><td class="num">${fmt(round3(D.rows.reduce((s, r) => s + r.sal, 0)))}</td><td class="num">${fmt(round3(D.rows.reduce((s, r) => s + r.close, 0)))}</td><td class="num">${fmtV(D.rows.reduce((s, r) => r.actual == null ? s : round3((s || 0) + r.actual), null))}</td><td class="num">${sg(T.qtyDiff)}</td><td></td><td class="num">${fmtV(T.vClose)}</td><td class="num">${fmtV(T.vAct)}</td><td class="num">${sg(T.vDiff)}</td><td></td><td></td><td class="num">${fmt(T.bbQty)}</td><td class="num">${fmtV(T.bbCost)}</td><td class="num">${fmt(T.salesAmt)}</td></tr></tbody></table>`;
+  const T = D.T; const strip = html => { if (cg == null) return html; return html.replace(/<tr[^>]*>[\s\S]*?<\/tr>/g, tr => { let ci = 0; return tr.replace(/<t([dh])([^>]*)>([\s\S]*?)<\/t\1>/g, (m, tag, attrs) => { const span = +((attrs.match(/colspan="(\d+)"/) || [0, 1])[1]); let vis = 0; for (let k = 0; k < span; k++) if (keep[ci + k]) vis++; ci += span; if (!vis) return ''; return span > 1 ? m.replace(/colspan="\d+"/, `colspan="${vis}"`) : m; }); }); };
+  return strip(`<table${cls ? ` class="${cls}"` : ''}><thead><tr>${COMBO_H.map((h, i) => `<th class="${i >= 3 && i !== 15 ? 'num' : ''}">${h}</th>`).join('')}</tr></thead><tbody>${D.rows.map(r => `<tr><td class="code">${esc(codeOf(r.item))}</td>${nameCell(r.item)}<td class="muted">${esc(r.item.unit)}</td><td class="num">${fmtS(r.open)}</td><td class="num cin">${fmtS(r.inn)}</td><td class="num cin">${fmtS(r.pur)}</td><td class="num cout">${fmtS(r.out)}</td><td class="num cout">${fmtS(r.sal)}</td><td class="num"><b>${fmtS(r.close)}</b></td><td class="num">${r.actual == null ? '<span class="muted">—</span>' : fmt(r.actual)}</td><td class="num">${sg(r.diff)}</td><td class="num muted">${fmtV(r.cost)}</td><td class="num">${fmtV(r.vClose)}</td><td class="num">${r.actual == null ? '<span class="muted">—</span>' : fmtV(r.vAct)}</td><td class="num">${r.diff == null ? '<span class="muted">—</span>' : sg(r.vDiff)}</td><td>${esc(r.dept)}</td><td class="num">${pc(r.margin)}</td><td class="num">${r.bb ? fmt(r.bb) : ''}</td><td class="num">${r.bb ? fmtV(r.vBB) : ''}</td><td class="num">${r.salesAmt ? fmt(r.salesAmt) : ''}</td></tr>`).join('')}
+    <tr class="tot"><td colspan="3">الإجمالي (${D.rows.length} صنف، ${T.nCount} مجرود)</td><td class="num">${fmt(round3(D.rows.reduce((s, r) => s + r.open, 0)))}</td><td class="num">${fmt(round3(D.rows.reduce((s, r) => s + r.inn, 0)))}</td><td class="num">${fmt(round3(D.rows.reduce((s, r) => s + r.pur, 0)))}</td><td class="num">${fmt(round3(D.rows.reduce((s, r) => s + r.out, 0)))}</td><td class="num">${fmt(round3(D.rows.reduce((s, r) => s + r.sal, 0)))}</td><td class="num">${fmt(round3(D.rows.reduce((s, r) => s + r.close, 0)))}</td><td class="num">${fmtV(D.rows.reduce((s, r) => r.actual == null ? s : round3((s || 0) + r.actual), null))}</td><td class="num">${sg(T.qtyDiff)}</td><td></td><td class="num">${fmtV(T.vClose)}</td><td class="num">${fmtV(T.vAct)}</td><td class="num">${sg(T.vDiff)}</td><td></td><td></td><td class="num">${fmt(T.bbQty)}</td><td class="num">${fmtV(T.bbCost)}</td><td class="num">${fmt(T.salesAmt)}</td></tr></tbody></table>`);
 }
 function comboSummaryHTML_tiles(D) {
   const s = D.sum; const per = D.from === D.to ? 'يوم ' + D.from : `من ${D.from} إلى ${D.to}`; const v = x => x == null ? '—' : fmt(x); const pc = x => x == null ? '—' : fmt(x) + '%';
@@ -2603,8 +2628,9 @@ function comboMethodHTML(D, cls) {
   return `<table${cls ? ` class="${cls}"` : ''}><thead><tr><th style="width:190px">البند</th><th>طريقة الاحتساب</th><th class="num" style="width:130px">القيمة في هذا التقرير</th></tr></thead><tbody>${secs.map(sec => `<tr class="tot"><td colspan="3" style="text-align:start">${esc(sec.title)}</td></tr>` + sec.rows.map(r => `<tr><td class="nm"><b>${esc(r[0])}</b></td><td class="nm" style="white-space:normal;line-height:1.6">${esc(r[1])}</td><td class="num ${typeof r[2] === 'number' && r[2] < 0 ? 'neg' : ''}">${val(r[2], r[3])}</td></tr>`).join('')).join('')}</tbody></table>`;
 }
 /* --- تصدير التقرير اليومي للمبيعات والمخزون بتنسيق إكسل الكامل (ثلاث أوراق بنفس الألوان والترتيب) --- */
-function comboExport() {
-  const D = comboData(); const per = D.from === D.to ? D.from : `${D.from} - ${D.to}`; const MAR = 'FF7A1F2B', PINK = 'FFF6ECEC', CREAM = 'FFEFE3D3', BAND = 'FFFAF7F5', INK = 'FF222222', GREY = 'FF6B6B6B';
+/** يبني مصنّف الإكسل: blocks = [{ title, sheet, D }] (ورقة حركة وجرد لكل كتلة)، D = بيانات الملخص، cg = مجموعات الأعمدة الظاهرة */
+function comboBook(blocks, D, per, cg, fname) {
+  const MAR = 'FF7A1F2B', PINK = 'FFF6ECEC', CREAM = 'FFEFE3D3', BAND = 'FFFAF7F5', INK = 'FF222222', GREY = 'FF6B6B6B';
   const Q3 = '#,##0.000;[Red]\\-#,##0.000;\\-', Q2 = '#,##0.00;[Red]\\-#,##0.00;\\-', PCT = '0.0%;[Red]\\-0.0%;\\-', COST = '#,##0.000', KG = '#,##0.000" كغ";[Red]\\-#,##0.000" كغ"';
   const ST = []; const st = o => { const k = JSON.stringify(o); let i = ST.findIndex(x => x.k === k); if (i < 0) { ST.push({ k, o }); i = ST.length - 1; } return i; };
   const thin = { l: 'thin', r: 'thin', t: 'thin', b: 'thin' }, hi = { l: 'thin', r: 'thin', t: 'medium', b: 'medium' };
@@ -2620,26 +2646,28 @@ function comboExport() {
   prof.forEach((r, i) => { const bd = i % 2 === 1; const n = r3.length + 1; r3.push({ h: r.item.name2 ? 30 : 18, cells: [S(codeOf(r.item), cell(null, bd)), S(r.item.name, cell(null, bd, { h: 'left' })), S(r.item.name2 || '', cell(null, bd, { sz: 8.5, color: 'FF444444', h: 'right', wrap: 1 })), S(r.item.unit, cell(null, bd)), S(r.qty, cell(Q3, bd)), S(r.gross ?? '', cell(Q2, bd)), S(r.taxLabel, cell(null, bd)), S(r.net ?? '', cell(Q2, bd)), S(r.cost ?? '', cell(COST, bd)), S(r.cogs, cell(Q2, bd)), r.full ? F(`H${n}-J${n}`, r.profit, cell(Q2, bd)) : S('', cell(Q2, bd)), r.full ? F(`IF(H${n}=0,0,K${n}/H${n})`, r.margin != null ? r.margin / 100 : 0, cell(PCT, bd, { b: 1 })) : S('', cell(PCT, bd, { b: 1 }))] }); });
   const t3 = r3.length + 1, p1 = 5, p2 = Math.max(5, t3 - 1);
   r3.push({ h: 21.75, cells: [S('الإجمالي', tot()), E(tot()), E(tot()), E(tot()), E(tot()), E(tot()), E(tot()), F(`SUM(H${p1}:H${p2})`, D.sum.net || 0, tot(Q2)), E(tot()), F(`SUM(J${p1}:J${p2})`, D.sum.cogs || 0, tot(Q2)), F(`H${t3}-J${t3}`, D.sum.gp || 0, tot(Q2)), F(`IF(H${t3}=0,0,K${t3}/H${t3})`, (D.sum.gpPct || 0) / 100, tot(PCT))] });
-  // ---- ورقة 2: الحركة والجرد ----
-  const r2 = [{ h: 30, cells: [S(`التقرير اليومي للمبيعات والمخزون — ${per}`, title(15)), ...Array(19).fill(E(title(15)))] }, { h: 21.75, cells: [S(`حركة المواد والجرد الفعلي — فروقات الجرد ${per}${D.wh ? ' — ' + whName(D.wh) : ''}`, subT), ...Array(19).fill(E(subT))] }, { h: 6, cells: [] }, { h: 37.5, cells: COMBO_H.map(h => S(h, head)) }];
-  D.rows.forEach((r, i) => { const bd = i % 2 === 1; const n = r2.length + 1; const hasCost = r.cost != null; const dc = r.diff != null;
+  // ---- أوراق الحركة والجرد (ورقة لكل كتلة) ----
+  const mkSheet2 = (BD, sub2) => { const r2 = [{ h: 30, cells: [S(`التقرير اليومي للمبيعات والمخزون — ${per}`, title(15)), ...Array(19).fill(E(title(15)))] }, { h: 21.75, cells: [S(sub2, subT), ...Array(19).fill(E(subT))] }, { h: 6, cells: [] }, { h: 37.5, cells: COMBO_H.map(h => S(h, head)) }];
+  BD.rows.forEach((r, i) => { const bd = i % 2 === 1; const n = r2.length + 1; const hasCost = r.cost != null; const dc = r.diff != null;
     r2.push({ h: 18, cells: [S(codeOf(r.item), cell(null, bd)), S(r.item.name, cell(null, bd, { h: 'left' })), S(r.item.unit, cell(null, bd)), S(r.open, cell(Q3, bd)), S(r.inn, cell(Q3, bd)), S(r.pur, cell(Q3, bd)), S(r.out, cell(Q3, bd)), S(r.sal, cell(Q3, bd)), F(`D${n}+E${n}+F${n}-G${n}-H${n}`, r.close, cell(Q3, bd)), S(r.actual ?? '', cell(Q3, bd)), dc ? F(`J${n}-I${n}`, r.diff, cell(Q3, bd, { b: 1 })) : S('', cell(Q3, bd, { b: 1 })), S(r.cost ?? '', cell(COST, bd)), hasCost ? F(`I${n}*L${n}`, r.vClose, cell(Q2, bd)) : S('', cell(Q2, bd)), hasCost && dc ? F(`J${n}*L${n}`, r.vAct, cell(Q2, bd)) : S('', cell(Q2, bd)), hasCost && dc ? F(`L${n}*K${n}`, r.vDiff, cell(Q2, bd, { b: 1 })) : S('', cell(Q2, bd, { b: 1 })), S(r.dept, cell(null, bd, { color: 'FF444444' })), S(r.margin != null ? r.margin / 100 : '', cell(PCT, bd)), S(r.bb || '', cell(Q3, bd)), S(r.vBB || '', cell(Q2, bd)), S(r.salesAmt || '', cell(Q2, bd))] }); });
   const t2 = r2.length + 1, q1 = 5, q2 = Math.max(5, t2 - 1); const sum = c => `SUM(${c}${q1}:${c}${q2})`;
-  r2.push({ h: 21.75, cells: [S('الإجمالي', tot()), E(tot()), E(tot()), F(sum('D'), null, tot(Q3)), F(sum('E'), null, tot(Q3)), F(sum('F'), null, tot(Q3)), F(sum('G'), null, tot(Q3)), F(sum('H'), null, tot(Q3)), F(sum('I'), null, tot(Q3)), F(sum('J'), null, tot(Q3)), F(sum('K'), D.T.qtyDiff, tot(Q3)), E(tot()), F(sum('M'), D.T.vClose, tot(Q2)), F(sum('N'), D.T.vAct, tot(Q2)), F(sum('O'), D.T.vDiff, tot(Q2)), E(tot()), E(tot()), F(sum('R'), D.T.bbQty, tot(Q3)), F(sum('S'), D.T.bbCost, tot(Q2)), F(sum('T'), D.T.salesAmt, tot(Q2))] });
-  r2.push({ h: 18.75, cells: [S('نسبة كلفة الدم والكيس إلى قيمة المبيعات المسجلة', note), ...Array(17).fill(E(note)), F(`IF(T${t2}=0,0,S${t2}/T${t2})`, D.T.salesAmt ? (D.T.bbCost || 0) / D.T.salesAmt : 0, st({ font: { sz: 9.5, b: 1, color: 'FF333333' }, border: thin, nf: PCT, al: { h: 'center' } })), E(note)] });
+  r2.push({ h: 21.75, cells: [S('الإجمالي', tot()), E(tot()), E(tot()), F(sum('D'), null, tot(Q3)), F(sum('E'), null, tot(Q3)), F(sum('F'), null, tot(Q3)), F(sum('G'), null, tot(Q3)), F(sum('H'), null, tot(Q3)), F(sum('I'), null, tot(Q3)), F(sum('J'), null, tot(Q3)), F(sum('K'), BD.T.qtyDiff, tot(Q3)), E(tot()), F(sum('M'), BD.T.vClose, tot(Q2)), F(sum('N'), BD.T.vAct, tot(Q2)), F(sum('O'), BD.T.vDiff, tot(Q2)), E(tot()), E(tot()), F(sum('R'), BD.T.bbQty, tot(Q3)), F(sum('S'), BD.T.bbCost, tot(Q2)), F(sum('T'), BD.T.salesAmt, tot(Q2))] });
+  r2.push({ h: 18.75, cells: [S('نسبة كلفة الدم والكيس إلى قيمة المبيعات المسجلة', note), ...Array(17).fill(E(note)), F(`IF(T${t2}=0,0,S${t2}/T${t2})`, BD.T.salesAmt ? (BD.T.bbCost || 0) / BD.T.salesAmt : 0, st({ font: { sz: 9.5, b: 1, color: 'FF333333' }, border: thin, nf: PCT, al: { h: 'center' } })), E(note)] });
+  return { rows: r2, t2, merges: ['A1:T1', 'A2:T2', `A${t2}:C${t2}`, `A${t2 + 1}:R${t2 + 1}`] }; };
+  const S2 = blocks.map(b => ({ b, ...mkSheet2(b.D, b.title) })); const t2 = S2[0].t2;
   // ---- ورقة 1: الملخص ----
   const lab = b => st({ font: { sz: 11, b: b ? 1 : 0, color: b ? MAR : INK }, fill: b ? CREAM : null, border: b ? hi : thin, al: { h: 'right' } }), val = (nf, b) => st({ font: { sz: 11, b: 1, color: b ? MAR : INK }, fill: b ? CREAM : null, border: b ? hi : thin, nf, al: { h: 'center' } });
   const labG = st({ font: { sz: 10, color: GREY }, border: thin, al: { h: 'right' } }), valG = st({ font: { sz: 10, b: 1, color: GREY }, border: thin, nf: PCT, al: { h: 'center' } });
   const band = st({ font: { sz: 11.5, b: 1, color: 'FFFFFFFF' }, fill: MAR, al: { h: 'center', wrap: 1 } });
-  const s2n = "'الحركة والجرد'", s3n = "'نسبة أرباح الأصناف'"; const S0 = D.sum; const row = (cells, h) => ({ h, cells: [null, ...cells] });
+  const one = blocks.length === 1; const s2n = `'${blocks[0].sheet.replace(/'/g, "''")}'`, s3n = "'نسبة أرباح الأصناف'"; const S0 = D.sum; const row = (cells, h) => ({ h, cells: [null, ...cells] }); const F2 = (f, v, st_) => one ? F(f, v, st_) : S(v, st_);
   const r1 = [row([S('التقرير اليومي للمبيعات والمخزون', title(16)), E(title(16))], 33.75), row([S(`ملخص ${per}${D.wh ? ' — ' + whName(D.wh) : ''}`, subT), E(subT)], 21.75), { h: 9.75, cells: [] },
     row([S(`مبيعات يوم ${per}`, band), E(band)], 24),
     row([S('قيمة المبيعات', lab()), F(`${s3n}!H${t3}`, S0.net || 0, val(Q2))], 24), row([S('كلفة المبيعات', lab()), F(`${s3n}!J${t3}`, S0.cogs || 0, val(Q2))], 24),
     row([S('مجمل الربح قبل الدم و الكيس', lab(1)), F('C5-C6', S0.gp || 0, val(Q2, 1))], 24), row([S('نسبة مجمل الربح قبل الدم و الكيس', labG), F('IF(C5=0,0,C7/C5)', (S0.gpPct || 0) / 100, valG)], 24),
-    row([S('الدم و الكيس وعظم', lab()), F(`${s2n}!S${t2}`, S0.bb || 0, val(Q2))], 24), row([S('نسبة الدم و الكيس', labG), F('IF(C5=0,0,C9/C5)', (S0.bbPct || 0) / 100, valG)], 24),
+    row([S('الدم و الكيس وعظم', lab()), F2(`${s2n}!S${t2}`, S0.bb || 0, val(Q2))], 24), row([S('نسبة الدم و الكيس', labG), F('IF(C5=0,0,C9/C5)', (S0.bbPct || 0) / 100, valG)], 24),
     row([S('مجمل الربح بعد الدم و الكيس', lab(1)), F('C7-C9', S0.gp2 || 0, val(Q2, 1))], 24), row([S('نسبة مجمل الربح بعد الدم و الكيس', labG), F('IF(C5=0,0,C11/C5)', (S0.gp2Pct || 0) / 100, valG)], 24),
     { h: 9.75, cells: [] }, row([S(`فروقات الجرد ${per}`, band), E(band)], 24),
-    row([S('كمية فرق الجرد', lab()), F(`${s2n}!K${t2}`, S0.qtyDiff, val(KG))], 24), row([S('قيمة فرق الجرد', lab(1)), F(`${s2n}!O${t2}`, S0.vDiff || 0, val(Q2, 1))], 24),
+    row([S('كمية فرق الجرد', lab()), F2(`${s2n}!K${t2}`, S0.qtyDiff, val(KG))], 24), row([S('قيمة فرق الجرد', lab(1)), F2(`${s2n}!O${t2}`, S0.vDiff || 0, val(Q2, 1))], 24),
     { h: 9.75, cells: [] }, row([S('* القيم بالأحمر سالبة. التفاصيل في ورقتي «الحركة والجرد» و«نسبة أرباح الأصناف».', noteFree), E(noteFree)], 18)];
   // ---- ورقة 4: طريقة الاحتساب ----
   const mh = st({ font: { sz: 10, b: 1, color: 'FFFFFFFF' }, fill: MAR, border: thin, al: { h: 'center', wrap: 1 } }), mLab = st({ font: { sz: 10, b: 1, color: INK }, border: thin, al: { h: 'right', v: 'top', wrap: 1 } }), mTxt = st({ font: { sz: 9.5, color: 'FF333333' }, border: thin, al: { h: 'right', v: 'top', wrap: 1 } });
@@ -2649,18 +2677,53 @@ function comboExport() {
   for (const sec of comboMethod(D)) { merges4.push(`A${r4.length + 1}:D${r4.length + 1}`); r4.push({ h: 22, cells: [S(sec.title, mBand), E(mBand), E(mBand), E(mBand)] });
     for (const r of sec.rows) { const lines = Math.max(1, Math.ceil(String(r[1]).length / 95)); const u = r[3]; const nf = u === '%' ? PCT : u === 'kg' ? Q3 : (typeof r[2] === 'number' && !Number.isInteger(r[2])) ? Q2 : null; const v = r[2] == null ? '' : (u === '%' ? r[2] / 100 : r[2]);
       r4.push({ h: Math.min(120, 16 * lines + 4), cells: [S(r[0], mLab), S(r[1], mTxt), S(v, mVal(nf)), S(u === '%' ? '' : (u || ''), mTxt)] }); } }
+  const hidden = cg ? [3, 4, 5, 6, 7, 8, 9, 10].filter(() => !cg.qty).concat([11, 12, 13, 14].filter(() => !cg.cost), [15, 16, 17, 18, 19].filter(() => !cg.x)) : [];
   const blob = XS.build([
     { name: 'ملخص', cols: [4, 44, 22, 4], rows: r1, merges: ['B1:C1', 'B2:C2', 'B4:C4', 'B14:C14', 'B18:C18'], grid: false, fitH: 1 },
-    { name: 'الحركة والجرد', cols: [8, 42, 6.6, 10.6, 9, 10, 9, 9.6, 10.6, 13, 10, 9.6, 11.4, 13, 11, 9, 9.6, 9, 10.6, 11], rows: r2, merges: ['A1:T1', 'A2:T2', `A${t2}:C${t2}`, `A${t2 + 1}:R${t2 + 1}`], freeze: { x: 2, y: 4 }, landscape: true, fitH: 0, titles: '$4:$4' },
+    ...S2.map(x => ({ name: x.b.sheet, cols: [8, 42, 6.6, 10.6, 9, 10, 9, 9.6, 10.6, 13, 10, 9.6, 11.4, 13, 11, 9, 9.6, 9, 10.6, 11], hidden, rows: x.rows, merges: x.merges, freeze: { x: 2, y: 4 }, landscape: true, fitH: 0, titles: '$4:$4' })),
     { name: 'نسبة أرباح الأصناف', cols: [9.6, 40, 30, 6.6, 10, 13, 8, 13, 10.6, 12, 11, 10.6], rows: r3, merges: ['A1:L1', 'A2:L2', `A${t3}:G${t3}`], freeze: { x: 2, y: 4 }, landscape: true, fitH: 0, titles: '$4:$4' },
     { name: 'طريقة الاحتساب', cols: [30, 95, 20, 8], rows: r4, merges: merges4, freeze: { y: 4 }, landscape: false, fitH: 0, titles: '$4:$4' },
   ], ST.map(x => x.o));
-  download(`التقرير_اليومي_للمبيعات_والمخزون_${D.from}${D.to !== D.from ? '_' + D.to : ''}.xlsx`, blob);
+  download(fname, blob);
 }
+function comboExport() { const D = comboData(); const per = D.from === D.to ? D.from : `${D.from} - ${D.to}`; comboBook([{ title: `حركة المواد والجرد الفعلي — فروقات الجرد ${per}${D.wh ? ' — ' + whName(D.wh) : ''}`, sheet: 'الحركة والجرد', D }], D, per, null, `التقرير_اليومي_للمبيعات_والمخزون_${D.from}${D.to !== D.from ? '_' + D.to : ''}.xlsx`); }
 
 function comboPrint() { const D = comboData(); if (true) { const per = D.from === D.to ? 'التاريخ: ' + D.from : `من ${D.from} إلى ${D.to}`; printHTML('التقرير اليومي للمبيعات والمخزون', [per, D.wh ? 'المستودع: ' + whName(D.wh) : 'كل المستودعات'], comboSummaryHTML(D) + '<div style="height:12px"></div>' + comboTableHTML(D, 'xr-tbl tbl') + '<h3 style="margin:14px 0 6px">تحليل ربحية الأصناف المباعة</h3>' + (profitTableHTML('xr-tbl tbl', { from: D.from, to: D.to, wh: D.wh }) || '<p>لا توجد مبيعات</p>') + '<h3 style="margin:14px 0 6px">كيف تم الاحتساب بالتفصيل</h3>' + comboMethodHTML(D, 'xr-tbl tbl'), { landscape: true }); return; } const per = D.from === D.to ? 'التاريخ: ' + D.from : `من ${D.from} إلى ${D.to}`; const s = D.sum; const v = x => x == null ? '—' : fmt(x); const pc = x => x == null ? '—' : fmt(x) + '%';
   const sumT = `<table style="width:auto;min-width:50%;margin-bottom:12px"><tbody>${[['قيمة المبيعات (قبل الضريبة)', v(s.net)], ['كلفة المبيعات', v(s.cogs)], ['مجمل الربح قبل الدم والكيس', v(s.gp)], ['نسبة مجمل الربح قبل الدم والكيس', pc(s.gpPct)], ['الدم والكيس (بالكلفة)', v(s.bb)], ['نسبة الدم والكيس من المبيعات', pc(s.bbPct)], ['مجمل الربح بعد الدم والكيس', v(s.gp2)], ['نسبة مجمل الربح بعد الدم والكيس', pc(s.gp2Pct)], ['كمية فرق الجرد', fmt(s.qtyDiff)], ['قيمة فرق الجرد', v(s.vDiff)]].map(([l, x]) => `<tr><td>${l}</td><td class="num"><b>${x}</b></td></tr>`).join('')}</tbody></table>`;
   printHTML('التقرير اليومي للمبيعات والمخزون', [per, D.wh ? 'المستودع: ' + whName(D.wh) : 'كل المستودعات'], sumT + comboTableHTML(D, '') + `<h3 style="margin:14px 0 6px">تحليل ربحية الأصناف المباعة</h3>` + (profitTableHTML('', { from: D.from, to: D.to, wh: D.wh }) || '<p>لا توجد مبيعات</p>'), { landscape: true }); }
+
+/* --- تقرير مخصص: حسب القسم / تجميعي / مستودع واحد / حسب الصنف، مع فلاتر ومجموعات أعمدة --- */
+let ruCombo = null;
+function customOpts() {
+  const from = $('#ruFrom').value || todayISO(), to = $('#ruTo').value || from; const mode = $('#ruMode').value; const cg = { qty: $('#ruColQty').checked, cost: $('#ruColCost').checked, x: $('#ruColX').checked };
+  let itemIds = null, item = null; if (mode === 'item') { item = ruCombo && ruCombo.value ? itemById(ruCombo.value) : null; itemIds = new Set(item ? (matGrouping() ? S.items.filter(i => normCode(matCode(i)) === normCode(matCode(item))).map(i => i.id) : [item.id]) : []); }
+  return { from, to, mode, wh: $('#ruWh').value, ty: $('#ruType').value, cat: $('#ruCat').value, q: $('#ruQ').value.trim(), dmode: $('#ruDiff').value, onlyMoved: $('#ruMoved').checked, trusted: $('#ruTrusted').checked, cg, itemIds, item, showSum: $('#ruSum').checked };
+}
+function customBlocks(o) {
+  o = o || customOpts(); const base = { from: o.from, to: o.to, ty: o.ty, cat: o.cat, q: o.q, dmode: o.dmode, onlyMoved: o.onlyMoved, itemIds: o.itemIds }; const per = o.from === o.to ? o.from : `${o.from} - ${o.to}`;
+  const whs = activeWhs().filter(w => !w.virtual && (o.trusted || !w.trusted)); const blocks = [];
+  if (o.mode === 'all') blocks.push({ title: `حركة المواد والجرد الفعلي — تجميعي كل المستودعات — ${per}`, sheet: 'الحركة والجرد', D: comboData({ ...base, wh: '' }) });
+  else if (o.mode === 'one') { const w = whById(o.wh) || whs[0]; if (w) blocks.push({ title: `حركة المواد والجرد الفعلي — ${w.name} — ${per}`, sheet: w.name, D: comboData({ ...base, wh: w.id }) }); }
+  else if (o.mode === 'dept') { for (const w of whs) { const D = comboData({ ...base, wh: w.id }); if (D.rows.length) blocks.push({ title: `القسم: ${w.name} — ${per}`, sheet: w.name, D }); } }
+  else if (o.mode === 'item' && o.item) { // صف لكل مستودع للصنف المختار، والإجمالي = التجميعي
+    const rows = []; for (const w of activeWhs().filter(w => !w.virtual)) { const D = comboData({ ...base, wh: w.id, onlyMoved: false, dmode: '' }); const r = D.rows[0]; if (!r || !(r.open || r.inn || r.pur || r.out || r.sal || r.close || r.actual)) continue; r.item = { id: 'wh:' + w.id, code: w.code, code2: '', name: w.name, unit: o.item.unit }; r.dept = w.name; rows.push(r); }
+    const T = comboTotals(rows); const prof = profitData({ from: o.from, to: o.to, wh: '', itemIds: o.itemIds }).rows; const PT = profitTotals(prof);
+    blocks.push({ title: `الصنف: ${codeOf(o.item)} ${o.item.name} — صف لكل مستودع — ${per}`, sheet: 'حسب الصنف', D: { rows, prof, T, sum: { net: PT.net, cogs: PT.cogs, gp: PT.profit }, from: o.from, to: o.to, wh: '' } });
+  }
+  const overall = comboData({ ...base, wh: o.mode === 'one' ? o.wh : '' }); return { blocks, overall, per, ...o };
+}
+function renderRepCustom() {
+  if (!$('#ruFrom').value) $('#ruFrom').value = todayISO(); if (!$('#ruTo').value) $('#ruTo').value = $('#ruFrom').value;
+  $('#ruWhWrap').style.display = $('#ruMode').value === 'one' ? '' : 'none'; $('#ruItemWrap').style.display = $('#ruMode').value === 'item' ? '' : 'none';
+  const C = customBlocks(); const host = $('#ruOut'); let h = '';
+  if (C.showSum) h += `<div style="padding:0 12px 12px">${comboSummaryHTML(C.overall)}</div>`;
+  if (C.mode === 'item' && !C.item) h += emptyHTML('اختر الصنف');
+  else if (!C.blocks.length) h += emptyHTML('لا توجد بيانات مطابقة للفلاتر');
+  for (const b of C.blocks) h += `<div class="xr" style="margin:14px 12px 0"><div class="xr-title">${esc(b.title)}</div><div class="xr-sub">${b.D.rows.length} صنف${C.q ? ' — بحث: ' + esc(C.q) : ''}${C.ty ? ' — النوع: ' + esc(ITEM_TYPES[C.ty] || C.ty) : ''}${C.cat ? ' — التصنيف: ' + esc(C.cat) : ''}${C.dmode ? ' — ' + ({ nz: 'بدون أصفار', pos: 'زيادة فقط', neg: 'نقص فقط' })[C.dmode] : ''}</div></div><div class="tbl-wrap">${comboTableHTML(b.D, 'tbl xr-tbl', C.cg)}</div>`;
+  host.innerHTML = h;
+}
+function customExport() { const C = customBlocks(); if (!C.blocks.length) return toast('لا توجد بيانات للتصدير', 'warn'); const seen = new Set(); for (const b of C.blocks) { let n = b.sheet.slice(0, 28); while (seen.has(n)) n += '٢'; seen.add(n); b.sheet = n; } comboBook(C.blocks, C.overall, C.per, C.cg, `تقرير_مخصص_${C.from}${C.to !== C.from ? '_' + C.to : ''}.xlsx`); }
+function customPrint() { const C = customBlocks(); if (!C.blocks.length) return toast('لا توجد بيانات للطباعة', 'warn'); printHTML('تقرير مخصص — المبيعات والمخزون', [C.from === C.to ? 'التاريخ: ' + C.from : `من ${C.from} إلى ${C.to}`, ({ dept: 'حسب القسم', all: 'تجميعي', one: 'مستودع: ' + whName(C.wh), item: 'حسب الصنف' })[C.mode]].filter(Boolean), (C.showSum ? comboSummaryHTML(C.overall) : '') + C.blocks.map(b => `<h3 style="margin:14px 0 6px">${esc(b.title)}</h3>` + comboTableHTML(b.D, 'xr-tbl tbl', C.cg)).join(''), { landscape: true }); }
 
 /* --- التقرير اليومي --- */
 function dailyData() {
@@ -2845,7 +2908,7 @@ function bindFile(dropId, inputId, handler) {
 }
 function init() {
   // تفعيل الفرز والتصفية بعد كل عرض جدول (قبل ربط الأحداث حتى تلتقط النسخة المغلّفة)
-  for (const n of ['renderItems', 'renderWhs', 'renderDocs', 'renderRepDaily', 'renderRepBalances', 'renderRepCard', 'renderRepMoves', 'renderRepLow', 'renderRepFull', 'renderRepCountDiff', 'renderRepProfit', 'renderRepCombo', 'renderCosts', 'renderCountGrid', 'renderCountHistory', 'renderSalesLog', 'renderAlloc', 'renderBoms', 'renderOpeningGrid', 'slRenderPreview', 'ipPreview']) { const f = window[n]; if (typeof f === 'function') window[n] = function (...a) { const r = f.apply(this, a); enhanceAll(); return r; }; }
+  for (const n of ['renderItems', 'renderWhs', 'renderDocs', 'renderRepDaily', 'renderRepBalances', 'renderRepCard', 'renderRepMoves', 'renderRepLow', 'renderRepFull', 'renderRepCountDiff', 'renderRepProfit', 'renderRepCombo', 'renderRepCustom', 'renderCosts', 'renderCountGrid', 'renderCountHistory', 'renderSalesLog', 'renderAlloc', 'renderBoms', 'renderOpeningGrid', 'slRenderPreview', 'ipPreview']) { const f = window[n]; if (typeof f === 'function') window[n] = function (...a) { const r = f.apply(this, a); enhanceAll(); return r; }; }
   PRISTINE = '<!doctype html>\n' + document.documentElement.outerHTML;
   storageCheck(); S = load();
   const emb = embeddedState();
@@ -2912,6 +2975,10 @@ function init() {
   ['rdFrom', 'rdTo', 'rdWh', 'rdType', 'rdMoved', 'rdDetail', 'rdCost'].forEach(id => $('#' + id).onchange = renderRepDaily); $('#rdQ').oninput = renderRepDaily;
   $('#rdToday').onclick = () => { $('#rdFrom').value = $('#rdTo').value = todayISO(); renderRepDaily(); };
   $('#rdPrint').onclick = dailyPrint; $('#rdExport').onclick = () => exportXlsx(`التقرير_اليومي_${$('#rdFrom').value}.xlsx`, [{ name: 'التقرير اليومي', aoa: dailyAOA() }]);
+  ['ruFrom', 'ruTo', 'ruMode', 'ruWh', 'ruType', 'ruCat', 'ruDiff', 'ruMoved', 'ruTrusted', 'ruColQty', 'ruColCost', 'ruColX', 'ruSum'].forEach(id => $('#' + id).onchange = renderRepCustom); $('#ruQ').oninput = renderRepCustom;
+  ruCombo = makeCombo($('#ruItem'), { placeholder: 'اختر الصنف…', source: () => S.items, onPick: renderRepCustom });
+  $('#ruToday').onclick = () => { $('#ruFrom').value = $('#ruTo').value = todayISO(); renderRepCustom(); }; $('#ruMonth').onclick = () => { const t = todayISO(); $('#ruFrom').value = t.slice(0, 8) + '01'; $('#ruTo').value = t; renderRepCustom(); };
+  $('#ruPrint').onclick = customPrint; $('#ruExport').onclick = customExport;
   ['rxFrom', 'rxTo', 'rxWh', 'rxMoved'].forEach(id => $('#' + id).onchange = renderRepCombo);
   $('#rxToday').onclick = () => { $('#rxFrom').value = $('#rxTo').value = todayISO(); renderRepCombo(); }; $('#rxYest').onclick = () => { const d = new Date(); d.setDate(d.getDate() - 1); const y = d.toISOString().slice(0, 10); $('#rxFrom').value = $('#rxTo').value = y; renderRepCombo(); };
   $('#rxPrint').onclick = comboPrint; $('#rxExport').onclick = comboExport; $('#rxExport').textContent = ''; $('#rxExport').insertAdjacentHTML('beforeend', '<svg><use href="#i-xls"/></svg>إكسل (4 أوراق)');
