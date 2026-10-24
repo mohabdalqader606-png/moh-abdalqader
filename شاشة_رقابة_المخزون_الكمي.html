@@ -331,6 +331,35 @@ details[open]>summary::before{content:"▾ "}
 
 /* ===== Print ===== */
 #printArea{display:none}
+
+/* التقرير اليومي للمبيعات والمخزون — تصميم مطابق لملف الإكسل */
+.xr{--mar:#7A1F2B;--pink:#F6ECEC;--cream:#EFE3D3;--band:#FAF7F5;font-family:Arial,"Segoe UI",Tahoma,sans-serif;color:#222}
+.xr .xr-title{background:var(--mar);color:#fff;font-weight:800;font-size:17px;text-align:center;padding:9px 12px;border-radius:8px 8px 0 0}
+.xr .xr-sub{background:var(--pink);color:var(--mar);font-weight:700;font-size:13px;text-align:center;padding:6px 12px;margin-bottom:10px}
+.xr .xr-band{background:var(--mar);color:#fff;font-weight:700;font-size:13px;text-align:center;padding:6px 12px}
+.xr table.xr-sum{width:100%;max-width:560px;border-collapse:collapse;font-size:13px;background:#fff}
+.xr table.xr-sum td{border:1px solid #c8c8c8;padding:6px 10px;background:#fff}
+.xr table.xr-sum td:last-child{text-align:center;font-weight:700;width:150px;font-variant-numeric:tabular-nums}
+.xr table.xr-sum tr.hi td{background:var(--cream);color:var(--mar);font-weight:800;border-top:2px solid var(--mar);border-bottom:2px solid var(--mar)}
+.xr table.xr-sum tr.pct td{color:#6B6B6B;font-size:12px}
+.xr .neg{color:#C00000}
+.xr .xr-note{color:#6B6B6B;font-size:11.5px;margin-top:8px}
+.xr-tbl.tbl{font-family:Arial,"Segoe UI",Tahoma,sans-serif;font-size:12.5px;color:#222;border-collapse:collapse}
+.xr-tbl.tbl thead th{background:#7A1F2B!important;color:#fff!important;font-weight:700;text-align:center;border:1px solid #c8c8c8;white-space:normal;line-height:1.3;padding:8px 6px}
+.xr-tbl.tbl thead tr.flt th{background:var(--card2)!important;color:var(--ink2)!important}
+.xr-tbl.tbl tbody td{border:1px solid #c8c8c8;padding:5px 7px;background:#fff;text-align:center;color:#222}
+.xr-tbl.tbl tbody td.nm,.xr-tbl.tbl tbody td.code{text-align:start}
+.xr-tbl.tbl tbody tr:nth-child(even) td{background:#FAF7F5}
+.xr-tbl.tbl tbody tr.tot td{background:#EFE3D3!important;color:#7A1F2B;font-weight:800;border-top:2px solid #7A1F2B;border-bottom:2px solid #7A1F2B}
+.xr-tbl.tbl .neg{color:#C00000}.xr-tbl.tbl .pos{color:#222}
+.xr-tbl.tbl .cin,.xr-tbl.tbl .cout{color:#222}
+.xr-tbl.tbl td.cin,.xr-tbl.tbl td.cout,.xr-tbl.tbl th.cin,.xr-tbl.tbl th.cout{box-shadow:none;border-inline-start:1px solid #c8c8c8;border-inline-end:1px solid #c8c8c8;background-image:none}
+.xr-tbl.tbl td.nm{white-space:nowrap;min-width:200px}
+.xr-tbl.tbl td.num .muted{color:#888}
+.xr-tbl.tbl td .sub{color:#444}
+html[data-theme="dark"] .xr table.xr-sum td,html[data-theme="dark"] .xr-tbl.tbl tbody td{color:#222}
+@media print{.xr .xr-title{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+
 @media print{
   @page{size:A4;margin:10mm 9mm 12mm}
   body{background:#fff;color:#000;font-size:11.5px;font-family:var(--font)}
@@ -738,6 +767,7 @@ details[open]>summary::before{content:"▾ "}
             </div>
             <div class="bd" id="rxSummary"></div>
             <div class="bd tight"><div class="tbl-wrap" id="rxTable"></div></div>
+            <div class="bd tight" style="margin-top:14px"><div class="tbl-wrap" id="rxProfit"></div></div>
           </div>
           <div class="sub" data-rep="profit">
             <div class="filters" style="border-radius:0">
@@ -946,7 +976,7 @@ details[open]>summary::before{content:"▾ "}
 /* =========================================================
    رقابة المخزون الكمي — منطق الشاشة
    ========================================================= */
-const APP_VER = '2.7.0';
+const APP_VER = '2.8.0';
 const DB_KEY = 'kinv_ctrl_v1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -1433,6 +1463,50 @@ function exportXlsx(name, sheets) { // sheets: [{name, aoa}]
   for (const s of sheets) { const ws = XLSX.utils.aoa_to_sheet(s.aoa); ws['!cols'] = (s.aoa[0] || []).map((_, ci) => ({ wch: Math.min(40, Math.max(8, ...s.aoa.slice(0, 200).map(r => String(r[ci] ?? '').length + 2))) })); if (!wb.Workbook) wb.Workbook = { Views: [{ RTL: true }] }; XLSX.utils.book_append_sheet(wb, ws, s.name.slice(0, 31)); }
   XLSX.writeFile(wb, name);
 }
+
+/* ---------- مولّد XLSX منسّق (ألوان، خطوط، حدود، دمج، تجميد، صيغ، إعداد طباعة) بلا مكتبات ---------- */
+const XS = (() => {
+  const T = new Int32Array(256); for (let i = 0; i < 256; i++) { let c = i; for (let k = 0; k < 8; k++) c = c & 1 ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1); T[i] = c; }
+  const crc = u => { let c = -1; for (let i = 0; i < u.length; i++) c = T[(c ^ u[i]) & 255] ^ (c >>> 8); return (c ^ -1) >>> 0; };
+  const enc = new TextEncoder(); const le16 = n => [n & 255, (n >> 8) & 255], le32 = n => [n & 255, (n >> 8) & 255, (n >> 16) & 255, (n >>> 24) & 255];
+  function zip(files) { const parts = [], cd = []; let off = 0;
+    for (const f of files) { const nm = enc.encode(f.name), d = enc.encode(f.data), c = crc(d);
+      const lh = new Uint8Array([80, 75, 3, 4, ...le16(20), ...le16(0x0800), ...le16(0), ...le16(0), ...le16(0), ...le32(c), ...le32(d.length), ...le32(d.length), ...le16(nm.length), ...le16(0)]); parts.push(lh, nm, d);
+      cd.push(new Uint8Array([80, 75, 1, 2, ...le16(20), ...le16(20), ...le16(0x0800), ...le16(0), ...le16(0), ...le16(0), ...le32(c), ...le32(d.length), ...le32(d.length), ...le16(nm.length), ...le16(0), ...le16(0), ...le16(0), ...le16(0), ...le32(0), ...le32(off)]), nm); off += lh.length + nm.length + d.length; }
+    let cdLen = 0; for (const p of cd) cdLen += p.length; const end = new Uint8Array([80, 75, 5, 6, ...le16(0), ...le16(0), ...le16(files.length), ...le16(files.length), ...le32(cdLen), ...le32(off), ...le16(0)]);
+    return new Blob([...parts, ...cd, end], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }); }
+  const xe = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const colL = n => { let s = ''; n++; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
+  /** sheets: [{ name, cols:[width…], rows:[{ h, cells:[{ v, f, s }] }], merges:['A1:C1'], freeze:{x,y}, landscape, fitH, titles:'$4:$4', footer }] ; styles: مصفوفة أنماط {font:{sz,b,color}, fill, border:{l,r,t,b}, nf, al:{h,v,wrap}} */
+  function build(sheets, styles) {
+    const fonts = [], fills = ['<fill><patternFill patternType="none"/></fill>', '<fill><patternFill patternType="gray125"/></fill>'], borders = ['<border><left/><right/><top/><bottom/><diagonal/></border>'], nfs = [], xfs = []; const idx = (arr, v) => { let i = arr.indexOf(v); if (i < 0) { arr.push(v); i = arr.length - 1; } return i; };
+    const bcol = st => st === 'medium' ? 'FF7A1F2B' : 'FFC8C8C8';
+    for (const s of styles) { const f = s.font || {}; const fi = idx(fonts, `<font>${f.b ? '<b/>' : ''}<sz val="${f.sz || 11}"/><color rgb="${f.color || 'FF222222'}"/><name val="Arial"/><family val="2"/></font>`);
+      const li = s.fill ? idx(fills, `<fill><patternFill patternType="solid"><fgColor rgb="${s.fill}"/><bgColor indexed="64"/></patternFill></fill>`) : 0;
+      const b = s.border || {}; const bi = (b.l || b.r || b.t || b.b) ? idx(borders, `<border>${['l', 'r', 't', 'b'].map((k, j) => { const tag = ['left', 'right', 'top', 'bottom'][j]; return b[k] ? `<${tag} style="${b[k]}"><color rgb="${bcol(b[k])}"/></${tag}>` : `<${tag}/>`; }).join('')}<diagonal/></border>`) : 0;
+      const ni = s.nf ? 164 + idx(nfs, s.nf) : 0; const a = s.al || {};
+      xfs.push(`<xf numFmtId="${ni}" fontId="${fi}" fillId="${li}" borderId="${bi}" xfId="0" applyFont="1"${li ? ' applyFill="1"' : ''}${bi ? ' applyBorder="1"' : ''}${ni ? ' applyNumberFormat="1"' : ''}${(a.h || a.v || a.wrap) ? ` applyAlignment="1"><alignment${a.h ? ` horizontal="${a.h}"` : ''} vertical="${a.v || 'center'}"${a.wrap ? ' wrapText="1"' : ''}/></xf>` : '/>'}`); }
+    const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">${nfs.length ? `<numFmts count="${nfs.length}">${nfs.map((n, i) => `<numFmt numFmtId="${164 + i}" formatCode="${xe(n)}"/>`).join('')}</numFmts>` : ''}<fonts count="${fonts.length}">${fonts.join('')}</fonts><fills count="${fills.length}">${fills.join('')}</fills><borders count="${borders.length}">${borders.join('')}</borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs><cellXfs count="${xfs.length}">${xfs.join('')}</cellXfs><cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>`;
+    const files = []; const names = [];
+    sheets.forEach((sh, si) => {
+      let maxC = 0; const rowsXml = sh.rows.map((r, ri) => { const cells = (r.cells || []).map((c, ci) => { if (c == null) return ''; maxC = Math.max(maxC, ci + 1); const ref = colL(ci) + (ri + 1); const s = c.s != null ? ` s="${c.s}"` : '';
+        if (c.f) return `<c r="${ref}"${s}><f>${xe(c.f)}</f>${typeof c.v === 'number' && isFinite(c.v) ? `<v>${c.v}</v>` : ''}</c>`;
+        if (typeof c.v === 'number' && isFinite(c.v)) return `<c r="${ref}"${s}><v>${c.v}</v></c>`;
+        if (c.v == null || c.v === '') return `<c r="${ref}"${s}/>`; return `<c r="${ref}"${s} t="inlineStr"><is><t xml:space="preserve">${xe(c.v)}</t></is></c>`; }).join(''); return `<row r="${ri + 1}"${r.h ? ` ht="${r.h}" customHeight="1"` : ''}>${cells}</row>`; }).join('');
+      const cols = (sh.cols || []).map((w, i) => w ? `<col min="${i + 1}" max="${i + 1}" width="${w}" customWidth="1"/>` : '').join('');
+      const fz = sh.freeze; const pane = fz ? `<pane${fz.x ? ` xSplit="${fz.x}"` : ''}${fz.y ? ` ySplit="${fz.y}"` : ''} topLeftCell="${colL(fz.x || 0)}${(fz.y || 0) + 1}" activePane="bottomRight" state="frozen"/>` : '';
+      const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheetPr><pageSetUpPr fitToPage="1"/></sheetPr><dimension ref="A1:${colL(Math.max(0, maxC - 1))}${sh.rows.length || 1}"/><sheetViews><sheetView rightToLeft="1" workbookViewId="0"${si === 0 ? ' tabSelected="1"' : ''} showGridLines="${sh.grid === false ? 0 : 1}">${pane}</sheetView></sheetViews><sheetFormatPr defaultRowHeight="15"/>${cols ? `<cols>${cols}</cols>` : ''}<sheetData>${rowsXml}</sheetData>${sh.merges && sh.merges.length ? `<mergeCells count="${sh.merges.length}">${sh.merges.map(m => `<mergeCell ref="${m}"/>`).join('')}</mergeCells>` : ''}<printOptions horizontalCentered="1"/><pageMargins left="0.35" right="0.35" top="0.5" bottom="0.6" header="0.5" footer="0.25"/><pageSetup paperSize="9" orientation="${sh.landscape ? 'landscape' : 'portrait'}" fitToWidth="1" fitToHeight="${sh.fitH == null ? 1 : sh.fitH}"/><headerFooter><oddFooter>&amp;C&amp;P / &amp;N</oddFooter></headerFooter></worksheet>`;
+      files.push({ name: `xl/worksheets/sheet${si + 1}.xml`, data: xml }); names.push(sh.name.slice(0, 31)); });
+    const defs = sheets.map((sh, i) => sh.titles ? `<definedName name="_xlnm.Print_Titles" localSheetId="${i}">'${xe(names[i]).replace(/'/g, "''")}'!${sh.titles}</definedName>` : '').join('');
+    files.push({ name: 'xl/workbook.xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><bookViews><workbookView xWindow="0" yWindow="0" windowWidth="20000" windowHeight="12000"/></bookViews><sheets>${names.map((n, i) => `<sheet name="${xe(n)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join('')}</sheets>${defs ? `<definedNames>${defs}</definedNames>` : ''}<calcPr calcId="191029" fullCalcOnLoad="1"/></workbook>` });
+    files.push({ name: 'xl/_rels/workbook.xml.rels', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${names.map((_, i) => `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`).join('')}<Relationship Id="rIdS" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>` });
+    files.push({ name: 'xl/styles.xml', data: stylesXml });
+    files.push({ name: '_rels/.rels', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>` });
+    files.push({ name: '[Content_Types].xml', data: `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>${names.map((_, i) => `<Override PartName="/xl/worksheets/sheet${i + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`).join('')}</Types>` });
+    return zip(files);
+  }
+  return { build, colL };
+})();
 function printHTML(title, meta, bodyHtml, opts = {}) {
   $('#printArea').innerHTML = `<div class="ph"><div class="co">${esc(S.company || 'رقابة المخزون الكمي')}</div><h1>${esc(title)}</h1></div><div class="meta">${meta.filter(Boolean).map(m => `<span>${esc(m)}</span>`).join('')}<span>طُبع في ${new Date().toLocaleString('ar-JO')}</span></div>${bodyHtml}`;
   let st = document.getElementById('pgOrient'); if (!st) { st = document.createElement('style'); st.id = 'pgOrient'; document.head.appendChild(st); }
@@ -2448,23 +2522,74 @@ function comboTableHTML(D, cls) {
   const T = D.T; return `<table${cls ? ` class="${cls}"` : ''}><thead><tr>${COMBO_H.map((h, i) => `<th class="${i >= 3 && i !== 15 ? 'num' : ''}">${h}</th>`).join('')}</tr></thead><tbody>${D.rows.map(r => `<tr><td class="code">${esc(codeOf(r.item))}</td>${nameCell(r.item)}<td class="muted">${esc(r.item.unit)}</td><td class="num">${fmtS(r.open)}</td><td class="num cin">${fmtS(r.inn)}</td><td class="num cin">${fmtS(r.pur)}</td><td class="num cout">${fmtS(r.out)}</td><td class="num cout">${fmtS(r.sal)}</td><td class="num"><b>${fmtS(r.close)}</b></td><td class="num">${r.actual == null ? '<span class="muted">—</span>' : fmt(r.actual)}</td><td class="num">${sg(r.diff)}</td><td class="num muted">${fmtV(r.cost)}</td><td class="num">${fmtV(r.vClose)}</td><td class="num">${r.actual == null ? '<span class="muted">—</span>' : fmtV(r.vAct)}</td><td class="num">${r.diff == null ? '<span class="muted">—</span>' : sg(r.vDiff)}</td><td>${esc(r.dept)}</td><td class="num">${pc(r.margin)}</td><td class="num">${r.bb ? fmt(r.bb) : ''}</td><td class="num">${r.bb ? fmtV(r.vBB) : ''}</td><td class="num">${r.salesAmt ? fmt(r.salesAmt) : ''}</td></tr>`).join('')}
     <tr class="tot"><td colspan="3">الإجمالي (${D.rows.length} صنف، ${T.nCount} مجرود)</td><td class="num">${fmt(round3(D.rows.reduce((s, r) => s + r.open, 0)))}</td><td class="num">${fmt(round3(D.rows.reduce((s, r) => s + r.inn, 0)))}</td><td class="num">${fmt(round3(D.rows.reduce((s, r) => s + r.pur, 0)))}</td><td class="num">${fmt(round3(D.rows.reduce((s, r) => s + r.out, 0)))}</td><td class="num">${fmt(round3(D.rows.reduce((s, r) => s + r.sal, 0)))}</td><td class="num">${fmt(round3(D.rows.reduce((s, r) => s + r.close, 0)))}</td><td class="num">${fmtV(D.rows.reduce((s, r) => r.actual == null ? s : round3((s || 0) + r.actual), null))}</td><td class="num">${sg(T.qtyDiff)}</td><td></td><td class="num">${fmtV(T.vClose)}</td><td class="num">${fmtV(T.vAct)}</td><td class="num">${sg(T.vDiff)}</td><td></td><td></td><td class="num">${fmt(T.bbQty)}</td><td class="num">${fmtV(T.bbCost)}</td><td class="num">${fmt(T.salesAmt)}</td></tr></tbody></table>`;
 }
-function comboSummaryHTML(D) {
+function comboSummaryHTML_tiles(D) {
   const s = D.sum; const per = D.from === D.to ? 'يوم ' + D.from : `من ${D.from} إلى ${D.to}`; const v = x => x == null ? '—' : fmt(x); const pc = x => x == null ? '—' : fmt(x) + '%';
   const tile = (l, val, cls = '') => `<div style="flex:1;min-width:170px;border:1px solid var(--line2);border-radius:12px;padding:10px 14px;background:var(--card2)"><div class="small muted">${l}</div><div style="font-size:19px;font-weight:800" class="${cls}">${val}</div></div>`;
   return `<div class="hint" style="margin-bottom:10px"><b>${per}</b> — ${D.wh ? 'مستودع: ' + esc(whName(D.wh)) : 'كل المستودعات'}. قيمة المبيعات قبل الضريبة من سندات المبيعات المرحّلة، وكلفة المبيعات بكلفة الصنف، والدم والكيس = سندات إخراج كيس ودم مقوّمة بالكلفة، وفروقات الجرد من آخر جرد ضمن الفترة.${s.nNoAmt ? ` <span class="neg">${s.nNoAmt} صنف مباع بلا مبلغ.</span>` : ''}${s.nNoCost ? ` <span class="neg">${s.nNoCost} صنف مباع بلا كلفة.</span>` : ''}</div>
     <div class="row" style="flex-wrap:wrap;gap:10px;align-items:stretch">${tile('قيمة المبيعات (قبل الضريبة)', v(s.net))}${tile('كلفة المبيعات', v(s.cogs))}${tile('مجمل الربح قبل الدم والكيس', v(s.gp), s.gp < 0 ? 'neg' : 'pos')}${tile('نسبة مجمل الربح قبل الدم والكيس', pc(s.gpPct))}${tile('الدم والكيس (بالكلفة)', v(s.bb))}${tile('نسبة الدم والكيس من المبيعات', pc(s.bbPct))}${tile('مجمل الربح بعد الدم والكيس', v(s.gp2), s.gp2 < 0 ? 'neg' : 'pos')}${tile('نسبة مجمل الربح بعد الدم والكيس', pc(s.gp2Pct))}${tile('كمية فرق الجرد', (s.qtyDiff > 0 ? '+' : '') + fmt(s.qtyDiff), s.qtyDiff < 0 ? 'neg' : s.qtyDiff > 0 ? 'pos' : '')}${tile('قيمة فرق الجرد', s.vDiff == null ? '—' : (s.vDiff > 0 ? '+' : '') + fmt(s.vDiff), s.vDiff < 0 ? 'neg' : s.vDiff > 0 ? 'pos' : '')}</div>`;
 }
+function comboSummaryHTML(D) {
+  const s = D.sum; const per = D.from === D.to ? D.from : `${D.from} - ${D.to}`; const v = x => x == null ? '—' : `<span class="${x < 0 ? 'neg' : ''}">${fmt(x)}</span>`; const pc = x => x == null ? '—' : `<span class="${x < 0 ? 'neg' : ''}">${fmt(x)}%</span>`;
+  const tr = (l, x, cls = '') => `<tr class="${cls}"><td>${l}</td><td>${x}</td></tr>`;
+  return `<div class="xr"><div class="xr-title">التقرير اليومي للمبيعات والمخزون</div><div class="xr-sub">ملخص ${esc(per)}${D.wh ? ' — ' + esc(whName(D.wh)) : ''}</div>
+    <div class="row" style="align-items:flex-start;gap:24px;flex-wrap:wrap"><div style="flex:1;min-width:320px;max-width:560px"><div class="xr-band">مبيعات يوم ${esc(per)}</div><table class="xr-sum"><tbody>${tr('قيمة المبيعات', v(s.net))}${tr('كلفة المبيعات', v(s.cogs))}${tr('مجمل الربح قبل الدم و الكيس', v(s.gp), 'hi')}${tr('نسبة مجمل الربح قبل الدم و الكيس', pc(s.gpPct), 'pct')}${tr('الدم و الكيس وعظم', v(s.bb))}${tr('نسبة الدم و الكيس', pc(s.bbPct), 'pct')}${tr('مجمل الربح بعد الدم و الكيس', v(s.gp2), 'hi')}${tr('نسبة مجمل الربح بعد الدم و الكيس', pc(s.gp2Pct), 'pct')}</tbody></table></div>
+    <div style="flex:1;min-width:320px;max-width:560px"><div class="xr-band">فروقات الجرد ${esc(per)}</div><table class="xr-sum"><tbody>${tr('كمية فرق الجرد', s.qtyDiff == null ? '—' : `<span class="${s.qtyDiff < 0 ? 'neg' : ''}">${fmt(s.qtyDiff)} كغ</span>`)}${tr('قيمة فرق الجرد', v(s.vDiff), 'hi')}${tr('أصناف مجرودة', String(s.nCount))}</tbody></table>
+    <div class="xr-note">* القيم بالأحمر سالبة. قيمة المبيعات قبل الضريبة من سندات المبيعات المرحّلة، وكلفة المبيعات بكلفة الصنف، والدم والكيس = سندات إخراج كيس ودم مقوّمة بالكلفة، وفروقات الجرد من آخر جرد ضمن الفترة.${s.nNoAmt ? ` <span class="neg">${s.nNoAmt} صنف مباع بلا مبلغ.</span>` : ''}${s.nNoCost ? ` <span class="neg">${s.nNoCost} صنف مباع بلا كلفة.</span>` : ''}</div></div></div></div>`;
+}
 function renderRepCombo() {
   if (!$('#rxFrom').value) $('#rxFrom').value = todayISO(); if (!$('#rxTo').value) $('#rxTo').value = $('#rxFrom').value;
-  const D = comboData(); $('#rxSummary').innerHTML = comboSummaryHTML(D); $('#rxTable').innerHTML = D.rows.length ? comboTableHTML(D, 'tbl') : emptyHTML('لا توجد حركات أو جرد في هذه الفترة');
+  const D = comboData(); const per = D.from === D.to ? D.from : `${D.from} - ${D.to}`; $('#rxSummary').innerHTML = comboSummaryHTML(D);
+  $('#rxTable').innerHTML = (D.rows.length ? `<div class="xr" style="margin:0 12px"><div class="xr-title">التقرير اليومي للمبيعات والمخزون — ${esc(per)}</div><div class="xr-sub">حركة المواد والجرد الفعلي — فروقات الجرد ${esc(per)}${D.wh ? ' — ' + esc(whName(D.wh)) : ''}</div></div>` + comboTableHTML(D, 'tbl xr-tbl') : emptyHTML('لا توجد حركات أو جرد في هذه الفترة'));
+  const ph = profitTableHTML('tbl xr-tbl', { from: D.from, to: D.to, wh: D.wh }); $('#rxProfit').innerHTML = ph ? `<div class="xr" style="margin:0 12px"><div class="xr-title">التقرير اليومي للمبيعات والمخزون — ${esc(per)}</div><div class="xr-sub">تحليل ربحية الأصناف المباعة — ${esc(per)}</div></div>` + ph : '';
 }
+/* --- تصدير التقرير اليومي للمبيعات والمخزون بتنسيق إكسل الكامل (ثلاث أوراق بنفس الألوان والترتيب) --- */
 function comboExport() {
-  const D = comboData(); const per = D.from === D.to ? D.from : `${D.from} - ${D.to}`;
-  const sheet2 = [[`التقرير اليومي للمبيعات والمخزون — ${per}`], [`حركة المواد والجرد الفعلي${D.wh ? ' — ' + whName(D.wh) : ''}`], [], COMBO_H, ...comboRowsAOA(D), [], ['الإجمالي', '', '', '', '', '', '', '', '', '', D.T.qtyDiff, '', D.T.vClose ?? '', D.T.vAct ?? '', D.T.vDiff ?? '', '', '', D.T.bbQty, D.T.bbCost ?? '', D.T.salesAmt]];
-  const sheet3 = [[`التقرير اليومي للمبيعات والمخزون — ${per}`], ['تحليل ربحية الأصناف المباعة'], [], ...profitAOA({ from: D.from, to: D.to, wh: D.wh })];
-  exportXlsx(`التقرير_اليومي_للمبيعات_والمخزون_${D.from}${D.to !== D.from ? '_' + D.to : ''}.xlsx`, [{ name: 'ملخص', aoa: comboSummaryRows(D) }, { name: 'الحركة والجرد', aoa: sheet2 }, { name: 'نسبة أرباح الأصناف', aoa: sheet3 }]);
+  const D = comboData(); const per = D.from === D.to ? D.from : `${D.from} - ${D.to}`; const MAR = 'FF7A1F2B', PINK = 'FFF6ECEC', CREAM = 'FFEFE3D3', BAND = 'FFFAF7F5', INK = 'FF222222', GREY = 'FF6B6B6B';
+  const Q3 = '#,##0.000;[Red]\\-#,##0.000;\\-', Q2 = '#,##0.00;[Red]\\-#,##0.00;\\-', PCT = '0.0%;[Red]\\-0.0%;\\-', COST = '#,##0.000', KG = '#,##0.000" كغ";[Red]\\-#,##0.000" كغ"';
+  const ST = []; const st = o => { const k = JSON.stringify(o); let i = ST.findIndex(x => x.k === k); if (i < 0) { ST.push({ k, o }); i = ST.length - 1; } return i; };
+  const thin = { l: 'thin', r: 'thin', t: 'thin', b: 'thin' }, hi = { l: 'thin', r: 'thin', t: 'medium', b: 'medium' };
+  const title = sz => st({ font: { sz, b: 1, color: 'FFFFFFFF' }, fill: MAR, al: { h: 'center', wrap: 1 } }), subT = st({ font: { sz: 11, b: 1, color: MAR }, fill: PINK, al: { h: 'center', wrap: 1 } });
+  const head = st({ font: { sz: 10, b: 1, color: 'FFFFFFFF' }, fill: MAR, border: thin, al: { h: 'center', wrap: 1 } });
+  const cell = (nf, band, extra = {}) => st({ font: { sz: extra.sz || 9.5, b: extra.b ? 1 : 0, color: extra.color || INK }, fill: band ? BAND : null, border: thin, nf: nf || undefined, al: { h: extra.h || 'center', wrap: extra.wrap ? 1 : 0 } });
+  const tot = nf => st({ font: { sz: 10, b: 1, color: MAR }, fill: CREAM, border: hi, nf: nf || undefined, al: { h: nf ? 'center' : 'right' } });
+  const note = st({ font: { sz: 9.5, color: GREY }, border: thin, al: { h: 'right' } }), noteFree = st({ font: { sz: 8.5, color: GREY }, al: { h: 'right' } });
+  const S = (v, s) => ({ v, s }), F = (f, v, s) => ({ f, v, s }), E = s => ({ v: '', s });
+  // ---- ورقة 3: نسبة أرباح الأصناف ----
+  const prof = profitData({ from: D.from, to: D.to, wh: D.wh }).rows; const H3 = [codeLabel(), 'الصنف', 'الاسم المتعارف عليه', 'الوحدة', 'كمية البيع', 'المبيعات شامل الضريبة', 'الضريبة', 'المبيعات قبل الضريبة', 'الكلفة/وحدة', 'كلفة المبيعات', 'الربح', 'نسبة الربح %'];
+  const r3 = [{ h: 30, cells: [S(`التقرير اليومي للمبيعات والمخزون — ${per}`, title(15)), ...Array(11).fill(E(title(15)))] }, { h: 21.75, cells: [S(`تحليل ربحية الأصناف المباعة — ${per}`, subT), ...Array(11).fill(E(subT))] }, { h: 6, cells: [] }, { h: 37.5, cells: H3.map(h => S(h, head)) }];
+  prof.forEach((r, i) => { const bd = i % 2 === 1; const n = r3.length + 1; r3.push({ h: r.item.name2 ? 30 : 18, cells: [S(codeOf(r.item), cell(null, bd)), S(r.item.name, cell(null, bd, { h: 'left' })), S(r.item.name2 || '', cell(null, bd, { sz: 8.5, color: 'FF444444', h: 'right', wrap: 1 })), S(r.item.unit, cell(null, bd)), S(r.qty, cell(Q3, bd)), S(r.gross ?? '', cell(Q2, bd)), S(r.taxLabel, cell(null, bd)), S(r.net ?? '', cell(Q2, bd)), S(r.cost ?? '', cell(COST, bd)), S(r.cogs, cell(Q2, bd)), r.full ? F(`H${n}-J${n}`, r.profit, cell(Q2, bd)) : S('', cell(Q2, bd)), r.full ? F(`IF(H${n}=0,0,K${n}/H${n})`, r.margin != null ? r.margin / 100 : 0, cell(PCT, bd, { b: 1 })) : S('', cell(PCT, bd, { b: 1 }))] }); });
+  const t3 = r3.length + 1, p1 = 5, p2 = Math.max(5, t3 - 1);
+  r3.push({ h: 21.75, cells: [S('الإجمالي', tot()), E(tot()), E(tot()), E(tot()), E(tot()), E(tot()), E(tot()), F(`SUM(H${p1}:H${p2})`, D.sum.net || 0, tot(Q2)), E(tot()), F(`SUM(J${p1}:J${p2})`, D.sum.cogs || 0, tot(Q2)), F(`H${t3}-J${t3}`, D.sum.gp || 0, tot(Q2)), F(`IF(H${t3}=0,0,K${t3}/H${t3})`, (D.sum.gpPct || 0) / 100, tot(PCT))] });
+  // ---- ورقة 2: الحركة والجرد ----
+  const r2 = [{ h: 30, cells: [S(`التقرير اليومي للمبيعات والمخزون — ${per}`, title(15)), ...Array(19).fill(E(title(15)))] }, { h: 21.75, cells: [S(`حركة المواد والجرد الفعلي — فروقات الجرد ${per}${D.wh ? ' — ' + whName(D.wh) : ''}`, subT), ...Array(19).fill(E(subT))] }, { h: 6, cells: [] }, { h: 37.5, cells: COMBO_H.map(h => S(h, head)) }];
+  D.rows.forEach((r, i) => { const bd = i % 2 === 1; const n = r2.length + 1; const hasCost = r.cost != null; const dc = r.diff != null;
+    r2.push({ h: 18, cells: [S(codeOf(r.item), cell(null, bd)), S(r.item.name, cell(null, bd, { h: 'left' })), S(r.item.unit, cell(null, bd)), S(r.open, cell(Q3, bd)), S(r.inn, cell(Q3, bd)), S(r.pur, cell(Q3, bd)), S(r.out, cell(Q3, bd)), S(r.sal, cell(Q3, bd)), F(`D${n}+E${n}+F${n}-G${n}-H${n}`, r.close, cell(Q3, bd)), S(r.actual ?? '', cell(Q3, bd)), dc ? F(`J${n}-I${n}`, r.diff, cell(Q3, bd, { b: 1 })) : S('', cell(Q3, bd, { b: 1 })), S(r.cost ?? '', cell(COST, bd)), hasCost ? F(`I${n}*L${n}`, r.vClose, cell(Q2, bd)) : S('', cell(Q2, bd)), hasCost && dc ? F(`J${n}*L${n}`, r.vAct, cell(Q2, bd)) : S('', cell(Q2, bd)), hasCost && dc ? F(`L${n}*K${n}`, r.vDiff, cell(Q2, bd, { b: 1 })) : S('', cell(Q2, bd, { b: 1 })), S(r.dept, cell(null, bd, { color: 'FF444444' })), S(r.margin != null ? r.margin / 100 : '', cell(PCT, bd)), S(r.bb || '', cell(Q3, bd)), S(r.vBB || '', cell(Q2, bd)), S(r.salesAmt || '', cell(Q2, bd))] }); });
+  const t2 = r2.length + 1, q1 = 5, q2 = Math.max(5, t2 - 1); const sum = c => `SUM(${c}${q1}:${c}${q2})`;
+  r2.push({ h: 21.75, cells: [S('الإجمالي', tot()), E(tot()), E(tot()), F(sum('D'), null, tot(Q3)), F(sum('E'), null, tot(Q3)), F(sum('F'), null, tot(Q3)), F(sum('G'), null, tot(Q3)), F(sum('H'), null, tot(Q3)), F(sum('I'), null, tot(Q3)), F(sum('J'), null, tot(Q3)), F(sum('K'), D.T.qtyDiff, tot(Q3)), E(tot()), F(sum('M'), D.T.vClose, tot(Q2)), F(sum('N'), D.T.vAct, tot(Q2)), F(sum('O'), D.T.vDiff, tot(Q2)), E(tot()), E(tot()), F(sum('R'), D.T.bbQty, tot(Q3)), F(sum('S'), D.T.bbCost, tot(Q2)), F(sum('T'), D.T.salesAmt, tot(Q2))] });
+  r2.push({ h: 18.75, cells: [S('نسبة كلفة الدم والكيس إلى قيمة المبيعات المسجلة', note), ...Array(17).fill(E(note)), F(`IF(T${t2}=0,0,S${t2}/T${t2})`, D.T.salesAmt ? (D.T.bbCost || 0) / D.T.salesAmt : 0, st({ font: { sz: 9.5, b: 1, color: 'FF333333' }, border: thin, nf: PCT, al: { h: 'center' } })), E(note)] });
+  // ---- ورقة 1: الملخص ----
+  const lab = b => st({ font: { sz: 11, b: b ? 1 : 0, color: b ? MAR : INK }, fill: b ? CREAM : null, border: b ? hi : thin, al: { h: 'right' } }), val = (nf, b) => st({ font: { sz: 11, b: 1, color: b ? MAR : INK }, fill: b ? CREAM : null, border: b ? hi : thin, nf, al: { h: 'center' } });
+  const labG = st({ font: { sz: 10, color: GREY }, border: thin, al: { h: 'right' } }), valG = st({ font: { sz: 10, b: 1, color: GREY }, border: thin, nf: PCT, al: { h: 'center' } });
+  const band = st({ font: { sz: 11.5, b: 1, color: 'FFFFFFFF' }, fill: MAR, al: { h: 'center', wrap: 1 } });
+  const s2n = "'الحركة والجرد'", s3n = "'نسبة أرباح الأصناف'"; const S0 = D.sum; const row = (cells, h) => ({ h, cells: [null, ...cells] });
+  const r1 = [row([S('التقرير اليومي للمبيعات والمخزون', title(16)), E(title(16))], 33.75), row([S(`ملخص ${per}${D.wh ? ' — ' + whName(D.wh) : ''}`, subT), E(subT)], 21.75), { h: 9.75, cells: [] },
+    row([S(`مبيعات يوم ${per}`, band), E(band)], 24),
+    row([S('قيمة المبيعات', lab()), F(`${s3n}!H${t3}`, S0.net || 0, val(Q2))], 24), row([S('كلفة المبيعات', lab()), F(`${s3n}!J${t3}`, S0.cogs || 0, val(Q2))], 24),
+    row([S('مجمل الربح قبل الدم و الكيس', lab(1)), F('C5-C6', S0.gp || 0, val(Q2, 1))], 24), row([S('نسبة مجمل الربح قبل الدم و الكيس', labG), F('IF(C5=0,0,C7/C5)', (S0.gpPct || 0) / 100, valG)], 24),
+    row([S('الدم و الكيس وعظم', lab()), F(`${s2n}!S${t2}`, S0.bb || 0, val(Q2))], 24), row([S('نسبة الدم و الكيس', labG), F('IF(C5=0,0,C9/C5)', (S0.bbPct || 0) / 100, valG)], 24),
+    row([S('مجمل الربح بعد الدم و الكيس', lab(1)), F('C7-C9', S0.gp2 || 0, val(Q2, 1))], 24), row([S('نسبة مجمل الربح بعد الدم و الكيس', labG), F('IF(C5=0,0,C11/C5)', (S0.gp2Pct || 0) / 100, valG)], 24),
+    { h: 9.75, cells: [] }, row([S(`فروقات الجرد ${per}`, band), E(band)], 24),
+    row([S('كمية فرق الجرد', lab()), F(`${s2n}!K${t2}`, S0.qtyDiff, val(KG))], 24), row([S('قيمة فرق الجرد', lab(1)), F(`${s2n}!O${t2}`, S0.vDiff || 0, val(Q2, 1))], 24),
+    { h: 9.75, cells: [] }, row([S('* القيم بالأحمر سالبة. التفاصيل في ورقتي «الحركة والجرد» و«نسبة أرباح الأصناف».', noteFree), E(noteFree)], 18)];
+  const blob = XS.build([
+    { name: 'ملخص', cols: [4, 44, 22, 4], rows: r1, merges: ['B1:C1', 'B2:C2', 'B4:C4', 'B14:C14', 'B18:C18'], grid: false, fitH: 1 },
+    { name: 'الحركة والجرد', cols: [8, 42, 6.6, 10.6, 9, 10, 9, 9.6, 10.6, 13, 10, 9.6, 11.4, 13, 11, 9, 9.6, 9, 10.6, 11], rows: r2, merges: ['A1:T1', 'A2:T2', `A${t2}:C${t2}`, `A${t2 + 1}:R${t2 + 1}`], freeze: { x: 2, y: 4 }, landscape: true, fitH: 0, titles: '$4:$4' },
+    { name: 'نسبة أرباح الأصناف', cols: [9.6, 40, 30, 6.6, 10, 13, 8, 13, 10.6, 12, 11, 10.6], rows: r3, merges: ['A1:L1', 'A2:L2', `A${t3}:G${t3}`], freeze: { x: 2, y: 4 }, landscape: true, fitH: 0, titles: '$4:$4' },
+  ], ST.map(x => x.o));
+  download(`التقرير_اليومي_للمبيعات_والمخزون_${D.from}${D.to !== D.from ? '_' + D.to : ''}.xlsx`, blob);
 }
-function comboPrint() { const D = comboData(); const per = D.from === D.to ? 'التاريخ: ' + D.from : `من ${D.from} إلى ${D.to}`; const s = D.sum; const v = x => x == null ? '—' : fmt(x); const pc = x => x == null ? '—' : fmt(x) + '%';
+
+function comboPrint() { const D = comboData(); if (true) { const per = D.from === D.to ? 'التاريخ: ' + D.from : `من ${D.from} إلى ${D.to}`; printHTML('التقرير اليومي للمبيعات والمخزون', [per, D.wh ? 'المستودع: ' + whName(D.wh) : 'كل المستودعات'], comboSummaryHTML(D) + '<div style="height:12px"></div>' + comboTableHTML(D, 'xr-tbl tbl') + '<h3 style="margin:14px 0 6px">تحليل ربحية الأصناف المباعة</h3>' + (profitTableHTML('xr-tbl tbl', { from: D.from, to: D.to, wh: D.wh }) || '<p>لا توجد مبيعات</p>'), { landscape: true }); return; } const per = D.from === D.to ? 'التاريخ: ' + D.from : `من ${D.from} إلى ${D.to}`; const s = D.sum; const v = x => x == null ? '—' : fmt(x); const pc = x => x == null ? '—' : fmt(x) + '%';
   const sumT = `<table style="width:auto;min-width:50%;margin-bottom:12px"><tbody>${[['قيمة المبيعات (قبل الضريبة)', v(s.net)], ['كلفة المبيعات', v(s.cogs)], ['مجمل الربح قبل الدم والكيس', v(s.gp)], ['نسبة مجمل الربح قبل الدم والكيس', pc(s.gpPct)], ['الدم والكيس (بالكلفة)', v(s.bb)], ['نسبة الدم والكيس من المبيعات', pc(s.bbPct)], ['مجمل الربح بعد الدم والكيس', v(s.gp2)], ['نسبة مجمل الربح بعد الدم والكيس', pc(s.gp2Pct)], ['كمية فرق الجرد', fmt(s.qtyDiff)], ['قيمة فرق الجرد', v(s.vDiff)]].map(([l, x]) => `<tr><td>${l}</td><td class="num"><b>${x}</b></td></tr>`).join('')}</tbody></table>`;
   printHTML('التقرير اليومي للمبيعات والمخزون', [per, D.wh ? 'المستودع: ' + whName(D.wh) : 'كل المستودعات'], sumT + comboTableHTML(D, '') + `<h3 style="margin:14px 0 6px">تحليل ربحية الأصناف المباعة</h3>` + (profitTableHTML('', { from: D.from, to: D.to, wh: D.wh }) || '<p>لا توجد مبيعات</p>'), { landscape: true }); }
 
