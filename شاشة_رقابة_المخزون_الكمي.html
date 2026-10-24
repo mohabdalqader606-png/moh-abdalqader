@@ -768,6 +768,7 @@ html[data-theme="dark"] .xr table.xr-sum td,html[data-theme="dark"] .xr-tbl.tbl 
             <div class="bd" id="rxSummary"></div>
             <div class="bd tight"><div class="tbl-wrap" id="rxTable"></div></div>
             <div class="bd tight" style="margin-top:14px"><div class="tbl-wrap" id="rxProfit"></div></div>
+            <div class="bd tight" style="margin-top:14px"><details><summary class="small muted" style="cursor:pointer;padding:0 12px">كيف تم الاحتساب بالتفصيل (الورقة الرابعة في الإكسل)</summary><div class="tbl-wrap" id="rxMethod" style="margin-top:8px"></div></details></div>
           </div>
           <div class="sub" data-rep="profit">
             <div class="filters" style="border-radius:0">
@@ -976,7 +977,7 @@ html[data-theme="dark"] .xr table.xr-sum td,html[data-theme="dark"] .xr-tbl.tbl 
 /* =========================================================
    رقابة المخزون الكمي — منطق الشاشة
    ========================================================= */
-const APP_VER = '2.8.0';
+const APP_VER = '2.8.1';
 const DB_KEY = 'kinv_ctrl_v1';
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -2540,7 +2541,66 @@ function renderRepCombo() {
   if (!$('#rxFrom').value) $('#rxFrom').value = todayISO(); if (!$('#rxTo').value) $('#rxTo').value = $('#rxFrom').value;
   const D = comboData(); const per = D.from === D.to ? D.from : `${D.from} - ${D.to}`; $('#rxSummary').innerHTML = comboSummaryHTML(D);
   $('#rxTable').innerHTML = (D.rows.length ? `<div class="xr" style="margin:0 12px"><div class="xr-title">التقرير اليومي للمبيعات والمخزون — ${esc(per)}</div><div class="xr-sub">حركة المواد والجرد الفعلي — فروقات الجرد ${esc(per)}${D.wh ? ' — ' + esc(whName(D.wh)) : ''}</div></div>` + comboTableHTML(D, 'tbl xr-tbl') : emptyHTML('لا توجد حركات أو جرد في هذه الفترة'));
+  $('#rxMethod').innerHTML = `<div class="xr" style="margin:0 12px"><div class="xr-title">كيف تم الاحتساب بالتفصيل</div><div class="xr-sub">بأرقام هذا التقرير — ${esc(per)}</div></div>` + comboMethodHTML(D, 'tbl xr-tbl');
   const ph = profitTableHTML('tbl xr-tbl', { from: D.from, to: D.to, wh: D.wh }); $('#rxProfit').innerHTML = ph ? `<div class="xr" style="margin:0 12px"><div class="xr-title">التقرير اليومي للمبيعات والمخزون — ${esc(per)}</div><div class="xr-sub">تحليل ربحية الأصناف المباعة — ${esc(per)}</div></div>` + ph : '';
+}
+/* --- الورقة الرابعة: كيف تم الاحتساب بالتفصيل (بأرقام هذا التقرير) --- */
+function comboMethod(D) {
+  const s = D.sum, T = D.T; const inP = d => d.date >= D.from && d.date <= D.to && (!D.wh || d.wh === D.wh || d.whFrom === D.wh || d.whTo === D.wh);
+  const dq = d => round3(d.lines.reduce((a, l) => a + (+l.qty || 0), 0));
+  const sales = S.docs.filter(d => d.type === 'sales' && inP(d)), bb = S.docs.filter(d => d.type === 'bagblood' && inP(d)), adj = S.docs.filter(d => d.source === 'count' && inP(d));
+  const counts = S.counts.filter(c => c.date >= D.from && c.date <= D.to && (!D.wh || c.wh === D.wh) && !whById(c.wh)?.virtual).sort((a, b) => a.date.localeCompare(b.date));
+  const trusted = activeWhs().filter(w => w.trusted).map(w => w.name).join('، ') || 'لا يوجد';
+  const gross = D.prof.reduce((a, r) => addV(a, r.gross), null), qty = round3(D.prof.reduce((a, r) => a + r.qty, 0)); const noCost = D.rows.filter(r => r.cost == null).length;
+  const list = (arr, f, max = 12) => arr.length ? arr.slice(0, max).map(f).join('، ') + (arr.length > max ? ` … و${arr.length - max} أخرى` : '') : 'لا يوجد';
+  return [
+    { title: 'أولاً: المبيعات والربح (ورقة نسبة أرباح الأصناف)', rows: [
+      ['كمية البيع', `مجموع كميات أسطر سندات المبيعات المرحّلة ضمن الفترة من ملفات المبيعات اليومية. السندات: ${list(sales, d => `${d.no} (${d.date}، ${whName(d.wh)}، ${fmt(dq(d))} كغ)`)}`, qty, 'kg'],
+      ['المبيعات شامل الضريبة', 'مجموع عمود "صافي المبيعات بعد الضريبة" كما ورد في ملف المبيعات لكل سطر مرحّل (المبلغ في الملف شامل الضريبة)', gross, ''],
+      ['المبيعات قبل الضريبة', 'لكل سطر: المبلغ شامل الضريبة ÷ (1 + نسبة الضريبة ÷ 100) ثم تُجمع الأسطر. مثال: مبلغ 116 بضريبة 16% = 116 ÷ 1.16 = 100، ومبلغ بضريبة 0% يبقى كما هو', s.net, ''],
+      ['كلفة المبيعات', 'لكل سطر: كمية البيع × الكلفة للوحدة؛ الكلفة هي الواردة في ملف المبيعات لذلك اليوم، وإن لم ترد فكلفة الصنف المعتمدة في صفحة الكلف', s.cogs, ''],
+      ['مجمل الربح قبل الدم والكيس', 'المبيعات قبل الضريبة − كلفة المبيعات', s.gp, ''],
+      ['نسبة مجمل الربح قبل الدم والكيس', 'مجمل الربح قبل الدم والكيس ÷ المبيعات قبل الضريبة × 100', s.gpPct, '%'],
+      ['نسبة ربح كل صنف', 'في ورقة نسبة أرباح الأصناف: (المبيعات قبل الضريبة − كلفة المبيعات) ÷ المبيعات قبل الضريبة × 100 لكل صنف على حدة', null, ''],
+      ['الدم والكيس (بالكلفة)', `مجموع كميات سندات "إخراج كيس ودم" ضمن الفترة مضروبة بكلفة كل صنف. السندات (${bb.length}، ${fmt(T.bbQty)} كغ): ${list(bb, d => `${d.no} (${d.date}، ${whName(d.wh)}، ${fmt(dq(d))} كغ)`)}`, s.bb, ''],
+      ['نسبة الدم والكيس', 'الدم والكيس بالكلفة ÷ المبيعات قبل الضريبة × 100', s.bbPct, '%'],
+      ['مجمل الربح بعد الدم والكيس', 'مجمل الربح قبل الدم والكيس − الدم والكيس بالكلفة', s.gp2, ''],
+      ['نسبة مجمل الربح بعد الدم والكيس', 'مجمل الربح بعد الدم والكيس ÷ المبيعات قبل الضريبة × 100', s.gp2Pct, '%'],
+    ] },
+    { title: 'ثانياً: الحركة والجرد (لكل صنف في ورقة الحركة والجرد)', rows: [
+      ['الرصيد الافتتاحي', `كل سندات الأرصدة الافتتاحية بأي تاريخ حتى نهاية الفترة + كل الحركات قبل ${D.from} (بما فيها تسويات الجرد المرحّلة قبل الفترة)`, null, ''],
+      ['الإدخال', `سندات الإدخال + إنتاج سندات التصنيع${D.wh ? ' + التحويل الوارد إلى هذا المستودع' : ''} + تسويات جرد مرحّلة بتاريخ أقدم من آخر جرد ضمن الفترة`, null, ''],
+      ['المشتريات', 'فواتير المشتريات، ومنها كمية الشراء الواردة في ملف المبيعات اليومي عند ترحيلها', null, ''],
+      ['الإخراج', `سندات الإخراج + سندات إخراج كيس ودم + استهلاك سندات التصنيع${D.wh ? ' + التحويل الصادر من هذا المستودع' : ''}`, null, ''],
+      ['المبيعات', D.wh ? 'سندات المبيعات المرحّلة على هذا المستودع + التحويل منه إلى المستودع الوهمي (توزيع المبيعات)' : 'سندات المبيعات المرحّلة؛ التحويلات بين المستودعات لا تظهر تجميعياً لأنها تتعادل', null, ''],
+      ['الرصيد الدفتري', 'الرصيد الافتتاحي + الإدخال + المشتريات − الإخراج − المبيعات. تسوية الجرد الخاصة بالجرد المقارَن نفسه لا تدخل فيه حتى يظهر الفرق', null, ''],
+      ['الجرد الفعلي', `آخر جرد محفوظ ضمن الفترة لكل مستودع${D.wh ? '' : '، والتجميعي = مجموع المستودعات'}. المستودعات المجرودة دائماً (${trusted}) رصيدها الدفتري هو الفعلي. الصنف الذي له رصيد في مستودع مجرود ولم يُدرج في عدّه يُعتبر صفراً. المستودع الذي لم يُجرد ضمن الفترة يُفترض رصيده الدفتري (فرقه صفر)`, null, ''],
+      ['الفرق', 'الجرد الفعلي − الرصيد الدفتري (موجب زيادة، سالب نقص)', null, ''],
+      ['الكلفة/وحدة', 'كلفة الصنف المعتمدة: من كشف الكلف أو آخر ملف مبيعات أو يدوياً. عند تجميع الوحدات تحت رمز المادة: إن تساوت كلف الوحدات تُعرض وإلا المتوسط المرجّح بالكمية', null, ''],
+      ['قيمة الدفتري / الفعلي / الفرق', 'الرصيد الدفتري × الكلفة، الجرد الفعلي × الكلفة، الفرق × الكلفة. الصنف بلا كلفة تبقى قيمه فارغة', null, ''],
+      ['القسم', 'المستودع الذي جُرد فيه الصنف ضمن الفترة، وإلا المستودع الذي فيه أكبر رصيد له (الأقسام قبل المستودعات المجرودة دائماً)', null, ''],
+      ['نسبة ربح المادة', 'من ورقة نسبة أرباح الأصناف لنفس الصنف', null, ''],
+      ['الدم والكيس وكلفته', 'كمية سندات إخراج كيس ودم للصنف ضمن الفترة، وكلفتها = الكمية × الكلفة/وحدة', null, ''],
+      ['قيمة المبيعات', 'مجموع مبالغ سندات المبيعات للصنف ضمن الفترة شامل الضريبة', null, ''],
+      ['تجميع رمز المادة', matGrouping() ? 'الوضع الحالي: رمز المادة — كل الوحدات التي تحمل نفس رمز المادة مجموعة في سطر واحد (الكميات والقيم مجموعة)' : 'الوضع الحالي: رمز الوحدة — كل صنف في سطر مستقل', null, ''],
+    ] },
+    { title: 'ثالثاً: فروقات الجرد (الملخص)', rows: [
+      ['الجرود المعتمدة ضمن الفترة', list(counts, c => `${c.date} ${whName(c.wh)} (${c.lines.length} صنف${c.posted ? '، مرحّل كتسوية' : ''})`), counts.length, 'جرد'],
+      ['كمية فرق الجرد', 'مجموع عمود الفرق لكل أصناف ورقة الحركة والجرد', s.qtyDiff, 'kg'],
+      ['قيمة فرق الجرد', 'مجموع عمود قيمة الفرق', s.vDiff, ''],
+      ['أصناف مجرودة', 'عدد الأصناف التي لها جرد فعلي (محفوظ أو مجرود دائماً أو مفترض)', s.nCount, 'صنف'],
+      ['تسويات جرد مرحّلة ضمن الفترة', adj.length ? list(adj, d => `${d.no} (${d.date}، ${whName(d.wh)}، ${DT[d.type].label}، ${fmt(dq(d))} كغ)`) : 'لا يوجد', adj.length, 'سند'],
+    ] },
+    { title: 'رابعاً: ملاحظات', rows: [
+      ['أصناف بلا كلفة', 'لا تدخل في كلفة المبيعات ولا في القيم؛ تُعبّأ كلفتها من صفحة الكلف', noCost, 'صنف'],
+      ['أصناف مباعة بلا مبلغ', 'أسطر مبيعات رُحّلت بدون عمود المبلغ؛ لا تدخل في قيمة المبيعات والربح', s.nNoAmt, 'صنف'],
+      ['المصدر', `بيانات الشاشة حتى ${new Date(S.updatedAt || Date.now()).toLocaleString('ar-JO')} — الإصدار ${APP_VER}`, null, ''],
+    ] },
+  ];
+}
+function comboMethodHTML(D, cls) {
+  const secs = comboMethod(D); const val = (v, u) => v == null ? '' : u === '%' ? fmt(v) + '%' : u === 'kg' ? fmt(v) + ' كغ' : (typeof v === 'number' ? fmt(v) + (u ? ' ' + u : '') : esc(String(v)));
+  return `<table${cls ? ` class="${cls}"` : ''}><thead><tr><th style="width:190px">البند</th><th>طريقة الاحتساب</th><th class="num" style="width:130px">القيمة في هذا التقرير</th></tr></thead><tbody>${secs.map(sec => `<tr class="tot"><td colspan="3" style="text-align:start">${esc(sec.title)}</td></tr>` + sec.rows.map(r => `<tr><td class="nm"><b>${esc(r[0])}</b></td><td class="nm" style="white-space:normal;line-height:1.6">${esc(r[1])}</td><td class="num ${typeof r[2] === 'number' && r[2] < 0 ? 'neg' : ''}">${val(r[2], r[3])}</td></tr>`).join('')).join('')}</tbody></table>`;
 }
 /* --- تصدير التقرير اليومي للمبيعات والمخزون بتنسيق إكسل الكامل (ثلاث أوراق بنفس الألوان والترتيب) --- */
 function comboExport() {
@@ -2581,15 +2641,24 @@ function comboExport() {
     { h: 9.75, cells: [] }, row([S(`فروقات الجرد ${per}`, band), E(band)], 24),
     row([S('كمية فرق الجرد', lab()), F(`${s2n}!K${t2}`, S0.qtyDiff, val(KG))], 24), row([S('قيمة فرق الجرد', lab(1)), F(`${s2n}!O${t2}`, S0.vDiff || 0, val(Q2, 1))], 24),
     { h: 9.75, cells: [] }, row([S('* القيم بالأحمر سالبة. التفاصيل في ورقتي «الحركة والجرد» و«نسبة أرباح الأصناف».', noteFree), E(noteFree)], 18)];
+  // ---- ورقة 4: طريقة الاحتساب ----
+  const mh = st({ font: { sz: 10, b: 1, color: 'FFFFFFFF' }, fill: MAR, border: thin, al: { h: 'center', wrap: 1 } }), mLab = st({ font: { sz: 10, b: 1, color: INK }, border: thin, al: { h: 'right', v: 'top', wrap: 1 } }), mTxt = st({ font: { sz: 9.5, color: 'FF333333' }, border: thin, al: { h: 'right', v: 'top', wrap: 1 } });
+  const mVal = nf => st({ font: { sz: 10, b: 1, color: INK }, border: thin, nf: nf || undefined, al: { h: 'center', v: 'top' } }), mBand = st({ font: { sz: 11, b: 1, color: MAR }, fill: CREAM, border: hi, al: { h: 'right' } });
+  const r4 = [{ h: 30, cells: [S(`التقرير اليومي للمبيعات والمخزون — ${per}`, title(15)), E(title(15)), E(title(15)), E(title(15))] }, { h: 21.75, cells: [S('كيف تم الاحتساب بالتفصيل — بأرقام هذا التقرير', subT), E(subT), E(subT), E(subT)] }, { h: 6, cells: [] }, { h: 24, cells: [S('البند', mh), S('طريقة الاحتساب', mh), S('القيمة في هذا التقرير', mh), S('الوحدة', mh)] }];
+  const merges4 = ['A1:D1', 'A2:D2'];
+  for (const sec of comboMethod(D)) { merges4.push(`A${r4.length + 1}:D${r4.length + 1}`); r4.push({ h: 22, cells: [S(sec.title, mBand), E(mBand), E(mBand), E(mBand)] });
+    for (const r of sec.rows) { const lines = Math.max(1, Math.ceil(String(r[1]).length / 95)); const u = r[3]; const nf = u === '%' ? PCT : u === 'kg' ? Q3 : (typeof r[2] === 'number' && !Number.isInteger(r[2])) ? Q2 : null; const v = r[2] == null ? '' : (u === '%' ? r[2] / 100 : r[2]);
+      r4.push({ h: Math.min(120, 16 * lines + 4), cells: [S(r[0], mLab), S(r[1], mTxt), S(v, mVal(nf)), S(u === '%' ? '' : (u || ''), mTxt)] }); } }
   const blob = XS.build([
     { name: 'ملخص', cols: [4, 44, 22, 4], rows: r1, merges: ['B1:C1', 'B2:C2', 'B4:C4', 'B14:C14', 'B18:C18'], grid: false, fitH: 1 },
     { name: 'الحركة والجرد', cols: [8, 42, 6.6, 10.6, 9, 10, 9, 9.6, 10.6, 13, 10, 9.6, 11.4, 13, 11, 9, 9.6, 9, 10.6, 11], rows: r2, merges: ['A1:T1', 'A2:T2', `A${t2}:C${t2}`, `A${t2 + 1}:R${t2 + 1}`], freeze: { x: 2, y: 4 }, landscape: true, fitH: 0, titles: '$4:$4' },
     { name: 'نسبة أرباح الأصناف', cols: [9.6, 40, 30, 6.6, 10, 13, 8, 13, 10.6, 12, 11, 10.6], rows: r3, merges: ['A1:L1', 'A2:L2', `A${t3}:G${t3}`], freeze: { x: 2, y: 4 }, landscape: true, fitH: 0, titles: '$4:$4' },
+    { name: 'طريقة الاحتساب', cols: [30, 95, 20, 8], rows: r4, merges: merges4, freeze: { y: 4 }, landscape: false, fitH: 0, titles: '$4:$4' },
   ], ST.map(x => x.o));
   download(`التقرير_اليومي_للمبيعات_والمخزون_${D.from}${D.to !== D.from ? '_' + D.to : ''}.xlsx`, blob);
 }
 
-function comboPrint() { const D = comboData(); if (true) { const per = D.from === D.to ? 'التاريخ: ' + D.from : `من ${D.from} إلى ${D.to}`; printHTML('التقرير اليومي للمبيعات والمخزون', [per, D.wh ? 'المستودع: ' + whName(D.wh) : 'كل المستودعات'], comboSummaryHTML(D) + '<div style="height:12px"></div>' + comboTableHTML(D, 'xr-tbl tbl') + '<h3 style="margin:14px 0 6px">تحليل ربحية الأصناف المباعة</h3>' + (profitTableHTML('xr-tbl tbl', { from: D.from, to: D.to, wh: D.wh }) || '<p>لا توجد مبيعات</p>'), { landscape: true }); return; } const per = D.from === D.to ? 'التاريخ: ' + D.from : `من ${D.from} إلى ${D.to}`; const s = D.sum; const v = x => x == null ? '—' : fmt(x); const pc = x => x == null ? '—' : fmt(x) + '%';
+function comboPrint() { const D = comboData(); if (true) { const per = D.from === D.to ? 'التاريخ: ' + D.from : `من ${D.from} إلى ${D.to}`; printHTML('التقرير اليومي للمبيعات والمخزون', [per, D.wh ? 'المستودع: ' + whName(D.wh) : 'كل المستودعات'], comboSummaryHTML(D) + '<div style="height:12px"></div>' + comboTableHTML(D, 'xr-tbl tbl') + '<h3 style="margin:14px 0 6px">تحليل ربحية الأصناف المباعة</h3>' + (profitTableHTML('xr-tbl tbl', { from: D.from, to: D.to, wh: D.wh }) || '<p>لا توجد مبيعات</p>') + '<h3 style="margin:14px 0 6px">كيف تم الاحتساب بالتفصيل</h3>' + comboMethodHTML(D, 'xr-tbl tbl'), { landscape: true }); return; } const per = D.from === D.to ? 'التاريخ: ' + D.from : `من ${D.from} إلى ${D.to}`; const s = D.sum; const v = x => x == null ? '—' : fmt(x); const pc = x => x == null ? '—' : fmt(x) + '%';
   const sumT = `<table style="width:auto;min-width:50%;margin-bottom:12px"><tbody>${[['قيمة المبيعات (قبل الضريبة)', v(s.net)], ['كلفة المبيعات', v(s.cogs)], ['مجمل الربح قبل الدم والكيس', v(s.gp)], ['نسبة مجمل الربح قبل الدم والكيس', pc(s.gpPct)], ['الدم والكيس (بالكلفة)', v(s.bb)], ['نسبة الدم والكيس من المبيعات', pc(s.bbPct)], ['مجمل الربح بعد الدم والكيس', v(s.gp2)], ['نسبة مجمل الربح بعد الدم والكيس', pc(s.gp2Pct)], ['كمية فرق الجرد', fmt(s.qtyDiff)], ['قيمة فرق الجرد', v(s.vDiff)]].map(([l, x]) => `<tr><td>${l}</td><td class="num"><b>${x}</b></td></tr>`).join('')}</tbody></table>`;
   printHTML('التقرير اليومي للمبيعات والمخزون', [per, D.wh ? 'المستودع: ' + whName(D.wh) : 'كل المستودعات'], sumT + comboTableHTML(D, '') + `<h3 style="margin:14px 0 6px">تحليل ربحية الأصناف المباعة</h3>` + (profitTableHTML('', { from: D.from, to: D.to, wh: D.wh }) || '<p>لا توجد مبيعات</p>'), { landscape: true }); }
 
@@ -2845,7 +2914,7 @@ function init() {
   $('#rdPrint').onclick = dailyPrint; $('#rdExport').onclick = () => exportXlsx(`التقرير_اليومي_${$('#rdFrom').value}.xlsx`, [{ name: 'التقرير اليومي', aoa: dailyAOA() }]);
   ['rxFrom', 'rxTo', 'rxWh', 'rxMoved'].forEach(id => $('#' + id).onchange = renderRepCombo);
   $('#rxToday').onclick = () => { $('#rxFrom').value = $('#rxTo').value = todayISO(); renderRepCombo(); }; $('#rxYest').onclick = () => { const d = new Date(); d.setDate(d.getDate() - 1); const y = d.toISOString().slice(0, 10); $('#rxFrom').value = $('#rxTo').value = y; renderRepCombo(); };
-  $('#rxPrint').onclick = comboPrint; $('#rxExport').onclick = comboExport;
+  $('#rxPrint').onclick = comboPrint; $('#rxExport').onclick = comboExport; $('#rxExport').textContent = ''; $('#rxExport').insertAdjacentHTML('beforeend', '<svg><use href="#i-xls"/></svg>إكسل (4 أوراق)');
   ['rpFrom', 'rpTo', 'rpWh', 'rpType'].forEach(id => $('#' + id).onchange = renderRepProfit); $('#rpQ').oninput = renderRepProfit;
   $('#rpToday').onclick = () => { $('#rpFrom').value = $('#rpTo').value = todayISO(); renderRepProfit(); }; $('#rpMonth').onclick = () => { const t = todayISO(); $('#rpFrom').value = t.slice(0, 8) + '01'; $('#rpTo').value = t; renderRepProfit(); };
   $('#rpPrint').onclick = () => { const { from, to, wh } = profitData(); const h = profitTableHTML(''); if (!h) return toast('لا توجد بيانات للطباعة', 'warn'); printHTML('تقرير المبيعات والربحية', [from === to ? 'التاريخ: ' + from : `من ${from} إلى ${to}`, wh ? 'المستودع: ' + whName(wh) : 'كل المستودعات'], h, { landscape: true }); };
