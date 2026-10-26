@@ -1582,6 +1582,110 @@ GROUP BY
 ORDER BY
     D."Yr", D."Mo", S."SlpName", SUM(D."Net") DESC;
 </script>
+<script type="text/plain" id="sql_q18pay">
+/* SELECT T0."RefDate" FROM JDT1 T0 WHERE T0."RefDate" BETWEEN [%0] AND [%1] */
+SELECT
+T0."TransId"                       AS "رقم القيد",
+T0."RefDate"                       AS "تاريخ التحصيل",
+T0."DueDate"                       AS "تاريخ استحقاق الشيك (إن وجد)",
+T0."ShortName"                     AS "رمز العميل",
+C."CardName"                       AS "اسم العميل",
+S."SlpName"                        AS "المندوب",
+(T0."Credit" - T0."Debit")         AS "قيمة التحصيل",
+IFNULL(TG."ExtraDays", 0)          AS "أيام السماح",
+IFNULL((
+SELECT SUM(J1."Debit" - J1."Credit")
+FROM JDT1 J1
+WHERE J1."ShortName" = T0."ShortName" AND J1."ShortName" <> J1."Account"
+AND J1."RefDate" <= T0."RefDate" AND J1."TransId" <> T0."TransId"
+), 0)                               AS "الرصيد قبل هذا التحصيل",
+IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+WHERE X."CardCode"=T0."ShortName" AND X."DocDate" <= T0."RefDate"
+AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-0
+), 0)                                AS "M0 الشهر الحالي (حتى يوم التحصيل)",
+IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+WHERE X."CardCode"=T0."ShortName" AND X."DocDate" <= T0."RefDate"
+AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-1
+), 0)                                AS "M1 شهر قبل",
+IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+WHERE X."CardCode"=T0."ShortName" AND X."DocDate" <= T0."RefDate"
+AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-2
+), 0)                                AS "M2 شهرين قبل",
+IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+WHERE X."CardCode"=T0."ShortName" AND X."DocDate" <= T0."RefDate"
+AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-3
+), 0)                                AS "M3 3 أشهر قبل",
+IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+WHERE X."CardCode"=T0."ShortName" AND X."DocDate" <= T0."RefDate"
+AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-4
+), 0)                                AS "M4 4 أشهر قبل",
+IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+WHERE X."CardCode"=T0."ShortName" AND X."DocDate" <= T0."RefDate"
+AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-5
+), 0)                                AS "M5 5 أشهر قبل",
+IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+WHERE X."CardCode"=T0."ShortName" AND X."DocDate" <= T0."RefDate"
+AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-6
+), 0)                                AS "M6 6 أشهر قبل",
+IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+WHERE X."CardCode"=T0."ShortName" AND X."DocDate" <= T0."RefDate"
+AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-7
+), 0)                                AS "M7 7 أشهر قبل",
+IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+WHERE X."CardCode"=T0."ShortName" AND X."DocDate" <= T0."RefDate"
+AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-8
+), 0)                                AS "M8 8 أشهر قبل",
+IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+WHERE X."CardCode"=T0."ShortName" AND X."DocDate" <= T0."RefDate"
+AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-9
+), 0)                                AS "M9 9 أشهر قبل",
+IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+WHERE X."CardCode"=T0."ShortName" AND X."DocDate" <= T0."RefDate"
+AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-10
+), 0)                                AS "M10 10 أشهر قبل",
+IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+WHERE X."CardCode"=T0."ShortName" AND X."DocDate" <= T0."RefDate"
+AND YEAR(X."DocDate")*12+MONTH(X."DocDate") = YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-11
+), 0)                                AS "M11 11 أشهر قبل",
+IFNULL((SELECT SUM(CASE WHEN X."Kind"='I' THEN X."Amt" ELSE -X."Amt" END)
+FROM (SELECT "CardCode","DocTotal" AS "Amt",'I' AS "Kind","DocDate" FROM OINV WHERE "CANCELED"='N'
+UNION ALL SELECT "CardCode","DocTotal",'R',"DocDate" FROM ORIN WHERE "CANCELED"='N') X
+WHERE X."CardCode"=T0."ShortName" AND X."DocDate" <= T0."RefDate"
+AND YEAR(X."DocDate")*12+MONTH(X."DocDate") <= YEAR(T0."RefDate")*12+MONTH(T0."RefDate")-12
+), 0)                                AS "M12plus أقدم من 12 شهر",
+T0."TransId"                       AS "TransId"
+FROM "JDT1" T0
+INNER JOIN "OCRD" C ON T0."ShortName" = C."CardCode" AND C."CardType"='C'
+LEFT JOIN "OSLP" S ON C."SlpCode" = S."SlpCode"
+LEFT JOIN "OCTG" TG ON C."GroupNum" = TG."GroupNum"
+WHERE T0."TransType" = '24'
+AND T0."RefDate" BETWEEN '[%0]' AND '[%1]'
+ORDER BY T0."ShortName", T0."RefDate"
+</script>
 <script type="text/plain" id="sql_aging1">
 /* SELECT C."CardCode" FROM OCRD C WHERE C."CreateDate" < [%0] */
 SELECT
@@ -1816,7 +1920,7 @@ const QDEF=[
  {id:'q16',n:"فصل المهام التفصيلي مستنداً بمستند",short:"فصل المهام التفصيلي",g:CHECKS[15],doc:"رقم المستند",date:"تاريخ المستند",dims:["اسم المستخدم", "نوع الحركة", "اسم الطرف"],ms:["المبلغ"],flags:["الملاحظات"],text:[],cols:["فتح المستخدم", "رمز المستخدم", "اسم المستخدم", "نوع الحركة", "رقم المستند", "فتح فاتورة", "فتح اشعار دائن", "فتح سند قبض", "فتح امر شراء", "فتح فاتورة شراء", "فتح سند صرف", "فتح القيد", "فتح ادخال مخزون", "فتح اخراج مخزون", "فتح الطرف", "اسم الطرف", "تاريخ المستند", "تاريخ الادخال", "ايام التأخير", "المبلغ", "درجة الخطورة", "الملاحظات"]},
 ];
 /* ================= utils ================= */
-const VERSION='v2.27';
+const VERSION='v2.28';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nf0=new Intl.NumberFormat('en-US',{maximumFractionDigits:0,minimumFractionDigits:0});
@@ -3620,6 +3724,64 @@ CUSTOM.q18_rep=(T,el)=>{const M=repModel(T);if(!M){el.innerHTML='<div class="car
   table(T,$('rpC'),'rpC',{name:'العملاء',cols:[{k:'#',t:'#',nos:1},{k:'name',t:'العميل',f:'t',cls:'nm',h:r=>'<span class="lnk">'+esc(r.name)+'</span><div class="code">'+esc(r.code)+'</div>'},{k:'last',t:'المندوب الحالي',f:'t',cls:'nm'},{k:'repTxt',t:'كل المندوبين',f:'t',cls:'nm',h:r=>esc(r.repTxt)+(r.moved?' <span class="pill w">انتقل</span>':'')},{k:'nm',t:'أشهر نشطة',f:'i'},{k:'ni',t:'الفواتير',f:'i'},{k:'s',t:'المبيعات',f:'n'},{k:'r',t:'المرتجعات',f:'n'},{k:'net',t:'صافي المبيعات',f:'n',heat:true},{k:'avg',t:'متوسط شهري',f:'n',get:r=>r.nm?r.net/r.nm:null}],rows:custs,sort:'net',dir:-1,lim:100,onRow:r=>repCustModal(T,M,r.code)});};
 EXPL_VIEWS.q18_move={t:'انتقال العملاء بين المندوبين',d:'يحدد مندوب كل عميل في كل شهر (صاحب أعلى صافي مبيعات له)، ويرصد الشهر الذي يتغيّر فيه المندوب عن آخر شهر نشط سابق، ثم يقارن متوسط صافي المبيعات الشهري للعميل مع المندوب السابق (آخر الأشهر قبل الانتقال) بمتوسطه مع المندوب الجديد (أول الأشهر بعده). الانتقال من/إلى «بدون مندوب» مستبعد افتراضياً.',cols:[['من / إلى المندوب','المندوب قبل الانتقال وبعده'],['آخر شهر مع السابق / أول شهر مع الجديد','حدود الانتقال'],['أشهر قبل / بعد','عدد الأشهر الداخلة في كل متوسط (حتى الحد المضبوط)'],['متوسط شهري قبل / بعد','متوسط صافي المبيعات الشهري للعميل في كل فترة'],['الفرق الشهري / %','بعد − قبل، ونسبته من قبل؛ الأحمر انخفاض'],['إجمالي قبل / بعد','مجموع صافي المبيعات في أشهر المقارنة'],['بيع مشترك','باع للعميل أكثر من مندوب في شهر الانتقال'],['عاد للسابق','العميل عاد لاحقاً إلى مندوبه السابق']]};
 EXPL_VIEWS.q18_rep={t:'مصفوفة المندوبين',d:'ملخص كل مندوب للفترة: العملاء والفواتير والمرتجعات وصافي المبيعات وحصته ومتوسط العميل، والعملاء الجدد (أول ظهور عنده) والمفقودون (نشط في الشهر السابق ولم يشترِ هذا الشهر)؛ ثم مصفوفة المندوب × الشهر بالصافي أو عدد العملاء أو الجدد أو المفقودين، وأكبر العملاء مع مندوبيهم.',cols:[['العملاء','عدد العملاء المختلفين الذين باع لهم المندوب في الفترة'],['% المرتجعات','قيمة المرتجعات ÷ المبيعات'],['متوسط العميل','صافي المبيعات ÷ عدد العملاء'],['عملاء جدد / مفقودون','مجموع الشهري عبر الفترة']]};
+/* ===== آلية الدفع: كويري التحصيلات (سندات القبض JDT1 TransType 24) مع مبيعات الأشهر حتى يوم التحصيل ===== */
+const REP_PAY_COLS=["رقم القيد","تاريخ التحصيل","تاريخ استحقاق الشيك (إن وجد)","رمز العميل","اسم العميل","المندوب","قيمة التحصيل","أيام السماح","الرصيد قبل هذا التحصيل","M0 الشهر الحالي (حتى يوم التحصيل)","M1 شهر قبل","M2 شهرين قبل","M3 3 أشهر قبل","M4 4 أشهر قبل","M5 5 أشهر قبل","M6 6 أشهر قبل","M7 7 أشهر قبل","M8 8 أشهر قبل","M9 9 أشهر قبل","M10 10 أشهر قبل","M11 11 أشهر قبل","M12plus أقدم من 12 شهر","TransId"];
+const REP_PAY_DEF={n:'التحصيلات وآلية الدفع',cols:REP_PAY_COLS,doc:'رقم القيد'};
+REP_DEF.custom.push(['q18_pay','آلية الدفع']);
+/* لكل تحصيل: الرصيد القائم قبله يُوزَّع على الأشهر من الأحدث للأقدم (كما في عمر الذمة)، ثم التحصيل يسدّد الأقدم أولاً → عمر المدفوع بالأشهر والأيام */
+function repPayModel(T){const D=T.D2;if(!D||!D.rows||!D.rows.length)return null;const H=D.head.map(hnorm);const ix=n=>H.indexOf(hnorm(n));const I={id:ix('رقم القيد'),date:ix('تاريخ التحصيل'),due:ix('تاريخ استحقاق الشيك (إن وجد)'),cc:ix('رمز العميل'),cn:ix('اسم العميل'),rep:ix('المندوب'),amt:ix('قيمة التحصيل'),grace:ix('أيام السماح'),bal:ix('الرصيد قبل هذا التحصيل')};
+  const mIdx=[];H.forEach((h,i)=>{const m=/^m(\d+)/i.exec(D.head[i].trim());if(m)mIdx.push([+m[1],i]);});mIdx.sort((a,b)=>a[0]-b[0]);
+  if(I.date<0||I.cc<0||I.amt<0||I.bal<0||!mIdx.length)return null;
+  const pd=makeDateParser(D.rows.slice(0,300).map(r=>r[I.date]).filter(Boolean));const n=(r,i)=>i>=0?(pnum(r[i])||0):0,s=(r,i)=>i>=0?String(r[i]||'').trim():'';
+  const pays=[];
+  for(const r of D.rows){const amt=n(r,I.amt);const date=pd(s(r,I.date));if(!(amt>0)||date==null)continue;const bal=n(r,I.bal),grace=n(r,I.grace);let rep=s(r,I.rep);if(!rep||REP_NOREP.test(rep))rep='بدون مندوب';
+    const m=mIdx.map(([k,i])=>Math.max(0,n(r,i)));/* المبيعات الصافية لكل شهر (سالب = مرتجع صافٍ → صفر) */
+    /* 1) الرصيد قبل التحصيل يُغطّى من الأحدث للأقدم → الأجزاء المفتوحة لكل شهر */
+    let left=Math.max(bal,0);const open=m.map(()=>0);for(let k=0;k<m.length&&left>0;k++){const take=Math.min(m[k],left);open[k]=take;left-=take;}const beyond=left;/* رصيد أقدم من كل الأشهر المتاحة */
+    /* 2) التحصيل يسدّد الأقدم أولاً */
+    let pay=amt;const paid=m.map(()=>0);let paidBeyond=0;if(beyond>0){paidBeyond=Math.min(beyond,pay);pay-=paidBeyond;}for(let k=open.length-1;k>=0&&pay>0;k--){const t=Math.min(open[k],pay);paid[k]=t;pay-=t;}const advance=pay;/* دفعة مقدمة / تزيد عن الرصيد */
+    const applied=amt-advance;const monthsIdx=mIdx.map(x=>x[0]);let wsum=0;for(let k=0;k<paid.length;k++)wsum+=paid[k]*monthsIdx[k];wsum+=paidBeyond*(monthsIdx[monthsIdx.length-1]+1);
+    const ageM=applied>0?wsum/applied:null;const d=new Date(date*DAY);const dom=d.getUTCDate();const ageD=ageM==null?null:(ageM*30+dom-15);/* تقريب: من منتصف شهر الفاتورة */
+    pays.push({id:s(r,I.id),date,per:repPer(d.getUTCFullYear(),d.getUTCMonth()+1),due:pd(s(r,I.due)),cc:s(r,I.cc),cn:s(r,I.cn),rep,amt,bal,grace,applied,advance,ageM,ageD,late:ageD!=null&&ageD>grace+15,paid,paidBeyond,beyond,open});}
+  return {pays,mIdx};}
+function repPayAgg(pays,keyFn){const m=new Map();for(const p of pays){const k=keyFn(p);if(k==null)continue;let g=m.get(k);if(!g){g={label:String(k),n:0,amt:0,applied:0,adv:0,w:0,late:0,lateAmt:0,bal:0,custs:new Set(),grace:0};m.set(k,g);}g.n++;g.amt+=p.amt;g.applied+=p.applied;g.adv+=p.advance;if(p.ageD!=null)g.w+=p.ageD*p.applied;if(p.late){g.late++;g.lateAmt+=p.applied;}g.bal+=p.bal;g.custs.add(p.cc);g.grace+=p.grace;}
+  return [...m.values()].map(g=>{g.nc=g.custs.size;delete g.custs;g.ageD=g.applied>0?g.w/g.applied:null;g.latePct=g.applied>0?g.lateAmt/g.applied:null;g.avgBal=g.n?g.bal/g.n:null;g.avgGrace=g.n?g.grace/g.n:null;return g;});}
+function repPayModal(T,PM,cc){const pays=PM.pays.filter(p=>p.cc===cc).sort((a,b)=>a.date-b.date);if(!pays.length)return;const months=PM.mIdx.map(x=>x[0]);
+  let h='<h2>تحصيلات '+esc(pays[0].cn)+' <span class="code">'+esc(cc)+'</span><span class="sp"></span><button class="btn sm" onclick="doPrint()">طباعة</button> <button class="btn sm" onclick="closeModal()">إغلاق</button></h2>';
+  const g=repPayAgg(pays,p=>'x')[0];h+=kpis([['التحصيلات',FI(g.n),F2(g.amt)+' د.أ'],['متوسط عمر المدفوع',g.ageD!=null?F0(g.ageD)+' يوم':'—','مرجّح بالمبلغ · السماح '+F0(g.avgGrace)+' يوم'],['متأخر عن السماح',PC(g.latePct),FI(g.late)+' تحصيلاً','red'],['دفعات مقدمة',F2(g.adv),'تزيد عن الرصيد القائم']]);
+  h+='<div class="tw"><table class="t"><thead><tr><th>التاريخ</th><th class="tx">المندوب</th><th>القيمة</th><th>الرصيد قبله</th><th>سدّد من أشهر</th><th>عمر المدفوع (يوم)</th><th>السماح</th><th>الحالة</th></tr></thead><tbody>'+pays.map(p=>'<tr><td>'+fmtDay(p.date)+'</td><td class="tx">'+esc(p.rep)+'</td><td>'+F2(p.amt)+'</td><td>'+F2(p.bal)+'</td><td class="tx">'+(p.paid.map((v,k)=>v>0.5?'M'+months[k]+': '+F0(v):'').filter(Boolean).join(' · ')+(p.paidBeyond>0.5?' · أقدم: '+F0(p.paidBeyond):'')+(p.advance>0.5?' · مقدم: '+F0(p.advance):''))+'</td><td>'+(p.ageD==null?'—':F0(p.ageD))+'</td><td>'+F0(p.grace)+'</td><td>'+(p.ageD==null?'<span class="pill n">مقدم</span>':p.late?'<span class="pill r">متأخر</span>':'<span class="pill g">ضمن السماح</span>')+'</td></tr>').join('')+'</tbody></table></div>';
+  $('md').innerHTML=h;$('ov').classList.add('on');}
+CUSTOM.q18_pay=(T,el)=>{if(T.D2===undefined){T.D2=null;IDB.get('q18_pay').then(D=>{if(D&&D.rows&&D.rows.length){T.D2=D;if(T.view==='q18_pay')renderTab(T);}});}
+  const S=T.S;const box='<div class="card"><h3>كويري التحصيلات وآلية الدفع <span class="hint">سندات القبض مع الرصيد قبل كل تحصيل ومبيعات الأشهر السابقة حتى يوم التحصيل</span></h3>'+(T.D2?'<div style="margin-bottom:8px;color:var(--good);font-weight:600">محمّل: '+esc(T.D2.src)+' — '+FI(T.D2.rows.length)+' تحصيل <button class="btn sm warn" id="pyDel">حذف</button></div>':'')+'<div class="drop" id="pyDrop"><div class="big">اسحب ملف ناتج كويري التحصيلات هنا أو اضغط للاختيار</div><div style="color:var(--ink2)">txt من Query Manager أو CSV / TSV</div><input type="file" accept=".txt,.csv,.tsv,.tab" style="display:none"></div><textarea class="paste" id="pyPaste" placeholder="أو الصق النتيجة هنا..." style="margin-top:8px;min-height:60px"></textarea><div style="margin-top:6px"><button class="btn pri" id="pyGo">تحليل النص الملصوق</button> <button class="btn" id="pyCp">نسخ كويري التحصيلات</button></div><div class="msg" id="pymsg"></div></div>';
+  const PM=repPayModel(T);
+  if(!PM){el.innerHTML=box+'<div class="card"><div class="empty">حمّل كويري التحصيلات لعرض آلية الدفع لكل مندوب وعميل</div></div>';repPayBind(T,el);return;}
+  /* فلترة التحصيلات بمندوب/عميل الكشف الرئيسي إن كان مفلتراً */
+  let pays=PM.pays;const RM=repModel(T);if(RM){const activeCusts=new Set(RM.custs.keys());if(T.S.drill.length||Object.keys(T.S.dim||{}).length)pays=pays.filter(p=>activeCusts.has(p.cc));}
+  const months=[...new Set(pays.map(p=>p.per))].sort((a,b)=>a-b);const all=repPayAgg(pays,p=>'x')[0]||{n:0,amt:0,applied:0,adv:0,late:0,lateAmt:0};
+  const byRep=repPayAgg(pays,p=>p.rep).sort((a,b)=>b.amt-a.amt);
+  let h=box+kpis([['التحصيلات',FI(all.n),F0(all.amt)+' د.أ · '+FI(months.length)+' شهر'],['متوسط عمر المدفوع',all.ageD!=null?F0(all.ageD)+' يوم':'—','من تاريخ الفاتورة إلى التحصيل، مرجّح بالمبلغ · متوسط السماح '+F0(all.avgGrace)+' يوم','gold'],['متأخر عن السماح',PC(all.latePct),FI(all.late)+' تحصيلاً · '+F0(all.lateAmt)+' د.أ',all.latePct>0.3?'red':''],['دفعات مقدمة / زائدة',F0(all.adv),'لا يقابلها رصيد قائم'],['متوسط الرصيد قبل التحصيل',F0(all.avgBal),'']]);
+  h+='<div class="card"><h3>آلية الدفع حسب المندوب <span class="hint">عمر المدفوع = بعد كم يوماً من تاريخ الفاتورة يصل التحصيل (الأقدم يُسدَّد أولاً) · اضغط على المندوب لحصر الكشف عليه</span><span class="sp"></span>'+expBtn(T,'pyR')+'</h3><div id="pyR"></div></div>';
+  h+='<div class="card"><h3>عمر المدفوع (يوم) حسب المندوب × الشهر '+expBtn(T,'pyM')+'</h3><div id="pyM"></div></div>';
+  h+='<div class="card"><h3>آلية الدفع حسب العميل <span class="hint">اضغط على العميل لتفصيل تحصيلاته وتوزيعها على أشهر الفواتير</span><span class="sp"></span>'+expBtn(T,'pyC')+'</h3><div id="pyC"></div></div>';
+  if(RM){h+='<div class="card"><h3>آلية الدفع قبل الانتقال وبعده <span class="hint">للعملاء الذين انتقلوا بين المندوبين (من تحليل الانتقال): عمر المدفوع مع المندوب السابق مقابل الجديد</span> '+expBtn(T,'pyV')+'</h3><div id="pyV"></div></div>';}
+  el.innerHTML=h;repPayBind(T,el);
+  const agecell=r=>r.ageD==null?'<span class="z">—</span>':'<span class="'+(r.avgGrace!=null&&r.ageD>r.avgGrace+15?'dn':'up')+'">'+F0(r.ageD)+'</span>';
+  const cols=[{k:'#',t:'#',nos:1},{k:'label',t:'المندوب',f:'t',cls:'nm',h:r=>'<span class="lnk">'+esc(r.label)+'</span>'},{k:'nc',t:'العملاء',f:'i'},{k:'n',t:'التحصيلات',f:'i'},{k:'amt',t:'المحصَّل',f:'n',heat:true},{k:'avgBal',t:'متوسط الرصيد قبل التحصيل',f:'n'},{k:'avgGrace',t:'متوسط السماح (يوم)',f:'n',dec:0},{k:'ageD',t:'عمر المدفوع (يوم)',f:'n',dec:0,h:agecell},{k:'late',t:'تحصيلات متأخرة',f:'i'},{k:'latePct',t:'% متأخر (بالمبلغ)',f:'pc',h:r=>r.latePct==null?'—':'<span class="'+(r.latePct>0.3?'dn':'')+'">'+PC(r.latePct)+'</span>'},{k:'adv',t:'دفعات مقدمة',f:'n'}];
+  table(T,$('pyR'),'pyR',{name:'آلية_الدفع_المندوب',cols,rows:byRep,total:Object.assign({label:'الإجمالي'},all,{nc:new Set(pays.map(p=>p.cc)).size}),sort:'amt',dir:-1,onRow:r=>{if(RM&&RM.cols.cRep)drillTo(T,RM.cols.cRep.i,r.label==='بدون مندوب'?'':r.label,'المندوب');}});
+  const mrows=byRep.map(g=>{const o={label:g.label};for(const m of months){const a=repPayAgg(pays.filter(p=>p.rep===g.label&&p.per===m),p=>'x')[0];o['p'+m]=a?a.ageD:null;}return o;});
+  table(T,$('pyM'),'pyM',{name:'عمر_المدفوع_شهري',short:true,cols:[{k:'label',t:'المندوب',f:'t',cls:'nm'},...months.map(m=>({k:'p'+m,t:repPerTxt(m),f:'n',dec:0,heat:true,red:true}))],rows:mrows,sort:null});
+  const byC=repPayAgg(pays,p=>p.cc).map(g=>{const p=pays.find(x=>x.cc===g.label);g.cn=p.cn;g.reps=[...new Set(pays.filter(x=>x.cc===g.label).map(x=>x.rep))].join('، ');return g;}).sort((a,b)=>b.amt-a.amt);
+  table(T,$('pyC'),'pyC',{name:'آلية_الدفع_العميل',cols:[{k:'#',t:'#',nos:1},{k:'cn',t:'العميل',f:'t',cls:'nm',h:r=>'<span class="lnk">'+esc(r.cn)+'</span><div class="code">'+esc(r.label)+'</div>'},{k:'reps',t:'المندوب',f:'t',cls:'nm'},{k:'n',t:'التحصيلات',f:'i'},{k:'amt',t:'المحصَّل',f:'n',heat:true},{k:'avgBal',t:'متوسط الرصيد قبل التحصيل',f:'n'},{k:'avgGrace',t:'السماح',f:'n',dec:0},{k:'ageD',t:'عمر المدفوع (يوم)',f:'n',dec:0,h:agecell},{k:'over',t:'تجاوز السماح (يوم)',f:'n',dec:0,get:r=>r.ageD!=null&&r.avgGrace!=null?Math.max(0,r.ageD-r.avgGrace):null,heat:true,red:true},{k:'latePct',t:'% متأخر',f:'pc'},{k:'adv',t:'مقدم',f:'n'}],rows:byC,sort:'amt',dir:-1,lim:100,onRow:r=>repPayModal(T,PM,r.label)});
+  if(RM){const moves=repMoves(RM,{k:S.mvK||3,ignoreNo:S.mvNo!==false});const vr=moves.map(mv=>{const before=pays.filter(p=>p.cc===mv.code&&p.rep===mv.from&&p.per<mv.per),after=pays.filter(p=>p.cc===mv.code&&p.rep===mv.to&&p.per>=mv.per);const b=repPayAgg(before,p=>'x')[0],a=repPayAgg(after,p=>'x')[0];return {code:mv.code,name:mv.name,from:mv.from,to:mv.to,per:mv.per,nB:b?b.n:0,ageB:b?b.ageD:null,lateB:b?b.latePct:null,nA:a?a.n:0,ageA:a?a.ageD:null,lateA:a?a.latePct:null,d:b&&a&&b.ageD!=null&&a.ageD!=null?a.ageD-b.ageD:null};}).filter(r=>r.nB||r.nA);
+    table(T,$('pyV'),'pyV',{name:'آلية_الدفع_قبل_بعد',short:true,cols:[{k:'name',t:'العميل',f:'t',cls:'nm',h:r=>'<span class="lnk">'+esc(r.name)+'</span>'},{k:'from',t:'من',f:'t',cls:'nm'},{k:'to',t:'إلى',f:'t',cls:'nm'},{k:'per',t:'شهر الانتقال',f:'t',get:r=>repPerTxt(r.per)},{k:'nB',t:'تحصيلات قبل',f:'i'},{k:'ageB',t:'عمر المدفوع قبل',f:'n',dec:0},{k:'lateB',t:'% متأخر قبل',f:'pc'},{k:'nA',t:'تحصيلات بعد',f:'i'},{k:'ageA',t:'عمر المدفوع بعد',f:'n',dec:0},{k:'lateA',t:'% متأخر بعد',f:'pc'},{k:'d',t:'الفرق (يوم)',f:'n',dec:0,h:r=>r.d==null?'<span class="z">—</span>':'<span class="'+(r.d>0?'dn':'up')+'">'+(r.d>0?'+':'')+F0(r.d)+'</span>'}],rows:vr,sort:null,onRow:r=>repPayModal(T,PM,r.code)});}
+};
+function repPayBind(T,el){const d=$('pyDrop');if(!d)return;const inp=d.querySelector('input');d.onclick=e=>{if(e.target.closest('button'))return;inp.click();};d.ondragover=e=>{e.preventDefault();d.classList.add('ov');};d.ondragleave=()=>d.classList.remove('ov');
+  const load=fn=>{try{const D=fn();T.D2=D;saveData('q18_pay',D);T.ts={};renderTab(T);toast('تم تحميل التحصيلات');}catch(e){const m=$('pymsg');if(m){m.textContent=e.message||String(e);m.className='msg err';}}};
+  const file=f=>{const rd=new FileReader();rd.onload=()=>load(()=>parseText(decodeBuf(rd.result),f.name.replace(/\.[^.]+$/,''),REP_PAY_DEF));rd.readAsArrayBuffer(f);};
+  d.ondrop=e=>{e.preventDefault();d.classList.remove('ov');if(e.dataTransfer.files[0])file(e.dataTransfer.files[0]);};inp.onchange=e=>{if(e.target.files[0])file(e.target.files[0]);e.target.value='';};
+  $('pyGo').onclick=()=>{const t=$('pyPaste').value;if(t.trim())load(()=>parseText(t,'نص ملصوق',REP_PAY_DEF));};$('pyCp').onclick=()=>{const s=$('sql_q18pay');if(s)copyText(forQM(s.textContent.trim()));};
+  const del=$('pyDel');if(del)del.onclick=()=>{if(!confirm('حذف كشف التحصيلات من الجهاز؟'))return;T.D2=null;deleteData('q18_pay');T.ts={};renderTab(T);};}
+EXPL_VIEWS.q18_pay={t:'آلية الدفع',d:'لكل سند قبض: الرصيد القائم قبله يُوزَّع على أشهر المبيعات من الأحدث للأقدم (كما في عمر الذمة)، ثم يُفترض أن التحصيل يسدّد الأقدم أولاً، فيُحسب «عمر المدفوع»: بعد كم يوماً من تاريخ الفاتورة (تقريباً من منتصف شهرها) وصل التحصيل، مرجّحاً بالمبلغ. يُقارن بأيام السماح في شروط دفع العميل؛ متأخر إذا تجاوز السماح بأكثر من 15 يوماً. ما يزيد عن الرصيد القائم يُعدّ دفعة مقدمة ولا يدخل في العمر.',cols:[['التحصيلات / المحصَّل','عدد سندات القبض ومجموعها'],['متوسط الرصيد قبل التحصيل','كم كان العميل مديناً عند كل دفعة'],['عمر المدفوع (يوم)','متوسط مرجّح لعمر الفواتير التي سدّدتها الدفعات'],['% متأخر','نسبة المبالغ التي سدّدت فواتير تجاوزت السماح بأكثر من 15 يوماً'],['قبل / بعد الانتقال','نفس المؤشرات للعميل مع المندوب السابق ثم الجديد']]};
 /* ================= boot ================= */
 async function appBoot(){
   for(const d of QDEF)TABS[d.id]=mkTab(d);
