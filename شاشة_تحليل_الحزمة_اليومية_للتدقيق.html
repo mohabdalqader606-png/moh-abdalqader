@@ -1519,6 +1519,69 @@ HAVING
 ORDER BY
     L."DocDate", L."Type", OI."DocNum", RN."DocNum", L."ItemCode", L."BatchNum";
 </script>
+<script type="text/plain" id="sql_q18">
+/* SELECT FROM OINV T0 */
+/* WHERE T0."DocDate" BETWEEN [%0] AND [%1] */
+
+WITH Docs AS
+(
+    /* فواتير البيع (موجب) */
+    SELECT
+        YEAR(T0."DocDate")            AS "Yr",
+        MONTH(T0."DocDate")           AS "Mo",
+        T0."SlpCode",
+        T0."CardCode",
+        T0."CardName",
+        T0."DocTotal" - T0."VatSum"   AS "Net",
+        1                             AS "InvCount",
+        0                             AS "RetCount"
+    FROM OINV T0
+    WHERE
+        T0."CANCELED" = 'N'
+        AND T0."DocDate" BETWEEN [%0] AND [%1]
+
+    UNION ALL
+
+    /* مرتجعات البيع (سالب) */
+    SELECT
+        YEAR(T0."DocDate")             AS "Yr",
+        MONTH(T0."DocDate")            AS "Mo",
+        T0."SlpCode",
+        T0."CardCode",
+        T0."CardName",
+        -(T0."DocTotal" - T0."VatSum") AS "Net",
+        0                              AS "InvCount",
+        1                              AS "RetCount"
+    FROM ORIN T0
+    WHERE
+        T0."CANCELED" = 'N'
+        AND T0."DocDate" BETWEEN [%0] AND [%1]
+)
+
+SELECT
+    D."Yr"                                AS "السنة",
+    D."Mo"                                AS "الشهر",
+    D."SlpCode"                           AS "رمز المندوب",
+    S."SlpName"                           AS "المندوب",
+    D."CardCode"                          AS "رمز العميل",
+    D."CardName"                          AS "العميل",
+
+    SUM(D."InvCount")                     AS "عدد الفواتير",
+    SUM(D."RetCount")                     AS "عدد المرتجعات",
+
+    SUM(CASE WHEN D."Net" > 0 THEN D."Net" ELSE 0 END)   AS "المبيعات",
+    SUM(CASE WHEN D."Net" < 0 THEN -D."Net" ELSE 0 END)  AS "المرتجعات",
+    SUM(D."Net")                          AS "صافي المبيعات"
+
+FROM Docs D
+LEFT JOIN OSLP S ON D."SlpCode" = S."SlpCode"
+
+GROUP BY
+    D."Yr", D."Mo", D."SlpCode", S."SlpName", D."CardCode", D."CardName"
+
+ORDER BY
+    D."Yr", D."Mo", S."SlpName", SUM(D."Net") DESC;
+</script>
 <script type="text/plain" id="sql_aging1">
 /* SELECT C."CardCode" FROM OCRD C WHERE C."CreateDate" < [%0] */
 SELECT
@@ -1753,7 +1816,7 @@ const QDEF=[
  {id:'q16',n:"فصل المهام التفصيلي مستنداً بمستند",short:"فصل المهام التفصيلي",g:CHECKS[15],doc:"رقم المستند",date:"تاريخ المستند",dims:["اسم المستخدم", "نوع الحركة", "اسم الطرف"],ms:["المبلغ"],flags:["الملاحظات"],text:[],cols:["فتح المستخدم", "رمز المستخدم", "اسم المستخدم", "نوع الحركة", "رقم المستند", "فتح فاتورة", "فتح اشعار دائن", "فتح سند قبض", "فتح امر شراء", "فتح فاتورة شراء", "فتح سند صرف", "فتح القيد", "فتح ادخال مخزون", "فتح اخراج مخزون", "فتح الطرف", "اسم الطرف", "تاريخ المستند", "تاريخ الادخال", "ايام التأخير", "المبلغ", "درجة الخطورة", "الملاحظات"]},
 ];
 /* ================= utils ================= */
-const VERSION='v2.26';
+const VERSION='v2.27';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nf0=new Intl.NumberFormat('en-US',{maximumFractionDigits:0,minimumFractionDigits:0});
@@ -1924,7 +1987,7 @@ function build(T){
     else if(c.f==='n'||c.f==='i'||c.f==='p'){const a=new Array(n);for(let i=0;i<n;i++)a[i]=pnum(raw[i][c.i]);V[c.i]=a;}
     else V[c.i]=raw.map(r=>r[c.i]);
   }
-  for(const d of (def.derive||[])){const src=cols.find(c=>c.k===hnorm(d.frm));if(!src)continue;const i=cols.length;cols.push({i,t:d.t,k:hnorm(d.t),f:'t',derived:1});const a=new Array(n);for(let r=0;r<n;r++){try{a[r]=d.fn(V[src.i][r]||'');}catch(e){a[r]='';}}V[i]=a;}
+  for(const d of (def.derive||[])){const src=cols.find(c=>c.k===hnorm(d.frm));if(!src)continue;const i=cols.length;cols.push({i,t:d.t,k:hnorm(d.t),f:'t',derived:1});const a=new Array(n);const get=(r)=>(nm)=>{const c=cols.find(x=>x.k===hnorm(nm));return c?V[c.i][r]:null;};for(let r=0;r<n;r++){try{a[r]=d.fn(V[src.i][r]||'',get(r));}catch(e){a[r]='';}}V[i]=a;}
   const find=name=>{if(!name)return null;const k=hnorm(name);return cols.find(c=>c.k===k)||cols.find(c=>c.k.includes(k))||null;};
   const P={cols,V,n};
   P.cDoc=find(def.doc);P.cDate=find(def.date);if(P.cDate&&P.cDate.f!=='d')P.cDate=null;
@@ -3474,6 +3537,89 @@ function procExplain(T){const S=T.S;if(S.view==='report'||S.view==='up'||S.view=
   h+='<h3>ملخص النطاق</h3><p>'+FI(t.n)+' شحنة · '+FI(t.cont)+' حاوية (بحري '+FI(t.sea)+' · جوي '+FI(t.air)+' · بري '+FI(t.land)+') · الوزن الصافي '+F0(t.wkg/1000)+' طن · الكلفة الواصلة '+F0(t.total)+' دينار (منشأ '+F0(t.fob)+' + إضافية '+F0(t.extra)+' = '+PC(t.pct)+') · مربوطة بتكاليف الاستيراد '+FI(R.hasLC.length)+' من '+FI(t.n)+'.</p>';
   h+='<h3>طريقة الحساب</h3><ul><li>الشحنة = سطر برقم طلبية في ملف التتبع مع أسطر حاوياته التالية؛ الحاوية = كل قيمة في Container No. بما فيها N/A.</li><li>طريقة الشحن: جوي إذا كان B/L أرقاماً فقط أو بريد سريع والحاوية N/A؛ بري إذا كان الاثنان N/A؛ وإلا بحري.</li><li>الربط بالكلفة برقم فاتورة الحجز (AP Reserve = رقم الفاتورة في كويري 13). كلفة المنشأ = قيمة المنشأ بالدينار؛ الإضافية = مصاريف ذيل الفاتورة + تكاليف مستند الاستيراد؛ النسبة = الإضافية ÷ المنشأ.</li><li>الوزن = الكمية المستلمة × وزن وحدة الشراء من قائمة الأصناف؛ وإلا وزن ملف التتبع مع تنبيه.</li><li>المستودع من المستودع الافتراضي للصنف (مجموعات الإعدادات)، نوع التخزين من خصائص الصنف، والبلد من وصف الصنف ثم الباركود ثم المورد.</li><li>آخر ورقة في ملف التتبع «طلبيات بالطريق» خارج المجاميع، والشحنات بمبلغ صفر (عيّنات) مستبعدة حسب الإعداد.</li></ul>';
   return h;}
+/* ================= تبويب مبيعات المندوبين والعملاء شهرياً — انتقال العملاء بين المندوبين ================= */
+const REP_NOREP=/no sales employee|بدون مندوب/i;
+const repPer=(y,m)=>{const Y=+y,M=+m;return Y>0&&M>0?Y*100+M:null;};const repPerTxt=p=>p?PROC_MON[(p%100)-1]+' '+Math.floor(p/100):'';
+const REP_DEF={id:'q18',n:"مبيعات المندوبين والعملاء شهرياً (فواتير ومرتجعات)",short:"المندوبون والعملاء",
+  g:{t:"مبيعات المندوبين والعملاء شهرياً (فواتير ومرتجعات)",m:"فواتير البيع والمرتجعات مجمّعة لكل مندوب × عميل × شهر (صافي بعد الضريبة)",open:"لا يوجد سهم فتح",
+    goal:"متابعة صافي مبيعات كل مندوب وكل عميل شهراً بشهر، ورصد العملاء الذين انتقلوا من مندوب إلى آخر ومقارنة صافي مبيعاتهم قبل الانتقال وبعده، إضافة إلى العملاء الجدد والمفقودين لكل مندوب ونسبة المرتجعات.",
+    shows:[["صافي المبيعات","الفواتير − المرتجعات بعد استبعاد ضريبة المبيعات، لكل مندوب × عميل × شهر"],["مندوب العميل في الشهر","المندوب صاحب أعلى صافي مبيعات للعميل في ذلك الشهر؛ إذا باع له أكثر من مندوب يُعلَّم «مشترك»"],["الانتقال","أول شهر يصبح فيه مندوب العميل مختلفاً عن مندوبه في آخر شهر نشط سابق"],["قبل / بعد","متوسط صافي المبيعات الشهري مع المندوب السابق في الأشهر التي سبقت الانتقال، ومع المندوب الجديد في الأشهر التي تلته (عدد الأشهر قابل للضبط)"],["عميل جديد / مفقود","جديد: أول ظهور له عند المندوب؛ مفقود: كان نشطاً عند المندوب في الشهر السابق ولم يشترِ هذا الشهر"],["بدون مندوب","المستندات برمز مندوب -1 (No Sales Employee) تُعرض باسم «بدون مندوب» وتُستبعد من تحليل الانتقال افتراضياً"]],
+    read:"ابدأ بـ«انتقال العملاء»: الأحمر انخفض صافي مبيعاته بعد الانتقال، والأخضر ارتفع. ثم «مصفوفة المندوبين» لرؤية الشهري لكل مندوب مع العملاء الجدد والمفقودين. اضغط على أي عميل لعرض مسيرته الشهرية.",
+    act:["عميل انخفضت مبيعاته بعد الانتقال: راجع سبب النقل ومتابعة المندوب الجديد له.","عميل يبيع له أكثر من مندوب في نفس الشهر: تحقق من تقسيم المناطق.","مندوب يفقد عملاء شهرياً أكثر مما يكسب: راجع تغطيته لمنطقته.","مرتجعات عالية لعميل أو مندوب: راجع الصلاحية والجودة وسياسة المرتجعات."]},
+  doc:null,date:null,
+  dims:["المندوب","العميل","الفترة"],ms:["صافي المبيعات","المبيعات","المرتجعات","عدد الفواتير","عدد المرتجعات"],flags:[],text:["رمز العميل","رمز المندوب"],
+  derive:[{frm:"الشهر",t:"الفترة",fn:(v,get)=>{const p=repPer(get('السنة'),v);return p?String(Math.floor(p/100))+'-'+String(p%100).padStart(2,'0'):'';}}],
+  custom:[['q18_move','انتقال العملاء بين المندوبين'],['q18_rep','مصفوفة المندوبين']],
+  cols:["السنة","الشهر","رمز المندوب","المندوب","رمز العميل","العميل","عدد الفواتير","عدد المرتجعات","المبيعات","المرتجعات","صافي المبيعات"]};
+QDEF.push(REP_DEF);
+/* نموذج: لكل عميل سلسلة شهرية {per→{rep→net}} */
+function repModel(T){const P=T.P,V=P.V,idx=filtered(T);const C=n=>P.cols.find(c=>c.k===hnorm(n))||null;
+  const cY=C('السنة'),cM=C('الشهر'),cRepC=C('رمز المندوب'),cRep=C('المندوب'),cCustC=C('رمز العميل'),cCust=C('العميل'),cInv=C('عدد الفواتير'),cRet=C('عدد المرتجعات'),cS=C('المبيعات'),cR=C('المرتجعات'),cN=C('صافي المبيعات');
+  if(!cY||!cM||!cRep||!cCustC||!cN)return null;
+  const num=(c,i)=>c?(V[c.i][i]||0):0,str=(c,i)=>c?String(V[c.i][i]==null?'':V[c.i][i]):'';
+  const repName=i=>{const n=str(cRep,i).trim();return (!n||REP_NOREP.test(n)||str(cRepC,i)==='-1')?'بدون مندوب':n;};
+  const custs=new Map(),reps=new Map(),pers=new Set();
+  for(const i of idx){const p=repPer(num(cY,i),num(cM,i));if(!p)continue;pers.add(p);const cc=str(cCustC,i)||str(cCust,i);const rep=repName(i);const net=num(cN,i),s=num(cS,i),r=num(cR,i),ni=num(cInv,i),nr=num(cRet,i);
+    let c=custs.get(cc);if(!c){c={code:cc,name:str(cCust,i),per:new Map(),net:0,s:0,r:0,ni:0,nr:0};custs.set(cc,c);}if(!c.name&&str(cCust,i))c.name=str(cCust,i);
+    let pm=c.per.get(p);if(!pm){pm={reps:{},net:0,s:0,r:0,ni:0,nr:0,rows:[]};c.per.set(p,pm);}pm.reps[rep]=(pm.reps[rep]||0)+net;pm.net+=net;pm.s+=s;pm.r+=r;pm.ni+=ni;pm.nr+=nr;pm.rows.push(i);c.net+=net;c.s+=s;c.r+=r;c.ni+=ni;c.nr+=nr;
+    let g=reps.get(rep);if(!g){g={name:rep,per:new Map(),custs:new Set(),net:0,s:0,r:0,ni:0,nr:0};reps.set(rep,g);}let gp=g.per.get(p);if(!gp){gp={net:0,s:0,r:0,ni:0,nr:0,custs:new Set()};g.per.set(p,gp);}gp.net+=net;gp.s+=s;gp.r+=r;gp.ni+=ni;gp.nr+=nr;gp.custs.add(cc);g.custs.add(cc);g.net+=net;g.s+=s;g.r+=r;g.ni+=ni;g.nr+=nr;}
+  const periods=[...pers].sort((a,b)=>a-b);
+  /* مندوب العميل في كل شهر = الأعلى صافياً؛ مشترك إذا باع له مندوبان بصافٍ ≥ 20% كلٌّ */
+  for(const c of custs.values()){for(const [p,pm] of c.per){const ks=Object.keys(pm.reps).sort((a,b)=>pm.reps[b]-pm.reps[a]);pm.rep=ks[0]||'بدون مندوب';const tot=ks.reduce((a,k)=>a+Math.max(pm.reps[k],0),0);pm.shared=ks.filter(k=>pm.reps[k]>0&&tot>0&&pm.reps[k]/tot>=0.2).length>1;}}
+  return {custs,reps,periods,cols:{cRep,cCust,cCustC}};}
+function repMoves(M,opt){const k=opt.k||3,ignoreNo=opt.ignoreNo!==false,minNet=opt.minNet||0;const out=[];
+  for(const c of M.custs.values()){const ps=[...c.per.keys()].sort((a,b)=>a-b);let prev=null;
+    for(let i=0;i<ps.length;i++){const p=ps[i],pm=c.per.get(p);if(!(pm.net>minNet)&&!(pm.s>0)){continue;}
+      if(prev&&pm.rep!==prev.rep&&!(ignoreNo&&(pm.rep==='بدون مندوب'||prev.rep==='بدون مندوب'))){
+        /* قبل: آخر k أشهر مع المندوب السابق (متتالية نشطة)؛ بعد: أول k أشهر مع المندوب الجديد */
+        const before=[],after=[];for(let j=i-1;j>=0&&before.length<k;j--){const q=c.per.get(ps[j]);if(q.rep!==prev.rep)break;before.push(q.net);}
+        for(let j=i;j<ps.length&&after.length<k;j++){const q=c.per.get(ps[j]);if(q.rep!==pm.rep)break;after.push(q.net);}
+        const avg=a=>a.length?a.reduce((x,y)=>x+y,0)/a.length:null;const b=avg(before),a=avg(after);
+        out.push({code:c.code,name:c.name,from:prev.rep,to:pm.rep,per:p,perPrev:prev.p,nB:before.length,nA:after.length,avgB:b,avgA:a,sumB:before.reduce((x,y)=>x+y,0),sumA:after.reduce((x,y)=>x+y,0),chg:b!=null&&a!=null?a-b:null,pct:b&&a!=null?(a-b)/Math.abs(b):null,shared:pm.shared,back:out.some(o=>o.code===c.code&&o.from===pm.rep&&o.to===prev.rep)});}
+      prev={rep:pm.rep,p};}}
+  return out;}
+function repCustModal(T,M,code){const c=M.custs.get(code);if(!c)return;const ps=[...c.per.keys()].sort((a,b)=>a-b);
+  let h='<h2>'+esc(c.name)+' <span class="code">'+esc(c.code)+'</span><span class="sp"></span><button class="btn sm" onclick="doPrint()">طباعة</button> <button class="btn sm" onclick="closeModal()">إغلاق</button></h2>';
+  h+=kpis([['صافي المبيعات',F2(c.net),FI(ps.length)+' شهر نشط'],['المبيعات / المرتجعات',F2(c.s)+' / '+F2(c.r),c.s>0?PC(c.r/c.s)+' مرتجعات':''],['الفواتير / المرتجعات',FI(c.ni)+' / '+FI(c.nr),''],['المندوبون',FI(new Set(ps.map(p=>c.per.get(p).rep)).size),[...new Set(ps.map(p=>c.per.get(p).rep))].join('، ')]]);
+  h+='<div id="rcCh" style="margin:6px 0"></div><div class="tw"><table class="t"><thead><tr><th>الشهر</th><th class="tx">المندوب</th><th>الفواتير</th><th>المرتجعات</th><th>المبيعات</th><th>قيمة المرتجعات</th><th>صافي المبيعات</th><th>التغيّر عن الشهر السابق</th></tr></thead><tbody>'+ps.map((p,i)=>{const pm=c.per.get(p),prev=i?c.per.get(ps[i-1]):null;const ch=prev?pm.net-prev.net:null;return '<tr'+(prev&&prev.rep!==pm.rep?' style="background:#fff4d6"':'')+'><td>'+repPerTxt(p)+'</td><td class="tx">'+esc(pm.rep)+(pm.shared?' <span class="pill w">مشترك: '+esc(Object.keys(pm.reps).join('، '))+'</span>':'')+(prev&&prev.rep!==pm.rep?' <span class="pill n">انتقال من '+esc(prev.rep)+'</span>':'')+'</td><td>'+FI(pm.ni)+'</td><td>'+FI(pm.nr)+'</td><td>'+F2(pm.s)+'</td><td>'+F2(pm.r)+'</td><td>'+F2(pm.net)+'</td><td class="'+(ch>0?'up':ch<0?'dn':'')+'">'+(ch==null?'—':(ch>0?'+':'')+F2(ch))+'</td></tr>';}).join('')+'</tbody></table></div>';
+  $('md').innerHTML=h;$('ov').classList.add('on');barChart($('rcCh'),ps.map(String),ps.map(p=>c.per.get(p).net),{h:160,fmt:F0,short:p=>repPerTxt(+p).split(' ')[0],label:p=>repPerTxt(+p),tip:i=>F2(c.per.get(ps[i]).net)+' — '+esc(c.per.get(ps[i]).rep)});}
+CUSTOM.q18_move=(T,el)=>{const M=repModel(T);if(!M){el.innerHTML='<div class="card"><div class="empty">هذا التحليل يحتاج أعمدة: السنة، الشهر، المندوب، رمز العميل، صافي المبيعات</div></div>';return;}
+  const S=T.S;S.mvK=S.mvK||3;if(S.mvNo==null)S.mvNo=true;S.mvDir=S.mvDir||'';S.mvFrom=S.mvFrom||'';S.mvTo=S.mvTo||'';
+  const all=repMoves(M,{k:S.mvK,ignoreNo:S.mvNo});const reps=[...M.reps.keys()].sort((a,b)=>a.localeCompare(b,'ar'));
+  const rows=all.filter(r=>(!S.mvFrom||r.from===S.mvFrom)&&(!S.mvTo||r.to===S.mvTo)&&(S.mvDir===''||(S.mvDir==='up'?r.chg>0:S.mvDir==='dn'?r.chg<0:r.chg==null)));
+  const up=rows.filter(r=>r.chg>0),dn=rows.filter(r=>r.chg<0);const sumB=procSum(rows,r=>r.avgB),sumA=procSum(rows,r=>r.avgA);
+  const opt=(cur,list)=>'<option value="">الكل</option>'+list.map(x=>'<option'+(cur===x?' selected':'')+'>'+esc(x)+'</option>').join('');
+  let h='<div class="card"><h3>انتقال العملاء بين المندوبين <span class="hint">العميل انتقل عندما يختلف مندوبه عن مندوبه في آخر شهر نشط سابق؛ المقارنة بمتوسط صافي المبيعات الشهري</span></h3><div class="bar" style="margin:0"><div class="fld"><label>من المندوب</label><select id="mvFrom">'+opt(S.mvFrom,reps)+'</select></div><div class="fld"><label>إلى المندوب</label><select id="mvTo">'+opt(S.mvTo,reps)+'</select></div><div class="fld"><label>النتيجة</label><select id="mvDir"><option value="">الكل</option><option value="up"'+(S.mvDir==='up'?' selected':'')+'>ارتفعت</option><option value="dn"'+(S.mvDir==='dn'?' selected':'')+'>انخفضت</option><option value="na"'+(S.mvDir==='na'?' selected':'')+'>بلا مقارنة</option></select></div><div class="fld"><label>أشهر المقارنة قبل/بعد</label><input type="number" id="mvK" value="'+S.mvK+'" min="1" max="12" style="width:70px"></div><label class="chk'+(S.mvNo?' hl':'')+'"><input type="checkbox" id="mvNo"'+(S.mvNo?' checked':'')+'> تجاهل الانتقال من/إلى «بدون مندوب»</label></div></div>';
+  h+=kpis([['عملاء انتقلوا',FI(rows.length),FI(new Set(rows.map(r=>r.code)).size)+' عميلاً مختلفاً'],['ارتفع صافي مبيعاتهم',FI(up.length),'+'+F0(procSum(up,r=>r.chg))+' د.أ شهرياً','green'],['انخفض',FI(dn.length),F0(procSum(dn,r=>r.chg))+' د.أ شهرياً','red'],['متوسط شهري قبل → بعد',F0(sumB)+' → '+F0(sumA),sumB?((sumA-sumB)/Math.abs(sumB)*100).toFixed(1)+'%':'',sumA>=sumB?'green':'red'],['عادوا للمندوب السابق',FI(rows.filter(r=>r.back).length),'انتقال عكسي لاحق'],['بيع مشترك في شهر الانتقال',FI(rows.filter(r=>r.shared).length),'أكثر من مندوب لنفس العميل']]);
+  h+='<div class="card"><h3>كشف الانتقالات <span class="hint">اضغط على العميل لعرض مسيرته الشهرية</span><span class="sp"></span>'+expBtn(T,'mvT')+'</h3><div id="mvT"></div></div>';
+  h+='<div class="grid2"><div class="card"><h3>صافي الانتقالات لكل مندوب <span class="hint">عملاء استلمهم − عملاء خرجوا منه</span> '+expBtn(T,'mvR')+'</h3><div id="mvR"></div></div><div class="card"><h3>مصفوفة من ← إلى <span class="hint">عدد العملاء</span> '+expBtn(T,'mvX')+'</h3><div id="mvX"></div></div></div>';
+  el.innerHTML=h;
+  const re=()=>{T.ts={};CUSTOM.q18_move(T,el);};$('mvFrom').onchange=e=>{S.mvFrom=e.target.value;re();};$('mvTo').onchange=e=>{S.mvTo=e.target.value;re();};$('mvDir').onchange=e=>{S.mvDir=e.target.value;re();};$('mvK').onchange=e=>{S.mvK=Math.max(1,Math.min(12,+e.target.value||3));re();};$('mvNo').onchange=e=>{S.mvNo=e.target.checked;re();};
+  const pcell=r=>r.pct==null?'<span class="z">—</span>':'<span class="'+(r.pct>0?'up':'dn')+'">'+(r.pct>0?'+':'')+(r.pct*100).toFixed(1)+'%</span>';
+  table(T,$('mvT'),'mvT',{name:'انتقال_العملاء',cols:[{k:'#',t:'#',nos:1},{k:'name',t:'العميل',f:'t',cls:'nm',h:r=>'<span class="lnk">'+esc(r.name)+'</span><div class="code">'+esc(r.code)+'</div>'},{k:'from',t:'من المندوب',f:'t',cls:'nm'},{k:'to',t:'إلى المندوب',f:'t',cls:'nm'},{k:'perPrev',t:'آخر شهر مع السابق',f:'t',get:r=>repPerTxt(r.perPrev)},{k:'per',t:'أول شهر مع الجديد',f:'t',get:r=>repPerTxt(r.per)},{k:'nB',t:'أشهر قبل',f:'i'},{k:'avgB',t:'متوسط شهري قبل',f:'n'},{k:'nA',t:'أشهر بعد',f:'i'},{k:'avgA',t:'متوسط شهري بعد',f:'n'},{k:'chg',t:'الفرق الشهري',f:'n',h:r=>r.chg==null?'<span class="z">—</span>':'<span class="'+(r.chg>0?'up':'dn')+'">'+(r.chg>0?'+':'')+F2(r.chg)+'</span>',heat:true},{k:'pct',t:'%',f:'pc',h:pcell},{k:'sumB',t:'إجمالي قبل',f:'n'},{k:'sumA',t:'إجمالي بعد',f:'n'},{k:'flags',t:'ملاحظات',f:'t',get:r=>[r.shared?'بيع مشترك':'',r.back?'عاد للسابق':''].filter(Boolean).join(' · '),h:r=>(r.shared?'<span class="pill w">بيع مشترك</span>':'')+(r.back?' <span class="pill n">عاد للسابق</span>':'')}],rows,sort:'chg',dir:1,onRow:r=>repCustModal(T,M,r.code)});
+  const byRep=new Map();for(const r of all){const a=byRep.get(r.to)||{label:r.to,inN:0,outN:0,inNet:0,outNet:0};a.inN++;a.inNet+=r.avgA||0;byRep.set(r.to,a);const b=byRep.get(r.from)||{label:r.from,inN:0,outN:0,inNet:0,outNet:0};b.outN++;b.outNet+=r.avgB||0;byRep.set(r.from,b);}
+  const rr=[...byRep.values()].map(g=>{g.net=g.inN-g.outN;g.netV=g.inNet-g.outNet;return g;}).sort((a,b)=>b.net-a.net);
+  table(T,$('mvR'),'mvR',{name:'صافي_الانتقالات',short:true,cols:[{k:'label',t:'المندوب',f:'t',cls:'nm'},{k:'inN',t:'عملاء استلمهم',f:'i'},{k:'inNet',t:'متوسطهم الشهري بعده',f:'n'},{k:'outN',t:'عملاء خرجوا منه',f:'i'},{k:'outNet',t:'متوسطهم الشهري قبل الخروج',f:'n'},{k:'net',t:'صافي العملاء',f:'i',h:r=>'<span class="'+(r.net>0?'up':r.net<0?'dn':'')+'">'+(r.net>0?'+':'')+r.net+'</span>'},{k:'netV',t:'صافي القيمة الشهرية',f:'n'}],rows:rr,sort:null});
+  const froms=[...new Set(all.map(r=>r.from))].sort(),tos=[...new Set(all.map(r=>r.to))].sort();const xr=froms.map(f=>{const o={label:f,tot:0};for(const t of tos){const n=all.filter(r=>r.from===f&&r.to===t).length;o[t]=n||null;o.tot+=n;}return o;});
+  table(T,$('mvX'),'mvX',{name:'من_الى',short:true,cols:[{k:'label',t:'من ↓ إلى ←',f:'t',cls:'nm'},...tos.map(t=>({k:t,t,f:'i',heat:true})),{k:'tot',t:'الإجمالي',f:'i'}],rows:xr,sort:null});};
+CUSTOM.q18_rep=(T,el)=>{const M=repModel(T);if(!M){el.innerHTML='<div class="card"><div class="empty">هذا التحليل يحتاج أعمدة: السنة، الشهر، المندوب، رمز العميل، صافي المبيعات</div></div>';return;}
+  const ps=M.periods;const reps=[...M.reps.values()].sort((a,b)=>b.net-a.net);
+  /* عملاء جدد ومفقودون لكل مندوب شهرياً */
+  for(const g of reps){g.newN=0;g.lostN=0;g.byP={};let prev=null,seen=new Set();for(const p of ps){const gp=g.per.get(p);const cur=gp?gp.custs:new Set();const nw=[...cur].filter(c=>!seen.has(c)).length;const lost=prev?[...prev].filter(c=>!cur.has(c)).length:0;g.byP[p]={net:gp?gp.net:0,n:cur.size,nw,lost};g.newN+=nw;g.lostN+=lost;for(const c of cur)seen.add(c);prev=cur;}g.avgCust=g.custs.size?g.net/g.custs.size:null;g.retPct=g.s>0?g.r/g.s:null;}
+  const tot={net:procSum(reps,g=>g.net),s:procSum(reps,g=>g.s),r:procSum(reps,g=>g.r)};
+  let h=kpis([['صافي المبيعات',F0(tot.net),FI(ps.length)+' شهر · '+FI(reps.length)+' مندوباً'],['المرتجعات',F0(tot.r),tot.s>0?PC(tot.r/tot.s)+' من المبيعات':'','red'],['العملاء النشطون',FI(M.custs.size),''],['أكبر مندوب',reps[0]?esc(reps[0].name):'—',reps[0]?PC(tot.net?reps[0].net/tot.net:null)+' من الصافي':'','gold']]);
+  h+='<div class="card"><h3>ملخص المندوبين <span class="hint">اضغط على المندوب لحصر الكشف عليه</span><span class="sp"></span>'+expBtn(T,'rpR')+'</h3><div id="rpR"></div></div>';
+  h+='<div class="card"><h3>مصفوفة المندوب × الشهر: <select id="rpX"><option value="net">صافي المبيعات</option><option value="n">عدد العملاء النشطين</option><option value="nw">عملاء جدد</option><option value="lost">عملاء مفقودون</option></select> '+expBtn(T,'rpM')+'</h3><div id="rpM"></div></div>';
+  h+='<div class="card"><h3>أكبر العملاء <span class="hint">صافي المبيعات للفترة · اضغط للمسيرة الشهرية</span> '+expBtn(T,'rpC')+'</h3><div id="rpC"></div></div>';
+  el.innerHTML=h;
+  table(T,$('rpR'),'rpR',{name:'ملخص_المندوبين',cols:[{k:'#',t:'#',nos:1},{k:'name',t:'المندوب',f:'t',cls:'nm',h:r=>'<span class="lnk">'+esc(r.name)+'</span>'},{k:'nc',t:'العملاء',f:'i',get:r=>r.custs.size},{k:'ni',t:'الفواتير',f:'i'},{k:'nr',t:'المرتجعات (عدد)',f:'i'},{k:'s',t:'المبيعات',f:'n'},{k:'r',t:'قيمة المرتجعات',f:'n',heat:true,red:true},{k:'retPct',t:'% المرتجعات',f:'pc'},{k:'net',t:'صافي المبيعات',f:'n',heat:true},{k:'share',t:'% من الصافي',f:'pc',get:r=>tot.net?r.net/tot.net:null},{k:'avgCust',t:'متوسط العميل',f:'n'},{k:'newN',t:'عملاء جدد',f:'i'},{k:'lostN',t:'عملاء مفقودون',f:'i'}],rows:reps,total:{name:'الإجمالي',nc:M.custs.size,ni:procSum(reps,g=>g.ni),nr:procSum(reps,g=>g.nr),s:tot.s,r:tot.r,retPct:tot.s>0?tot.r/tot.s:null,net:tot.net,newN:procSum(reps,g=>g.newN),lostN:procSum(reps,g=>g.lostN)},sort:'net',dir:-1,onRow:r=>drillTo(T,M.cols.cRep.i,r.name==='بدون مندوب'?'':r.name,'المندوب')});
+  const sel=$('rpX');sel.value=T.rpx||'net';const draw=()=>{const k=sel.value;T.rpx=k;const rows=reps.map(g=>{const o={label:g.name,tot:0};for(const p of ps){const v=g.byP[p]?g.byP[p][k]:0;o['p'+p]=v;o.tot+=v;}return o;});const t={label:'الإجمالي',tot:0};for(const p of ps){t['p'+p]=rows.reduce((a,r)=>a+r['p'+p],0);t.tot+=t['p'+p];}
+    table(T,$('rpM'),'rpM',{name:'مصفوفة_المندوبين_'+k,cols:[{k:'label',t:'المندوب',f:'t',cls:'nm'},...ps.map(p=>({k:'p'+p,t:repPerTxt(p),f:k==='net'?'n':'i',dec:0,heat:true})),{k:'tot',t:k==='net'?'الإجمالي':k==='n'?'—':'الإجمالي',f:k==='net'?'n':'i',dec:0}],rows,total:t,sort:null,lim:60});};
+  sel.onchange=draw;draw();
+  const custs=[...M.custs.values()].map(c=>{const ps2=[...c.per.keys()].sort((a,b)=>a-b);c.nm=ps2.length;c.reps=[...new Set(ps2.map(p=>c.per.get(p).rep))];c.repTxt=c.reps.join('، ');c.moved=c.reps.length>1;c.last=ps2.length?c.per.get(ps2[ps2.length-1]).rep:'';return c;}).sort((a,b)=>b.net-a.net);
+  table(T,$('rpC'),'rpC',{name:'العملاء',cols:[{k:'#',t:'#',nos:1},{k:'name',t:'العميل',f:'t',cls:'nm',h:r=>'<span class="lnk">'+esc(r.name)+'</span><div class="code">'+esc(r.code)+'</div>'},{k:'last',t:'المندوب الحالي',f:'t',cls:'nm'},{k:'repTxt',t:'كل المندوبين',f:'t',cls:'nm',h:r=>esc(r.repTxt)+(r.moved?' <span class="pill w">انتقل</span>':'')},{k:'nm',t:'أشهر نشطة',f:'i'},{k:'ni',t:'الفواتير',f:'i'},{k:'s',t:'المبيعات',f:'n'},{k:'r',t:'المرتجعات',f:'n'},{k:'net',t:'صافي المبيعات',f:'n',heat:true},{k:'avg',t:'متوسط شهري',f:'n',get:r=>r.nm?r.net/r.nm:null}],rows:custs,sort:'net',dir:-1,lim:100,onRow:r=>repCustModal(T,M,r.code)});};
+EXPL_VIEWS.q18_move={t:'انتقال العملاء بين المندوبين',d:'يحدد مندوب كل عميل في كل شهر (صاحب أعلى صافي مبيعات له)، ويرصد الشهر الذي يتغيّر فيه المندوب عن آخر شهر نشط سابق، ثم يقارن متوسط صافي المبيعات الشهري للعميل مع المندوب السابق (آخر الأشهر قبل الانتقال) بمتوسطه مع المندوب الجديد (أول الأشهر بعده). الانتقال من/إلى «بدون مندوب» مستبعد افتراضياً.',cols:[['من / إلى المندوب','المندوب قبل الانتقال وبعده'],['آخر شهر مع السابق / أول شهر مع الجديد','حدود الانتقال'],['أشهر قبل / بعد','عدد الأشهر الداخلة في كل متوسط (حتى الحد المضبوط)'],['متوسط شهري قبل / بعد','متوسط صافي المبيعات الشهري للعميل في كل فترة'],['الفرق الشهري / %','بعد − قبل، ونسبته من قبل؛ الأحمر انخفاض'],['إجمالي قبل / بعد','مجموع صافي المبيعات في أشهر المقارنة'],['بيع مشترك','باع للعميل أكثر من مندوب في شهر الانتقال'],['عاد للسابق','العميل عاد لاحقاً إلى مندوبه السابق']]};
+EXPL_VIEWS.q18_rep={t:'مصفوفة المندوبين',d:'ملخص كل مندوب للفترة: العملاء والفواتير والمرتجعات وصافي المبيعات وحصته ومتوسط العميل، والعملاء الجدد (أول ظهور عنده) والمفقودون (نشط في الشهر السابق ولم يشترِ هذا الشهر)؛ ثم مصفوفة المندوب × الشهر بالصافي أو عدد العملاء أو الجدد أو المفقودين، وأكبر العملاء مع مندوبيهم.',cols:[['العملاء','عدد العملاء المختلفين الذين باع لهم المندوب في الفترة'],['% المرتجعات','قيمة المرتجعات ÷ المبيعات'],['متوسط العميل','صافي المبيعات ÷ عدد العملاء'],['عملاء جدد / مفقودون','مجموع الشهري عبر الفترة']]};
 /* ================= boot ================= */
 async function appBoot(){
   for(const d of QDEF)TABS[d.id]=mkTab(d);
