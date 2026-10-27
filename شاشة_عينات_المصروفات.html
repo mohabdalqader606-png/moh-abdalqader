@@ -422,7 +422,24 @@ details.sqlbox pre{margin:0;padding:12px 14px;border-top:1px solid var(--line);d
       <div class="row" style="margin-top:10px;gap:10px;align-items:center">
         <div class="chips seg" id="showMode"><span class="chip on" data-v="left">المتبقي <span class="n" id="cLeft">0</span></span><span class="chip" data-v="all">الكل <span class="n" id="cAllL">0</span></span><span class="chip" data-v="sel">العينات فقط <span class="n" id="cSelL">0</span></span></div>
         <label class="chk" id="revToggleWrap" style="min-height:34px;font-size:12px"><input type="checkbox" id="revToggle" checked> استبعاد القيد وعكسه <span class="n pill grey" id="cRev">0</span></label>
+        <button class="btn s" id="btnMoreF">⚙ فلاتر إضافية <span class="pill warn hidden" id="fCount">0</span></button>
         <div class="row" id="fSummary" style="gap:6px"></div>
+      </div>
+      <div id="moreF" class="hidden" style="margin-top:10px;padding:12px;border:1px dashed var(--line);border-radius:12px;background:var(--card2)">
+        <div class="row">
+          <div class="grow" style="flex:1 1 150px"><label class="f">حالة التصوير (للعينات)</label><select id="xDone"><option value="">الكل</option><option value="no">لم تُصوَّر</option><option value="yes">مصوّرة</option></select></div>
+          <div class="grow" style="flex:1 1 150px"><label class="f">نوع المستند</label><select id="xType"><option value="">الكل</option></select></div>
+          <div class="grow" style="flex:1 1 120px"><label class="f">السيريز</label><select id="xSeries"><option value="">الكل</option></select></div>
+          <div class="grow" style="flex:1 1 120px"><label class="f">الشهر</label><select id="xMonth"><option value="">الكل</option></select></div>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <div class="grow" style="flex:1 1 130px"><label class="f">من تاريخ</label><input type="date" id="xFrom"></div>
+          <div class="grow" style="flex:1 1 130px"><label class="f">إلى تاريخ</label><input type="date" id="xTo"></div>
+          <div class="grow" style="flex:1 1 120px"><label class="f">المبلغ من</label><input type="number" id="xMin" step="any" placeholder="0"></div>
+          <div class="grow" style="flex:1 1 120px"><label class="f">المبلغ إلى</label><input type="number" id="xMax" step="any" placeholder="∞"></div>
+          <div class="grow" style="flex:1 1 150px"><label class="f">ملاحظة</label><select id="xNote"><option value="">الكل</option><option value="yes">فيها ملاحظة</option><option value="no">بدون ملاحظة</option></select></div>
+          <div style="align-self:flex-end"><button class="btn s ghost" id="xClear">مسح الفلاتر</button></div>
+        </div>
       </div>
       <div class="hint">القيد وعكسه (Reversal) يُستبعدان تلقائياً من الكشف والعدّ والنسب، ويمكن إظهارهما بإلغاء «استبعاد القيد وعكسه». اضغط <b>«＋ عينة»</b> على السطر لنقله إلى العينات المختارة، وباقي الكشف يبقى كما هو. سطور نفس القيد التي تحت <b>نفس الحساب وبنفس البيان</b> تُعدّ فاتورة واحدة وتُنقل معاً تلقائياً. الرقم الأزرق بجانب رقم المستند يعني أن القيد له أكثر من سطر.</div>
     </div>
@@ -657,7 +674,7 @@ ORDER BY
     </div>
   </section>
 
-  <footer>شاشة عينات المصروفات — الإصدار v2.21 · مزامنة سحابية</footer>
+  <footer>شاشة عينات المصروفات — الإصدار v2.22 · مزامنة سحابية</footer>
 </div>
 
 <div class="bottombar" id="bottombar">
@@ -740,7 +757,7 @@ let filingOk=true, reqOk=true;
 let pref={theme:''};
 let queue=[];                      // تعديلات بانتظار الرفع [{ids:[],patch:{}}]
 let flushing=false, lastLoad=0, importing=false;
-let ui={hideRev:true,show:'left',view:'grp',flatLimit:300,gSort:'name',gDir:1,sortL:{key:'date',dir:1},sortS:{key:'date',dir:1},tab:'list',fSt:'all',fExp:'',fQ:'',sSt:'all',sDone:'all',sGrp:'doc',sQ:'',tSt:'all',openL:new Set(),openS:new Set(),multi:new Set(),allOpenL:false,allOpenS:false};
+let ui={x:{done:'',type:'',series:'',month:'',from:'',to:'',min:'',max:'',note:''},moreF:false,hideRev:true,show:'left',view:'grp',flatLimit:300,gSort:'name',gDir:1,sortL:{key:'date',dir:1},sortS:{key:'date',dir:1},tab:'list',fSt:'all',fExp:'',fQ:'',sSt:'all',sDone:'all',sGrp:'doc',sQ:'',tSt:'all',openL:new Set(),openS:new Set(),multi:new Set(),allOpenL:false,allOpenS:false};
 
 /* ====================== تفضيلات + ثيم ====================== */
 try{pref=Object.assign(pref,JSON.parse(localStorage.getItem(LS_PREF)||'{}'));}catch(e){}
@@ -1212,7 +1229,24 @@ function renderList(){
   const rowsAll0=allRows(ui.fSt);const revN=rowsAll0.filter(x=>isRev(x.r)&&!x.r.sel).length;$('#cRev').textContent=revN;$('#revToggleWrap').style.display=revN?'':'none';
   const rowsAll=rowsAll0.filter(x=>!(ui.hideRev&&isRev(x.r)&&!x.r.sel));
   $('#cLeft').textContent=rowsAll.filter(x=>!x.r.sel).length;$('#cAllL').textContent=rowsAll.length;$('#cSelL').textContent=rowsAll.filter(x=>x.r.sel).length;
-  const rows=rowsAll.filter(x=>ui.show==='all'||(ui.show==='sel'?x.r.sel:!x.r.sel));
+  // خيارات الفلاتر الإضافية من البيانات
+  {const types=new Map(),series=new Set(),months=new Set();rowsAll0.forEach(x=>{const c=String(x.r.code||'').trim();types.set(c,(types.get(c)||0)+1);if(x.r.series)series.add(x.r.series);const dk=dateKey(x.r.date);if(/^\d{8}$/.test(dk))months.add(dk.slice(0,6));});
+   const tOpts=['<option value="">الكل</option>'].concat(Array.from(types.entries()).sort((a,b)=>b[1]-a[1]).map(([c,n])=>`<option value="${esc(c)}">${esc(DOC_TYPES[c]||(c==='30'?'قيد يومية':'رمز '+c))} (${n})</option>`)).join('');if($('#xType').innerHTML!==tOpts){$('#xType').innerHTML=tOpts;}$('#xType').value=ui.x.type;
+   const sOpts=['<option value="">الكل</option>'].concat(Array.from(series).sort().map(v=>`<option value="${esc(v)}">${esc(v)}</option>`)).join('');if($('#xSeries').innerHTML!==sOpts)$('#xSeries').innerHTML=sOpts;$('#xSeries').value=ui.x.series;
+   const mOpts=['<option value="">الكل</option>'].concat(Array.from(months).sort().map(v=>`<option value="${v}">${v.slice(4,6)}/${v.slice(0,4)}</option>`)).join('');if($('#xMonth').innerHTML!==mOpts)$('#xMonth').innerHTML=mOpts;$('#xMonth').value=ui.x.month;}
+  const xf=ui.x;const fromK=xf.from?xf.from.replace(/-/g,''):'',toK=xf.to?xf.to.replace(/-/g,''):'';
+  const nActive=Object.values(xf).filter(v=>v!=='').length;$('#fCount').textContent=nActive;$('#fCount').classList.toggle('hidden',!nActive);
+  const extra=x=>{const r=x.r;
+    if(xf.done&&(!r.sel||(xf.done==='yes')!==!!r.done))return false;
+    if(xf.type&&String(r.code||'').trim()!==xf.type)return false;
+    if(xf.series&&r.series!==xf.series)return false;
+    const dk=dateKey(r.date);
+    if(xf.month&&dk.slice(0,6)!==xf.month)return false;
+    if(fromK&&dk<fromK)return false;if(toK&&dk>toK)return false;
+    const a=Math.abs(r.net);if(xf.min!==''&&a<Number(xf.min))return false;if(xf.max!==''&&a>Number(xf.max))return false;
+    if(xf.note&&((xf.note==='yes')!==!!r.note))return false;
+    return true;};
+  const rows=rowsAll.filter(x=>(ui.show==='all'||(ui.show==='sel'?x.r.sel:!x.r.sel))&&extra(x));
   const byExp=new Map();
   rows.forEach(x=>{const k=expKey(x.r);if(!byExp.has(k))byExp.set(k,{k,exp:x.r.exp,n:0});byExp.get(k).n++;});
   if(ui.fExp&&!byExp.has(ui.fExp))ui.fExp='';
@@ -1403,6 +1437,9 @@ $('#fSt').addEventListener('change',e=>{ui.fSt=e.target.value;ui.fStTouched=true
 $('#fQ').addEventListener('input',e=>{ui.fQ=e.target.value.trim();renderList();});
 $('#fExp').addEventListener('click',e=>{const c=e.target.closest('.chip');if(!c)return;ui.fExp=c.dataset.exp;renderList();});
 $('#fExpSel').addEventListener('change',e=>{ui.fExp=e.target.value;ui.multi.clear();renderList();});
+$('#btnMoreF').addEventListener('click',()=>{ui.moreF=!ui.moreF;$('#moreF').classList.toggle('hidden',!ui.moreF);});
+[['xDone','done'],['xType','type'],['xSeries','series'],['xMonth','month'],['xFrom','from'],['xTo','to'],['xMin','min'],['xMax','max'],['xNote','note']].forEach(([id,k])=>{$('#'+id).addEventListener(id==='xMin'||id==='xMax'?'input':'change',e=>{ui.x[k]=e.target.value;if(k==='done'&&e.target.value&&ui.show==='left'){ui.show='all';$$('#showMode .chip').forEach(c=>c.classList.toggle('on',c.dataset.v==='all'));}renderList();});});
+$('#xClear').addEventListener('click',()=>{Object.keys(ui.x).forEach(k=>ui.x[k]='');['xDone','xType','xSeries','xMonth','xFrom','xTo','xMin','xMax','xNote'].forEach(id=>$('#'+id).value='');renderList();});
 $('#revToggle').addEventListener('change',e=>{ui.hideRev=e.target.checked;renderList();});
 $('#showMode').addEventListener('click',e=>{const c=e.target.closest('.chip');if(!c)return;ui.show=c.dataset.v;ui.multi.clear();$$('#showMode .chip').forEach(x=>x.classList.toggle('on',x===c));renderList();});
 $('#viewMode').addEventListener('click',e=>{const c=e.target.closest('.chip');if(!c)return;ui.view=c.dataset.v;ui.flatLimit=300;$$('#viewMode .chip').forEach(x=>x.classList.toggle('on',x===c));$('#btnExpand').style.display=ui.view==='flat'?'none':'';renderList();});
