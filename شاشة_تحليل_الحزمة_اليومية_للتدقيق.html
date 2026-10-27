@@ -203,6 +203,7 @@ body.scope-aging .tabs{display:none!important}
     <div><h1>شاشة تحليل الحزمة اليومية للتدقيق</h1><div class="sub" id="hsub">16 كويري معتمد + ربحية الأصناف + عمر الذمة + عروض المؤسسة العسكرية · مركز الكيلاني للأغذية · كل تبويب مستقل ببياناته وفلاتره وتقاريره</div></div>
     <span class="sp"></span>
     <span class="ubox" id="ubox" style="display:none"><b id="uEmail"></b><span id="syncSt" style="font-size:11px;opacity:.9"></span><button class="hbtn" onclick="doLogout()">خروج</button></span>
+    <label class="hbtn" id="mergeBox" style="display:none;cursor:pointer" title="عرض فروع العميل الواحد باسم العميل الأم في كل التبويبات — الربط من تبويب عمر الذمة ← الفروع"><input type="checkbox" id="mergeAll" style="vertical-align:middle"> دمج الفروع</label>
     <button class="hbtn" id="printBtn" onclick="doPrint()" style="display:none">طباعة A4</button>
   </div>
   <div class="tabs" id="qtabs"></div>
@@ -1920,7 +1921,7 @@ const QDEF=[
  {id:'q16',n:"فصل المهام التفصيلي مستنداً بمستند",short:"فصل المهام التفصيلي",g:CHECKS[15],doc:"رقم المستند",date:"تاريخ المستند",dims:["اسم المستخدم", "نوع الحركة", "اسم الطرف"],ms:["المبلغ"],flags:["الملاحظات"],text:[],cols:["فتح المستخدم", "رمز المستخدم", "اسم المستخدم", "نوع الحركة", "رقم المستند", "فتح فاتورة", "فتح اشعار دائن", "فتح سند قبض", "فتح امر شراء", "فتح فاتورة شراء", "فتح سند صرف", "فتح القيد", "فتح ادخال مخزون", "فتح اخراج مخزون", "فتح الطرف", "اسم الطرف", "تاريخ المستند", "تاريخ الادخال", "ايام التأخير", "المبلغ", "درجة الخطورة", "الملاحظات"]},
 ];
 /* ================= utils ================= */
-const VERSION='v2.28';
+const VERSION='v2.29';
 const $=id=>document.getElementById(id);
 const esc=s=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const nf0=new Intl.NumberFormat('en-US',{maximumFractionDigits:0,minimumFractionDigits:0});
@@ -2064,6 +2065,10 @@ function parseText(text,src,def){
 
 /* ================= column typing & build ================= */
 const DELAY_COLS=['ايام التأخير','أيام التأخير','تأخير الادخال'];
+/* دمج الفروع (عام): يُطبَّق على كل تبويب فيه عمود رمز عميل — الفروع المربوطة بعميل أم (من تبويب عمر الذمة ← الفروع) تُعرض باسم العميل الأم */
+let MERGE_ALL=false;
+const CUST_CODE_COLS=['رمز العميل','كود العميل','Customer/Vendor Code','فتح العميل','رمز العميل/المورد'],CUST_NAME_COLS=['اسم العميل','العميل','Customer/Vendor Name','اسم العميل/المورد'];
+const mergeGrp=code=>{if(!MERGE_ALL||typeof agGrpOf!=='function')return '';const c=String(code==null?'':code).trim();return c?agGrpOf(c):'';};
 const RISK_COL='درجة الخطورة';
 /* normalize a flag piece to a stable label: drop ": details", "من X الى Y" tails and "[...]" details */
 function flagLabel(p){let q=p.split(/[:：]/)[0].trim();q=q.replace(/\s+من\s+.*?\s+(الى|إلى)\s+.*$/,'').replace(/\s+من\s+(-|\[).*$/,'').replace(/^((?:[✖✗×ℹ]\s*)?(?:تغيير|رفع|تخفيض|تمديد)\s+\S+(?:\s+\S+)?)\s+من\s+.*$/,'$1').replace(/\s+(ب|بـ)\s*\d+\s*(يوم|ايام|أيام|%)?\s*$/,'').trim();return q||p;}
@@ -2092,6 +2097,11 @@ function build(T){
     else V[c.i]=raw.map(r=>r[c.i]);
   }
   for(const d of (def.derive||[])){const src=cols.find(c=>c.k===hnorm(d.frm));if(!src)continue;const i=cols.length;cols.push({i,t:d.t,k:hnorm(d.t),f:'t',derived:1});const a=new Array(n);const get=(r)=>(nm)=>{const c=cols.find(x=>x.k===hnorm(nm));return c?V[c.i][r]:null;};for(let r=0;r<n;r++){try{a[r]=d.fn(V[src.i][r]||'',get(r));}catch(e){a[r]='';}}V[i]=a;}
+  /* دمج الفروع: استبدال رمز/اسم الفرع بالعميل الأم مع الاحتفاظ بالأصل في عمودين مشتقين */
+  if(MERGE_ALL&&typeof agGrpOf==='function'){const cc=cols.find(c=>CUST_CODE_COLS.some(x=>hnorm(x)===c.k)&&c.f==='t'),cn=cols.find(c=>CUST_NAME_COLS.some(x=>hnorm(x)===c.k));
+    if(cc){let hit=0;const oc=V[cc.i].slice(),on=cn?V[cn.i].slice():null;for(let r=0;r<n;r++){const g=agGrpOf(String(oc[r]==null?'':oc[r]).trim());if(g){hit++;V[cc.i][r]=g;if(cn)V[cn.i][r]=g;}}
+      if(hit){const i1=cols.length;cols.push({i:i1,t:'رمز الفرع (قبل الدمج)',k:hnorm('رمز الفرع (قبل الدمج)'),f:'t',derived:1});V[i1]=oc;if(on){const i2=cols.length;cols.push({i:i2,t:'الفرع (قبل الدمج)',k:hnorm('الفرع (قبل الدمج)'),f:'t',derived:1});V[i2]=on;}T.merged=hit;}else T.merged=0;}}
+  else T.merged=0;
   const find=name=>{if(!name)return null;const k=hnorm(name);return cols.find(c=>c.k===k)||cols.find(c=>c.k.includes(k))||null;};
   const P={cols,V,n};
   P.cDoc=find(def.doc);P.cDate=find(def.date);if(P.cDate&&P.cDate.f!=='d')P.cDate=null;
@@ -2545,8 +2555,8 @@ let PRINT_PREPPED=false;
 function prepPrint(){const T=TABS[ACTIVE];if(!T)return false;const modal=$('ov').classList.contains('on');
   if(!modal){window.PRINT_ALL=true;try{renderTab(T);}catch(e){console.error(e);}}
   const view=((document.querySelector('#subtabs .stab.on')||{}).textContent||'').trim();const fl=printFilters();
-  let basis='';if(T.def.kind==='aging'){basis='تاريخ اللقطة: '+(T.S.snap!=null?fmtDay(T.S.snap):'—')+' · '+(T.S.mode==='with'?'الرصيد الدفتري + الشيكات المؤجلة':'الرصيد الدفتري فقط');}
-  else if(T.P&&T.P.cDate&&T.P.dMin!=null){const d1=T.S.d1!=null?T.S.d1:T.P.dMin,d2=T.S.d2!=null?T.S.d2:T.P.dMax;basis='الفترة: '+fmtDay(d1)+(d2>d1?' إلى '+fmtDay(d2):'');}
+  let basis='';if(MERGE_ALL&&T.def.kind!=='mil'&&T.def.kind!=='proc')basis='دمج الفروع: مفعّل';if(T.def.kind==='aging'){basis=(basis?basis+' · ':'')+'تاريخ اللقطة: '+(T.S.snap!=null?fmtDay(T.S.snap):'—')+' · '+(T.S.mode==='with'?'الرصيد الدفتري + الشيكات المؤجلة':'الرصيد الدفتري فقط');}
+  else if(T.P&&T.P.cDate&&T.P.dMin!=null){const d1=T.S.d1!=null?T.S.d1:T.P.dMin,d2=T.S.d2!=null?T.S.d2:T.P.dMax;basis=(basis?basis+' · ':'')+'الفترة: '+fmtDay(d1)+(d2>d1?' إلى '+fmtDay(d2):'');}
   $('printHead').innerHTML='<div class="ph1"><b>مركز الكيلاني للأغذية</b> — <b>'+esc(T.def.n)+'</b>'+(view?' — '+esc(view):'')+(modal?' — تفاصيل':'')+'</div><div class="ph2">'+[basis,fl.length?'النطاق: '+fl.join(' · '):''].filter(Boolean).map(esc).join(' | ')+'</div><div class="ph3">تاريخ الطباعة: '+new Date().toLocaleString('en-GB')+'</div>';
   try{$('printExplain').innerHTML=modal?'':printExplain(T);}catch(e){console.error(e);$('printExplain').innerHTML='';}
   document.body.classList.toggle('print-rpt',!modal&&!!document.querySelector('#view .rpt'));
@@ -2772,13 +2782,13 @@ function renderAging(T){const main=$('main'),S=T.S;T.last=T.last||{};if(!T.A||!T
     (ready&&S.view!=='up'&&S.view!=='guide'?'<div class="bar" id="agbar"><div class="fld"><label>تاريخ اللقطة</label><input type="date" id="fSnap" value="'+isoDay(S.snap)+'"></div><div class="fld"><label>الشيكات</label><select id="fMode"><option value="with"'+(S.mode==='with'?' selected':'')+'>مع شيكات</option><option value="without"'+(S.mode==='without'?' selected':'')+'>بدون شيكات</option></select></div><div class="fld"><label>بحث (عميل / رمز / هاتف)</label><input type="text" id="fq" value="'+esc(S.q)+'" placeholder="ابحث..."></div><div class="fld"><label>نوع العميل</label><select id="fType"><option value="">الجميع</option>'+Object.keys(AG_TYPES).filter(k=>k!=='O'||T.A.raw.some(c=>agTypeOf(c.code)==='O')).map(k=>'<option value="'+k+'"'+(S.type===k?' selected':'')+'>'+AG_TYPES[k]+'</option>').join('')+'</select></div><div class="fld"><label>فئة العميل</label><select id="fCat"><option value="">الكل</option>'+[...new Set(T.A.C.map(c=>c.cat||'(بدون)'))].sort((a,b)=>a.localeCompare(b,'ar')).map(r=>'<option value="'+esc(r)+'"'+(S.cat===r?' selected':'')+'>'+esc(r)+'</option>').join('')+'</select></div><div class="fld"><label>المدير</label><select id="fMgr"><option value="">الكل</option>'+[...new Set(T.A.C.map(c=>c.mgr))].sort((a,b)=>a.localeCompare(b,'ar')).map(r=>'<option value="'+esc(r)+'"'+(S.mgr===r?' selected':'')+'>'+esc(r)+'</option>').join('')+'</select></div><div class="fld"><label>المندوب</label><select id="fRep"><option value="">الكل</option>'+[...new Set(T.A.C.map(c=>c.rep))].sort((a,b)=>a.localeCompare(b,'ar')).map(r=>'<option value="'+esc(r)+'"'+(S.rep===r?' selected':'')+'>'+esc(r)+'</option>').join('')+'</select></div><label class="chk'+(S.merge?' hl':'')+'" id="fMergeL"><input type="checkbox" id="fMerge"'+(S.merge?' checked':'')+'> دمج الفروع</label><div class="fld"><label>الحالة</label><select id="fSt"><option value="">الكل</option>'+Object.keys(AG_ST).filter(k=>k!=='nodate').map(k=>'<option value="'+k+'"'+(S.st===k?' selected':'')+'>'+AG_ST[k][0]+'</option>').join('')+'</select></div><label class="chk'+(S.over?' hl':'')+'" id="fOverL"><input type="checkbox" id="fOver"'+(S.over?' checked':'')+'> فوق السقف فقط</label><div class="fld"><label>الحد الأدنى للتعرض</label><input type="number" id="fMin" value="'+(S.min||'')+'" style="width:90px" placeholder="0"></div><span class="sp"></span><button class="btn" id="fclr">مسح الفلاتر</button></div>':'')+'<div id="view"></div>';
   $('subtabs').querySelectorAll('.stab').forEach(b=>b.onclick=()=>{S.view=b.dataset.v;renderAging(T);window.scrollTo(0,0);});
   const bar=$('agbar');if(bar){const re=()=>renderAging(T);$('fSnap').onchange=e=>{S.snap=fromISO(e.target.value);agSave(T);};$('fMode').onchange=e=>{S.mode=e.target.value;agSave(T);};
-    let t;$('fq').oninput=e=>{clearTimeout(t);t=setTimeout(()=>{S.q=e.target.value.trim();AGV[S.view](T,$('view'));},250);};$('fRep').onchange=e=>{S.rep=e.target.value;re();};$('fMgr').onchange=e=>{S.mgr=e.target.value;re();};$('fType').onchange=e=>{S.type=e.target.value;re();};$('fCat').onchange=e=>{S.cat=e.target.value;re();};$('fMerge').onchange=e=>{S.merge=e.target.checked;LS.set('kap_aging_merge',S.merge?'1':'0');agMerge(T);agCompute(T);T.ts={};re();};$('fSt').onchange=e=>{S.st=e.target.value;re();};$('fOver').onchange=e=>{S.over=e.target.checked;re();};
+    let t;$('fq').oninput=e=>{clearTimeout(t);t=setTimeout(()=>{S.q=e.target.value.trim();AGV[S.view](T,$('view'));},250);};$('fRep').onchange=e=>{S.rep=e.target.value;re();};$('fMgr').onchange=e=>{S.mgr=e.target.value;re();};$('fType').onchange=e=>{S.type=e.target.value;re();};$('fCat').onchange=e=>{S.cat=e.target.value;re();};$('fMerge').onchange=e=>{if(typeof setMergeAll==='function'){setMergeAll(e.target.checked);return;}S.merge=e.target.checked;LS.set('kap_aging_merge',S.merge?'1':'0');agMerge(T);agCompute(T);T.ts={};re();};$('fSt').onchange=e=>{S.st=e.target.value;re();};$('fOver').onchange=e=>{S.over=e.target.checked;re();};
     let t2;$('fMin').oninput=e=>{clearTimeout(t2);t2=setTimeout(()=>{S.min=+e.target.value||0;re();},400);};$('fclr').onclick=()=>{S.q='';S.rep='';S.mgr='';S.type='';S.cat='';S.st='';S.over=false;S.min=0;re();};}
   (AGV[S.view]||AGV.ov)(T,$('view'));}
 async function agInit(T){T.S=agState();T.ts={};AG_MGR={};AG_GRP_USER={};try{AG_MGR=JSON.parse(LS.get('kap_aging_mgr')||'{}')||{};}catch(e){AG_MGR={};}try{AG_GRP_USER=JSON.parse(LS.get('kap_aging_grp')||'{}')||{};}catch(e){AG_GRP_USER={};}
   try{const o=JSON.parse(LS.get('kap_aging')||'{}');if(o.snap!=null)T.S.snap=o.snap;if(o.mode)T.S.mode=o.mode;if(o.rate>0)T.S.rate=o.rate;}catch(e){}
   if(T.S.snap==null)T.S.snap=Math.floor(Date.now()/DAY);
-  T.S.merge=LS.get('kap_aging_merge')==='1';
+  T.S.merge=LS.get('kap_aging_merge')==='1'||LS.get('kap_merge_all')==='1';
   try{const o=JSON.parse(LS.get('kap_aging_bands')||'{}');if(o.bands)T.S.bands=o.bands;if(o.basis)T.S.basis=o.basis;if(o.nMonths)T.S.nMonths=o.nMonths;}catch(e){}
   const D=await IDB.get('aging'),D2=await IDB.get('aging_chk');if(D&&D.rows&&D.rows.length)T.D=D;if(D2&&D2.rows&&D2.rows.length)T.D2=D2;
   try{agBuild(T);agCompute(T);}catch(e){console.error(e);T.A=null;T.P=null;}}
@@ -3735,6 +3745,7 @@ function repPayModel(T){const D=T.D2;if(!D||!D.rows||!D.rows.length)return null;
   const pd=makeDateParser(D.rows.slice(0,300).map(r=>r[I.date]).filter(Boolean));const n=(r,i)=>i>=0?(pnum(r[i])||0):0,s=(r,i)=>i>=0?String(r[i]||'').trim():'';
   const pays=[];
   for(const r of D.rows){const amt=n(r,I.amt);const date=pd(s(r,I.date));if(!(amt>0)||date==null)continue;const bal=n(r,I.bal),grace=n(r,I.grace);let rep=s(r,I.rep);if(!rep||REP_NOREP.test(rep))rep='بدون مندوب';
+    let cc=s(r,I.cc),cn=s(r,I.cn);{const g=mergeGrp(cc);if(g){cc=g;cn=g;}}
     const m=mIdx.map(([k,i])=>Math.max(0,n(r,i)));/* المبيعات الصافية لكل شهر (سالب = مرتجع صافٍ → صفر) */
     /* 1) الرصيد قبل التحصيل يُغطّى من الأحدث للأقدم → الأجزاء المفتوحة لكل شهر */
     let left=Math.max(bal,0);const open=m.map(()=>0);for(let k=0;k<m.length&&left>0;k++){const take=Math.min(m[k],left);open[k]=take;left-=take;}const beyond=left;/* رصيد أقدم من كل الأشهر المتاحة */
@@ -3742,7 +3753,7 @@ function repPayModel(T){const D=T.D2;if(!D||!D.rows||!D.rows.length)return null;
     let pay=amt;const paid=m.map(()=>0);let paidBeyond=0;if(beyond>0){paidBeyond=Math.min(beyond,pay);pay-=paidBeyond;}for(let k=open.length-1;k>=0&&pay>0;k--){const t=Math.min(open[k],pay);paid[k]=t;pay-=t;}const advance=pay;/* دفعة مقدمة / تزيد عن الرصيد */
     const applied=amt-advance;const monthsIdx=mIdx.map(x=>x[0]);let wsum=0;for(let k=0;k<paid.length;k++)wsum+=paid[k]*monthsIdx[k];wsum+=paidBeyond*(monthsIdx[monthsIdx.length-1]+1);
     const ageM=applied>0?wsum/applied:null;const d=new Date(date*DAY);const dom=d.getUTCDate();const ageD=ageM==null?null:(ageM*30+dom-15);/* تقريب: من منتصف شهر الفاتورة */
-    pays.push({id:s(r,I.id),date,per:repPer(d.getUTCFullYear(),d.getUTCMonth()+1),due:pd(s(r,I.due)),cc:s(r,I.cc),cn:s(r,I.cn),rep,amt,bal,grace,applied,advance,ageM,ageD,late:ageD!=null&&ageD>grace+15,paid,paidBeyond,beyond,open});}
+    pays.push({id:s(r,I.id),date,per:repPer(d.getUTCFullYear(),d.getUTCMonth()+1),due:pd(s(r,I.due)),cc,cn,rep,amt,bal,grace,applied,advance,ageM,ageD,late:ageD!=null&&ageD>grace+15,paid,paidBeyond,beyond,open});}
   return {pays,mIdx};}
 function repPayAgg(pays,keyFn){const m=new Map();for(const p of pays){const k=keyFn(p);if(k==null)continue;let g=m.get(k);if(!g){g={label:String(k),n:0,amt:0,applied:0,adv:0,w:0,late:0,lateAmt:0,bal:0,custs:new Set(),grace:0};m.set(k,g);}g.n++;g.amt+=p.amt;g.applied+=p.applied;g.adv+=p.advance;if(p.ageD!=null)g.w+=p.ageD*p.applied;if(p.late){g.late++;g.lateAmt+=p.applied;}g.bal+=p.bal;g.custs.add(p.cc);g.grace+=p.grace;}
   return [...m.values()].map(g=>{g.nc=g.custs.size;delete g.custs;g.ageD=g.applied>0?g.w/g.applied:null;g.latePct=g.applied>0?g.lateAmt/g.applied:null;g.avgBal=g.n?g.bal/g.n:null;g.avgGrace=g.n?g.grace/g.n:null;return g;});}
@@ -3784,13 +3795,21 @@ function repPayBind(T,el){const d=$('pyDrop');if(!d)return;const inp=d.querySele
 EXPL_VIEWS.q18_pay={t:'آلية الدفع',d:'لكل سند قبض: الرصيد القائم قبله يُوزَّع على أشهر المبيعات من الأحدث للأقدم (كما في عمر الذمة)، ثم يُفترض أن التحصيل يسدّد الأقدم أولاً، فيُحسب «عمر المدفوع»: بعد كم يوماً من تاريخ الفاتورة (تقريباً من منتصف شهرها) وصل التحصيل، مرجّحاً بالمبلغ. يُقارن بأيام السماح في شروط دفع العميل؛ متأخر إذا تجاوز السماح بأكثر من 15 يوماً. ما يزيد عن الرصيد القائم يُعدّ دفعة مقدمة ولا يدخل في العمر.',cols:[['التحصيلات / المحصَّل','عدد سندات القبض ومجموعها'],['متوسط الرصيد قبل التحصيل','كم كان العميل مديناً عند كل دفعة'],['عمر المدفوع (يوم)','متوسط مرجّح لعمر الفواتير التي سدّدتها الدفعات'],['% متأخر','نسبة المبالغ التي سدّدت فواتير تجاوزت السماح بأكثر من 15 يوماً'],['قبل / بعد الانتقال','نفس المؤشرات للعميل مع المندوب السابق ثم الجديد']]};
 /* ================= boot ================= */
 async function appBoot(){
+  MERGE_ALL=LS.get('kap_merge_all')==='1';
   for(const d of QDEF)TABS[d.id]=mkTab(d);
   for(const d of QDEF){if(d.kind==='aging'){await agInit(TABS[d.id]);continue;}if(d.kind==='mil'){await milInit(TABS[d.id]);continue;}if(d.kind==='proc'){await procInit(TABS[d.id]);continue;}const D=await IDB.get(d.id);if(D&&D.rows&&D.rows.length){const T=TABS[d.id];T.D=D;try{build(T);}catch(e){console.error(e);T.D=null;T.P=null;}}}
   let a=LS.get('kap_active');if(location.hash==='#aging'&&TABS.aging)a='aging';
   ACTIVE=(a&&TABS[a])?a:QDEF[0].id;
   $('qtabs').style.display='';$('printBtn').style.display='';
+  const mb=$('mergeBox');if(mb){mb.style.display='';$('mergeAll').checked=MERGE_ALL;$('mergeAll').onchange=e=>setMergeAll(e.target.checked);}
   renderTabs();renderTab(TABS[ACTIVE]);
 }
+function setMergeAll(v){MERGE_ALL=!!v;LS.set('kap_merge_all',MERGE_ALL?'1':'0');const ma=$('mergeAll');if(ma)ma.checked=MERGE_ALL;
+  for(const d of QDEF){const T=TABS[d.id];if(!T)continue;
+    if(d.kind==='aging'){T.S.merge=MERGE_ALL;LS.set('kap_aging_merge',MERGE_ALL?'1':'0');try{agMerge(T);agCompute(T);}catch(e){console.error(e);}T.ts={};continue;}
+    if(d.kind==='mil'||d.kind==='proc')continue;
+    if(T.D){try{build(T);}catch(e){console.error(e);}invalidate(T);T.ts={};}}
+  renderTab(TABS[ACTIVE]);toast(MERGE_ALL?'دمج الفروع مفعّل في كل التبويبات':'أُلغي دمج الفروع');}
 /* نقل بيانات محفوظة قبل نظام الدخول (بدون اسم مستخدم) إلى أول مستخدم يسجّل دخوله على هذا الجهاز */
 async function migrateLegacy(){try{if(localStorage.getItem('kap_migrated_'+UID))return;
   const keys=[...QDEF.map(d=>d.id),'aging','aging_chk'];
