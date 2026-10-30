@@ -674,7 +674,7 @@ ORDER BY
     </div>
   </section>
 
-  <footer>شاشة عينات المصروفات — الإصدار v2.22 · مزامنة سحابية</footer>
+  <footer>شاشة عينات المصروفات — الإصدار v2.23 · مزامنة سحابية</footer>
 </div>
 
 <div class="bottombar" id="bottombar">
@@ -687,6 +687,18 @@ ORDER BY
 
 <div class="toast" id="toast"></div>
 <div class="print-only pr" id="printArea"></div>
+
+<dialog id="dlgSheets">
+  <div class="dl">
+    <h3>📑 أوراق الملف</h3>
+    <p class="muted tiny" style="margin-top:0">الملف فيه أكثر من ورقة. اختر ما تريد استيراده. السطور المكررة بين الأوراق تُحسب مرة واحدة.</p>
+    <div id="shList" style="max-height:50vh;overflow:auto"></div>
+    <div class="row" style="margin-top:14px;justify-content:flex-end">
+      <button class="btn" id="shCancel">إلغاء</button>
+      <button class="btn p" id="shGo">استيراد المحدد</button>
+    </div>
+  </div>
+</dialog>
 
 <dialog id="dlgFile">
   <div class="dl">
@@ -739,7 +751,7 @@ const SUPABASE_KEY='sb_publishable_NGtGX9SN8hXSoq-JRidGcQ_NfAyYCP5';
 const SCREEN_ID='expense-samples';
 const T_ST='expense_sample_statements', T_ROWS='expense_sample_rows', T_FILE='expense_sample_filing', T_REQ='expense_sample_requirements';
 const LS_CACHE='kilani_exp_samples_cache_v2', LS_QUEUE='kilani_exp_samples_queue_v2', LS_PREF='kilani_exp_samples_pref_v2', LS_LEGACY='kilani_exp_samples_v1';
-const PAGE=1000, CHUNK=400;
+const PAGE=1000, CHUNK=1000, FETCH_PAR=4, GROUP_PAGE=300;
 
 const $=s=>document.querySelector(s);
 const $$=s=>Array.from(document.querySelectorAll(s));
@@ -747,7 +759,7 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;'
 const fmt=n=>{n=Number(n)||0;return n.toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:3});};
 const pct=(a,b)=>b?Math.round(a/b*1000)/10:0;
 const pctS=(a,b)=>(b?(pct(a,b)+'%'):'—');
-const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,8);
+let _uidC=0;const uid=()=>(crypto&&crypto.randomUUID)?crypto.randomUUID().replace(/-/g,'').slice(0,20):(Date.now().toString(36)+(++_uidC).toString(36)+Math.random().toString(36).slice(2,8));
 const now=()=>new Date().toISOString();
 const pad=n=>String(n).padStart(2,'0');
 
@@ -772,8 +784,24 @@ $('#themeBtn').addEventListener('click',()=>{const cur=pref.theme||(matchMedia('
 applyTheme();
 
 /* ====================== كاش محلي + طابور ====================== */
-function saveCache(){try{localStorage.setItem(LS_CACHE,JSON.stringify({t:now(),statements:state.statements,filing:state.filing,reqs:state.reqs}));}catch(e){}}
-function loadCache(){try{const o=JSON.parse(localStorage.getItem(LS_CACHE)||'null');if(o&&Array.isArray(o.statements)){state.statements=o.statements;state.filing=o.filing||{};state.reqs=o.reqs||[];dedupeStatements();return true;}}catch(e){}return false;}
+/* كاش محلي على IndexedDB (يتحمل مئات الآلاف من السطور) مع رجوع إلى localStorage */
+function idb(){return new Promise((res,rej)=>{try{const q=indexedDB.open('kilani_exp_samples',1);q.onupgradeneeded=()=>{q.result.createObjectStore('kv');};q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error);}catch(e){rej(e);}});}
+async function idbGet(k){try{const db=await idb();return await new Promise((res,rej)=>{const t=db.transaction('kv','readonly').objectStore('kv').get(k);t.onsuccess=()=>res(t.result);t.onerror=()=>rej(t.error);});}catch(e){return undefined;}}
+async function idbSet(k,v){try{const db=await idb();return await new Promise((res,rej)=>{const t=db.transaction('kv','readwrite').objectStore('kv').put(v,k);t.onsuccess=()=>res(true);t.onerror=()=>rej(t.error);});}catch(e){return false;}}
+let lastSync='';
+let cacheT=null;
+function saveCache(){clearTimeout(cacheT);cacheT=setTimeout(saveCacheNow,400);}
+async function saveCacheNow(){
+  const payload={t:now(),lastSync,statements:state.statements,filing:state.filing,reqs:state.reqs};
+  const ok=await idbSet(LS_CACHE,payload);
+  if(!ok){try{localStorage.setItem(LS_CACHE,JSON.stringify(payload));}catch(e){}}
+}
+async function loadCache(){
+  let o=await idbGet(LS_CACHE);
+  if(!o){try{o=JSON.parse(localStorage.getItem(LS_CACHE)||'null');}catch(e){o=null;}}
+  if(o&&Array.isArray(o.statements)){state.statements=o.statements;state.filing=o.filing||{};state.reqs=o.reqs||[];lastSync=o.lastSync||'';dedupeStatements();return true;}
+  return false;
+}
 function saveQueue(){try{localStorage.setItem(LS_QUEUE,JSON.stringify(queue));}catch(e){}}
 function loadQueue(){try{queue=JSON.parse(localStorage.getItem(LS_QUEUE)||'[]')||[];}catch(e){queue=[];}}
 const SHORT={ok:'متزامن',busy:'مزامنة…',off:'غير متصل'};
@@ -807,8 +835,26 @@ function toDate(v){
 }
 function dateKey(d){const m=String(d).match(/^(\d{2})\.(\d{2})\.(\d{4})$/);return m?m[3]+m[2]+m[1]:d;}
 function str(v){if(v==null)return '';return String(v).trim();}
+/* تخطيط فواتير المبيعات/المرتجعات: # | رمز الحركة (التسلسل) | التاريخ | رمز العميل | العميل | المبلغ | ضريبة المبيعات | الاجمالي | النوع */
+function isSalesHeader(cells){const t=(cells||[]).map(c=>String(c||'').trim());return t.some(x=>/^العميل$|اسم\s*العميل|CardName/i.test(x))&&t.some(x=>/الاجمالي|الإجمالي|^المبلغ$|DocTotal/i.test(x));}
+const SERIES_BY_LEN={5:['S5','المؤسسة الاستهلاكية العسكرية'],7:['S7','الكاش فان'],8:['S8','المبيعات النقدية'],9:['S9','الذمم (العملاء)']};
+function salesRows(mat,hi){
+  const h=mat[hi].map(c=>String(c||'').trim());const col=re=>h.findIndex(x=>re.test(x));
+  const cDoc=col(/رمز\s*الحركة|رقم\s*الفاتورة|DocNum/i),cDate=col(/تاريخ/),cCust=col(/^العميل$|اسم\s*العميل|CardName/i),cCode=col(/رمز\s*العميل|CardCode/i),cAmt=col(/^المبلغ$|قبل\s*الضريبة/),cTax=col(/ضريبة/),cTot=col(/الاجمالي|الإجمالي|DocTotal/i),cType=col(/^النوع$/);
+  const out=[];
+  for(let i=hi+1;i<mat.length;i++){const c=mat[i];if(!c||!c.length)continue;
+    const doc=str(cDoc>=0?c[cDoc]:'');const cust=str(cCust>=0?c[cCust]:'');if(!doc||!/^\d+$/.test(doc)||!cust)continue;
+    const typ=str(cType>=0?c[cType]:'');const isRet=/مردود|مرتجع|return|credit/i.test(typ);
+    const amt=toNum(cAmt>=0?c[cAmt]:0),tax=toNum(cTax>=0?c[cTax]:0);let tot=cTot>=0?toNum(c[cTot]):amt+tax;if(cTot<0||tot===0&&(amt||tax))tot=amt+tax;
+    const ser=SERIES_BY_LEN[doc.length]||['S'+doc.length,'تسلسل '+doc.length+' خانات'];
+    const r={date:toDate(cDate>=0?c[cDate]:''),trx:doc,series:'',doc,code:isRet?'14':'13',acct:ser[0],exp:ser[1],debit:amt,credit:0,net:tot,desc:cust,edesc:typ,r1:str(cCode>=0?c[cCode]:''),r2:tax?String(tax):'',r3:''};
+    r.k=[r.date,r.trx,r.series,r.doc,r.acct,r.net,r.desc].join('|');out.push(r);}
+  const seen={};out.forEach(r=>{const n=(seen[r.k]||0)+1;seen[r.k]=n;if(n>1)r.k+='#'+n;});
+  return out;
+}
 function rowsFromMatrix(mat){
   if(!mat.length)return [];
+  for(let i=0;i<Math.min(mat.length,10);i++){if(isSalesHeader(mat[i]))return salesRows(mat,i);}
   let hi=-1;for(let i=0;i<Math.min(mat.length,10);i++){if(isHeader(mat[i])){hi=i;break;}}
   let map;if(hi>=0)map=mapHeader(mat[hi]);else{map={};DEFAULT_ORDER.forEach((k,i)=>map[k]=i);}
   const out=[];
@@ -836,11 +882,20 @@ function toServerRow(stId,r){const data={};DATA_KEYS.forEach(k=>data[k]=r[k]);re
 function fromServerRow(x){return Object.assign({},x.data||{},{id:x.id,k:x.k,sel:!!x.sel,done:!!x.done,note:x.note||'',selAt:x.sel_at||'',doneAt:x.done_at||''});}
 
 function dedupeStatements(){const seen=new Set();state.statements=state.statements.filter(s=>{if(seen.has(s.id))return false;seen.add(s.id);return true;});}
+async function fetchPaged(build,onProgress){
+  // يجلب كل الصفحات بالتوازي (FETCH_PAR صفحات معاً)
+  const {count,error:ec}=await build().select('id',{count:'exact',head:true});if(ec)throw ec;
+  const total=count||0;const pages=Math.ceil(total/PAGE);let out=new Array(pages);let next=0,done=0;
+  async function worker(){while(next<pages){const i=next++;const {data,error}=await build().select('*').order('id').range(i*PAGE,i*PAGE+PAGE-1);if(error)throw error;out[i]=data||[];done++;if(onProgress)onProgress(done,pages);}}
+  await Promise.all(Array.from({length:Math.min(FETCH_PAR,pages)},worker));
+  return [].concat(...out.filter(Boolean));
+}
+function maxUpd(rows,cur){let m=cur||'';rows.forEach(x=>{if(x.updated_at&&x.updated_at>m)m=x.updated_at;});return m;}
 async function fetchAll(){
   const {data:sts,error:e1}=await sb.from(T_ST).select('*').order('created_at');
   if(e1)throw e1;
-  let all=[],from=0;
-  for(;;){const {data,error}=await sb.from(T_ROWS).select('*').order('id').range(from,from+PAGE-1);if(error)throw error;all=all.concat(data||[]);if(!data||data.length<PAGE)break;from+=PAGE;}
+  const all=await fetchPaged(()=>sb.from(T_ROWS),(d,n)=>setSync('busy',`جاري التحميل… ${d}/${n}`));
+  lastSync=maxUpd(all,'');
   const byS=new Map();all.forEach(x=>{if(!byS.has(x.statement_id))byS.set(x.statement_id,[]);byS.get(x.statement_id).push(fromServerRow(x));});
   state.statements=(sts||[]).map(s=>({id:s.id,name:s.name,createdAt:s.created_at,updatedAt:s.updated_at,rows:byS.get(s.id)||[]}));
   try{const {data:fl,error:ef}=await sb.from(T_FILE).select('*');if(ef)throw ef;filingOk=true;const f={};(fl||[]).forEach(x=>{f[x.id]={box:x.box||'',seq:x.seq==null?'':x.seq,note:x.note||''};});state.filing=f;}
@@ -851,6 +906,26 @@ async function fetchAll(){
   dedupeStatements();
   queue.forEach(op=>applyPatchLocal(op.ids,op.patch,false));
   lastLoad=Date.now();saveCache();
+}
+/* مزامنة تزايدية: الكشوفات كلها (صغيرة) + السطور المعدّلة منذ آخر مزامنة + فحص عدد السطور لكل كشف */
+async function syncIncremental(){
+  const {data:sts,error:e1}=await sb.from(T_ST).select('*').order('created_at');if(e1)throw e1;
+  const serverIds=new Set((sts||[]).map(s=>s.id));
+  state.statements=state.statements.filter(s=>serverIds.has(s.id));
+  for(const s of (sts||[])){let loc=state.statements.find(x=>x.id===s.id);if(!loc){loc={id:s.id,name:s.name,createdAt:s.created_at,updatedAt:s.updated_at,rows:[]};state.statements.push(loc);}else{loc.name=s.name;loc.updatedAt=s.updated_at;}}
+  let changed=[];
+  if(lastSync){changed=await fetchPaged(()=>sb.from(T_ROWS).gt('updated_at',lastSync));}
+  const idx=new Map();state.statements.forEach(s=>s.rows.forEach(r=>idx.set(r.id,s)));
+  changed.forEach(x=>{const r=fromServerRow(x);const cur=idx.get(x.id);const tgt=state.statements.find(s=>s.id===x.statement_id);if(!tgt)return;
+    if(cur&&cur!==tgt){cur.rows=cur.rows.filter(y=>y.id!==x.id);}
+    const i=tgt.rows.findIndex(y=>y.id===x.id);if(i>=0)tgt.rows[i]=r;else tgt.rows.push(r);idx.set(x.id,tgt);});
+  lastSync=maxUpd(changed,lastSync);
+  // فحص العدد لكل كشف: اختلاف = حذف لم يصلنا → إعادة جلب سطور ذلك الكشف
+  for(const s of state.statements){const {count,error}=await sb.from(T_ROWS).select('id',{count:'exact',head:true}).eq('statement_id',s.id);if(error)throw error;
+    if((count||0)!==s.rows.length){const rows=await fetchPaged(()=>sb.from(T_ROWS).eq('statement_id',s.id),(d,n)=>setSync('busy',`تحديث «${s.name}»… ${d}/${n}`));s.rows=rows.map(fromServerRow);lastSync=maxUpd(rows,lastSync);}}
+  try{const {data:fl,error:ef}=await sb.from(T_FILE).select('*');if(ef)throw ef;filingOk=true;const f={};(fl||[]).forEach(x=>{f[x.id]={box:x.box||'',seq:x.seq==null?'':x.seq,note:x.note||''};});state.filing=f;}catch(e){filingOk=false;}
+  try{const {data:rq,error:er}=await sb.from(T_REQ).select('*').order('created_at');if(er)throw er;reqOk=true;state.reqs=(rq||[]).map(fromServerReq);}catch(e){reqOk=false;}
+  dedupeStatements();queue.forEach(op=>applyPatchLocal(op.ids,op.patch,false));lastLoad=Date.now();saveCache();
 }
 async function reload(silent){
   if(!sb||!SESSION||importing)return;
@@ -940,7 +1015,7 @@ async function importStatement(name,rows,opts){
     }
     for(let i=0;i<toDelete.length;i+=200){const {error}=await sb.from(T_ROWS).delete().in('id',toDelete.slice(i,i+200));if(error)throw error;}
   }catch(e){console.error(e);importing=false;toast('فشل الرفع إلى السحابة: '+(e.message||e));syncStatus();return;}
-  importing=false;
+  importing=false;lastSync=now();
   st.rows=rows;st.updatedAt=now();
   const idx=state.statements.findIndex(x=>x.id===st.id);
   if(idx>=0)state.statements[idx]=st;else state.statements.push(st);
@@ -972,7 +1047,7 @@ function clearSelections(id){
 /* تحديث لحظي */
 function subscribeRealtime(){
   if(rtChannel)return;
-  let reloadT=null;const schedReload=()=>{clearTimeout(reloadT);reloadT=setTimeout(()=>{if(importing){schedReload();return;}reload(true);},1200);};
+  let reloadT=null;const schedReload=()=>{clearTimeout(reloadT);reloadT=setTimeout(()=>{if(importing){schedReload();return;}reloadInc();},1200);};
   rtChannel=sb.channel('exp-samples-'+SCREEN_ID)
     .on('postgres_changes',{event:'*',schema:'public',table:T_ROWS},p=>{
       if(importing)return;
@@ -1006,7 +1081,8 @@ function subscribeRealtime(){
     .subscribe();
 }
 let rT=null;function renderAllDebounced(){clearTimeout(rT);rT=setTimeout(renderAll,150);}
-document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&SESSION){flush();if(Date.now()-lastLoad>120000)reload(true);}});
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&SESSION){flush();if(Date.now()-lastLoad>120000)reloadInc();}});
+async function reloadInc(){if(!sb||!SESSION||importing)return;try{await syncIncremental();renderAll();autoMergeDuplicates();}catch(e){console.warn(e);}syncStatus();}
 
 /* ====================== دخول وصلاحيات ====================== */
 function gate(html){$('#gate').innerHTML=html;$('#gate').classList.remove('hidden');$('#app').classList.add('hidden');}
@@ -1045,10 +1121,11 @@ async function afterLogin(){
   $('#roBanner').classList.toggle('hidden',CAN_EDIT);
   $('#importCard').classList.toggle('hidden',!CAN_EDIT);
   document.body.classList.toggle('ro',!CAN_EDIT);
-  gate('<div class="center-load"><div class="spin"></div>جاري تحميل البيانات من السحابة…</div>');
+  gate('<div class="center-load"><div class="spin"></div>جاري تحميل البيانات…</div>');
   loadQueue();
-  try{await fetchAll();}
-  catch(e){console.error(e);if(!loadCache()){renderUnauthorized('warn','تعذّر تحميل البيانات',e.message||'خطأ غير معروف');return;}toast('تعذّر الاتصال — تُعرض آخر نسخة محلية');}
+  const cached=await loadCache();
+  try{if(cached&&state.statements.length){await syncIncremental();}else{await fetchAll();}}
+  catch(e){console.error(e);if(!cached){renderUnauthorized('warn','تعذّر تحميل البيانات',e.message||'خطأ غير معروف');return;}toast('تعذّر الاتصال — تُعرض آخر نسخة محلية');}
   $('#gate').classList.add('hidden');$('#app').classList.remove('hidden');
   renderAll();syncStatus();flush();subscribeRealtime();checkLegacy();autoMergeDuplicates();
 }
@@ -1078,7 +1155,7 @@ async function uploadBundle(statements){
 /* ====================== أدوات على البيانات ====================== */
 function allRows(filterSt){const out=[];state.statements.forEach(s=>{if(filterSt&&filterSt!=='all'&&s.id!==filterSt)return;s.rows.forEach(r=>out.push({r,s}));});return out;}
 /* رقم المستند المعروض حسب نوع الحركة: سندات الصرف/القبض يُعرض رقم السند (Reference 1) ورقم المرجع (Reference 2) */
-const DOC_TYPES={'46':'سند صرف','24':'سند قبض','18':'فاتورة مورد','19':'إشعار دائن مورد','13':'فاتورة مبيعات','14':'إشعار دائن','30':''};
+const DOC_TYPES={'46':'سند صرف','24':'سند قبض','18':'فاتورة مورد','19':'إشعار دائن مورد','13':'فاتورة مبيعات','14':'مرتجع مبيعات','30':''};
 function docInfo(r){const code=String(r.code||'').trim();const pay=code==='46'||code==='24';const no=(pay&&r.r1)?r.r1:(r.doc||'');return {no,tag:DOC_TYPES[code]||'',ref:pay?(r.r2||''):'',isPay:pay,jno:pay&&r.r1?r.doc:''};}
 function docCell(r){const d=docInfo(r);return `<b class="num">${esc(d.no||'—')}</b>${d.tag?`<span class="dtag">${esc(d.tag)}</span>`:''}${d.ref?`<small>مرجع <span class="num">${esc(d.ref)}</span></small>`:''}${d.jno?`<small>قيد <span class="num">${esc(d.jno)}</span></small>`:''}`;}
 /* البوكس فايل والترتيب لكل مصروف داخل الكشف */
@@ -1194,7 +1271,7 @@ function renderKpis(){
   $('#kAllSub').textContent=`${allD} من ${allN} مصوّرة`+(rqN?` · عينات ${done}/${sel} · متطلبات ${rqD}/${rqN}`:'');
   $('#kAllBar').style.width=pct(allD,allN)+'%';
   $('#nReqs').textContent=rqN-rqD;
-  $('#kSel').innerHTML=sel+`<small>عينة</small>`;$('#kSelSub').textContent=`من ${tot} سطر مصروف (${pctS(sel,tot)})`;
+  $('#kSel').innerHTML=sel+`<small>عينة</small>`;$('#kSelSub').textContent=`من ${tot.toLocaleString('en-US')} سطر (${pctS(sel,tot)})`;
   $('#kLeft').textContent=sel-done;$('#kLeftSub').textContent=sel-done?'عينة لم تُصوَّر بعد':(sel?'اكتمل التصوير ✔':'—');
   $('#kCov').textContent=amt?pct(selAmt,amt)+'%':'0%';$('#kCovSub').textContent=`${fmt(selAmt)} من ${fmt(amt)}`;
   $('#nList').textContent=tot-sel;$('#nSamples').textContent=sel;$('#nSt').textContent=state.statements.length;
@@ -1291,7 +1368,9 @@ function renderList(){
         ${ui.fSt!=='all'&&CAN_EDIT?`<button class="fbtn no-print" data-filing="${ui.fSt}|${esc(g.acct)}" data-exp="${esc(g.exp)}" title="البوكس فايل والترتيب">📦</button>`:''}
         <div class="meta"><b>${t.sel} / ${t.n} عينة</b>${pctS(t.selAmt,t.amt)} من المبلغ</div>
         <span class="caret">▼</span></div><div class="grp-b">${sortbar(ui.sortL,'data-sortl')}${headRow(ui.sortL,'data-sortl','')}`);
-    g.items.sort(sorter(ui.sortL)).forEach(x=>html.push(lineHtml(x,docN,docExp,false)));
+    const sortedItems=g.items.sort(sorter(ui.sortL));const lim=(ui.gLimit&&ui.gLimit[g.k])||GROUP_PAGE;
+    sortedItems.slice(0,lim).forEach(x=>html.push(lineHtml(x,docN,docExp,false)));
+    if(sortedItems.length>lim)html.push(`<button class="btn more-btn" data-gmore="${esc(g.k)}">عرض المزيد (${(sortedItems.length-lim).toLocaleString('en-US')} متبقٍ من ${sortedItems.length.toLocaleString('en-US')})</button>`);
     html.push('</div></div>');
   });
   $('#listBody').innerHTML=html.join('');renderBottom();
@@ -1449,6 +1528,7 @@ $('#btnExpand').addEventListener('click',e=>{ui.allOpenL=!ui.allOpenL;if(!ui.all
 $('#listBody').addEventListener('click',e=>{
   const so=e.target.closest('[data-sortl]');if(so){toggleSort(ui.sortL,so.dataset.sortl);const y=window.scrollY;renderList();window.scrollTo(0,y);return;}
   if(e.target.closest('#btnMore')){ui.flatLimit+=300;const y=window.scrollY;renderList();window.scrollTo(0,y);return;}
+  const gm=e.target.closest('[data-gmore]');if(gm){ui.gLimit=ui.gLimit||{};ui.gLimit[gm.dataset.gmore]=((ui.gLimit[gm.dataset.gmore])||GROUP_PAGE)+GROUP_PAGE;const y=window.scrollY;renderList();window.scrollTo(0,y);return;}
   const lu=e.target.closest('[data-lunsel]');if(lu){const n=patchRows(expandInvoice([lu.dataset.lunsel]),{sel:false});const y=window.scrollY;renderAll();window.scrollTo(0,y);toast(n>1?`أُرجع ${n} سطر (نفس الفاتورة) إلى الكشف`:'أُرجعت إلى الكشف');return;}
   const sel=e.target.closest('[data-sel]');if(sel){const ids=expandInvoice([sel.dataset.sel]);const n=patchRows(ids,{sel:true});if(n){const y=window.scrollY;renderAll();window.scrollTo(0,y);toast(n>1?`أُضيفت إلى العينات مع ${n-1} سطر آخر من نفس الفاتورة`:'أُضيفت إلى العينات');}return;}
   const ln=e.target.closest('[data-lnote]');if(ln){const f=findRow(ln.dataset.lnote);if(!f)return;const v=prompt('ملاحظة على هذا السطر:',f.r.note||'');if(v===null)return;patchRows([f.r.id],{note:v.trim()});renderList();return;}
@@ -1575,7 +1655,20 @@ function readFile(f){
   if(/\.(csv|txt|tsv)$/i.test(f.name)){const rd=new FileReader();rd.onload=()=>importStatement(name,parsePaste(rd.result),tgt);rd.readAsText(f,'utf-8');return;}
   if(typeof XLSX==='undefined'){toast('مكتبة Excel غير محمّلة — الصق البيانات كنص بدلاً من ذلك');return;}
   const rd=new FileReader();
-  rd.onload=()=>{try{const wb=XLSX.read(rd.result,{type:'array',cellDates:true});let all=[];wb.SheetNames.forEach(sn=>{const mat=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:''});const rows=rowsFromMatrix(mat);if(rows.length)all=all.concat(rows);});importStatement(name,all,tgt);}catch(err){console.error(err);toast('تعذّر قراءة الملف');}};
+  setSync('busy','جاري قراءة الملف…');
+  rd.onload=()=>{setTimeout(()=>{try{
+    const wb=XLSX.read(rd.result,{type:'array',cellDates:true});
+    const sheets=wb.SheetNames.map(sn=>{const mat=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:true,defval:''});return {sn,rows:rowsFromMatrix(mat)};}).filter(x=>x.rows.length);
+    syncStatus();
+    if(!sheets.length){toast('لم أجد بيانات معروفة في الملف');return;}
+    const go=chosen=>{const seen=new Set();let all=[];chosen.forEach(x=>x.rows.forEach(r=>{if(seen.has(r.k))return;seen.add(r.k);all.push(r);}));importStatement(name,all,tgt);};
+    if(sheets.length===1){go(sheets);return;}
+    const allIdx=sheets.findIndex(x=>/الكل|all/i.test(x.sn));
+    $('#shList').innerHTML=sheets.map((x,i)=>`<label class="chk" style="display:flex;justify-content:space-between;margin-bottom:6px"><span><input type="checkbox" data-sh="${i}" ${allIdx<0||i===allIdx?'checked':''}> ${esc(x.sn)}</span><span class="muted tiny">${x.rows.length.toLocaleString('en-US')} سطر · ${fmt(x.rows.reduce((a,r)=>a+r.net,0))}</span></label>`).join('');
+    const dl=$('#dlgSheets');dl.showModal();
+    $('#shGo').onclick=()=>{const chosen=Array.from(dl.querySelectorAll('[data-sh]:checked')).map(c=>sheets[+c.dataset.sh]);dl.close();if(!chosen.length){toast('اختر ورقة واحدة على الأقل');return;}go(chosen);};
+    $('#shCancel').onclick=()=>dl.close();
+  }catch(err){console.error(err);syncStatus();toast('تعذّر قراءة الملف');}},30);};
   rd.readAsArrayBuffer(f);
 }
 document.addEventListener('click',e=>{const m=e.target.closest('[data-merge]');if(!m)return;const [a,b]=m.dataset.merge.split('|');mergeStatements(a,b);});
