@@ -444,6 +444,7 @@ details.sqlbox pre{margin:0;padding:12px 14px;border-top:1px solid var(--line);d
       </div>
       <div class="hint">القيد وعكسه (Reversal) يُستبعدان تلقائياً من الكشف والعدّ والنسب، ويمكن إظهارهما بإلغاء «استبعاد القيد وعكسه». اضغط <b>«＋ عينة»</b> على السطر لنقله إلى العينات المختارة، وباقي الكشف يبقى كما هو. سطور نفس القيد التي تحت <b>نفس الحساب وبنفس البيان</b> تُعدّ فاتورة واحدة وتُنقل معاً تلقائياً. الرقم الأزرق بجانب رقم المستند يعني أن القيد له أكثر من سطر.</div>
     </div>
+    <div id="errBanner"></div>
     <div id="bigBanner"></div>
     <div id="dupWarnList"></div>
     <div id="listBody"></div>
@@ -684,6 +685,15 @@ ORDER BY
     </div>
 
     <div class="card">
+      <h2>تشخيص <small>إذا لم تظهر البيانات على جهاز</small></h2>
+      <div id="diagBox" class="muted tiny">—</div>
+      <div class="row" style="margin-top:8px">
+        <button class="btn" id="btnDiag">فحص الاتصال بالسحابة</button>
+        <button class="btn d" data-hardreload="1">مسح الكاش وإعادة التحميل الكاملة</button>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>نسخة احتياطية</h2>
       <div class="row">
         <button class="btn" id="btnBackup">⬇ حفظ نسخة (JSON)</button>
@@ -694,7 +704,7 @@ ORDER BY
     </div>
   </section>
 
-  <footer>شاشة عينات المصروفات — الإصدار v2.25 · مزامنة سحابية</footer>
+  <footer>شاشة عينات المصروفات — الإصدار v2.26 · مزامنة سحابية</footer>
 </div>
 
 <div class="bottombar" id="bottombar">
@@ -808,7 +818,7 @@ applyTheme();
 function idb(){return new Promise((res,rej)=>{try{const q=indexedDB.open('kilani_exp_samples',1);q.onupgradeneeded=()=>{q.result.createObjectStore('kv');};q.onsuccess=()=>res(q.result);q.onerror=()=>rej(q.error);}catch(e){rej(e);}});}
 async function idbGet(k){try{const db=await idb();return await new Promise((res,rej)=>{const t=db.transaction('kv','readonly').objectStore('kv').get(k);t.onsuccess=()=>res(t.result);t.onerror=()=>rej(t.error);});}catch(e){return undefined;}}
 async function idbSet(k,v){try{const db=await idb();return await new Promise((res,rej)=>{const t=db.transaction('kv','readwrite').objectStore('kv').put(v,k);t.onsuccess=()=>res(true);t.onerror=()=>rej(t.error);});}catch(e){return false;}}
-let lastSync='';
+let lastSync='',lastError='';
 let cacheT=null;
 function saveCache(){clearTimeout(cacheT);cacheT=setTimeout(saveCacheNow,400);}
 async function saveCacheNow(){
@@ -1196,9 +1206,10 @@ async function afterLogin(){
   document.body.classList.toggle('ro',!CAN_EDIT);
   gate('<div class="center-load"><div class="spin"></div><span id="gateMsg">جاري تحميل البيانات…</span></div>');
   loadQueue();
-  const cached=await loadCache();
-  try{if(cached&&state.statements.length){await syncIncremental();}else{await fetchAll();}}
-  catch(e){console.error(e);if(!cached){renderUnauthorized('warn','تعذّر تحميل البيانات',e.message||'خطأ غير معروف');return;}toast('تعذّر الاتصال — تُعرض آخر نسخة محلية');}
+  const cached=(await loadCache())&&state.statements.length>0;
+  lastError='';
+  try{if(cached){await syncIncremental();}else{state.statements=[];await fetchAll();}}
+  catch(e){console.error(e);lastError=(e&&(e.message||e.details||String(e)))||'خطأ غير معروف';if(!cached){renderUnauthorized('warn','تعذّر تحميل البيانات',lastError+' — جرّب «مسح الكاش وإعادة التحميل» من تبويب البيانات بعد الدخول، أو أرسل هذه الرسالة.');return;}toast('تعذّر الاتصال — تُعرض آخر نسخة محلية');}
   $('#gate').classList.add('hidden');$('#app').classList.remove('hidden');
   renderAll();syncStatus();flush();subscribeRealtime();checkLegacy();autoMergeDuplicates();
 }
@@ -1413,6 +1424,7 @@ function renderList(){
   if(!vis.length&&!bigEmptyOk){$('#listBody').innerHTML=`<div class="card empty"><div class="ic">✅</div><b>لا توجد سطور مطابقة</b>${ui.show==='left'?'كل سطور هذا المصروف أصبحت ضمن العينات — اختر «الكل» لرؤيتها هنا، أو غيّر البحث.':'غيّر الفلتر أو البحث.'}</div>`;renderBottom();return;}
   const totals=sumTotals(ui.fSt);
   const bigSt=ui.fSt!=='all'?state.statements.find(s=>s.id===ui.fSt&&isBig(s)):null;
+  $('#errBanner').innerHTML=lastError?`<div class="banner warn">⚠️ آخر محاولة مزامنة فشلت: <b>${esc(lastError)}</b> <button class="btn s" data-hardreload="1" style="margin-inline-start:auto">مسح الكاش وإعادة التحميل</button></div>`:'';
   $('#bigBanner').innerHTML=bigSt?`<div class="banner info">⚡ كشف كبير (${(bigSt.total||0).toLocaleString('en-US')} سطر): محمّلة <b>العينات</b> فقط لتبقى الشاشة سريعة على التلفون. اكتب في البحث لجلب سطور من السيرفر، أو اجلب سطور مجموعة بزر «جلب». ${!statsOk?'<b>مجاميع المجموعات غير متاحة — شغّل ملف SQL رقم 13.</b> ':''}${ui.bigSearching?'<span class="pill warn">جارٍ البحث على السيرفر…</span>':''}${bigSt.lastSearchN!=null?`<span class="pill grey">نتائج السيرفر: ${bigSt.lastSearchN}</span>`:''}<button class="btn s ghost" data-loadall="${bigSt.id}" style="margin-inline-start:auto">تحميل كل السطور (للكمبيوتر)</button></div>`:'';
   const docN=new Map();
   allRows(ui.fSt).forEach(x=>{if(!x.r.doc)return;const k=x.s.id+'|'+x.r.doc;docN.set(k,(docN.get(k)||0)+1);});
@@ -1798,6 +1810,23 @@ $('#reqsBody').addEventListener('click',e=>{
   const del=e.target.closest('[data-rqdel]');if(del){deleteReq(del.dataset.rqdel);return;}
   const bx=e.target.closest('[data-rqbox]');if(bx){const r=state.reqs.find(x=>x.id===bx.dataset.rqbox);if(!r)return;const box=prompt('رقم البوكس فايل:',r.box||'');if(box===null)return;const seq=prompt('الترتيب داخل البوكس:',r.seq===''?'':r.seq);if(seq===null)return;patchReq(r.id,{box:box.trim(),seq:seq.trim()});}
 });
+/* تشخيص */
+async function runDiag(){
+  const box=$('#diagBox');box.innerHTML='جاري الفحص…';const out=[];
+  out.push(`المستخدم: ${esc(SESSION&&SESSION.user?SESSION.user.email:'—')} · الصلاحية: ${esc(PERM||'—')} · الإصدار: ${esc((document.querySelector('footer')||{}).textContent||'')}`);
+  out.push(`متصل بالإنترنت: ${navigator.onLine?'نعم':'لا'} · آخر مزامنة: ${esc(lastSync||'—')} · آخر خطأ: ${esc(lastError||'لا يوجد')}`);
+  out.push(`محلياً: ${state.statements.length} كشف · ${state.statements.reduce((a,s)=>a+s.rows.length,0).toLocaleString('en-US')} سطر محمّل · ${state.reqs.length} متطلب`);
+  try{const {data:sts,error:e1}=await sb.from(T_ST).select('id,name');if(e1)throw e1;const {count,error:e2}=await sb.from(T_ROWS).select('id',{count:'exact',head:true});if(e2)throw e2;const {count:cs}=await sb.from(T_ROWS).select('id',{count:'exact',head:true}).eq('sel',true);
+    out.push(`السيرفر: ${(sts||[]).length} كشف (${(sts||[]).map(x=>esc(x.name)).join('، ')||'لا شيء'}) · ${(count||0).toLocaleString('en-US')} سطر · ${cs||0} عينة`);
+    const {error:e3}=await sb.rpc('exp_sample_group_stats',{p_statement:'__probe__'});out.push(`دالة المجاميع (SQL 13): ${e3?'غير موجودة — '+esc(e3.message):'موجودة ✔'}`);
+    out.push(`جدول البوكس فايل: ${filingOk?'✔':'✖'} · جدول المتطلبات: ${reqOk?'✔':'✖'}`);
+  }catch(e){out.push(`<b style="color:var(--red)">فشل الاتصال بالسيرفر: ${esc(e.message||e)}</b>`);}
+  box.innerHTML=out.join('<br>');
+}
+$('#btnDiag').addEventListener('click',runDiag);
+document.addEventListener('click',async e=>{const h=e.target.closest('[data-hardreload]');if(!h)return;if(!confirm('مسح الكاش المحلي على هذا الجهاز وإعادة تحميل كل البيانات من السحابة؟ (العينات محفوظة على السحابة ولن تتأثر)'))return;
+  try{localStorage.removeItem(LS_CACHE);}catch(x){}try{await new Promise(res=>{const q=indexedDB.deleteDatabase('kilani_exp_samples');q.onsuccess=q.onerror=q.onblocked=()=>res();});}catch(x){}
+  lastSync='';location.reload();});
 /* تبويب البيانات */
 function copyText(txt){return navigator.clipboard.writeText(txt).then(()=>toast('تم نسخ الكويري')).catch(()=>{const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();try{document.execCommand('copy');toast('تم نسخ الكويري');}catch(err){toast('تعذّر النسخ — افتح النص وانسخه يدوياً');}ta.remove();});}
 $('#btnCopySql2').addEventListener('click',e=>{e.preventDefault();copyText($('#sqlText2').textContent);});
