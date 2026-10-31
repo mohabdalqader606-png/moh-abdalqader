@@ -704,7 +704,7 @@ ORDER BY
     </div>
   </section>
 
-  <footer>شاشة عينات المصروفات — الإصدار v2.26 · مزامنة سحابية</footer>
+  <footer>شاشة عينات المصروفات — الإصدار v2.27 · مزامنة سحابية</footer>
 </div>
 
 <div class="bottombar" id="bottombar">
@@ -923,11 +923,12 @@ function toServerRow(stId,r){const data={};DATA_KEYS.forEach(k=>data[k]=r[k]);re
 function fromServerRow(x){return Object.assign({},x.data||{},{id:x.id,k:x.k,sel:!!x.sel,done:!!x.done,note:x.note||'',selAt:x.sel_at||'',doneAt:x.done_at||''});}
 
 function dedupeStatements(){const seen=new Set();state.statements=state.statements.filter(s=>{if(seen.has(s.id))return false;seen.add(s.id);return true;});}
-async function fetchPaged(build,onProgress){
-  // يجلب كل الصفحات بالتوازي (FETCH_PAR صفحات معاً)
-  const {count,error:ec}=await build().select('id',{count:'exact',head:true});if(ec)throw ec;
+async function fetchPaged(applyFilters,onProgress){
+  // يجلب كل الصفحات بالتوازي (FETCH_PAR صفحات معاً). الفلاتر تُطبَّق بعد select كما تتطلب مكتبة Supabase
+  const f=applyFilters||(q=>q);
+  const {count,error:ec}=await f(sb.from(T_ROWS).select('id',{count:'exact',head:true}));if(ec)throw ec;
   const total=count||0;const pages=Math.ceil(total/PAGE);let out=new Array(pages);let next=0,done=0;
-  async function worker(){while(next<pages){const i=next++;const {data,error}=await build().select('*').order('id').range(i*PAGE,i*PAGE+PAGE-1);if(error)throw error;out[i]=data||[];done++;if(onProgress)onProgress(done,pages);}}
+  async function worker(){while(next<pages){const i=next++;const {data,error}=await f(sb.from(T_ROWS).select('*')).order('id').range(i*PAGE,i*PAGE+PAGE-1);if(error)throw error;out[i]=data||[];done++;if(onProgress)onProgress(done,pages);}}
   await Promise.all(Array.from({length:Math.min(FETCH_PAR,pages)},worker));
   return [].concat(...out.filter(Boolean));
 }
@@ -941,17 +942,17 @@ async function loadStats(s){
 async function loadStatementRows(s,count){
   if(count>BIG_LIMIT&&!s.loadedAll){
     s.big=true;s.total=count;
-    const rows=await fetchPaged(()=>sb.from(T_ROWS).eq('statement_id',s.id).eq('sel',true),(d,n)=>setSync('busy',`تحميل عينات «${s.name}»… ${d}/${n}`));
+    const rows=await fetchPaged(q=>q.eq('statement_id',s.id).eq('sel',true),(d,n)=>setSync('busy',`تحميل عينات «${s.name}»… ${d}/${n}`));
     s.rows=rows.map(fromServerRow);await loadStats(s);return rows;
   }
   s.big=false;s.total=count;s.stats=null;
-  const rows=await fetchPaged(()=>sb.from(T_ROWS).eq('statement_id',s.id),(d,n)=>setSync('busy',`تحميل «${s.name}»… ${d}/${n}`));
+  const rows=await fetchPaged(q=>q.eq('statement_id',s.id),(d,n)=>setSync('busy',`تحميل «${s.name}»… ${d}/${n}`));
   s.rows=rows.map(fromServerRow);return rows;
 }
 async function loadAllRows(s){
   if(!isBig(s))return;
   setSync('busy','تحميل كل السطور…');
-  const rows=await fetchPaged(()=>sb.from(T_ROWS).eq('statement_id',s.id),(d,n)=>setSync('busy',`تحميل كل سطور «${s.name}»… ${d}/${n}`));
+  const rows=await fetchPaged(q=>q.eq('statement_id',s.id),(d,n)=>setSync('busy',`تحميل كل سطور «${s.name}»… ${d}/${n}`));
   s.rows=rows.map(fromServerRow);s.loadedAll=true;lastSync=maxUpd(rows,lastSync);saveCache();syncStatus();
 }
 /* مجاميع كل مصروف داخل كشف: من السيرفر للكشوفات الكبيرة، ومن السطور المحمّلة لغيرها */
@@ -990,7 +991,7 @@ async function syncIncremental(){
   state.statements=state.statements.filter(s=>serverIds.has(s.id));
   for(const s of (sts||[])){let loc=state.statements.find(x=>x.id===s.id);if(!loc){loc={id:s.id,name:s.name,createdAt:s.created_at,updatedAt:s.updated_at,rows:[]};state.statements.push(loc);}else{loc.name=s.name;loc.updatedAt=s.updated_at;}}
   let changed=[];
-  if(lastSync){changed=await fetchPaged(()=>sb.from(T_ROWS).gt('updated_at',lastSync));}
+  if(lastSync){changed=await fetchPaged(q=>q.gt('updated_at',lastSync));}
   const idx=new Map();state.statements.forEach(s=>s.rows.forEach(r=>idx.set(r.id,s)));
   changed.forEach(x=>{const r=fromServerRow(x);const cur=idx.get(x.id);const tgt=state.statements.find(s=>s.id===x.statement_id);if(!tgt)return;
     if(cur&&cur!==tgt){cur.rows=cur.rows.filter(y=>y.id!==x.id);}
@@ -1001,9 +1002,9 @@ async function syncIncremental(){
   for(const s of state.statements){const {count,error}=await sb.from(T_ROWS).select('id',{count:'exact',head:true}).eq('statement_id',s.id);if(error)throw error;
     const total=count||0;
     if(total>BIG_LIMIT&&!s.loadedAll){s.big=true;s.total=total;const {count:cs}=await sb.from(T_ROWS).select('id',{count:'exact',head:true}).eq('statement_id',s.id).eq('sel',true);const locSel=s.rows.filter(r=>r.sel).length;
-      if((cs||0)!==locSel){const rows=await fetchPaged(()=>sb.from(T_ROWS).eq('statement_id',s.id).eq('sel',true),(d,n)=>setSync('busy',`تحديث عينات «${s.name}»… ${d}/${n}`));const tmp=s.rows.filter(r=>r._tmp&&!r.sel);s.rows=rows.map(fromServerRow).concat(tmp);lastSync=maxUpd(rows,lastSync);}
+      if((cs||0)!==locSel){const rows=await fetchPaged(q=>q.eq('statement_id',s.id).eq('sel',true),(d,n)=>setSync('busy',`تحديث عينات «${s.name}»… ${d}/${n}`));const tmp=s.rows.filter(r=>r._tmp&&!r.sel);s.rows=rows.map(fromServerRow).concat(tmp);lastSync=maxUpd(rows,lastSync);}
       if(!s.stats)await loadStats(s);}
-    else{s.big=false;s.total=total;if(total!==s.rows.length){const rows=await fetchPaged(()=>sb.from(T_ROWS).eq('statement_id',s.id),(d,n)=>setSync('busy',`تحديث «${s.name}»… ${d}/${n}`));s.rows=rows.map(fromServerRow);lastSync=maxUpd(rows,lastSync);}}}
+    else{s.big=false;s.total=total;if(total!==s.rows.length){const rows=await fetchPaged(q=>q.eq('statement_id',s.id),(d,n)=>setSync('busy',`تحديث «${s.name}»… ${d}/${n}`));s.rows=rows.map(fromServerRow);lastSync=maxUpd(rows,lastSync);}}}
   try{const {data:fl,error:ef}=await sb.from(T_FILE).select('*');if(ef)throw ef;filingOk=true;const f={};(fl||[]).forEach(x=>{f[x.id]={box:x.box||'',seq:x.seq==null?'':x.seq,note:x.note||''};});state.filing=f;}catch(e){filingOk=false;}
   try{const {data:rq,error:er}=await sb.from(T_REQ).select('*').order('created_at');if(er)throw er;reqOk=true;state.reqs=(rq||[]).map(fromServerReq);}catch(e){reqOk=false;}
   dedupeStatements();queue.forEach(op=>applyPatchLocal(op.ids,op.patch,false));lastLoad=Date.now();saveCache();
