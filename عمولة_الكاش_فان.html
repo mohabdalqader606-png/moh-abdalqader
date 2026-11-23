@@ -366,7 +366,7 @@ function renderColl(){const el=document.getElementById('collTbl');const q=(docum
 function importCollPaste(){const txt=document.getElementById('collPaste').value;if(!txt.trim())return;let n=0;txt.split(/\r?\n/).forEach(line=>{if(!line.trim())return;const parts=splitPasteLine(line);if(parts.length<5)return;const [name,entry,methodTxt,due,amt]=parts;if(!/^\d{4}-\d{2}-\d{2}/.test(entry))return;const rep=repByName(name);if(!rep)return;const isChq=/شيك|chq|check/i.test(methodTxt);ST.coll.push({id:uid(),repId:rep.id,entry:entry.slice(0,10),method:isChq?'chq':'cash',due:isChq?due.slice(0,10):'',amount:+amt.replace(/,/g,'')||0});n++});document.getElementById('collPaste').value='';saveState();renderColl();renderReps();fillRepSelects();alert('تم استيراد '+n+' سطر')}
 
 /* ================= COMMISSION ================= */
-function periodData(key){ST.periods[key]=ST.periods[key]||{mgrName:'',mgrAmt:0,supName:'',supAmt:0,assistants:[],perRep:{}};return ST.periods[key]}
+function periodData(key){ST.periods[key]=ST.periods[key]||{mgrName:'',mgrAmt:0,supName:'',supAmt:0,supRate:null,assistants:[],perRep:{}};return ST.periods[key]}
 function computeCV(fromISO,toISO){
  const key=fromISO+'|'+toISO;const PD=periodData(key);const P=ST.params;
  const salesByRep={};ST.sales.forEach(s=>{const d=s.month+'-01';if(d<fromISO||d>toISO)return;salesByRep[s.repId]=(salesByRep[s.repId]||0)+(+s.amount||0)});
@@ -389,7 +389,10 @@ function computeCV(fromISO,toISO){
   const total=salesComm+salesBonus+collBonus+(+man.mgrBonus||0)-retDed-(+man.assistFee||0);
   return {rep,sales,salesComm,salesBonusCalc,salesBonus,salesBonusOv,collTot:coll.tot,collWeak:coll.weak,weakRatio,collBonusCalc,collBonus,collBonusOv,mgrBonus:+man.mgrBonus||0,retChq:+man.retChq||0,retDed,assistFee:+man.assistFee||0,total};
  });
- return {rows,PD,P,key};
+ const totalSales=rows.reduce((a,r)=>a+r.sales,0);
+ const supRate=(PD.supRate!=null&&PD.supRate!=='')?+PD.supRate:null;
+ const supAmt=supRate!=null?totalSales*supRate/100:(+PD.supAmt||0);
+ return {rows,PD,P,key,totalSales,supRate,supAmt};
 }
 function setBonusOv(key,repId,field,input){
  const raw=input.value;
@@ -450,22 +453,22 @@ function renderComm(){
  document.getElementById('cvParams').innerHTML=[['salesRate','% عمولة المبيعات'],['salesTarget','هدف المبيعات لمكافأة كاملة'],['salesBonus','قيمة مكافأة البيع الكاملة'],['collBonus','قيمة مكافأة التحصيل الممتاز'],['collWeakDays','حد الأيام (أكثر = ضعيف)'],['retChqRate','% خصم الشيكات المرتجعة']].map(([k,l])=>`<label>${l}</label><input type="number" step="any" value="${P[k]}" onchange="ST.params['${k}']=+this.value;saveState();renderComm()">`).join('');
  const T=X.rows.reduce((a,r)=>{['sales','salesComm','salesBonus','collBonus','mgrBonus','retDed','assistFee','total'].forEach(k=>a[k]=(a[k]||0)+r[k]);return a},{sales:0,salesComm:0,salesBonus:0,collBonus:0,mgrBonus:0,retDed:0,assistFee:0,total:0});
  const assistTot=(PD.assistants||[]).reduce((a,x)=>a+(+x.amt||0),0);
- const grand=T.total+(+PD.mgrAmt||0)+(+PD.supAmt||0)+assistTot;
+ const grand=T.total+(+PD.mgrAmt||0)+X.supAmt+assistTot;
  document.getElementById('cvKpi').innerHTML=[
   ['مندوبو الكاش فان',X.rows.length,''],
   ['صافي مبيعاتهم',fmt(T.sales),'عمولة '+P.salesRate+'% = '+fmt(T.salesComm)],
   ['مكافآت البيع والتحصيل',fmt(T.salesBonus+T.collBonus),'بيع '+fmt(T.salesBonus)+' + تحصيل '+fmt(T.collBonus)],
   ['خصومات المندوبين',fmt(T.retDed+T.assistFee),'مرتجعات '+fmt(T.retDed)+' + مقابل مساعد '+fmt(T.assistFee)],
   ['إجمالي عمولات المندوبين',fmt(T.total),''],
-  ['الإجمالي الكلي',fmt(grand),'+ مدير '+fmt(PD.mgrAmt||0)+' مشرف '+fmt(PD.supAmt||0)+' مساعدين '+fmt(assistTot)]
+  ['الإجمالي الكلي',fmt(grand),'+ مدير '+fmt(PD.mgrAmt||0)+' مشرف '+fmt(X.supAmt)+' مساعدين '+fmt(assistTot)]
  ].map(([l,v,s])=>`<div class="kpi"><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${s}</div></div>`).join('');
  document.getElementById('mgrBox').innerHTML=`<div class="row"><label>الاسم</label><input type="text" value="${(PD.mgrName||'').replace(/"/g,'&quot;')}" style="width:140px" placeholder="اسم مدير المبيعات" onchange="periodData('${X.key}').mgrName=this.value;saveState();renderComm()"></div><div class="row"><label>عمولة ثابتة (د.أ)</label><input type="number" step="any" value="${PD.mgrAmt||0}" onchange="periodData('${X.key}').mgrAmt=+this.value;saveState();renderComm()"></div><p class="hint">تُدخل يدوياً لكل فترة — مش مربوطة بمندوب من الشاشة، وبتظهر بجدول المندوبين تحت.</p>`;
- document.getElementById('supBox').innerHTML=`<div class="row"><label>الاسم</label><input type="text" value="${(PD.supName||'').replace(/"/g,'&quot;')}" style="width:140px" placeholder="اسم مشرف المبيعات" onchange="periodData('${X.key}').supName=this.value;saveState();renderComm()"></div><div class="row"><label>عمولة ثابتة (د.أ)</label><input type="number" step="any" value="${PD.supAmt||0}" onchange="periodData('${X.key}').supAmt=+this.value;saveState();renderComm()"></div><p class="hint">تُدخل يدوياً لكل فترة — مش مربوطة بمندوب من الشاشة، وبتظهر بجدول المندوبين تحت.</p>`;
+ document.getElementById('supBox').innerHTML=`<div class="row"><label>الاسم</label><input type="text" value="${(PD.supName||'').replace(/"/g,'&quot;')}" style="width:140px" placeholder="اسم مشرف المبيعات" onchange="periodData('${X.key}').supName=this.value;saveState();renderComm()"></div><div class="row"><label>نسبة عمولة % (من إجمالي مبيعات كل المندوبين)</label><input type="number" step="any" value="${PD.supRate!=null?PD.supRate:''}" placeholder="اختياري" style="width:80px" onchange="periodData('${X.key}').supRate=this.value===''?null:+this.value;saveState();renderComm()"></div><div class="row"><label>عمولة ثابتة (د.أ)</label><input type="number" step="any" value="${PD.supAmt||0}" ${PD.supRate!=null?'disabled title="معطّلة لأن نسبة العمولة مفعّلة — امسح النسبة لترجيعها يدوية"':''} onchange="periodData('${X.key}').supAmt=+this.value;saveState();renderComm()"></div><p class="hint">${PD.supRate!=null?`محتسبة تلقائياً: إجمالي مبيعات جميع المندوبين (${fmt(X.totalSales)}) × ${PD.supRate}% = ${fmt(X.supAmt)}`:'تُدخل يدوياً لكل فترة، أو ضع نسبة عمولة بالأعلى لتُحسب تلقائياً من إجمالي مبيعات الجميع.'}</p>`;
  document.getElementById('cvAssist').innerHTML=`<table><tr><th>الاسم</th><th class="num">المبلغ</th><th></th></tr>${(PD.assistants||[]).map((a,i)=>`<tr><td><input type="text" value="${(a.name||'').replace(/"/g,'&quot;')}" style="width:110px" onchange="periodData('${X.key}').assistants[${i}].name=this.value;saveState()"></td><td class="num"><input type="number" step="any" value="${a.amt||0}" style="width:70px" onchange="periodData('${X.key}').assistants[${i}].amt=+this.value;saveState();renderComm()"></td><td><button class="btn danger sm" onclick="periodData('${X.key}').assistants.splice(${i},1);saveState();renderComm()">✕</button></td></tr>`).join('')||'<tr><td colspan="3" class="hint">لا يوجد</td></tr>'}</table><button class="btn ghost sm" style="margin-top:6px" onclick="periodData('${X.key}').assistants.push({name:'مساعد جديد',amt:0});saveState();renderComm()">+ مساعد</button><p class="hint">إجمالي هذا الشهر: ${fmt(assistTot)}</p>`;
  const cvq=(document.getElementById('cvSearch').value||'').trim().toLowerCase();
  const dispRows=X.rows.filter(r=>!cvq||r.rep.name.toLowerCase().includes(cvq));
  const specialRows=(!cvq||'مدير المبيعات'.includes(cvq)||(PD.mgrName||'').toLowerCase().includes(cvq)?specialRowHtml('مدير المبيعات',PD.mgrName,PD.mgrAmt||0):'')
-  +(!cvq||'مشرف المبيعات'.includes(cvq)||(PD.supName||'').toLowerCase().includes(cvq)?specialRowHtml('مشرف المبيعات',PD.supName,PD.supAmt||0):'')
+  +(!cvq||'مشرف المبيعات'.includes(cvq)||(PD.supName||'').toLowerCase().includes(cvq)?specialRowHtml('مشرف المبيعات',PD.supName,X.supAmt):'')
   +(PD.assistants||[]).filter(a=>!cvq||'مساعد'.includes(cvq)||(a.name||'').toLowerCase().includes(cvq)).map(a=>specialRowHtml('مساعد',a.name,a.amt||0)).join('');
  document.getElementById('cvTbl').innerHTML=dispRows.map(r=>cvRowHtml(r,X,P)).join('')+specialRows+((dispRows.length||specialRows)?`<tr class="tot"><td>الإجمالي</td><td class="num">${fmt(T.sales)}</td><td class="num">${fmt(T.salesComm)}</td><td class="num">${fmt(T.salesBonus)}</td><td colspan="2"></td><td></td><td class="num">${fmt(T.collBonus)}</td><td class="num">${fmt(T.mgrBonus)}</td><td></td><td class="num">${fmt(T.retDed)}</td><td class="num">${fmt(T.assistFee)}</td><td class="num">${fmt(grand)}</td><td class="noprint"></td></tr>`:'')||'<tr><td colspan="14" class="hint">أضف مندوبين أولاً من تبويب "المندوبون"</td></tr>';
 }
@@ -479,7 +482,7 @@ function printFullReport(){
  const rows=X.rows.slice().sort((a,b)=>b.total-a.total);
  const T=rows.reduce((a,r)=>{['sales','salesComm','salesBonus','collTot','collWeak','collBonus','mgrBonus','retDed','assistFee','total'].forEach(k=>a[k]=(a[k]||0)+r[k]);return a},{});
  const assistTot=(PD.assistants||[]).reduce((a,x)=>a+(+x.amt||0),0);
- const grand=T.total+(+PD.mgrAmt||0)+(+PD.supAmt||0)+assistTot;
+ const grand=T.total+(+PD.mgrAmt||0)+X.supAmt+assistTot;
  const [fromISO,toISO]=X.key.split('|');
  const [fy,fm]=fromISO.split('-');
  const periodLabel=(MONTH_AR[fm]||fm)+' '+fy;
@@ -512,7 +515,7 @@ function printFullReport(){
   <table><tr><th>#</th><th>المندوب</th><th>صافي المبيعات</th><th>عمولة المبيعات</th><th>مكافأة البيع</th><th>تحصيل الفترة</th><th>شيكات ضعيفة</th><th>%ضعيف</th><th>مكافأة التحصيل</th><th>مكافأة المدير</th><th>خصم المرتجع</th><th>مقابل مساعد</th><th>الإجمالي</th></tr>
    ${rowHtml}
    ${specialRow('مدير المبيعات',PD.mgrName,PD.mgrAmt||0)}
-   ${specialRow('مشرف المبيعات',PD.supName,PD.supAmt||0)}
+   ${specialRow('مشرف المبيعات',PD.supName,X.supAmt)}
    ${assistantsRows}
    <tr class="tot"><td colspan="2">الإجمالي العام</td><td>${fmt(T.sales)}</td><td>${fmt(T.salesComm)}</td><td>${fmt(T.salesBonus)}</td><td>${fmt(T.collTot)}</td><td>${fmt(T.collWeak)}</td><td></td><td>${fmt(T.collBonus)}</td><td>${fmt(T.mgrBonus)}</td><td>${fmt(T.retDed)}</td><td>${fmt(T.assistFee)}</td><td class="total">${fmt(grand)}</td></tr>
   </table>
