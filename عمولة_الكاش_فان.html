@@ -36,6 +36,8 @@ tr.tot td{font-weight:700;background:#f7f9fd}
 .btn:hover{opacity:.9}
 .btn.gold{background:var(--gold);color:#3a2f0c}
 .btn.ghost{background:none;border:1px solid var(--line);color:var(--text)}
+header .btn.ghost{border-color:rgba(255,255,255,.4);color:#fff}
+header .btn.ghost:hover{background:rgba(255,255,255,.12)}
 .btn.danger{background:none;border:1px solid var(--coral);color:var(--coral);padding:4px 9px}
 .btn.sm{padding:5px 10px;font-size:12px}
 .grid{display:grid;gap:12px}
@@ -114,6 +116,7 @@ th .sort-arrow{margin-inline-start:4px;font-size:10px;opacity:.8}
  <div><h1>💰 برنامج عمولة الكاش فان</h1><p>احتساب عمولة مندوبي الكاش فان — مركز الكيلاني للأغذية</p></div>
  <div class="row noprint" style="margin:0">
   <span class="status-pill noprint" id="statusPill"></span>
+  <span class="status-pill noprint" id="saveStatus"></span>
   <button class="btn ghost sm" onclick="exportJSON()">⬇ نسخة احتياطية JSON</button>
   <button class="btn ghost sm edit-only" onclick="document.getElementById('importFile').click()">⬆ استيراد نسخة</button>
   <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(event)">
@@ -391,14 +394,17 @@ async function loadState(){
  if(data&&data.data){const o=data.data;ST={...ST,...o,params:{...ST.params,...(o.params||{})}}}
 }
 let _saveT=null;
+function setSaveStatus(txt){const el=document.getElementById('saveStatus');if(el)el.textContent=txt}
 function saveState(){
  if(!CAN_EDIT)return;
+ setSaveStatus('⏳ جارِ الحفظ...');
  clearTimeout(_saveT);
  _saveT=setTimeout(async()=>{
   try{
    const {error}=await sb.from('cvcomm_state').upsert({id:1,data:ST,updated_by:SESSION.user.id,updated_at:new Date().toISOString()});
    if(error)throw error;
-  }catch(e){alert('تعذّر حفظ التعديل على القاعدة المشتركة: '+e.message)}
+   setSaveStatus('🟢 تم الحفظ '+new Date().toLocaleTimeString('ar-JO',{hour:'2-digit',minute:'2-digit',second:'2-digit'}));
+  }catch(e){setSaveStatus('🔴 تعذّر الحفظ');alert('تعذّر حفظ التعديل على القاعدة المشتركة: '+e.message)}
  },400);
 }
 function uid(){return 'id'+Date.now().toString(36)+Math.random().toString(36).slice(2,8)}
