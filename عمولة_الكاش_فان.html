@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>برنامج عمولة الكاش فان</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<style>
+:root{--navy:#0b1f3a;--gold:#c9a94d;--teal:#2f8f7f;--coral:#c0503f;--bg:#f4f6fb;--card:#fff;--line:#e2e6f0;--text:#1b2b4a;--muted:#6b7688}
+*{box-sizing:border-box}
+body{margin:0;font-family:'Segoe UI',Tahoma,Arial,sans-serif;background:var(--bg);color:var(--text);direction:rtl}
+header{background:var(--navy);color:#fff;padding:16px 22px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px}
+header h1{margin:0;font-size:19px}
+header p{margin:2px 0 0;font-size:12px;color:#c9d3e6}
+nav{display:flex;gap:4px;background:#fff;border-bottom:1px solid var(--line);padding:0 14px;overflow-x:auto}
+nav button{background:none;border:none;border-bottom:3px solid transparent;padding:12px 14px;font-size:13.5px;cursor:pointer;color:var(--muted);white-space:nowrap;font-family:inherit}
+nav button.active{color:var(--navy);border-bottom-color:var(--gold);font-weight:700}
+main{max-width:1200px;margin:0 auto;padding:18px}
+.tab{display:none}
+.tab.active{display:block}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px;box-shadow:0 2px 8px rgba(11,31,58,.04)}
+.card h2{margin:0 0 4px;font-size:16px;color:var(--navy)}
+.card h3{margin:0 0 8px;font-size:14px;color:var(--navy)}
+.hint{color:var(--muted);font-size:12px;line-height:1.7;margin:6px 0}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:8px 0}
+label{font-size:12.5px;color:var(--muted);white-space:nowrap}
+input,select{font-family:inherit;font-size:13px;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:#fff;color:var(--text)}
+input[type=number]{width:100px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+th,td{padding:7px 9px;border-bottom:1px solid var(--line);text-align:right}
+th{background:#f7f9fd;color:var(--navy);font-weight:700;position:sticky;top:0}
+td.num,th.num{text-align:left;font-variant-numeric:tabular-nums}
+.tblwrap{overflow-x:auto;max-height:52vh;overflow-y:auto;border:1px solid var(--line);border-radius:8px}
+tr.tot td{font-weight:700;background:#f7f9fd}
+.btn{background:var(--navy);color:#fff;border:none;border-radius:6px;padding:8px 14px;font-size:12.5px;cursor:pointer;font-family:inherit}
+.btn:hover{opacity:.9}
+.btn.gold{background:var(--gold);color:#3a2f0c}
+.btn.ghost{background:none;border:1px solid var(--line);color:var(--text)}
+.btn.danger{background:none;border:1px solid var(--coral);color:var(--coral);padding:4px 9px}
+.btn.sm{padding:5px 10px;font-size:12px}
+.grid{display:grid;gap:12px}
+.g3{grid-template-columns:repeat(3,1fr)}
+.g4{grid-template-columns:repeat(4,1fr)}
+.g5{grid-template-columns:repeat(5,1fr)}
+.g6{grid-template-columns:repeat(6,1fr)}
+@media(max-width:900px){.g3,.g4,.g5,.g6{grid-template-columns:repeat(2,1fr)}}
+.kpi{background:#f7f9fd;border-radius:8px;padding:10px 12px}
+.kpi .lbl{font-size:11.5px;color:var(--muted)}
+.kpi .val{font-size:18px;font-weight:700;color:var(--navy);margin:2px 0}
+.kpi .sub{font-size:11px;color:var(--muted)}
+.kpi .sub.neg{color:var(--coral)}
+.kpi .sub.pos{color:var(--teal)}
+textarea{width:100%;min-height:90px;font-family:'Consolas',monospace;font-size:12px;padding:8px;border:1px solid var(--line);border-radius:6px;direction:ltr;text-align:left}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;background:#eef1f8;color:var(--navy)}
+.neg{color:var(--coral)}
+.pos{color:var(--teal)}
+details summary{cursor:pointer;font-weight:600;color:var(--navy);font-size:13px}
+th .sort-arrow{margin-inline-start:4px;font-size:10px;opacity:.8}
+#printArea{display:none}
+@media print{
+ @page{size:A4 landscape;margin:12mm}
+ header,nav,.noprint{display:none!important}
+ .tab{display:block!important}
+ main{max-width:100%}
+ body.print-single-mode>*:not(#printArea){display:none!important}
+ body.print-single-mode #printArea{display:block!important}
+}
+#printArea{font-size:11.5px}
+#printArea .rpt-head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid var(--navy);padding-bottom:12px;margin-bottom:16px}
+#printArea .rpt-brand{font-weight:800;font-size:19px;color:var(--navy)}
+#printArea .rpt-brand small{display:block;font-weight:500;font-size:11.5px;color:var(--muted);margin-top:3px}
+#printArea .rpt-title{text-align:left}
+#printArea .rpt-title h1{font-size:15px;font-weight:800;margin:0 0 4px;color:var(--navy)}
+#printArea .rpt-period{font-family:'Consolas',monospace;font-size:11.5px;color:var(--gold)}
+#printArea .rpt-kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:9px;margin-bottom:16px}
+#printArea .rpt-kpi{border:1px solid var(--line);border-radius:8px;padding:9px 10px;background:#f7f9fd}
+#printArea .rpt-kpi .l{font-size:9.5px;color:var(--muted);margin-bottom:3px}
+#printArea .rpt-kpi .v{font-weight:800;font-size:14px;color:var(--navy)}
+#printArea table{width:100%;border-collapse:collapse;margin-top:0}
+#printArea th{background:var(--navy);color:#fff;font-weight:700;font-size:10px;padding:7px 5px;text-align:center;border-left:1px solid rgba(255,255,255,.15)}
+#printArea td{padding:6px 5px;border-bottom:1px solid var(--line);text-align:center;font-size:11px}
+#printArea td.name{text-align:right;font-weight:600}
+#printArea td.idx{color:var(--muted);font-family:'Consolas',monospace}
+#printArea tr.alt td{background:#f7f9fd}
+#printArea tr{break-inside:avoid}
+#printArea td.manual{color:var(--gold);font-weight:600}
+#printArea td.neg{color:#c0503f}
+#printArea td.total{font-weight:800;background:#fbf3e2}
+#printArea tr.special{background:#fbf8f1}
+#printArea .tot td{font-weight:800;background:#f7f9fd;border-top:2px solid var(--navy);border-bottom:none;padding-top:9px}
+#printArea .tot td.total{background:var(--navy);color:#fff}
+#printArea .rpt-legend{display:flex;gap:16px;margin-top:9px;font-size:10px;color:var(--muted)}
+#printArea .rpt-legend span{display:inline-flex;align-items:center;gap:5px}
+#printArea .rpt-legend i{width:8px;height:8px;border-radius:2px;display:inline-block}
+#printArea .rpt-sign{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:40px}
+#printArea .rpt-sign div{border-top:1px solid var(--navy);padding-top:7px;font-size:10.5px;color:var(--muted);text-align:center}
+#printArea .rpt-sign b{display:block;color:var(--navy);font-size:11.5px;margin-bottom:2px}
+#printArea .rpt-foot{margin-top:18px;padding-top:8px;border-top:1px solid var(--line);display:flex;justify-content:space-between;font-size:9px;color:var(--muted)}
+.gate{max-width:420px;margin:70px auto;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:26px;box-shadow:0 10px 30px rgba(11,31,58,.08)}
+.gate h1{font-size:18px;margin:0 0 6px;color:var(--navy)}
+.gate .sub{color:var(--muted);font-size:12.5px;margin-bottom:18px}
+.gate .field{margin-bottom:12px}
+.gate .field label{display:block;margin-bottom:4px}
+.gate input{width:100%}
+.gate .err{color:var(--coral);font-size:12.5px;margin-top:10px}
+.center-load{text-align:center;color:var(--muted);padding:70px 10px;font-size:13px}
+.status-pill{background:rgba(255,255,255,.12);padding:5px 10px;border-radius:20px;font-size:11.5px;white-space:nowrap}
+</style>
+</head>
+<body>
+<div id="authGate"><div class="center-load">جاري التحميل...</div></div>
+<div id="appRoot" style="display:none">
+<header>
+ <div><h1>💰 برنامج عمولة الكاش فان</h1><p>احتساب عمولة مندوبي الكاش فان — مركز الكيلاني للأغذية</p></div>
+ <div class="row noprint" style="margin:0">
+  <span class="status-pill noprint" id="statusPill"></span>
+  <button class="btn ghost sm" onclick="exportJSON()">⬇ نسخة احتياطية JSON</button>
+  <button class="btn ghost sm edit-only" onclick="document.getElementById('importFile').click()">⬆ استيراد نسخة</button>
+  <input type="file" id="importFile" accept=".json" style="display:none" onchange="importJSON(event)">
+  <button class="btn ghost sm edit-only" style="border-color:#ff8a8a;color:#ff8a8a" onclick="clearAllData()">🗑 حذف كافة البيانات</button>
+  <button class="btn ghost sm noprint" onclick="doLogout()">خروج</button>
+ </div>
+</header>
+<nav class="noprint">
+ <button data-t="reps" class="active">١ المندوبون</button>
+ <button data-t="sales">٢ المبيعات الشهرية</button>
+ <button data-t="coll">٣ التحصيل والشيكات</button>
+ <button data-t="comm">٤ احتساب العمولة</button>
+</nav>
+<main>
+
+<!-- ===== TAB: REPS ===== -->
+<section class="tab active" id="tab-reps">
+ <div class="card">
+  <h2>مندوبو الكاش فان</h2>
+  <p class="hint">أضف هون كل مندوبي الكاش فان. هاد البرنامج مخصص لهدول فقط.</p>
+  <div class="row edit-only"><input type="text" id="newRepName" placeholder="اسم المندوب" style="width:220px" onkeydown="if(event.key==='Enter')addRep()"><button class="btn" onclick="addRep()">+ إضافة مندوب</button></div>
+  <details class="edit-only" style="margin-top:8px"><summary>📋 استيراد لصق دفعة وحدة (من إكسل أو من نتيجة الكويري تحت)</summary>
+   <p class="hint">الصق سطر لكل مندوب — إما اسم بعمود وحيد، أو (كود، اسم، قسم) متل نتيجة الكويري تحت مباشرة. الأسماء المكررة بتتجاهل تلقائياً.</p>
+   <textarea id="repsPaste" placeholder="C1	أحمد محمد	كاش فان"></textarea>
+   <button class="btn sm" style="margin-top:6px" onclick="importRepsPaste()">استيراد</button>
+  </details>
+  <details style="margin-top:8px"><summary>🗄️ كويري SAP لجلب مندوبي الكاش فان فقط (انسخه شغّله بمدير الكويريات)</summary>
+   <p class="hint">القسم عندكم مسجّل بحقل مخصص اسمه الحقيقي "U_SlpType" على شاشة مندوبي المبيعات (بيظهر بعنوان "Department" بالشاشة فقط)، وقيمته لمندوبي الكاش فان "CashVan". مفلتر كمان على النشيطين فقط (Active = 'Y') — أي مندوب موقوف/غير فعّال ما رح يطلع.</p>
+   <textarea id="qReps" readonly style="min-height:90px">SELECT T0."SlpCode" AS "كود المندوب", T0."SlpName" AS "المندوب", T0."U_SlpType" AS "القسم"
+FROM OSLP T0
+WHERE T0."U_SlpType" = 'CashVan' AND T0."Active" = 'Y'
+ORDER BY T0."SlpName"</textarea>
+   <button class="btn ghost sm" style="margin-top:6px" onclick="copyQuery('qReps')">📋 نسخ الكويري</button>
+  </details>
+  <div class="row"><label>بحث</label><input type="text" id="repsSearch" placeholder="اسم المندوب..." style="width:220px" oninput="renderReps()"><button class="btn ghost sm edit-only" onclick="cleanOrphans()" title="يحذف أي سطر مبيعات أو تحصيل مربوط بمندوب محذوف">🧹 تنظيف سجلات يتيمة</button></div>
+  <div class="tblwrap" style="max-height:none"><table><tr><th>المندوب</th><th class="num">مبيعات مسجّلة (سطر)</th><th class="num">تحصيل مسجّل (سطر)</th><th></th></tr><tbody id="repsTbl"></tbody></table></div>
+ </div>
+</section>
+
+<!-- ===== TAB: SALES ===== -->
+<section class="tab" id="tab-sales">
+ <div class="card">
+  <h2>صافي المبيعات الشهرية لكل مندوب</h2>
+  <p class="hint">سجل شهرياً صافي مبيعات كل مندوب (بعد المرتجعات). هاي القاعدة إلي بتحسب عليها عمولة الـ2% ومكافأة البيع.</p>
+  <div class="row edit-only">
+   <label>المندوب</label><select id="salesRep"></select>
+   <label>الشهر</label><input type="month" id="salesMonth">
+   <label>صافي المبيعات</label><input type="number" step="any" id="salesAmt" placeholder="0">
+   <button class="btn" onclick="addSale()">+ إضافة</button>
+  </div>
+  <details class="edit-only" style="margin-top:8px"><summary>📋 استيراد لصق دفعة وحدة (من إكسل)</summary>
+   <p class="hint">الصق أعمدة: المندوب [تاب] الشهر YYYY-MM [تاب] صافي المبيعات — سطر لكل مندوب/شهر. أسماء المندوبين الجديدة بتنضاف تلقائياً.</p>
+   <textarea id="salesPaste" placeholder="أحمد محمد	2026-07	14500"></textarea>
+   <button class="btn sm" style="margin-top:6px" onclick="importSalesPaste()">استيراد</button>
+  </details>
+  <details style="margin-top:8px"><summary>🗄️ كويري SAP لجلب هذي البيانات (انسخه شغّله بمدير الكويريات)</summary>
+   <p class="hint">شغّل الكويري بمدير الكويريات بـSAP، حدد الفترة (بيسألك من-إلى تلقائياً)، انسخ نتيجة الجدول (Ctrl+A ثم Ctrl+C من شبكة النتائج) والصقها بخانة الاستيراد فوق مباشرة.</p>
+   <textarea id="qSales" readonly style="min-height:150px">SELECT "المندوب", "الشهر", SUM("صافي") AS "صافي المبيعات"
+FROM (
+    SELECT T4."SlpName" AS "المندوب", TO_VARCHAR(T0."DocDate",'YYYY-MM') AS "الشهر",
+           SUM(T0."DocTotal" - T0."VatSum") AS "صافي"
+    FROM OINV T0
+    INNER JOIN OSLP T4 ON T4."SlpCode" = T0."SlpCode"
+    WHERE T0."CANCELED" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1] AND T4."U_SlpType" = 'CashVan' AND T4."Active" = 'Y'
+    GROUP BY T4."SlpName", TO_VARCHAR(T0."DocDate",'YYYY-MM')
+    UNION ALL
+    SELECT T4."SlpName", TO_VARCHAR(T0."DocDate",'YYYY-MM'),
+           -SUM(T0."DocTotal" - T0."VatSum")
+    FROM ORIN T0
+    INNER JOIN OSLP T4 ON T4."SlpCode" = T0."SlpCode"
+    WHERE T0."CANCELED" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1] AND T4."U_SlpType" = 'CashVan' AND T4."Active" = 'Y'
+    GROUP BY T4."SlpName", TO_VARCHAR(T0."DocDate",'YYYY-MM')
+) X
+GROUP BY "المندوب", "الشهر"
+ORDER BY "المندوب", "الشهر"</textarea>
+   <button class="btn ghost sm" style="margin-top:6px" onclick="copyQuery('qSales')">📋 نسخ الكويري</button>
+   <p class="hint">صافي المبيعات = فواتير المبيعات (OINV) ناقص المرتجعات (ORIN)، حسب المندوب المسجّل على كل فاتورة. مفلتر تلقائياً على مندوبي الكاش فان النشيطين فقط (U_SlpType = 'CashVan' وActive = 'Y').</p>
+  </details>
+  <div class="row"><label>بحث</label><input type="text" id="salesSearch" placeholder="اسم المندوب..." style="width:220px" oninput="renderSales()"><button class="btn ghost sm edit-only" style="border-color:var(--coral);color:var(--coral)" onclick="clearSales()">🗑 امسح كل بيانات المبيعات</button></div>
+  <p class="hint">لصق بيانات نفس المندوب/الشهر بيستبدل القيمة القديمة تلقائياً (مش بيكرّرها) — بس لو عندك سجلات قديمة خاطئة من قبل هالتحديث، امسحها كلها بالزر واعد اللصق من جديد.</p>
+  <div class="tblwrap" style="margin-top:10px"><table><tr><th>المندوب</th><th>الشهر</th><th class="num">صافي المبيعات</th><th></th></tr><tbody id="salesTbl"></tbody></table></div>
+ </div>
+</section>
+
+<!-- ===== TAB: COLLECTIONS ===== -->
+<section class="tab" id="tab-coll">
+ <div class="card">
+  <h2>التحصيل والشيكات</h2>
+  <p class="hint">سجل كل عملية تحصيل: تاريخ القبض، طريقة الدفع، وإذا كانت شيك — تاريخ استحقاق الشيك. هاي القاعدة إلي بتحسب عليها مكافأة جودة التحصيل (شيك استحقاقه أكثر من 7 أيام من تاريخ القبض = "ضعيف").</p>
+  <div class="row edit-only">
+   <label>المندوب</label><select id="collRep"></select>
+   <label>تاريخ القبض</label><input type="date" id="collEntry">
+   <label>الطريقة</label><select id="collMethod" onchange="toggleDueField()"><option value="cash">نقد / حوالة بنكية</option><option value="chq">شيك</option></select>
+   <label id="collDueLbl" style="display:none">تاريخ استحقاق الشيك</label><input type="date" id="collDue" style="display:none">
+   <label>المبلغ</label><input type="number" step="any" id="collAmt" placeholder="0">
+   <button class="btn" onclick="addColl()">+ إضافة</button>
+  </div>
+  <details class="edit-only" style="margin-top:8px"><summary>📋 استيراد لصق دفعة وحدة (من إكسل)</summary>
+   <p class="hint">الصق أعمدة: المندوب [تاب] تاريخ القبض YYYY-MM-DD [تاب] الطريقة (نقد أو شيك) [تاب] تاريخ استحقاق الشيك (فارغ لو نقد) [تاب] المبلغ.</p>
+   <textarea id="collPaste" placeholder="أحمد محمد	2026-07-01	شيك	2026-07-20	500"></textarea>
+   <button class="btn sm" style="margin-top:6px" onclick="importCollPaste()">استيراد</button>
+  </details>
+  <details style="margin-top:8px"><summary>🗄️ كويري SAP لجلب هذي البيانات (انسخه شغّله بمدير الكويريات)</summary>
+   <p class="hint">شغّل الكويري بمدير الكويريات بـSAP، حدد الفترة (بيسألك من-إلى تلقائياً)، انسخ نتيجة الجدول والصقها بخانة الاستيراد فوق مباشرة. بيرجّع سطر لكل قبض نقدي، سطر لكل حوالة، وسطر لكل شيك لحاله بتاريخ استحقاقه.</p>
+   <textarea id="qColl" readonly style="min-height:180px">SELECT T2."SlpName" AS "المندوب",
+       TO_VARCHAR(T0."DocDate",'YYYY-MM-DD') AS "تاريخ القبض",
+       'نقد' AS "الطريقة",
+       '' AS "تاريخ استحقاق الشيك",
+       (COALESCE(T0."CashSum",0) + COALESCE(T0."TrsfrSum",0)) AS "المبلغ"
+FROM ORCT T0
+INNER JOIN OCRD T1 ON T1."CardCode" = T0."CardCode"
+INNER JOIN OSLP T2 ON T2."SlpCode" = T1."SlpCode"
+WHERE T0."Canceled" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1]
+  AND (COALESCE(T0."CashSum",0) + COALESCE(T0."TrsfrSum",0)) > 0
+  AND T2."U_SlpType" = 'CashVan' AND T2."Active" = 'Y'
+
+UNION ALL
+
+SELECT T2."SlpName",
+       TO_VARCHAR(T0."DocDate",'YYYY-MM-DD'),
+       'شيك',
+       TO_VARCHAR(T3."DueDate",'YYYY-MM-DD'),
+       T3."CheckSum"
+FROM ORCT T0
+INNER JOIN RCT1 T3 ON T3."DocNum" = T0."DocEntry"
+INNER JOIN OCRD T1 ON T1."CardCode" = T0."CardCode"
+INNER JOIN OSLP T2 ON T2."SlpCode" = T1."SlpCode"
+WHERE T0."Canceled" = 'N' AND T0."DocDate" BETWEEN [%0] AND [%1]
+  AND T2."U_SlpType" = 'CashVan' AND T2."Active" = 'Y'
+
+ORDER BY 1,2</textarea>
+   <button class="btn ghost sm" style="margin-top:6px" onclick="copyQuery('qColl')">📋 نسخ الكويري</button>
+   <p class="hint">المندوب هون هو مندوب العميل المسجّل بكرت العميل (مش مندوب الفاتورة). مفلتر تلقائياً على مندوبي الكاش فان النشيطين فقط (U_SlpType = 'CashVan' وActive = 'Y').</p>
+  </details>
+  <div class="row"><label>بحث</label><input type="text" id="collSearch" placeholder="اسم المندوب..." style="width:220px" oninput="renderColl()"><button class="btn ghost sm edit-only" style="border-color:var(--coral);color:var(--coral)" onclick="clearColl()">🗑 امسح كل بيانات التحصيل</button></div>
+  <p class="hint">عندك سجلات قديمة خاطئة من قبل تصليح اللصق؟ امسحها كلها بالزر واعد لصق نتيجة الكويري من جديد لتفادي التكرار.</p>
+  <div class="tblwrap" style="margin-top:10px"><table><tr><th>المندوب</th><th>تاريخ القبض</th><th>الطريقة</th><th>استحقاق الشيك</th><th class="num">المبلغ</th><th class="num">المدة (يوم)</th><th>التقييم</th><th></th></tr><tbody id="collTbl"></tbody></table></div>
+ </div>
+</section>
+
+<!-- ===== TAB: COMMISSION ===== -->
+<section class="tab" id="tab-comm">
+ <div class="card">
+  <h2>احتساب عمولة الكاش فان</h2>
+  <p class="hint">العمولة = 2% من صافي المبيعات + مكافأة بيع (حتى 50 د.أ بالتناسب مع هدف المبيعات) + مكافأة جودة تحصيل (حتى 50 د.أ حسب نسبة الشيكات الضعيفة) + مكافأة مدير يدوية − خصم 2% من الشيكات المرتجعة − مقابل استخدام مساعد.</p>
+  <div class="row noprint"><label>من شهر</label><input type="month" id="cvFrom" onchange="document.getElementById('cvTo').value=this.value;renderComm()"><label>إلى شهر</label><input type="month" id="cvTo" onchange="renderComm()"><button class="btn sm" onclick="renderComm()">تحديث</button><button class="btn gold sm" onclick="printFullReport()">🖨 طباعة تقرير احترافي</button></div>
+  <div class="row noprint"><label>اسم الشركة (يظهر برأس التقرير المطبوع)</label><input type="text" id="companyName" class="edit-field" value="مركز الكيلاني للأغذية" style="width:260px" onchange="saveCompanyName()"></div>
+  <p class="hint noprint">تغيير "من شهر" بيحدّث "إلى شهر" ليطابقه (فترة شهر واحد). لفترة أطول، غيّر "إلى شهر" بعدها يدوياً.</p>
+  <div class="grid g6" id="cvKpi" style="margin-top:10px"></div>
+  <details class="noprint" style="margin-top:10px" open><summary>⚙️ إعدادات معادلة العمولة (عدّل أي رقم وبيتحدّث الجدول فوراً)</summary>
+   <div class="row" style="margin-top:8px" id="cvParams"></div>
+  </details>
+ </div>
+ <div class="grid g3">
+  <div class="card"><h3>مدير المبيعات</h3><div id="mgrBox"></div></div>
+  <div class="card"><h3>مشرف المبيعات</h3><div id="supBox"></div></div>
+  <div class="card"><h3>المساعدون (شهرياً)</h3><div id="cvAssist"></div></div>
+ </div>
+ <div class="card">
+  <h3>مندوبو الكاش فان</h3>
+  <div class="row noprint"><label>بحث</label><input type="text" id="cvSearch" placeholder="اسم المندوب..." style="width:220px" oninput="renderComm()"></div>
+  <p class="hint noprint">💡 مرّر الماوس فوق أي رقم بالجدول لتشوف معادلته بالأرقام الفعلية. "مكافأة البيع" و"مكافأة التحصيل" خانتان قابلتان للتعديل يدوياً لكل مندوب لحاله — عدّل أي وحدة منهم وبتتحدد بعلامة ✏ (لونها ذهبي) عشان تعرف إنها قيمة يدوية مش محسوبة تلقائياً؛ امسح الخانة لترجيعها للحساب التلقائي.</p>
+  <div class="tblwrap"><table><tr>
+   <th title="من تبويب المندوبين">المندوب</th>
+   <th class="num" title="مجموع صافي المبيعات المسجّلة لهذا المندوب بالفترة المختارة (من تبويب المبيعات الشهرية)">صافي المبيعات</th>
+   <th class="num" title="مبلغ العمولة (مو نسبة) = صافي المبيعات × نسبة العمولة % (النسبة قابلة للتعديل بإعدادات المعادلة فوق)">عمولة المبيعات (د.أ)</th>
+   <th class="num" title="مكافأة تناسبية حتى سقف معيّن: (صافي المبيعات ÷ هدف المبيعات) × قيمة المكافأة الكاملة. قابلة للتعديل يدوياً لكل مندوب — اكتب رقم بالخانة ليصير هو القيمة الفعلية (بيتحدد بعلامة ✏)، أو امسحها لترجيعها للحساب التلقائي">مكافأة البيع</th>
+   <th class="num" title="مجموع كل ما حصّله المندوب بالفترة: نقد + حوالات بنكية + شيكات (فورية ومؤجلة) — من تبويب التحصيل والشيكات">تحصيل الفترة</th>
+   <th class="num" title="مجموع قيمة الشيكات الي تاريخ استحقاقها أبعد من حد الأيام المحدد بإعدادات المعادلة (افتراضياً 7 أيام) عن تاريخ القبض">شيكات ضعيفة</th>
+   <th class="num" title="نسبة الشيكات الضعيفة من كامل تحصيل المندوب = الشيكات الضعيفة ÷ تحصيل الفترة">%ضعيف</th>
+   <th class="num" title="مكافأة جودة التحصيل = قيمة المكافأة الكاملة × (1 − نسبة الشيكات الضعيفة). قابلة للتعديل يدوياً لكل مندوب — اكتب رقم بالخانة ليصير هو القيمة الفعلية (بيتحدد بعلامة ✏)، أو امسحها لترجيعها للحساب التلقائي">مكافأة التحصيل</th>
+   <th class="num" title="مكافأة يقرّرها المدير يدوياً لكل مندوب ولكل فترة — مش محسوبة بمعادلة">مكافأة المدير</th>
+   <th class="num" title="قيمة الشيكات المرتجعة على هذا المندوب — تُدخل يدوياً">شيكات مرتجعة</th>
+   <th class="num" title="خصم = قيمة الشيكات المرتجعة × نسبة الخصم % (قابلة للتعديل بإعدادات المعادلة فوق)">خصم المرتجع</th>
+   <th class="num" title="خصم يدوي مقابل استخدام المندوب لمساعد بالتوزيع">مقابل مساعد</th>
+   <th class="num" title="الإجمالي = عمولة المبيعات + مكافأة البيع + مكافأة التحصيل + مكافأة المدير − خصم المرتجع − مقابل المساعد">الإجمالي</th>
+   <th class="noprint"></th>
+  </tr><tbody id="cvTbl"></tbody></table></div>
+ </div>
+</section>
+
+</main>
+</div>
+<div id="printArea"></div>
+<script>
+/* =================================================================
+   الاتصال بمشروع Supabase الموحّد لكل شاشات الكيلاني (نفس المفتاح العام
+   المستخدم بباقي الشاشات — الحماية الفعلية عبر RLS + مصفوفة الصلاحيات).
+   ================================================================= */
+const SUPABASE_URL='https://fxjdmqqmcgccocfbgopm.supabase.co';
+const SUPABASE_KEY='sb_publishable_NGtGX9SN8hXSoq-JRidGcQ_NfAyYCP5';
+const SCREEN_ID='cashvan-commission';
+let sb=null,SESSION=null,SCREEN_PERM=null,CAN_EDIT=false;
+
+/* ---------------- تسجيل الدخول (Supabase Auth) ---------------- */
+function renderLoginGate(errMsg){
+ document.getElementById('authGate').innerHTML=`
+ <div class="gate">
+  <h1>🔐 تسجيل الدخول</h1>
+  <p class="sub">مركز الكيلاني للأغذية — برنامج عمولة الكاش فان</p>
+  <div class="field"><label>البريد الإلكتروني</label><input type="email" id="loginEmail"></div>
+  <div class="field"><label>كلمة المرور</label><input type="password" id="loginPass"></div>
+  <button class="btn" style="width:100%" onclick="doLogin()">دخول</button>
+  ${errMsg?`<div class="err">${esc(errMsg)}</div>`:''}
+ </div>`;
+ document.getElementById('appRoot').style.display='none';
+}
+async function doLogin(){
+ const email=document.getElementById('loginEmail').value.trim();
+ const password=document.getElementById('loginPass').value;
+ if(!email||!password){renderLoginGate('الرجاء إدخال البريد الإلكتروني وكلمة المرور.');return}
+ const {data,error}=await sb.auth.signInWithPassword({email,password});
+ if(error){renderLoginGate('فشل الدخول: '+error.message);return}
+ SESSION=data.session;
+ await checkPermissionAndRender();
+}
+async function doLogout(){await sb.auth.signOut();SESSION=null;SCREEN_PERM=null;CAN_EDIT=false;renderLoginGate('')}
+
+/* ---------------- صلاحية هذه الشاشة (user_screen_permissions) ---------------- */
+function renderUnauthorized(title,msg){
+ document.getElementById('authGate').innerHTML=`
+ <div class="gate">
+  <h1>🚫 ${esc(title)}</h1>
+  <p class="sub">${esc(msg)}</p>
+  <button class="btn ghost" style="width:100%" onclick="doLogout()">تسجيل خروج</button>
+ </div>`;
+ document.getElementById('appRoot').style.display='none';
+}
+async function checkPermissionAndRender(){
+ document.getElementById('authGate').innerHTML='<div class="center-load">جاري التحقق من صلاحيتك...</div>';
+ const {data:permRow,error:permErr}=await sb.from('user_screen_permissions')
+  .select('permission').eq('user_id',SESSION.user.id).eq('screen_id',SCREEN_ID).maybeSingle();
+ if(permErr){
+  renderUnauthorized('تعذّر التحقق من صلاحيتك','حصل خطأ تقني أثناء التحقق من صلاحيتك على هذه الشاشة. حدّث الصفحة وحاول مجدداً، وإذا تكرر راجع مدير الصلاحيات.');
+  return;
+ }
+ SCREEN_PERM=permRow?permRow.permission:null;
+ if(!SCREEN_PERM){
+  renderUnauthorized('لا تملك صلاحية الدخول','حسابك غير مخوَّل بالدخول على شاشة عمولة الكاش فان. راجع مدير الصلاحيات لمنحك صلاحية (VIEW/INPUT/ADMIN) من شاشة إدارة المستخدمين والصلاحيات.');
+  return;
+ }
+ CAN_EDIT=SCREEN_PERM==='INPUT'||SCREEN_PERM==='ADMIN';
+ document.getElementById('authGate').innerHTML='<div class="center-load">جاري تحميل البيانات من القاعدة المشتركة...</div>';
+ try{await loadState()}catch(e){
+  document.getElementById('authGate').innerHTML=`<div class="gate"><h1>تعذّر تحميل البيانات</h1><p class="sub">${esc(e.message)}</p><p class="hint">تأكد من وجود جدول cvcomm_state على مشروع Supabase وأن سياسات RLS تسمح لك بالقراءة.</p></div>`;
+  return;
+ }
+ document.getElementById('authGate').innerHTML='';
+ document.getElementById('appRoot').style.display='';
+ document.getElementById('statusPill').textContent='🟢 '+SESSION.user.email+' · '+({VIEW:'مطالعة فقط',INPUT:'مدخل بيانات',ADMIN:'مدير'}[SCREEN_PERM]||'');
+ applyEditGate();
+ migrateLegacyPeriodKeys();
+ renderAll();
+}
+function applyEditGate(){
+ document.querySelectorAll('.edit-only').forEach(el=>el.style.display=CAN_EDIT?'':'none');
+ document.querySelectorAll('.edit-field').forEach(el=>el.disabled=!CAN_EDIT);
+}
+
+/* ---------------- الإقلاع ---------------- */
+async function boot(){
+ sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+ const {data:{session},error}=await sb.auth.getSession();
+ if(error){renderLoginGate('تعذّر التحقق من الجلسة: '+error.message);return}
+ if(!session){renderLoginGate();return}
+ SESSION=session;
+ await checkPermissionAndRender();
+}
+
+/* ================= STATE ================= */
+let ST={reps:[],sales:[],coll:[],params:{salesRate:2,salesTarget:13000,salesBonus:50,collBonus:50,collWeakDays:7,retChqRate:2},periods:{}};
+async function loadState(){
+ const {data,error}=await sb.from('cvcomm_state').select('data').eq('id',1).maybeSingle();
+ if(error)throw error;
+ if(data&&data.data){const o=data.data;ST={...ST,...o,params:{...ST.params,...(o.params||{})}}}
+}
+let _saveT=null;
+function saveState(){
+ if(!CAN_EDIT)return;
+ clearTimeout(_saveT);
+ _saveT=setTimeout(async()=>{
+  try{
+   const {error}=await sb.from('cvcomm_state').upsert({id:1,data:ST,updated_by:SESSION.user.id,updated_at:new Date().toISOString()});
+   if(error)throw error;
+  }catch(e){alert('تعذّر حفظ التعديل على القاعدة المشتركة: '+e.message)}
+ },400);
+}
+function uid(){return 'id'+Date.now().toString(36)+Math.random().toString(36).slice(2,8)}
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function splitPasteLine(line){
+ if(line.includes('\t'))return line.split('\t').map(x=>x.trim());
+ return line.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(x=>x.trim());
+}
+function copyQuery(id){const el=document.getElementById(id);el.select();el.setSelectionRange(0,el.value.length);let ok=false;try{ok=document.execCommand('copy')}catch(e){}
+ if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(el.value).then(()=>alert('تم نسخ الكويري ✓')).catch(()=>{if(!ok)alert('تعذّر النسخ التلقائي — حدد النص يدوياً (Ctrl+A) وانسخه (Ctrl+C)')})}
+ else if(ok)alert('تم نسخ الكويري ✓');else alert('تعذّر النسخ التلقائي — حدد النص يدوياً (Ctrl+A) وانسخه (Ctrl+C)')}
+function exportJSON(){const b=new Blob([JSON.stringify(ST,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='عمولة_الكاش_فان_نسخة_'+new Date().toISOString().slice(0,10)+'.json';a.click()}
+function clearAllData(){
+ if(!CAN_EDIT)return;
+ if(SCREEN_PERM!=='ADMIN'){alert('حذف كل البيانات المشتركة يتطلب صلاحية "مدير" على هذه الشاشة.');return}
+ if(!confirm('هذا رح يحذف كل شي نهائياً من القاعدة المشتركة: المندوبين، المبيعات، التحصيل، والإعدادات المدخلة يدوياً (مدير/مشرف/مساعدين) — لكل المستخدمين. خذ نسخة احتياطية JSON أولاً لو حابب تحتفظ بشي.\n\nهل أخذت نسخة احتياطية؟ لو لأ، اضغط إلغاء وخذ نسخة أولاً.\n\nمتابعة الحذف؟'))return;
+ ST={reps:[],sales:[],coll:[],params:{salesRate:2,salesTarget:13000,salesBonus:50,collBonus:50,collWeakDays:7,retChqRate:2},periods:{}};
+ saveState();
+ renderAll();
+}
+function importJSON(ev){const f=ev.target.files[0];if(!f)return;if(!CAN_EDIT){ev.target.value='';return}const r=new FileReader();r.onload=()=>{try{const o=JSON.parse(r.result);if(!confirm('هذا رح يستبدل كل البيانات الحالية بمحتوى الملف (بالقاعدة المشتركة). متابعة؟'))return;ST={...ST,...o,params:{...ST.params,...(o.params||{})}};saveState();renderAll()}catch(e){alert('ملف غير صالح')}};r.readAsText(f);ev.target.value=''}
+
+/* ================= UTIL ================= */
+function fmt(v){if(v==null||isNaN(v))return '—';const a=Math.abs(v).toLocaleString('en-US',{minimumFractionDigits:0,maximumFractionDigits:2});return v<0?'('+a+')':a}
+function pct(v){return v==null||isNaN(v)||!isFinite(v)?'—':(v*100).toFixed(1)+'%'}
+function endOfMonth(y,m){return new Date(y,m+1,0)} // m 0-based
+function isoLocal(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0')} // بديل toISOString() — هذيك بتحول لتوقيت UTC وبتقص يوم كامل بمناطق زمنية متقدمة عن UTC (زي الأردن)
+function repName(id){const r=ST.reps.find(x=>x.id===id);return r?r.name:'—'}
+function repByName(name){name=(name||'').trim();if(!name)return null;let r=ST.reps.find(x=>x.name===name);if(!r){r={id:uid(),name};ST.reps.push(r)}return r}
+function fillRepSelects(){const opts=ST.reps.map(r=>`<option value="${r.id}">${r.name}</option>`).join('')||'<option value="">— أضف مندوباً أولاً —</option>';['salesRep','collRep'].forEach(id=>{const el=document.getElementById(id);const cur=el.value;el.innerHTML=opts;if([...el.options].some(o=>o.value===cur))el.value=cur})}
+
+/* ================= REPS ================= */
+function addRep(){if(!CAN_EDIT)return;const el=document.getElementById('newRepName');const name=el.value.trim();if(!name)return;if(ST.reps.some(r=>r.name===name)){alert('المندوب موجود أصلاً');return}ST.reps.push({id:uid(),name});el.value='';saveState();renderReps();fillRepSelects()}
+function delRep(id){if(!CAN_EDIT)return;if(!confirm('حذف المندوب؟ رح تنحذف معه كل سجلات مبيعاته وتحصيله المسجّلة.'))return;
+ ST.reps=ST.reps.filter(r=>r.id!==id);
+ ST.sales=ST.sales.filter(s=>s.repId!==id);
+ ST.coll=ST.coll.filter(c=>c.repId!==id);
+ saveState();renderReps();renderSales();renderColl();fillRepSelects()}
+function cleanOrphans(){if(!CAN_EDIT)return;
+ const validIds=new Set(ST.reps.map(r=>r.id));
+ const nS=ST.sales.filter(s=>!validIds.has(s.repId)).length,nC=ST.coll.filter(c=>!validIds.has(c.repId)).length;
+ if(!nS&&!nC){alert('ما في سجلات يتيمة — كل شي مرتبط بمندوب موجود.');return}
+ if(!confirm(`رح تنحذف ${nS} سطر مبيعات و${nC} سطر تحصيل مش مرتبطين بأي مندوب موجود حالياً. متابعة؟`))return;
+ ST.sales=ST.sales.filter(s=>validIds.has(s.repId));
+ ST.coll=ST.coll.filter(c=>validIds.has(c.repId));
+ saveState();renderReps();renderSales();renderColl();renderComm();alert('تم التنظيف ✓')}
+function renderReps(){const el=document.getElementById('repsTbl');const q=(document.getElementById('repsSearch').value||'').trim().toLowerCase();
+ const list=ST.reps.filter(r=>!q||r.name.toLowerCase().includes(q));
+ el.innerHTML=list.map(r=>{const ns=ST.sales.filter(s=>s.repId===r.id).length,nc=ST.coll.filter(c=>c.repId===r.id).length;return `<tr><td><b>${r.name}</b></td><td class="num">${ns}</td><td class="num">${nc}</td><td>${CAN_EDIT?`<button class="btn danger sm" onclick="delRep('${r.id}')">حذف</button>`:''}</td></tr>`}).join('')||'<tr><td colspan="4" class="hint">لا يوجد مندوبون بعد</td></tr>'}
+function importRepsPaste(){if(!CAN_EDIT)return;const txt=document.getElementById('repsPaste').value;if(!txt.trim())return;let n=0;
+ txt.split(/\r?\n/).forEach(line=>{if(!line.trim()||line.trim().startsWith('--'))return;
+  const parts=splitPasteLine(line).filter(x=>x!=='');if(!parts.length)return;
+  const name=parts.length>=2?parts[1]:parts[0];
+  if(!name||/^(المندوب|slpname|كود المندوب|القسم|dept)$/i.test(name))return;
+  if(ST.reps.some(r=>r.name===name))return;
+  ST.reps.push({id:uid(),name});n++
+ });
+ document.getElementById('repsPaste').value='';saveState();renderReps();fillRepSelects();alert('تم إضافة '+n+' مندوب جديد')}
+
+/* ================= SALES ================= */
+function upsertSale(repId,month,amount){const ex=ST.sales.find(s=>s.repId===repId&&s.month===month);if(ex){ex.amount=amount;return false}ST.sales.push({id:uid(),repId,month,amount});return true}
+function addSale(){if(!CAN_EDIT)return;const repId=document.getElementById('salesRep').value,month=document.getElementById('salesMonth').value,amt=+document.getElementById('salesAmt').value;if(!repId){alert('أضف مندوباً أولاً واختره');return}if(!month){alert('اختر الشهر');return}upsertSale(repId,month,amt||0);document.getElementById('salesAmt').value='';saveState();renderSales();renderReps()}
+function clearSales(){if(!CAN_EDIT)return;if(!ST.sales.length){alert('ما في بيانات مبيعات أصلاً');return}if(!confirm(`رح تنحذف كل بيانات المبيعات (${ST.sales.length} سطر) لكل المندوبين والأشهر. متابعة؟`))return;ST.sales=[];saveState();renderSales();renderReps();renderComm()}
+function clearColl(){if(!CAN_EDIT)return;if(!ST.coll.length){alert('ما في بيانات تحصيل أصلاً');return}if(!confirm(`رح تنحذف كل بيانات التحصيل (${ST.coll.length} سطر) لكل المندوبين. متابعة؟`))return;ST.coll=[];saveState();renderColl();renderReps();renderComm()}
+function delSale(id){if(!CAN_EDIT)return;ST.sales=ST.sales.filter(s=>s.id!==id);saveState();renderSales();renderReps()}
+function renderSales(){const el=document.getElementById('salesTbl');const q=(document.getElementById('salesSearch').value||'').trim().toLowerCase();
+ const rows=ST.sales.filter(s=>!q||repName(s.repId).toLowerCase().includes(q)).sort((a,b)=>b.month.localeCompare(a.month));
+ el.innerHTML=rows.map(s=>`<tr><td>${repName(s.repId)}</td><td>${s.month}</td><td class="num">${fmt(s.amount)}</td><td>${CAN_EDIT?`<button class="btn danger sm" onclick="delSale('${s.id}')">حذف</button>`:''}</td></tr>`).join('')||'<tr><td colspan="4" class="hint">لا توجد سجلات مبيعات بعد</td></tr>'}
+function importSalesPaste(){if(!CAN_EDIT)return;const txt=document.getElementById('salesPaste').value;if(!txt.trim())return;let nNew=0,nUpd=0;txt.split(/\r?\n/).forEach(line=>{if(!line.trim())return;const parts=splitPasteLine(line);if(parts.length<3)return;const [name,month,amt]=parts;if(!/^\d{4}-\d{2}/.test(month))return;const rep=repByName(name);if(!rep)return;const isNew=upsertSale(rep.id,month.slice(0,7),+amt.replace(/,/g,'')||0);if(isNew)nNew++;else nUpd++});document.getElementById('salesPaste').value='';saveState();renderSales();renderReps();fillRepSelects();alert(`تم: ${nNew} سطر جديد، ${nUpd} سطر محدَّث (استبدل القديم لنفس المندوب/الشهر)`)}
+
+/* ================= COLLECTIONS ================= */
+function toggleDueField(){const isChq=document.getElementById('collMethod').value==='chq';document.getElementById('collDue').style.display=isChq?'':'none';document.getElementById('collDueLbl').style.display=isChq?'':'none'}
+function addColl(){if(!CAN_EDIT)return;const repId=document.getElementById('collRep').value,entry=document.getElementById('collEntry').value,method=document.getElementById('collMethod').value,due=document.getElementById('collDue').value,amt=+document.getElementById('collAmt').value;if(!repId){alert('أضف مندوباً أولاً واختره');return}if(!entry){alert('اختر تاريخ القبض');return}if(method==='chq'&&!due){alert('اختر تاريخ استحقاق الشيك');return}ST.coll.push({id:uid(),repId,entry,method,due:method==='chq'?due:'',amount:amt||0});document.getElementById('collAmt').value='';saveState();renderColl();renderReps()}
+function delColl(id){if(!CAN_EDIT)return;ST.coll=ST.coll.filter(c=>c.id!==id);saveState();renderColl();renderReps()}
+function collDur(c){if(c.method!=='chq'||!c.due)return null;const raw=Math.round((new Date(c.due)-new Date(c.entry))/864e5);return raw<=0?1:raw+1}
+function renderColl(){const el=document.getElementById('collTbl');const q=(document.getElementById('collSearch').value||'').trim().toLowerCase();
+ const rows=ST.coll.filter(c=>!q||repName(c.repId).toLowerCase().includes(q)).sort((a,b)=>b.entry.localeCompare(a.entry));const P=ST.params;
+ el.innerHTML=rows.map(c=>{const dur=collDur(c);const weak=dur!=null&&dur>P.collWeakDays;const grade=c.method!=='chq'?'<span class="badge">نقد/حوالة</span>':weak?'<span class="badge neg">ضعيف</span>':'<span class="badge pos">ممتاز</span>';
+  return `<tr><td>${repName(c.repId)}</td><td>${c.entry}</td><td>${c.method==='chq'?'شيك':'نقد/حوالة'}</td><td>${c.due||'—'}</td><td class="num">${fmt(c.amount)}</td><td class="num">${dur==null?'—':dur}</td><td>${grade}</td><td>${CAN_EDIT?`<button class="btn danger sm" onclick="delColl('${c.id}')">حذف</button>`:''}</td></tr>`}).join('')||'<tr><td colspan="8" class="hint">لا توجد سجلات تحصيل بعد</td></tr>'}
+function importCollPaste(){if(!CAN_EDIT)return;const txt=document.getElementById('collPaste').value;if(!txt.trim())return;let n=0;txt.split(/\r?\n/).forEach(line=>{if(!line.trim())return;const parts=splitPasteLine(line);if(parts.length<5)return;const [name,entry,methodTxt,due,amt]=parts;if(!/^\d{4}-\d{2}-\d{2}/.test(entry))return;const rep=repByName(name);if(!rep)return;const isChq=/شيك|chq|check/i.test(methodTxt);ST.coll.push({id:uid(),repId:rep.id,entry:entry.slice(0,10),method:isChq?'chq':'cash',due:isChq?due.slice(0,10):'',amount:+amt.replace(/,/g,'')||0});n++});document.getElementById('collPaste').value='';saveState();renderColl();renderReps();fillRepSelects();alert('تم استيراد '+n+' سطر')}
+
+/* ================= COMMISSION ================= */
+function periodData(key){ST.periods[key]=ST.periods[key]||{mgrName:'',mgrAmt:0,supName:'',supAmt:0,supRate:null,assistants:[],perRep:{}};return ST.periods[key]}
+function computeCV(fromISO,toISO){
+ const key=fromISO+'|'+toISO;const PD=periodData(key);const P=ST.params;
+ const salesByRep={};ST.sales.forEach(s=>{const d=s.month+'-01';if(d<fromISO||d>toISO)return;salesByRep[s.repId]=(salesByRep[s.repId]||0)+(+s.amount||0)});
+ const collByRep={};ST.coll.forEach(c=>{if(!c.entry||c.entry<fromISO||c.entry>toISO)return;const amt=+c.amount||0;if(amt<=0)return;const o=collByRep[c.repId]=collByRep[c.repId]||{tot:0,weak:0};o.tot+=amt;if(c.method!=='chq'||!c.due)return;const dur=collDur(c);if(dur>P.collWeakDays)o.weak+=amt});
+ const rows=ST.reps.map(rep=>{
+  const sales=salesByRep[rep.id]||0;const coll=collByRep[rep.id]||{tot:0,weak:0};
+  const salesComm=sales*P.salesRate/100;
+  const salesBonusCalc=sales>0?Math.min(1,sales/P.salesTarget)*P.salesBonus:0;
+  const weakRatio=coll.tot>0?coll.weak/coll.tot:0;
+  const collBonusCalc=coll.tot>0?Math.max(0,P.collBonus*(1-weakRatio)):0;
+  const man=PD.perRep[rep.id]=PD.perRep[rep.id]||{mgrBonus:0,retChq:0,assistFee:0,salesBonusOv:null,collBonusOv:null};
+  let salesBonusOv=man.salesBonusOv!=null&&man.salesBonusOv!==''?+man.salesBonusOv:null;
+  let collBonusOv=man.collBonusOv!=null&&man.collBonusOv!==''?+man.collBonusOv:null;
+  // تنظيف ذاتي: لو محفوظة قيمة "يدوية" بس هي فعلياً نفس المحسوبة تلقائياً (بقايا من قبل تصليح النسخ العرضي)، رجّعها أوتوماتيك واحفظ التنظيف
+  if(salesBonusOv!=null&&Math.abs(salesBonusOv-salesBonusCalc)<0.01){salesBonusOv=null;man.salesBonusOv=null;saveState()}
+  if(collBonusOv!=null&&Math.abs(collBonusOv-collBonusCalc)<0.01){collBonusOv=null;man.collBonusOv=null;saveState()}
+  const salesBonus=salesBonusOv!=null?salesBonusOv:salesBonusCalc;
+  const collBonus=collBonusOv!=null?collBonusOv:collBonusCalc;
+  const retDed=(+man.retChq||0)*P.retChqRate/100;
+  const total=salesComm+salesBonus+collBonus+(+man.mgrBonus||0)-retDed-(+man.assistFee||0);
+  return {rep,sales,salesComm,salesBonusCalc,salesBonus,salesBonusOv,collTot:coll.tot,collWeak:coll.weak,weakRatio,collBonusCalc,collBonus,collBonusOv,mgrBonus:+man.mgrBonus||0,retChq:+man.retChq||0,retDed,assistFee:+man.assistFee||0,total};
+ });
+ const totalSales=rows.reduce((a,r)=>a+r.sales,0);
+ const supRate=(PD.supRate!=null&&PD.supRate!=='')?+PD.supRate:null;
+ const supAmt=supRate!=null?totalSales*supRate/100:(+PD.supAmt||0);
+ return {rows,PD,P,key,totalSales,supRate,supAmt};
+}
+function setBonusOv(key,repId,field,input){if(!CAN_EDIT)return;
+ const raw=input.value;
+ const man=periodData(key).perRep[repId]=periodData(key).perRep[repId]||{mgrBonus:0,retChq:0,assistFee:0,salesBonusOv:null,collBonusOv:null};
+ if(raw===''){man[field]=null}
+ else{
+  const num=+raw,calc=+input.dataset.calc||0;
+  // لو القيمة المدخلة نفسها المحسوبة تلقائياً (زي لو انضغطت الخانة بالغلط)، اعتبرها أوتوماتيك مش تعديل يدوي حقيقي
+  man[field]=Math.abs(num-calc)<0.01?null:num;
+ }
+ saveState();renderComm();
+}
+function cvRowHtml(r,X,P){
+ const capNote=r.salesBonusCalc>P.salesBonus?` — تجاوز الهدف فأخذ الحد الأقصى ${P.salesBonus}`:'';
+ const tSales=`مسجّلة بتبويب المبيعات الشهرية`;
+ const tComm=`${fmt(r.sales)} × ${P.salesRate}% = ${fmt(r.salesComm)}`;
+ const tBonus=r.salesBonusOv!=null
+  ?`✏ قيمة يدوية أدخلتها بنفسك (بدل المحسوبة تلقائياً ${fmt(r.salesBonusCalc)}). امسح الخانة لترجيعها أوتوماتيك.`
+  :`(${fmt(r.sales)} ÷ ${fmt(P.salesTarget)}) × ${P.salesBonus} = ${fmt(r.salesBonusCalc)}${capNote}`;
+ const tCollTot=`نقد وحوالات وشيكات مسجّلة بتبويب التحصيل والشيكات`;
+ const tCollWeak=`شيكات استحقاقها أكثر من ${P.collWeakDays} يوم من تاريخ القبض`;
+ const tWeakPct=`${fmt(r.collWeak)} ÷ ${fmt(r.collTot)} = ${pct(r.weakRatio)}`;
+ const tCollBonus=r.collBonusOv!=null
+  ?`✏ قيمة يدوية أدخلتها بنفسك (بدل المحسوبة تلقائياً ${fmt(r.collBonusCalc)}). امسح الخانة لترجيعها أوتوماتيك.`
+  :`${P.collBonus} × (1 − ${pct(r.weakRatio)}) = ${fmt(r.collBonusCalc)}`;
+ const tRetDed=`${fmt(r.retChq)} × ${P.retChqRate}% = ${fmt(r.retDed)} خصم`;
+ const tTotal=`${fmt(r.salesComm)} + ${fmt(r.salesBonus)} + ${fmt(r.collBonus)} + ${fmt(r.mgrBonus)} − ${fmt(r.retDed)} − ${fmt(r.assistFee)} = ${fmt(r.total)}`;
+ const ovMark=v=>v!=null?' style="color:#c9a94d;font-weight:700"':'';
+ return `<tr><td><b>${r.rep.name}</b></td>`
+  +`<td class="num" title="${tSales}">${fmt(r.sales)}</td>`
+  +`<td class="num" title="${tComm}">${fmt(r.salesComm)}</td>`
+  +`<td class="num"${ovMark(r.salesBonusOv)} title="${tBonus}"><input type="number" step="any" autocomplete="off" placeholder="${fmt(r.salesBonusCalc)}" data-calc="${r.salesBonusCalc}" value="${r.salesBonusOv!=null?r.salesBonusOv:''}" style="width:75px" ${CAN_EDIT?'':'disabled'} onchange="setBonusOv('${X.key}','${r.rep.id}','salesBonusOv',this)">${r.salesBonusOv!=null?' ✏':''}</td>`
+  +`<td class="num" title="${tCollTot}">${fmt(r.collTot)}</td>`
+  +`<td class="num ${r.collWeak?'neg':''}" title="${tCollWeak}">${fmt(r.collWeak)}</td>`
+  +`<td class="num" title="${tWeakPct}">${pct(r.weakRatio)}</td>`
+  +`<td class="num"${ovMark(r.collBonusOv)} title="${tCollBonus}"><input type="number" step="any" autocomplete="off" placeholder="${fmt(r.collBonusCalc)}" data-calc="${r.collBonusCalc}" value="${r.collBonusOv!=null?r.collBonusOv:''}" style="width:75px" ${CAN_EDIT?'':'disabled'} onchange="setBonusOv('${X.key}','${r.rep.id}','collBonusOv',this)">${r.collBonusOv!=null?' ✏':''}</td>`
+  +`<td class="num" title="تُدخل يدوياً"><input type="number" step="any" autocomplete="off" value="${r.mgrBonus}" style="width:70px" ${CAN_EDIT?'':'disabled'} onchange="periodData('${X.key}').perRep['${r.rep.id}'].mgrBonus=+this.value;saveState();renderComm()"></td>`
+  +`<td class="num" title="تُدخل يدوياً"><input type="number" step="any" autocomplete="off" value="${r.retChq}" style="width:75px" ${CAN_EDIT?'':'disabled'} onchange="periodData('${X.key}').perRep['${r.rep.id}'].retChq=+this.value;saveState();renderComm()"></td>`
+  +`<td class="num" title="${tRetDed}">${fmt(r.retDed)}</td>`
+  +`<td class="num" title="تُدخل يدوياً"><input type="number" step="any" autocomplete="off" value="${r.assistFee}" style="width:75px" ${CAN_EDIT?'':'disabled'} onchange="periodData('${X.key}').perRep['${r.rep.id}'].assistFee=+this.value;saveState();renderComm()"></td>`
+  +`<td class="num" title="${tTotal}"><b>${fmt(r.total)}</b></td>`
+  +`<td class="noprint"><button class="btn ghost sm" onclick="printRepSlip('${r.rep.id}')" title="طباعة ملخص عمولة هذا المندوب">🖨</button></td></tr>`;
+}
+function specialRowHtml(label,name,amount){
+ return `<tr style="background:#fbf8ef"><td><b>${label}</b>${name?' — '+name:''}</td>`
+  +Array(11).fill('<td class="num">—</td>').join('')
+  +`<td class="num"><b>${fmt(amount)}</b></td><td class="noprint"></td></tr>`;
+}
+function renderComm(){
+ const fEl=document.getElementById('cvFrom'),tEl=document.getElementById('cvTo');
+ // لو الاثنين فاضيين، عبّيهم بالشهر الحالي؛ لو وحدة بس فاضية، خليها نفس الثانية (مش تدخل شهر النظام الحقيقي وتعمل فترة هجينة غلط)
+ if(!fEl.value&&!tEl.value){const now=new Date();const m=(now.getMonth()+1+'').padStart(2,'0');fEl.value=tEl.value=now.getFullYear()+'-'+m}
+ else if(!fEl.value)fEl.value=tEl.value;
+ else if(!tEl.value)tEl.value=fEl.value;
+ const f=fEl.value,t=tEl.value;
+ const fromISO=f+'-01';const [ty,tm]=t.split('-').map(Number);const toISO=isoLocal(endOfMonth(ty,tm-1));
+ const X=computeCV(fromISO,toISO);window._CV=X;const P=X.P,PD=X.PD;
+ document.getElementById('cvParams').innerHTML=[['salesRate','% عمولة المبيعات'],['salesTarget','هدف المبيعات لمكافأة كاملة'],['salesBonus','قيمة مكافأة البيع الكاملة'],['collBonus','قيمة مكافأة التحصيل الممتاز'],['collWeakDays','حد الأيام (أكثر = ضعيف)'],['retChqRate','% خصم الشيكات المرتجعة']].map(([k,l])=>`<label>${l}</label><input type="number" step="any" value="${P[k]}" ${CAN_EDIT?'':'disabled'} onchange="ST.params['${k}']=+this.value;saveState();renderComm()">`).join('');
+ const T=X.rows.reduce((a,r)=>{['sales','salesComm','salesBonus','collBonus','mgrBonus','retDed','assistFee','total'].forEach(k=>a[k]=(a[k]||0)+r[k]);return a},{sales:0,salesComm:0,salesBonus:0,collBonus:0,mgrBonus:0,retDed:0,assistFee:0,total:0});
+ const assistTot=(PD.assistants||[]).reduce((a,x)=>a+(+x.amt||0),0);
+ const grand=T.total+(+PD.mgrAmt||0)+X.supAmt+assistTot;
+ document.getElementById('cvKpi').innerHTML=[
+  ['مندوبو الكاش فان',X.rows.length,''],
+  ['صافي مبيعاتهم',fmt(T.sales),'عمولة '+P.salesRate+'% = '+fmt(T.salesComm)],
+  ['مكافآت البيع والتحصيل',fmt(T.salesBonus+T.collBonus),'بيع '+fmt(T.salesBonus)+' + تحصيل '+fmt(T.collBonus)],
+  ['خصومات المندوبين',fmt(T.retDed+T.assistFee),'مرتجعات '+fmt(T.retDed)+' + مقابل مساعد '+fmt(T.assistFee)],
+  ['إجمالي عمولات المندوبين',fmt(T.total),''],
+  ['الإجمالي الكلي',fmt(grand),'+ مدير '+fmt(PD.mgrAmt||0)+' مشرف '+fmt(X.supAmt)+' مساعدين '+fmt(assistTot)]
+ ].map(([l,v,s])=>`<div class="kpi"><div class="lbl">${l}</div><div class="val">${v}</div><div class="sub">${s}</div></div>`).join('');
+ document.getElementById('mgrBox').innerHTML=`<div class="row"><label>الاسم</label><input type="text" value="${(PD.mgrName||'').replace(/"/g,'&quot;')}" style="width:140px" placeholder="اسم مدير المبيعات" ${CAN_EDIT?'':'disabled'} onchange="periodData('${X.key}').mgrName=this.value;saveState();renderComm()"></div><div class="row"><label>عمولة ثابتة (د.أ)</label><input type="number" step="any" value="${PD.mgrAmt||0}" ${CAN_EDIT?'':'disabled'} onchange="periodData('${X.key}').mgrAmt=+this.value;saveState();renderComm()"></div><p class="hint">تُدخل يدوياً لكل فترة — مش مربوطة بمندوب من الشاشة، وبتظهر بجدول المندوبين تحت.</p>`;
+ document.getElementById('supBox').innerHTML=`<div class="row"><label>الاسم</label><input type="text" value="${(PD.supName||'').replace(/"/g,'&quot;')}" style="width:140px" placeholder="اسم مشرف المبيعات" ${CAN_EDIT?'':'disabled'} onchange="periodData('${X.key}').supName=this.value;saveState();renderComm()"></div><div class="row"><label>نسبة عمولة % (من إجمالي مبيعات كل المندوبين)</label><input type="number" step="any" value="${PD.supRate!=null?PD.supRate:''}" placeholder="اختياري" style="width:80px" ${CAN_EDIT?'':'disabled'} onchange="periodData('${X.key}').supRate=this.value===''?null:+this.value;saveState();renderComm()"></div><div class="row"><label>عمولة ثابتة (د.أ)</label><input type="number" step="any" value="${PD.supAmt||0}" ${(!CAN_EDIT||PD.supRate!=null)?'disabled':''} title="${PD.supRate!=null?'معطّلة لأن نسبة العمولة مفعّلة — امسح النسبة لترجيعها يدوية':''}" onchange="periodData('${X.key}').supAmt=+this.value;saveState();renderComm()"></div><p class="hint">${PD.supRate!=null?`محتسبة تلقائياً: إجمالي مبيعات جميع المندوبين (${fmt(X.totalSales)}) × ${PD.supRate}% = ${fmt(X.supAmt)}`:'تُدخل يدوياً لكل فترة، أو ضع نسبة عمولة بالأعلى لتُحسب تلقائياً من إجمالي مبيعات الجميع.'}</p>`;
+ document.getElementById('cvAssist').innerHTML=`<table><tr><th>الاسم</th><th class="num">المبلغ</th><th></th></tr>${(PD.assistants||[]).map((a,i)=>`<tr><td><input type="text" value="${(a.name||'').replace(/"/g,'&quot;')}" style="width:110px" ${CAN_EDIT?'':'disabled'} onchange="periodData('${X.key}').assistants[${i}].name=this.value;saveState()"></td><td class="num"><input type="number" step="any" value="${a.amt||0}" style="width:70px" ${CAN_EDIT?'':'disabled'} onchange="periodData('${X.key}').assistants[${i}].amt=+this.value;saveState();renderComm()"></td><td>${CAN_EDIT?`<button class="btn danger sm" onclick="periodData('${X.key}').assistants.splice(${i},1);saveState();renderComm()">✕</button>`:''}</td></tr>`).join('')||'<tr><td colspan="3" class="hint">لا يوجد</td></tr>'}</table>${CAN_EDIT?`<button class="btn ghost sm" style="margin-top:6px" onclick="periodData('${X.key}').assistants.push({name:'مساعد جديد',amt:0});saveState();renderComm()">+ مساعد</button>`:''}<p class="hint">إجمالي هذا الشهر: ${fmt(assistTot)}</p>`;
+ const cvq=(document.getElementById('cvSearch').value||'').trim().toLowerCase();
+ const dispRows=X.rows.filter(r=>!cvq||r.rep.name.toLowerCase().includes(cvq));
+ const specialRows=(!cvq||'مدير المبيعات'.includes(cvq)||(PD.mgrName||'').toLowerCase().includes(cvq)?specialRowHtml('مدير المبيعات',PD.mgrName,PD.mgrAmt||0):'')
+  +(!cvq||'مشرف المبيعات'.includes(cvq)||(PD.supName||'').toLowerCase().includes(cvq)?specialRowHtml('مشرف المبيعات',PD.supName,X.supAmt):'')
+  +(PD.assistants||[]).filter(a=>!cvq||'مساعد'.includes(cvq)||(a.name||'').toLowerCase().includes(cvq)).map(a=>specialRowHtml('مساعد',a.name,a.amt||0)).join('');
+ document.getElementById('cvTbl').innerHTML=dispRows.map(r=>cvRowHtml(r,X,P)).join('')+specialRows+((dispRows.length||specialRows)?`<tr class="tot"><td>الإجمالي</td><td class="num">${fmt(T.sales)}</td><td class="num">${fmt(T.salesComm)}</td><td class="num">${fmt(T.salesBonus)}</td><td colspan="2"></td><td></td><td class="num">${fmt(T.collBonus)}</td><td class="num">${fmt(T.mgrBonus)}</td><td></td><td class="num">${fmt(T.retDed)}</td><td class="num">${fmt(T.assistFee)}</td><td class="num">${fmt(grand)}</td><td class="noprint"></td></tr>`:'')||'<tr><td colspan="14" class="hint">أضف مندوبين أولاً من تبويب "المندوبون"</td></tr>';
+}
+
+/* ================= PRINT SINGLE REP ================= */
+function saveCompanyName(){if(!CAN_EDIT)return;ST.companyName=document.getElementById('companyName').value;saveState()}
+const MONTH_AR={'01':'كانون الثاني','02':'شباط','03':'آذار','04':'نيسان','05':'أيار','06':'حزيران','07':'تموز','08':'آب','09':'أيلول','10':'تشرين الأول','11':'تشرين الثاني','12':'كانون الأول'};
+function printFullReport(){
+ const X=window._CV;if(!X){alert('اضغط "تحديث" أولاً');return}
+ const P=X.P,PD=X.PD;
+ const rows=X.rows.slice().sort((a,b)=>b.total-a.total);
+ const T=rows.reduce((a,r)=>{['sales','salesComm','salesBonus','collTot','collWeak','collBonus','mgrBonus','retDed','assistFee','total'].forEach(k=>a[k]=(a[k]||0)+r[k]);return a},{});
+ const assistTot=(PD.assistants||[]).reduce((a,x)=>a+(+x.amt||0),0);
+ const grand=T.total+(+PD.mgrAmt||0)+X.supAmt+assistTot;
+ const [fromISO,toISO]=X.key.split('|');
+ const [fy,fm]=fromISO.split('-');
+ const periodLabel=(MONTH_AR[fm]||fm)+' '+fy;
+ const company=(ST.companyName||document.getElementById('companyName').value||'').trim();
+ const rowHtml=rows.map((r,i)=>`<tr class="${i%2?'alt':''}">
+   <td class="idx">${i+1}</td><td class="name">${r.rep.name}</td>
+   <td>${fmt(r.sales)}</td><td>${fmt(r.salesComm)}</td>
+   <td class="${r.salesBonusOv!=null?'manual':''}">${fmt(r.salesBonus)}</td>
+   <td>${fmt(r.collTot)}</td><td class="${r.collWeak?'neg':''}">${fmt(r.collWeak)}</td><td>${pct(r.weakRatio)}</td>
+   <td class="${r.collBonusOv!=null?'manual':''}">${fmt(r.collBonus)}</td>
+   <td class="${r.mgrBonus?'manual':''}">${fmt(r.mgrBonus)}</td>
+   <td class="${r.retDed?'neg':''}">${fmt(r.retDed)}</td>
+   <td class="${r.assistFee?'neg':''}">${fmt(r.assistFee)}</td>
+   <td class="total">${fmt(r.total)}</td></tr>`).join('');
+ const specialRow=(label,name,amount)=>`<tr class="special"><td class="idx">—</td><td class="name"><b>${label}</b>${name?' — '+name:''}</td>${'<td>—</td>'.repeat(10)}<td class="total">${fmt(amount)}</td></tr>`;
+ const assistantsRows=(PD.assistants||[]).map(a=>specialRow('مساعد',a.name,a.amt||0)).join('');
+ document.getElementById('printArea').innerHTML=`
+  <div class="rpt-head">
+   <div class="rpt-brand">${company}</div>
+   <div class="rpt-title"><h1>تقرير عمولة مندوبي الكاش فان</h1><div class="rpt-period">فترة ${periodLabel} (${fromISO} → ${toISO})</div></div>
+  </div>
+  <div class="rpt-kpis">
+   <div class="rpt-kpi"><div class="l">عدد المندوبين</div><div class="v">${rows.length}</div></div>
+   <div class="rpt-kpi"><div class="l">صافي المبيعات</div><div class="v">${fmt(T.sales)}</div></div>
+   <div class="rpt-kpi"><div class="l">عمولة المبيعات</div><div class="v">${fmt(T.salesComm)}</div></div>
+   <div class="rpt-kpi"><div class="l">مكافآت البيع والتحصيل</div><div class="v">${fmt(T.salesBonus+T.collBonus)}</div></div>
+   <div class="rpt-kpi"><div class="l">إجمالي عمولات المندوبين</div><div class="v">${fmt(T.total)}</div></div>
+   <div class="rpt-kpi"><div class="l">الإجمالي الكلي</div><div class="v">${fmt(grand)}</div></div>
+  </div>
+  <table><tr><th>#</th><th>المندوب</th><th>صافي المبيعات</th><th>عمولة المبيعات</th><th>مكافأة البيع</th><th>تحصيل الفترة</th><th>شيكات ضعيفة</th><th>%ضعيف</th><th>مكافأة التحصيل</th><th>مكافأة المدير</th><th>خصم المرتجع</th><th>مقابل مساعد</th><th>الإجمالي</th></tr>
+   ${rowHtml}
+   ${specialRow('مدير المبيعات',PD.mgrName,PD.mgrAmt||0)}
+   ${specialRow('مشرف المبيعات',PD.supName,X.supAmt)}
+   ${assistantsRows}
+   <tr class="tot"><td colspan="2">الإجمالي العام</td><td>${fmt(T.sales)}</td><td>${fmt(T.salesComm)}</td><td>${fmt(T.salesBonus)}</td><td>${fmt(T.collTot)}</td><td>${fmt(T.collWeak)}</td><td></td><td>${fmt(T.collBonus)}</td><td>${fmt(T.mgrBonus)}</td><td>${fmt(T.retDed)}</td><td>${fmt(T.assistFee)}</td><td class="total">${fmt(grand)}</td></tr>
+  </table>
+  <div class="rpt-legend"><span><i style="background:var(--gold)"></i> قيمة يدوية (مكافأة أو مبلغ مُدخل مباشرة، وليس ناتج معادلة)</span><span><i style="background:#c0503f"></i> خصم</span></div>
+  <div class="rpt-sign"><div><b>إعداد</b>نظام عمولة الكاش فان</div><div><b>مراجعة</b>&nbsp;</div><div><b>اعتماد</b>&nbsp;</div></div>
+  <div class="rpt-foot"><span>تاريخ الإصدار: ${new Date().toLocaleDateString('ar-JO',{year:'numeric',month:'long',day:'numeric'})}</span><span>تقرير عمولة الكاش فان — للاستخدام الداخلي</span></div>`;
+ document.body.classList.add('print-single-mode');
+ window.print();
+}
+function printRepSlip(repId){
+ const X=window._CV;if(!X)return;
+ const r=X.rows.find(x=>x.rep.id===repId);if(!r)return;
+ const per=(document.getElementById('cvFrom').value||'—')+' → '+(document.getElementById('cvTo').value||'—');
+ const P=X.P;
+ const line=(l,m,v)=>`<tr><td>${l}</td><td class="hint">${m}</td><td class="num">${v}</td></tr>`;
+ const body=line('صافي المبيعات','—',fmt(r.sales))
+  +line('عمولة المبيعات',`صافي المبيعات × ${P.salesRate}%`,fmt(r.salesComm))
+  +line('مكافأة البيع',r.salesBonusOv!=null?'✏ قيمة يدوية (بدل المحسوبة تلقائياً '+fmt(r.salesBonusCalc)+')':`(صافي المبيعات ÷ ${fmt(P.salesTarget)}) × ${P.salesBonus} — بحد أقصى ${P.salesBonus}`,fmt(r.salesBonus))
+  +line('تحصيل الفترة (نقد + حوالات + شيكات)','—',fmt(r.collTot))
+  +line('منها شيكات "ضعيفة"',`استحقاقها أكثر من ${P.collWeakDays} يوم من تاريخ القبض`,fmt(r.collWeak)+' ('+pct(r.weakRatio)+')')
+  +line('مكافأة جودة التحصيل',r.collBonusOv!=null?'✏ قيمة يدوية (بدل المحسوبة تلقائياً '+fmt(r.collBonusCalc)+')':`${P.collBonus} × (1 − نسبة الشيكات الضعيفة)`,fmt(r.collBonus))
+  +line('مكافأة المدير','تُدخل يدوياً',fmt(r.mgrBonus))
+  +line('شيكات مرتجعة',`المدخلة ${fmt(r.retChq)} × خصم ${P.retChqRate}%`,'−'+fmt(r.retDed))
+  +line('مقابل استخدام مساعد','تُدخل يدوياً','−'+fmt(r.assistFee));
+ document.getElementById('printArea').innerHTML=`
+  <h1>ملخص عمولة الكاش فان</h1>
+  <h2>${r.rep.name}</h2>
+  <p>الفترة: ${per} — تاريخ الطباعة: ${new Date().toLocaleDateString('ar-JO')}</p>
+  <table><tr><th>البند</th><th>طريقة الاحتساب</th><th class="num">القيمة (د.أ)</th></tr>${body}
+  <tr class="tot"><td colspan="2">إجمالي عمولة المندوب</td><td class="num">${fmt(r.total)}</td></tr></table>`;
+ document.body.classList.add('print-single-mode');
+ window.print();
+}
+window.addEventListener('afterprint',()=>document.body.classList.remove('print-single-mode'));
+
+/* ================= SORTABLE TABLES ================= */
+function sortCellValue(td){
+ const txt=(td.textContent||'').trim();
+ if(!txt||txt==='—'||txt==='-')return {n:-Infinity,s:''};
+ const cleaned=txt.replace(/[,٬%\s]/g,'').replace(/^\+/,'');
+ const num=parseFloat(cleaned.replace(/^\((.*)\)$/,'-$1'));
+ if(!isNaN(num)&&/^[\-\d.]/.test(cleaned.replace(/^\(/,'')))return {n:num,s:txt};
+ return {n:null,s:txt};
+}
+function sortTableBy(table,colIdx,dir){
+ // آخر tbody دايماً هو جسم الجدول الحقيقي (المتصفح بيلف صف العنوان السائب بـtbody ضمني منفصل قبله)
+ const tbody=table.tBodies[table.tBodies.length-1]||table;
+ const allRows=[...tbody.rows];
+ const rows=allRows.filter(r=>!r.querySelector('th')&&!r.classList.contains('tot'));
+ const totRow=allRows.find(r=>r.classList.contains('tot'));
+ const vals=rows.map(r=>{const cell=r.cells[colIdx];return cell?sortCellValue(cell):{n:null,s:''}});
+ const allNum=vals.every(v=>v.n!=null);
+ const paired=rows.map((r,i)=>[r,vals[i]]);
+ paired.sort((a,b)=>{let cmp;if(allNum)cmp=(a[1].n-b[1].n);else cmp=a[1].s.localeCompare(b[1].s,'ar');return dir==='asc'?cmp:-cmp});
+ paired.forEach(([r])=>tbody.appendChild(r));
+ if(totRow)tbody.appendChild(totRow);
+}
+document.addEventListener('click',e=>{
+ const th=e.target.closest('table th');
+ if(!th)return;
+ if(th.onclick||th.getAttribute('onclick'))return;
+ const table=th.closest('table');if(!table||!table.tBodies.length)return;
+ const headerRow=th.parentElement;const colIdx=[...headerRow.children].indexOf(th);
+ if(colIdx<0)return;
+ const cur=table.dataset.sortCol;const curDir=table.dataset.sortDir;
+ const dir=(cur==String(colIdx)&&curDir==='asc')?'desc':'asc';
+ table.dataset.sortCol=colIdx;table.dataset.sortDir=dir;
+ [...headerRow.children].forEach(h=>h.querySelectorAll('.sort-arrow').forEach(a=>a.remove()));
+ const arrow=document.createElement('span');arrow.className='sort-arrow';arrow.textContent=dir==='asc'?'▲':'▼';
+ th.appendChild(arrow);
+ sortTableBy(table,colIdx,dir);
+});
+document.addEventListener('mouseover',e=>{const th=e.target.closest('table th');if(th&&!th.onclick&&!th.getAttribute('onclick'))th.style.cursor='pointer'});
+
+/* ================= NAV & INIT ================= */
+document.querySelectorAll('nav button[data-t]').forEach(b=>b.onclick=()=>{
+ document.querySelectorAll('nav button[data-t]').forEach(x=>x.classList.remove('active'));b.classList.add('active');
+ document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));document.getElementById('tab-'+b.dataset.t).classList.add('active');
+ if(b.dataset.t==='comm')renderComm();
+});
+function renderAll(){if(ST.companyName!=null)document.getElementById('companyName').value=ST.companyName;fillRepSelects();renderReps();renderSales();renderColl();renderComm()}
+function migrateLegacyPeriodKeys(){
+ // كان "endOfMonth" يستخدم toISOString() اللي بتحوّل لتوقيت UTC وبتقص يوم كامل بمناطق زمنية متقدمة (زي الأردن UTC+3) —
+ // فكانت فترات الشهر تنحفظ بتاريخ نهاية أقل بيوم من الصحيح (٣٠ بدل ٣١ لشهر تموز مثلاً). هذي بترحّل أي فترة قديمة متأثرة لمفتاحها الصحيح.
+ let changed=false;
+ Object.keys(ST.periods||{}).forEach(key=>{
+  const parts=key.split('|');if(parts.length!==2)return;
+  const [from,to]=parts;const tp=to.split('-').map(Number);if(tp.length!==3)return;
+  const [ty,tm,td]=tp;const trueLast=new Date(ty,tm,0).getDate();
+  if(td===trueLast-1){
+   const newTo=ty+'-'+String(tm).padStart(2,'0')+'-'+String(trueLast).padStart(2,'0');
+   const newKey=from+'|'+newTo;
+   if(!ST.periods[newKey]){ST.periods[newKey]=ST.periods[key];changed=true}
+  }
+ });
+ if(changed)saveState();
+}
+document.addEventListener('DOMContentLoaded',boot);
+</script>
+</body>
+</html>
