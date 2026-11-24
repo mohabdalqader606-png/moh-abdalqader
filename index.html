@@ -407,7 +407,7 @@
 </main>
 
 <div id="printSheet"></div>
-<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 75</b></footer>
+<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 76</b></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
@@ -1067,6 +1067,20 @@ function delSheet(key){
   if(key==='trust'){ clear(['trustReconWrap','trustRowsWrap']); if($('trustCards')) $('trustCards').innerHTML=''; $('fnameTrust').textContent=''; }
   recomputeAll();
   setMsg && setMsg('saveMsg','🗑 حُذف '+names[key]+' — جارٍ الحفظ التلقائي','ok');
+}
+function fixDeclNo(){
+  if(!guardEdit(null)) return;
+  if(!ST.imports||!ST.imports.rows.length){ alert('ارفع كشف المستوردات أولاً.'); return; }
+  const oldNo=prompt('رقم البيان الحالي كما يظهر بالكشف (الجزء الأول فقط — مثال: 54249):'); if(oldNo===null) return;
+  const ok=String(oldNo).trim(); if(!ok) return;
+  const rows=ST.imports.rows.filter(r=>declKey(r.no)===ok);
+  if(!rows.length){ alert('لا يوجد بيان رقمه '+ok+' في الكشف.'); return; }
+  const newNo=prompt('الرقم الصحيح (الجزء الأول فقط):', ok); if(newNo===null) return;
+  const nk=String(newNo).trim(); if(!nk||nk===ok) return;
+  if(!confirm('تعديل رقم البيان '+ok+' إلى '+nk+' في '+rows.length+' سطر من الكشف؟\n\n⚠ تنبيه: إن كان الخطأ في نص قيد الأمانات (لا في الكشف الجمركي) فالأصح تصحيح القيد في النظام المحاسبي وسحب كشف أمانات جديد — الكشف الجمركي وثيقة رسمية.')) return;
+  rows.forEach(r=>{ r.no=String(r.no).replace(ok, nk); });
+  recomputeAll();
+  setMsg && setMsg('saveMsg','✏ عُدل رقم البيان '+ok+' إلى '+nk+' ('+rows.length+' سطر) — جارٍ الحفظ التلقائي','ok');
 }
 function applyEditLock(){
   ['btnSave','btnSaveCC'].forEach(id=>{ if($(id)) $(id).disabled=!canEdit; });
@@ -2590,7 +2604,8 @@ function renderAll(C){
       </tbody><tfoot><tr><td>المجموع</td><td class="num">${fmt(sumB)}</td><td class="num">${fmt(C.importsTax)}</td></tr></tfoot></table>
       <div class="hint" style="margin-top:6px;">أسطر النسبة 0% تُصنّف تلقائياً (لحوم/أسماك = صفرية · طحين/زيت/فاصولياء... = معفاة) — عدّل التصنيف من عمود «تصنيف 0%» بالجدول، والمستبعد (قيد نصي مثل مواد دعائية) عليه ☑ استبعاد.</div>
       <div class="toolrow"><button class="btn-teal btn-sm" onclick="printImportsReport()">🖨️ كشف المستوردات الرسمي (مرتب حسب البيان)</button>
-      <button class="btn-teal btn-sm" onclick="xlsxImportsModel()" title="النموذج الرسمي: التسلسل، رقم البيان وتاريخه، الوصل المالي والتصفية وتاريخه، قيمة البند، النسبة، الضريبة، وصف البنود + ورقة ملخص النسب">📥 إكسل نموذج المستوردات</button></div>
+      <button class="btn-teal btn-sm" onclick="xlsxImportsModel()" title="النموذج الرسمي: التسلسل، رقم البيان وتاريخه، الوصل المالي والتصفية وتاريخه، قيمة البند، النسبة، الضريبة، وصف البنود + ورقة ملخص النسب">📥 إكسل نموذج المستوردات</button>
+      <button class="btn-ghost btn-sm" onclick="fixDeclNo()" title="تعديل رقم بيان مكتوب خطأ في الكشف (كل أسطره) — استعمله فقط إن كان الخطأ في الكشف لا في قيد الأمانات">✏ تصحيح رقم بيان</button></div>
       <div id="importsChecks" style="margin-top:10px;"></div>
       <div class="scrollbox" style="max-height:380px; margin-top:10px;"><div id="importsRows"></div></div>`;
     renderImportsChecks();
