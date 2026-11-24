@@ -407,7 +407,7 @@
 </main>
 
 <div id="printSheet"></div>
-<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 72</b></footer>
+<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 73</b></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
@@ -1761,8 +1761,19 @@ async function onFileImports(inp){
   if(!guardEdit(inp)) return;
   const f=inp.files[0]; if(!f) return;
   $('fnameImports').textContent=f.name;
-  const aoa=await readFileXlsxAoA(f);
-  const hdr=(aoa[0]||[]).map(h=>String(h).replace(/\s+/g,' ').trim());
+  const aoaRaw=await readFileXlsxAoA(f);
+  // صف الرؤوس ليس بالضرورة الأول — بعض كشوفات الجمارك تسبقه بصفوف عنوان،
+  // فنبحث عنه في أول 20 صفاً (رؤوس كشف الجمارك أو رؤوس الكشف القديم)
+  const normHdr=r=>(r||[]).map(x=>String(x).replace(/\s+/g,' ').trim());
+  let hRow=-1;
+  for(let i=0;i<Math.min(20,aoaRaw.length);i++){
+    const cand=normHdr(aoaRaw[i]);
+    const isCust=cand.some(x=>/^ضريبة المبيعات/.test(x)) && cand.some(x=>/^قيمة البند/.test(x));
+    const isOld =cand.some(x=>/نسبة الضريبة/.test(x)) && cand.some(x=>/قيمة الاستيراد/.test(x));
+    if(isCust||isOld){ hRow=i; break; }
+  }
+  const aoa=hRow>0?aoaRaw.slice(hRow):aoaRaw;
+  const hdr=normHdr(aoa[0]);
   // كشف البيانات الرسمي من نظام الجمارك؟ (فيه ضريبة المبيعات وقيمة البند ورقم الوصل المالي)
   if(findCol(hdr,/^ضريبة المبيعات/)>=0 && findCol(hdr,/^قيمة البند/)>=0){
     const {rowsOut, transitN, exportN, lineN}=parseImportsCustoms(aoa, hdr, f.name);
@@ -1780,7 +1791,18 @@ async function onFileImports(inp){
         iBase=findCol(hdr,/قيمة الاستيراد/), iTax=findCol(hdr,/مبلغ الضريبة/),
         iEntry=findCol(hdr,/رقم القيد/), iItems=findCol(hdr,/الأصناف|الاصناف/),
         iDateD=findCol(hdr,/تاريخ البيان/), iOrder=findCol(hdr,/رقم الطلبية/);
-  if(iRate<0||iBase<0){ alert('لم أتعرف على أعمدة كشف المستوردات.'); return; }
+  if(iRate<0||iBase<0){
+    // هل هو «كشف الاستفسار عن المعاملات الجمركية»؟ (فيه رقم الوصل المالي والقيمة لكن بلا ضريبة المبيعات وقيمة البند)
+    let slim=false;
+    for(let i=0;i<Math.min(20,aoaRaw.length);i++){ const c=normHdr(aoaRaw[i]);
+      if(c.some(x=>/رقم الوصل المالي/.test(x)) && c.some(x=>x==='القيمة') && !c.some(x=>/ضريبة المبيعات/.test(x))){ slim=true; break; } }
+    if(slim){
+      alert('⚠ هذا الملف «كشف الاستفسار عن المعاملات الجمركية» — وهو لا يصلح للإقرار لأنه لا يحتوي عمودي «قيمة البند» و«ضريبة المبيعات».\n\nالمطلوب من نظام الجمارك: كشف البيانات التفصيلي نفسه الذي استعملناه سابقاً، وفيه الأعمدة: قيمة البند، ضريبة المبيعات، رقم وصل التصفية، وصف بند التعريفة، المصدر، المستورد، شرط ومكان التسليم…\n\nاسحب ذلك الكشف للفترة المطلوبة وارفعه هنا.');
+      return; }
+    // رسالة تشخيصية: نعرض أول صف غير فارغ حتى يُعرف ما وصل فعلاً
+    const firstRows=aoaRaw.slice(0,8).map(r=>(r||[]).filter(x=>String(x).trim()!=='').slice(0,8).join(' | ')).filter(s=>s).slice(0,3);
+    alert('لم أتعرف على أعمدة كشف المستوردات.\n\nالمطلوب: كشف نظام الجمارك (فيه «ضريبة المبيعات» و«قيمة البند») أو الكشف القديم (فيه «نسبة الضريبة» و«قيمة الاستيراد»).\n\nأول ما قرأته من الملف:\n'+(firstRows.join('\n')||'(ملف فارغ أو غير مقروء)'));
+    return; }
   const rowsOut=[];
   for(const r of aoa.slice(1)){
     const base=pnum(r[iBase]), tax=iTax>=0?pnum(r[iTax]):0;
