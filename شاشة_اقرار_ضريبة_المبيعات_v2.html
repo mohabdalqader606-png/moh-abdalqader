@@ -407,7 +407,7 @@
 </main>
 
 <div id="printSheet"></div>
-<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 77</b></footer>
+<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 78</b></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
@@ -2238,21 +2238,21 @@ function renderImportsChecks(){
   // 2) مطابقة بيان-بيان مع قيود الأمانات
   if(ST.trust){
     const imps=ST.trust.rows.filter(t=>t.cls==='imp');
-    const taxByNo={};
+    const taxByNo={}, dateByNo={};
     rows.forEach(r=>{ if(!r.tax) return; const n=declKey(r.no);
-      if(n.length>=3) taxByNo[n]=r3((taxByNo[n]||0)+r.tax); });
+      if(n.length>=3){ taxByNo[n]=r3((taxByNo[n]||0)+r.tax); if(!dateByNo[n]) dateByNo[n]=r.dateFin||''; } });
     const probs=[]; const usedEntries=new Set();
     for(const n in taxByNo){
       const e=imps.find(t=>t.details.includes(n));
-      if(!e) probs.push(`بيان ${n}: ضريبته ${fmt(taxByNo[n])} ولا يوجد له قيد أمانات`);
+      if(!e) probs.push(`بيان ${n} (وصل مالي ${esc(dateByNo[n]||'؟')}): ضريبته ${fmt(taxByNo[n])} ولا يوجد له قيد أمانات — إن كان قيده مرحَّلاً بعد نهاية الفترة فسيظهر بكشف الفترة القادمة`);
       else { usedEntries.add(e.i);
         const d=r3(e.debit-taxByNo[n]);
-        if(Math.abs(d)>0.02) probs.push(`بيان ${n}: الكشف ${fmt(taxByNo[n])} ≠ القيد ${fmt(e.debit)} (فرق ${fmt(d)})`); }
+        if(Math.abs(d)>0.02) probs.push(`بيان ${n} (وصل مالي ${esc(dateByNo[n]||'؟')}): الكشف ${fmt(taxByNo[n])} ≠ القيد ${fmt(e.debit)} (فرق ${fmt(d)})`); }
     }
     for(const t of imps){ if(usedEntries.has(t.i)||!t.debit) continue;
       const m=t.details.match(/(\d{3,})/g);
       const hasMatch=m&&m.some(n=>taxByNo[n]!==undefined);
-      if(!hasMatch) probs.push(`قيد أمانات ${fmt(t.debit)} (${esc(t.details.slice(0,45))}…) بلا بيان مقابل في الكشف`);
+      if(!hasMatch) probs.push(`قيد أمانات ${fmt(t.debit)} بتاريخ ${esc(t.date||'؟')} (${esc(t.details.slice(0,45))}…) بلا بيان مقابل في الكشف`);
     }
     html += probs.length
       ? `<div class="duebox" style="background:var(--crimson-bg); border-color:#EBC7C4; color:var(--crimson); margin-top:8px;">
