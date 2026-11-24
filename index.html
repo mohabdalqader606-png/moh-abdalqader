@@ -407,7 +407,7 @@
 </main>
 
 <div id="printSheet"></div>
-<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 76</b></footer>
+<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 77</b></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
@@ -2360,6 +2360,19 @@ async function onFileTrust(inp){
   recomputeAll();
 }
 function setTrustCls(i, cls){ if(!canEdit) return; const row=ST.trust.rows.find(r=>r.i===i); if(row){ row.cls=cls; row.auto=false; saveTrustRef([row]); recomputeAll(); } }
+function editTrustDet(i){
+  if(!guardEdit(null)) return;
+  const row=ST.trust.rows.find(r=>r.i===i); if(!row) return;
+  const nv=prompt('تعديل نص البيان:\n(التعديل على الشاشة فقط — القيد في النظام المحاسبي لا يتغير، وإذا رفعت كشفاً جديداً لاحقاً يعود النص الأصلي ما لم يُصحح القيد هناك)', row.details||'');
+  if(nv===null) return;
+  const t=String(nv).trim();
+  if(!t || t===row.details) return;
+  if(row.det0===undefined) row.det0=row.details; // الأصل للرجوع والتوثيق
+  row.details=t; row.edited=true;
+  if(row.cls) saveTrustRef([row]); // حفظ توقيع النص الجديد بالمرجع بنفس التصنيف
+  recomputeAll();
+  setMsg('trustMsg','✏ عُدل نص البيان (على الشاشة) — جارٍ الحفظ التلقائي','ok');
+}
 function setTrustJust(k, field, v){ if(!canEdit||!ST.trust) return;
   if(!ST.trust.just) ST.trust.just={};
   if(!ST.trust.just[k]) ST.trust.just[k]={};
@@ -2385,6 +2398,8 @@ function renderTrustRows(){
     {id:'cred',l:'دائن',n:1,get:r=>r.credit},
     {id:'cls',l:'التصنيف',sum:false,get:r=>TCLS_AR[r.cls],printText:r=>TCLS_AR[r.cls],
      render:r=>`<select onchange="setTrustCls(${r.i},this.value)" ${canEdit?'':'disabled'}>${['','sal','loc','imp','exp','pay','oth'].map(k=>`<option value="${k}" ${r.cls===k?'selected':''}>${TCLS_AR[k]}</option>`).join('')}</select>${r.auto?' <span title="تصنيف تلقائي">🤖</span>':''}`},
+    {id:'edit',l:'',sum:false,get:r=>'',printText:()=>'',
+     render:r=>canEdit?`<button class="btn-ghost btn-sm" style="padding:2px 8px;" onclick="editTrustDet(${r.i})" title="تعديل نص البيان (على الشاشة فقط — لا يغيّر القيد في النظام المحاسبي)">✏</button>${r.edited?' <span title="نص معدَّل يدوياً — الأصل: '+esc(r.det0||'')+'">📝</span>':''}`:(r.edited?'📝':'')},
   ], list, {title:'حساب أمانات ضريبة المبيعات (1212000001)', max:500, rowAttrs:r=>!r.cls?'style="background:var(--crimson-bg);"':''});
 }
 
