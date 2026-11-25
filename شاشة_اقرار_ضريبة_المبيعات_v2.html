@@ -407,10 +407,11 @@
 </main>
 
 <div id="printSheet"></div>
-<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 79</b></footer>
+<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 80</b></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
 /* ================= الإعدادات ================= */
@@ -920,8 +921,9 @@ async function mdlSave(sheets, fname){
   }catch(e){ alert('تعذر إنشاء الملف: '+e.message); }
 }
 /* ---- نموذج تحليل المبيعات ---- */
-function xlsxSalesModel(){
-  if(!DROWS.length){ alert('التفصيل السطري متاح بعد رفع ملف تحليل المبيعات في هذه الجلسة.'); return; }
+async function xlsxSalesModel(){
+  if(!DROWS.length){ setMsg('saveMsg','⬇ جارٍ تحميل التفصيل السطري من السيرفر…',''); await ensureRowsLoaded(); }
+  if(!DROWS.length){ alert('لا تفصيل سطرياً محفوظاً لهذه النسخة — أعد رفع ملف تحليل المبيعات مرة واحدة وسيُحفظ مضغوطاً للمرات القادمة.'); return; }
   const pr=periodRangeText();
   const fixed=['رمز السند','اسم العميل','الصنف','التاريخ'];
   const h1=[...fixed], h2=fixed.map(()=>''), gm=[];
@@ -1055,6 +1057,36 @@ function guardEdit(inp){ if(!canEdit){
 /* حفظ التفصيل السطري للمبيعات مع الإقرار (صيغة مضغوطة) حتى يبقى متاحاً بعد إعادة فتح الفترة */
 function packRows(rows){ return rows.map(x=>[x.no, x.ret?1:0, x.tc||'', x.ic||'', x.q||0, x.cust||'', x.item||'', x.date||'', x.v]); }
 function unpackRows(p){ return (p||[]).map(a=>({no:a[0], ret:!!a[1], tc:a[2]||'', ic:a[3]||'', q:+a[4]||0, cust:a[5]||'', item:a[6]||'', date:a[7]||'', v:a[8]||{}})); }
+let ROWS_DIRTY=false; // تُرفع عند رفع ملف مبيعات جديد فقط — فالكتابة للسيرفر مرة واحدة لا مع كل حفظ
+function gzPack(obj){ const u=pako.gzip(JSON.stringify(obj)); let s=''; const CH=0x8000;
+  for(let i=0;i<u.length;i+=CH) s+=String.fromCharCode.apply(null,u.subarray(i,i+CH));
+  return btoa(s); }
+function gzUnpack(b64){ const bin=atob(b64); const u=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i);
+  return JSON.parse(pako.ungzip(u,{to:'string'})); }
+async function saveRowsGz(declId){
+  if(!ROWS_DIRTY||!declId) return;
+  try{
+    if(DROWS.length){
+      const gz=gzPack({dcols:DCOLS, rows:packRows(DROWS)});
+      const {error}=await sb.from('decl_sales_rows').upsert({decl_id:declId, gz});
+      if(error) throw error;
+    } else {
+      await sb.from('decl_sales_rows').delete().eq('decl_id',declId);
+    }
+    ROWS_DIRTY=false;
+  }catch(e){ setMsg('saveMsg','⚠ لم يُحفظ التفصيل السطري المضغوط — هل نُفِّذ سكربت v7؟','err'); }
+}
+async function ensureRowsLoaded(){
+  if(DROWS.length) return true;
+  if(!curDeclId || typeof pako==='undefined') return false;
+  try{
+    const {data}=await sb.from('decl_sales_rows').select('gz').eq('decl_id',curDeclId).maybeSingle();
+    if(data&&data.gz){ const o=gzUnpack(data.gz); DCOLS=o.dcols||[]; DROWS=unpackRows(o.rows||[]);
+      if(DROWS.length){ rebuildItemsFromRows(); renderRowDetail(); return true; } }
+  }catch(e){}
+  return false;
+}
 function delSheet(key){
   if(!guardEdit(null)) return;
   const names={nt:'كشف الجهات غير الخاضعة', sales:'كشف تحليل المبيعات', purch:'كشف المشتريات المحلية', imports:'كشف المستوردات', trust:'كشف الأمانات'};
@@ -1064,7 +1096,7 @@ function delSheet(key){
   const es='<div class="empty-state">ارفع الكشف أولاً</div>';
   const clear=ids=>ids.forEach(id=>{ if($(id)) $(id).innerHTML=es; });
   if(key==='nt'){ clear(['ntDocsWrap']); if($('reconWrap')) $('reconWrap').innerHTML='<div class="empty-state">يلزم رفع الكشفين (١) و(٢)</div>'; $('fnameNT').textContent=''; }
-  if(key==='sales'){ DROWS=[]; DCOLS=[]; ITEMS={}; clear(['salesRatesWrap','itemsWrap','rowsWrap','ibWrap']); if($('reconWrap')) $('reconWrap').innerHTML='<div class="empty-state">يلزم رفع الكشفين (١) و(٢)</div>'; $('fnameSales').textContent=''; }
+  if(key==='sales'){ DROWS=[]; DCOLS=[]; ITEMS={}; ROWS_DIRTY=false; if(curDeclId) sb.from('decl_sales_rows').delete().eq('decl_id',curDeclId).then(()=>{},()=>{}); clear(['salesRatesWrap','itemsWrap','rowsWrap','ibWrap']); if($('reconWrap')) $('reconWrap').innerHTML='<div class="empty-state">يلزم رفع الكشفين (١) و(٢)</div>'; $('fnameSales').textContent=''; }
   if(key==='purch'){ PROWS=[]; clear(['purchWrap']); $('fnamePurch').textContent=''; }
   if(key==='imports'){ clear(['importsWrap']); $('fnameImports').textContent=''; }
   if(key==='trust'){ clear(['trustReconWrap','trustRowsWrap']); if($('trustCards')) $('trustCards').innerHTML=''; $('fnameTrust').textContent=''; }
@@ -1338,6 +1370,7 @@ async function onFileSales(inp){
   for(const ic in ITEMS){ const it=ITEMS[ic]; it.qty=r3(it.qty);
     for(const k in it.c){ it.c[k].b=r3(it.c[k].b); it.c[k].t=r3(it.c[k].t); } }
   ST.sales={rate, x0b:r3(x0b), x0t:r3(x0t), out0b:r3(out0b), cust, docAgg, unk, itemBracket, items:ITEMS, fname:f.name, rowsN:dataRows.length, retFactor};
+  ROWS_DIRTY=true;
   setMsg('salesParseMsg',`تمت المعالجة: ${dataRows.length.toLocaleString()} سطر ✔ ${retFactor===-1?'(عُكست إشارة المرتجعات تلقائياً)':''}`,'ok');
   recomputeAll(); renderItems(); renderRowDetail();
 }
@@ -1414,7 +1447,7 @@ function rowSort(id){ DSORT = DSORT.id===id ? {id, dir:-DSORT.dir} : {id, dir:-1
 function rowFilt(id,v){ DFILT[id]=v; renderRowDetail(); }
 function renderRowDetail(){
   const wrap=$('rowsWrap'); if(!wrap) return;
-  if(!DROWS.length){ wrap.innerHTML='<div class="empty-state">التفصيل السطري متاح بعد رفع ملف تحليل المبيعات في هذه الجلسة — أو نزّله CSV المؤرشف.</div>'; return; }
+  if(!DROWS.length){ wrap.innerHTML='<div class="empty-state">التفصيل السطري غير محمَّل — <button class="btn-teal btn-sm" onclick="ensureRowsLoaded().then(ok=>{ if(!ok) alert(\'لا تفصيل محفوظاً لهذه النسخة — أعد رفع ملف تحليل المبيعات مرة واحدة.\'); })">⬇ تحميل التفصيل من السيرفر</button></div>'; return; }
   const defs=rowColDefs();
   const list=filteredRows(defs);
   const shown=list.slice(0,200);
@@ -1431,7 +1464,8 @@ function renderRowDetail(){
   `</tbody><tfoot><tr>${defs.map((d,i)=>i===0?`<td>الإجمالي (${list.length.toLocaleString()} سطر)</td>`:(d.n?`<td class="num">${fmt(r3(sums[d.id]))}</td>`:'<td></td>')).join('')}</tr></tfoot></table>`+
     (list.length>200?`<div class="hint" style="padding:8px 12px;">يعرض أول 200 من ${list.length.toLocaleString()} سطر مفلتر (المجاميع تشمل الكل) — ضيّق الفلاتر أو اطبع/نزّل الكل.</div>`:'');
 }
-function printRows(){
+async function printRows(){
+  if(!DROWS.length) await ensureRowsLoaded();
   if(!DROWS.length){ alert('لا تفصيل سطري متاح.'); return; }
   const defs=rowColDefs();
   const list=filteredRows(defs);
@@ -2747,9 +2781,7 @@ async function saveDecl(status, quiet){
     data:{ v:2, ST, inputs:{prevCredit:num('prevCredit'), adjReg:num('adjReg'), adjDept:num('adjDept'), payDate:$('pPayDate').value||null, weekRate:num('pWeekRate'), fixed:num('pFixed'),
              ref16:num('ref16'), ref17:num('ref17'),
              reg:Object.fromEntries(['regName','regTaxNo','regPhone','regCell','regAddress','regGov','regIBAN','regEmail'].map(id=>[id,$(id)?$(id).value:'']))},
-           results:{outTax:C.outTax, inputsTotal:C.inputsTotal, netBefore:C.netBefore, f1:C.f1, f2:C.f2, netFinal:C.netFinal, totalSales:C.totalSales},
-           rows: DROWS.length?packRows(DROWS):undefined,
-           dcols: DROWS.length?DCOLS:undefined },
+           results:{outTax:C.outTax, inputsTotal:C.inputsTotal, netBefore:C.netBefore, f1:C.f1, f2:C.f2, netFinal:C.netFinal, totalSales:C.totalSales} },
     output_tax:C.outTax, input_tax:C.inputsTotal, net_tax:C.netFinal,
   };
   if(MULTI) payload.owner_id=curDeclOwner||curUser.id;
@@ -2761,6 +2793,7 @@ async function saveDecl(status, quiet){
     setMsg('saveMsg','فشل الحفظ: '+error.message,'err'); setMsg('saveMsg2','فشل الحفظ: '+error.message,'err'); return;
   }
   curDeclId=data.id; curDeclStatus=data.status;
+  saveRowsGz(data.id);
   if(MULTI){
     curDeclOwner=data.owner_id;
     const snap={id:data.id, owner_id:data.owner_id, status:data.status, updated_at:data.updated_at,
@@ -2804,7 +2837,7 @@ async function loadDeclForPeriod(manual){
     curDeclId=data.id; curDeclStatus=data.status; curDeclOwner=MULTI?data.owner_id:null;
     ST=Object.assign(freshST(), data.data.ST||{});
     ITEMS=(ST.sales&&ST.sales.items)||{};
-    if(data.data.rows){ try{ DCOLS=data.data.dcols||[]; DROWS=unpackRows(data.data.rows); }catch(e){ DROWS=[]; DCOLS=[]; } }
+    if(data.data.rows){ try{ DCOLS=data.data.dcols||[]; DROWS=unpackRows(data.data.rows); ROWS_DIRTY=true; }catch(e){ DROWS=[]; DCOLS=[]; } }
     const inp=data.data.inputs||{};
     $('prevCredit').value=inp.prevCredit||'';
     if(inp.adjReg!==undefined || inp.adjDept!==undefined){
