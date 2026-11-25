@@ -407,7 +407,7 @@
 </main>
 
 <div id="printSheet"></div>
-<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 78</b></footer>
+<footer>شاشة داخلية لإعداد ومراجعة إقرار ضريبة المبيعات قبل التقديم الرسمي — جميع المبالغ بالدينار (3 منازل). · <b>الإصدار 79</b></footer>
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
@@ -1052,6 +1052,9 @@ function guardEdit(inp){ if(!canEdit){
   alert(roleEdit?'هذه نسخة زميل آخر — للعمل افتح نسختك أنت من قائمة «نسخة الإقرار» في تبويب الفترة.'
                :'حسابك «مطالعة فقط» — لا يمكنك رفع كشوفات أو التعديل. راجع مدير النظام.');
   if(inp) inp.value=''; return false; } return true; }
+/* حفظ التفصيل السطري للمبيعات مع الإقرار (صيغة مضغوطة) حتى يبقى متاحاً بعد إعادة فتح الفترة */
+function packRows(rows){ return rows.map(x=>[x.no, x.ret?1:0, x.tc||'', x.ic||'', x.q||0, x.cust||'', x.item||'', x.date||'', x.v]); }
+function unpackRows(p){ return (p||[]).map(a=>({no:a[0], ret:!!a[1], tc:a[2]||'', ic:a[3]||'', q:+a[4]||0, cust:a[5]||'', item:a[6]||'', date:a[7]||'', v:a[8]||{}})); }
 function delSheet(key){
   if(!guardEdit(null)) return;
   const names={nt:'كشف الجهات غير الخاضعة', sales:'كشف تحليل المبيعات', purch:'كشف المشتريات المحلية', imports:'كشف المستوردات', trust:'كشف الأمانات'};
@@ -2744,7 +2747,9 @@ async function saveDecl(status, quiet){
     data:{ v:2, ST, inputs:{prevCredit:num('prevCredit'), adjReg:num('adjReg'), adjDept:num('adjDept'), payDate:$('pPayDate').value||null, weekRate:num('pWeekRate'), fixed:num('pFixed'),
              ref16:num('ref16'), ref17:num('ref17'),
              reg:Object.fromEntries(['regName','regTaxNo','regPhone','regCell','regAddress','regGov','regIBAN','regEmail'].map(id=>[id,$(id)?$(id).value:'']))},
-           results:{outTax:C.outTax, inputsTotal:C.inputsTotal, netBefore:C.netBefore, f1:C.f1, f2:C.f2, netFinal:C.netFinal, totalSales:C.totalSales} },
+           results:{outTax:C.outTax, inputsTotal:C.inputsTotal, netBefore:C.netBefore, f1:C.f1, f2:C.f2, netFinal:C.netFinal, totalSales:C.totalSales},
+           rows: DROWS.length?packRows(DROWS):undefined,
+           dcols: DROWS.length?DCOLS:undefined },
     output_tax:C.outTax, input_tax:C.inputsTotal, net_tax:C.netFinal,
   };
   if(MULTI) payload.owner_id=curDeclOwner||curUser.id;
@@ -2799,6 +2804,7 @@ async function loadDeclForPeriod(manual){
     curDeclId=data.id; curDeclStatus=data.status; curDeclOwner=MULTI?data.owner_id:null;
     ST=Object.assign(freshST(), data.data.ST||{});
     ITEMS=(ST.sales&&ST.sales.items)||{};
+    if(data.data.rows){ try{ DCOLS=data.data.dcols||[]; DROWS=unpackRows(data.data.rows); }catch(e){ DROWS=[]; DCOLS=[]; } }
     const inp=data.data.inputs||{};
     $('prevCredit').value=inp.prevCredit||'';
     if(inp.adjReg!==undefined || inp.adjDept!==undefined){
